@@ -42,6 +42,18 @@ export class NoFreePortError extends Error {
   }
 }
 
+export class CallbackClosedError extends Error {
+  constructor() {
+    super("The OAuth callback server was closed before the callback arrived.");
+    this.name = "CallbackClosedError";
+  }
+}
+
+export interface PortRange {
+  first: number;
+  last: number;
+}
+
 export interface CallbackResult {
   code: string;
   port: number;
@@ -56,6 +68,8 @@ export interface StartCallbackServerOptions {
   setTimeoutFn?: (callback: () => void, ms: number) => NodeJS.Timeout;
   /** Defaults to the global `clearTimeout`. */
   clearTimeoutFn?: (handle: NodeJS.Timeout) => void;
+  /** Defaults to 8484-8489. Inject a different range so tests don't fight over real ports. */
+  portRange?: PortRange;
 }
 
 export interface CallbackServerHandle {
@@ -115,15 +129,18 @@ async function bindPort(port: number, requestListener: RequestListener): Promise
   }
 }
 
-async function bindFirstFreePort(requestListener: RequestListener): Promise<{ port: number; servers: Server[] }> {
-  for (let port = FIRST_PORT; port <= LAST_PORT; port++) {
+async function bindFirstFreePort(
+  requestListener: RequestListener,
+  range: PortRange,
+): Promise<{ port: number; servers: Server[] }> {
+  for (let port = range.first; port <= range.last; port++) {
     try {
       return await bindPort(port, requestListener);
     } catch {
       continue;
     }
   }
-  throw new NoFreePortError(FIRST_PORT, LAST_PORT);
+  throw new NoFreePortError(range.first, range.last);
 }
 
 /**
@@ -138,6 +155,7 @@ export async function startCallbackServer(options: StartCallbackServerOptions): 
     timeoutMs = DEFAULT_TIMEOUT_MS,
     setTimeoutFn = setTimeout,
     clearTimeoutFn = clearTimeout,
+    portRange = { first: FIRST_PORT, last: LAST_PORT },
   } = options;
 
   let settleResolve!: (value: CallbackResult) => void;
@@ -224,7 +242,17 @@ export async function startCallbackServer(options: StartCallbackServerOptions): 
     settle(() => settleResolve({ code, port }));
   };
 
-  const bound = await bindFirstFreePort(requestListener);
+  let bound: { port: number; servers: Server[] };
+  try {
+    bound = await bindFirstFreePort(requestListener, portRange);
+  } catch (err) {
+    // Every exit path must clear this timeout, including this one: setTimeout's handle is
+    // ref'd by default, so an uncleared timer here would keep the whole process alive for up
+    // to `timeoutMs` (15 minutes by default) after a caller has already given up on the
+    // rejected promise below and moved on.
+    clearTimeoutFn(timeoutHandle);
+    throw err;
+  }
   port = bound.port;
   servers = bound.servers;
 
@@ -232,8 +260,12 @@ export async function startCallbackServer(options: StartCallbackServerOptions): 
     port,
     result,
     close: () => {
-      clearTimeoutFn(timeoutHandle);
-      closeAll();
+      // A caller that abandons the flow (the user cancelled, the CLI is exiting, ...) must not
+      // be left with a `result` promise that never settles -- that would hang whatever is
+      // awaiting it indefinitely. Routing through `settle` also clears the timeout and closes
+      // the servers exactly as the timeout and callback paths do; it's a no-op if the promise
+      // already settled, since a promise can only resolve or reject once.
+      settle(() => settleReject(new CallbackClosedError()));
     },
   };
 }

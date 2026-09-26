@@ -57,6 +57,55 @@ describe("startCallbackServer", () => {
     await expect(startCallbackServer({ expectedState: "state-1" })).rejects.toThrow(/no free port/i);
   });
 
+  it("binds within an injected port range instead of the default one", async () => {
+    // A custom range lets other tests (occupied-range, IPv6-conflict) exercise the same
+    // port-selection logic on a couple of high, unlikely-to-collide ports instead of the real
+    // 8484-8489 range, which is slower to occupy and could collide with an actual login flow
+    // running elsewhere on the same machine.
+    const handle = await startCallbackServer({
+      expectedState: "state-1",
+      portRange: { first: 19584, last: 19589 },
+    });
+    openHandles.push(handle);
+
+    expect(handle.port).toBe(19584);
+  });
+
+  it("rejects when every port in the injected range is occupied", async () => {
+    occupied.push(await occupyPort(19684));
+    occupied.push(await occupyPort(19685));
+
+    await expect(
+      startCallbackServer({
+        expectedState: "state-1",
+        portRange: { first: 19684, last: 19685 },
+      }),
+    ).rejects.toThrow(/no free port/i);
+  });
+
+  it("clears the timeout when every port in the range is occupied", async () => {
+    occupied.push(await occupyPort(19784));
+
+    const clearedHandles: unknown[] = [];
+    const fakeHandle = { marker: "fake-timeout-handle" };
+
+    await expect(
+      startCallbackServer({
+        expectedState: "state-1",
+        portRange: { first: 19784, last: 19784 },
+        // A real setTimeout here would keep the process alive for the full timeout (15
+        // minutes by default) if the bind-failure path forgot to clear it -- since Node
+        // timers are ref'd by default. Injecting a fake lets the test assert the clear
+        // happened without waiting on a real timer, or worse, leaking one into the test
+        // process.
+        setTimeoutFn: () => fakeHandle as unknown as NodeJS.Timeout,
+        clearTimeoutFn: (handle) => clearedHandles.push(handle),
+      }),
+    ).rejects.toThrow(/no free port/i);
+
+    expect(clearedHandles).toEqual([fakeHandle]);
+  });
+
   it("resolves with the authorization code when the callback carries a matching state", async () => {
     const handle = await startCallbackServer({ expectedState: "state-1" });
     openHandles.push(handle);
@@ -129,20 +178,49 @@ describe("startCallbackServer", () => {
     await expect(handle.result).rejects.toThrow(/timed out/i);
   });
 
-  it("accepts the callback on either loopback address", async () => {
+  it("accepts the callback on either loopback address", async (ctx) => {
     const handle = await startCallbackServer({ expectedState: "state-1" });
     openHandles.push(handle);
 
     await fetch(`http://127.0.0.1:${handle.port}/callback?code=via-v4&state=state-1`);
     await expect(handle.result).resolves.toEqual({ code: "via-v4", port: handle.port });
 
-    if (!ipv6Available) {
-      return;
-    }
+    // Report as skipped, not passed, when this host has no IPv6 loopback -- a silent early
+    // return here would make the suite look green while never having exercised the IPv6 half
+    // of the assertion at all.
+    ctx.skip(!ipv6Available, "IPv6 loopback (::1) is not available on this host");
 
     const handle2 = await startCallbackServer({ expectedState: "state-2" });
     openHandles.push(handle2);
     await fetch(`http://[::1]:${handle2.port}/callback?code=via-v6&state=state-2`);
     await expect(handle2.result).resolves.toEqual({ code: "via-v6", port: handle2.port });
+  });
+
+  it("skips a port whose IPv6 half is taken even though its IPv4 half is free", async (ctx) => {
+    ctx.skip(!ipv6Available, "IPv6 loopback (::1) is not available on this host");
+
+    occupied.push(await occupyPort(19884, "::1"));
+
+    const handle = await startCallbackServer({
+      expectedState: "state-1",
+      portRange: { first: 19884, last: 19885 },
+    });
+    openHandles.push(handle);
+
+    // The port whose IPv6 half was taken must be skipped entirely -- including its IPv4 half,
+    // which was free -- per the "taken if either address is occupied" rule, since redirect
+    // matching depends on the exact port and the server would otherwise be unreachable on
+    // whichever loopback address the browser happens to try first.
+    expect(handle.port).toBe(19885);
+  });
+
+  it("settles the result promise instead of leaving it pending when close() is called", async () => {
+    const handle = await startCallbackServer({ expectedState: "state-1" });
+    // Not pushed to openHandles: this test calls close() itself and asserts on the outcome,
+    // so the afterEach's blanket close() would just be a harmless no-op on top of it.
+
+    handle.close();
+
+    await expect(handle.result).rejects.toThrow(/closed/i);
   });
 });
