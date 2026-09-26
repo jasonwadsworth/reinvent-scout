@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createApiClient, type GetAccessTokenOptions } from "../../src/api/client.js";
+import { createApiClient } from "../../src/api/client.js";
+import { createTokenProviderAdapter } from "../../src/auth/provider-adapter.js";
 import { TOKEN_URL } from "../../src/auth/oauth.js";
-import { getAccessToken } from "../../src/auth/token-provider.js";
 import { readTokenStore, saveTokens, type StoredTokens } from "../../src/auth/token-store.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
 
@@ -112,16 +112,13 @@ describe("api client wired to the real token provider", () => {
     const routing = createRoutingFetch();
 
     // The wiring the CLI needs: the client's optional forceRefresh flag forwarded into the real
-    // token provider. Spreading `options` keeps this adapter correct the moment the provider
-    // understands the flag, and is the shape production should use.
-    const providerDeps = {
+    // token provider, through the same production adapter `auth login`/the CLI commands use --
+    // not a test-local stand-in.
+    const getAccessTokenForClient = createTokenProviderAdapter({
       storeRoot: home.path,
       fetchFn: routing.fetchFn,
       now: () => NOW,
-    };
-    const getAccessTokenForClient = async (
-      options?: GetAccessTokenOptions,
-    ): Promise<string> => getAccessToken({ ...providerDeps, ...options });
+    });
 
     const client = createApiClient({
       fetchFn: routing.fetchFn,

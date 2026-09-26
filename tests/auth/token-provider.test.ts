@@ -142,4 +142,43 @@ describe("getAccessToken", () => {
     ).rejects.toBeInstanceOf(AuthRequiredError);
     expect(fake.calls).toHaveLength(0);
   });
+
+  it("forces a refresh even when the stored token is still valid", async () => {
+    saveTokens(VALID_TOKENS, { storeRoot: home.path });
+    const fake = createFakeFetch([
+      {
+        status: 200,
+        json: { access_token: "forced-refresh-access", token_type: "Bearer", expires_in: 3600 },
+      },
+    ]);
+
+    const token = await getAccessToken({
+      storeRoot: home.path,
+      now: () => 1000,
+      fetchFn: fake.fetch,
+      forceRefresh: true,
+    });
+
+    expect(token).toBe("forced-refresh-access");
+    expect(fake.calls).toHaveLength(1);
+  });
+
+  it("shares one in-flight refresh between a forced caller and a concurrent unforced caller", async () => {
+    saveTokens(EXPIRING_SOON_TOKENS, { storeRoot: home.path });
+    const fake = createFakeFetch([
+      { status: 200, json: { access_token: "refreshed-access", token_type: "Bearer", expires_in: 3600 } },
+    ]);
+
+    const deps = { storeRoot: home.path, now: () => 50_000, fetchFn: fake.fetch };
+    const [forced, unforced] = await Promise.all([
+      getAccessToken({ ...deps, forceRefresh: true }),
+      getAccessToken(deps),
+    ]);
+
+    expect(forced).toBe("refreshed-access");
+    expect(unforced).toBe("refreshed-access");
+    // Single-flight must still hold when one of the two callers is forcing a refresh -- only one
+    // network call, not two.
+    expect(fake.calls).toHaveLength(1);
+  });
 });

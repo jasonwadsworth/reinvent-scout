@@ -13,7 +13,22 @@ import {
 export interface TokenProviderDeps extends TokenStoreDeps, ClockDeps {
   /** Defaults to the global `fetch`. Inject a fake so no test touches the network. */
   fetchFn?: typeof fetch;
+  /** Bypasses the "is the stored token still valid" check and forces a genuine refresh, even
+   * when the stored token is nowhere near its expiry. Used for the one-shot retry after the
+   * server rejects a token the caller believed was still valid (revoked server-side, rotated
+   * signing key, clock skew). Still single-flight: a forced caller joins a refresh already in
+   * flight for the same store root rather than starting a second one. */
+  forceRefresh?: boolean;
 }
+
+/**
+ * The subset of `TokenProviderDeps` a caller supplies per call, once the provider's fixed
+ * dependencies (store root, fetch, clock) are already bound -- see `src/auth/provider-adapter.ts`.
+ * The API client imports this type directly for its `getAccessToken` dependency, so if the
+ * provider ever changes what a caller can request, every adapter that feeds the client fails to
+ * typecheck instead of silently dropping the flag.
+ */
+export type GetAccessTokenOptions = Pick<TokenProviderDeps, "forceRefresh">;
 
 /**
  * One in-flight refresh promise per store root, shared by every concurrent caller within this
@@ -76,7 +91,7 @@ export async function getAccessToken(deps: TokenProviderDeps): Promise<string> {
     throw new AuthRequiredError();
   }
 
-  if (!isAccessTokenExpired(state.tokens, deps)) {
+  if (!deps.forceRefresh && !isAccessTokenExpired(state.tokens, deps)) {
     return state.tokens.accessToken;
   }
 

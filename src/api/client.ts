@@ -1,3 +1,4 @@
+import type { GetAccessTokenOptions } from "../auth/token-provider.js";
 import {
   AuthRequiredError,
   NotFoundError,
@@ -9,6 +10,8 @@ import {
 } from "../core/errors.js";
 import type { ListSessionsResponseContent, Schedule, Session } from "./types.js";
 
+export type { GetAccessTokenOptions };
+
 const DEFAULT_BASE_URL = "https://api.awsevents.com";
 
 /** A response is retried at most this many times before giving up on a 429. */
@@ -19,12 +22,6 @@ const BASE_BACKOFF_MS = 250;
 
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-export interface GetAccessTokenOptions {
-  /** Bypass any cached "still valid" check and get a genuinely fresh token. Used for the
-   * one-shot retry after a server rejects a token the caller believed was still valid. */
-  forceRefresh?: boolean;
 }
 
 export interface ApiClientDeps {
