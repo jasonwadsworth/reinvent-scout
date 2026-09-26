@@ -105,10 +105,15 @@ export interface CatalogData {
 }
 
 /** Persists raw sessions, the derived index, and sync metadata, creating the catalog directory
- * (and the store root above it) at 0700 if needed. Meta is written last, deliberately: if the
- * process is interrupted partway, a reader sees either the previous meta pointing at the
- * previous (complete) raw/index data, or the new meta pointing at the new (complete) data --
- * never a new meta pointing at raw or index data that only partially landed. */
+ * (and the store root above it) at 0700 if needed. Meta is written last, deliberately: it is the
+ * one file `getCatalogState` reads to decide freshness, so this ordering guarantees a reader
+ * never sees a *new* meta describing raw/index data that only partially landed -- if the process
+ * is interrupted before meta lands, the reader still sees the previous meta. That previous meta
+ * can by then be describing a mix of old and new raw/index data (if raw and/or index were
+ * already replaced before the interruption), which is a real inconsistency, not a hypothetical
+ * one -- but it is a safe one: the previous meta's `syncedAt` is unchanged, so it is exactly as
+ * stale as it was before this sync started and `getCatalogState` reports it accordingly, driving
+ * a re-sync that overwrites all three files again. */
 export function writeCatalog(data: CatalogData, deps: CatalogStoreDeps): void {
   ensureDirWithMode(catalogDir(deps.storeRoot), STORE_DIR_MODE);
   writeFileAtomic(rawPath(deps.storeRoot), () => JSON.stringify(data.raw), { mode: FILE_MODE });
