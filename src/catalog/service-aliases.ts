@@ -10,14 +10,29 @@ const PARENTHETICAL_PATTERN = /^(.*?)\s*\(([^)]+)\)\s*$/;
  * short alias like `lambda` from `"AWS Lambda"` or `dynamodb` from `"Amazon DynamoDB"`. */
 const VENDOR_PREFIX_PATTERN = /^(?:Amazon|AWS)\s+/;
 
+/** One alias that two or more canonical catalog service names both derived, in the shape
+ * `buildServiceAliasIndex` reports it: dropped from `resolve` (which returns `null` for it)
+ * rather than silently picked. `canonicalNames` is sorted, since which name happened to be
+ * processed first is not meaningful. */
+export interface ServiceAliasCollision {
+  alias: string;
+  canonicalNames: string[];
+}
+
 export interface ServiceAliasIndex {
   /**
    * Resolves a detected service key or free-form alias to its canonical catalog display name.
    * Returns `null` when this catalog has no counterpart for it -- a detected service with no
-   * catalog entry (Amazon SNS, today) is a normal outcome to report, not an error. Lookup is
-   * case- and punctuation-insensitive, matching how aliases are derived below.
+   * catalog entry (Amazon SNS, today) is a normal outcome to report, not an error -- or when the
+   * alias is ambiguous (see `collisions`). Lookup is case- and punctuation-insensitive, matching
+   * how aliases are derived below.
    */
   resolve(alias: string): string | null;
+  /** Every alias two or more canonical names derived. Each one always resolves to `null` via
+   * `resolve`; each colliding name's own full display name still resolves correctly, since that
+   * string is what actually differs between them. See `buildServiceAliasIndex`'s doc comment for
+   * why this degrades instead of failing outright. */
+  collisions: ServiceAliasCollision[];
 }
 
 /** Lowercases and strips everything but letters and digits, so `"AWS Lambda"`, `"aws-lambda"`
@@ -86,22 +101,26 @@ function candidateNamesFor(canonicalName: string): string[] {
  * JSON-round-tripped (it's rebuilt in memory from the synced catalog on every use), so there's no
  * later read path that could reintroduce the hazard even if one were needed here.
  *
- * A single alias that two different canonical names would both produce is a genuine ambiguity --
- * silently resolving it to whichever name happened to be processed first would make a matcher's
- * "exact service match" reason wrong in a way nothing downstream would ever catch -- so this
- * throws immediately at build time instead, rather than at some later, harder-to-trace lookup.
+ * A single alias that two different canonical names would both produce is a genuine ambiguity,
+ * but it must not make the whole index -- and so the `match` command -- unusable for every user
+ * over one AWS-side rename: silently resolving it to whichever name happened to be processed
+ * first would make a matcher's "exact service match" reason wrong in a way nothing downstream
+ * would ever catch, but refusing to build the index at all is a worse failure than the ambiguity
+ * itself. So a colliding alias is dropped (`resolve` returns `null` for it, exactly as if no
+ * service had ever produced it) and reported in `collisions` instead -- degrading one alias
+ * rather than breaking the command. Each colliding name's own full display name is unaffected,
+ * since two different services essentially never share the exact same full name.
  */
 export function buildServiceAliasIndex(catalogServiceNames: readonly string[]): ServiceAliasIndex {
-  const aliasToCanonical = new Map<string, string>();
+  const aliasToCanonicalNames = new Map<string, Set<string>>();
 
   function addAlias(alias: string, canonicalName: string): void {
-    const existing = aliasToCanonical.get(alias);
-    if (existing !== undefined && existing !== canonicalName) {
-      throw new Error(
-        `Service alias "${alias}" is ambiguous between "${existing}" and "${canonicalName}".`,
-      );
+    let names = aliasToCanonicalNames.get(alias);
+    if (names === undefined) {
+      names = new Set();
+      aliasToCanonicalNames.set(alias, names);
     }
-    aliasToCanonical.set(alias, canonicalName);
+    names.add(canonicalName);
   }
 
   const uniqueNames = [...new Set(catalogServiceNames)];
@@ -118,9 +137,21 @@ export function buildServiceAliasIndex(catalogServiceNames: readonly string[]): 
     }
   }
 
+  const resolvable = new Map<string, string>();
+  const collisions: ServiceAliasCollision[] = [];
+  for (const [alias, names] of aliasToCanonicalNames) {
+    if (names.size === 1) {
+      resolvable.set(alias, [...names][0]!);
+    } else {
+      collisions.push({ alias, canonicalNames: [...names].sort() });
+    }
+  }
+  collisions.sort((a, b) => a.alias.localeCompare(b.alias));
+
   return {
     resolve(alias: string): string | null {
-      return aliasToCanonical.get(normalizeAliasKey(alias)) ?? null;
+      return resolvable.get(normalizeAliasKey(alias)) ?? null;
     },
+    collisions,
   };
 }

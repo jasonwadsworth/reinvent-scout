@@ -88,15 +88,37 @@ describe("buildServiceAliasIndex", () => {
     expect(index.resolve("sfn")).toBeNull();
   });
 
-  it("builds the index from the fixture without a collision between two service names", () => {
-    expect(() => buildServiceAliasIndex(uniqueFixtureServiceNames())).not.toThrow();
+  it("builds the index from the fixture with no collisions", () => {
+    const index = buildServiceAliasIndex(uniqueFixtureServiceNames());
+
+    expect(index.collisions).toEqual([]);
   });
 
-  it("throws when two canonical names derive the same alias", () => {
+  it("drops a colliding alias to null rather than making the index unusable", () => {
     // A synthetic pair, not drawn from the real catalog (which has no such collision): both
     // strip to the same base name once their vendor prefix is removed, so they must collide on
-    // the alias "widget" under the actual derivation rules, not a contrived shortcut.
-    expect(() => buildServiceAliasIndex(["AWS Widget", "Amazon Widget"])).toThrow(/widget/i);
+    // the alias "widget" under the actual derivation rules, not a contrived shortcut. A rename on
+    // AWS's side must degrade one alias, not break every user's `match` command.
+    const index = buildServiceAliasIndex(["AWS Widget", "Amazon Widget"]);
+
+    expect(index.resolve("widget")).toBeNull();
+  });
+
+  it("still resolves each colliding service's own full display name", () => {
+    const index = buildServiceAliasIndex(["AWS Widget", "Amazon Widget"]);
+
+    expect(index.resolve("AWS Widget")).toBe("AWS Widget");
+    expect(index.resolve("Amazon Widget")).toBe("Amazon Widget");
+    expect(index.resolve("aws widget")).toBe("AWS Widget");
+    expect(index.resolve("amazon widget")).toBe("Amazon Widget");
+  });
+
+  it("lists a dropped alias in collisions with every canonical name that produced it", () => {
+    const index = buildServiceAliasIndex(["AWS Widget", "Amazon Widget"]);
+
+    expect(index.collisions).toEqual([
+      { alias: "widget", canonicalNames: ["AWS Widget", "Amazon Widget"] },
+    ]);
   });
 
   it("is not corrupted by an alias that collides with an Object.prototype member", () => {
