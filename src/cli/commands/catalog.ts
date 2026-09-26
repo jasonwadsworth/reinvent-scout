@@ -103,6 +103,13 @@ function parseLimit(raw: string): number {
   return limit;
 }
 
+/** The one-line form plus the abstract beneath it, for `--include-abstracts` without `--json`.
+ * A session with no abstract on record gets only its line, so the flag never invents text. */
+function formatSearchResultWithAbstract(result: CatalogQueryResult, abstract: string | null): string {
+  const line = formatSearchResultLine(result);
+  return abstract === null || abstract === "" ? line : `${line}\n  ${abstract}`;
+}
+
 function formatSearchResultLine(result: CatalogQueryResult): string {
   const { record } = result;
   const parts = [record.abbreviation ?? record.sessionId, record.title];
@@ -224,7 +231,13 @@ export function registerCatalogCommands(program: Command, deps: CatalogCommandDe
             score: result.score,
             abstract: rawBySessionId.get(result.record.sessionId)?.abstract ?? null,
           }));
-          print(options.json ? JSON.stringify(withAbstracts) : results.map(formatSearchResultLine).join("\n"));
+          print(
+            options.json
+              ? JSON.stringify(withAbstracts)
+              : results
+                  .map((result, i) => formatSearchResultWithAbstract(result, withAbstracts[i]?.abstract ?? null))
+                  .join("\n\n"),
+          );
           return;
         }
 

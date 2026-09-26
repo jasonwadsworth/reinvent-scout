@@ -258,6 +258,30 @@ describe("catalog search command", () => {
     }
   });
 
+  it("prints each abstract under its result line when --include-abstracts is given without --json", async () => {
+    const h = localHarness(home.path);
+
+    await h.run(["catalog", "search", "graviton", "--include-abstracts", "--limit", "3"]);
+
+    const text = h.printed.join("\n");
+    // ANT301 is a fixture session that definitely carries an abstract; its text must appear,
+    // not just the one-line summary the flag-less form prints.
+    expect(text).toContain("ANT301");
+    // This phrase occurs only in ANT301's abstract, never in any fixture title, so a summary
+    // line alone cannot satisfy it.
+    expect(text).toContain("accessible to everyone on your team");
+  });
+
+  it("does not print abstracts in human-readable output without the flag", async () => {
+    const h = localHarness(home.path);
+
+    await h.run(["catalog", "search", "graviton", "--limit", "3"]);
+
+    const text = h.printed.join("\n");
+    expect(text).toContain("ANT301");
+    expect(text).not.toContain("accessible to everyone on your team");
+  });
+
   it("includes abstracts only when --include-abstracts is passed", async () => {
     const withoutFlag = localHarness(home.path);
     await withoutFlag.run(["catalog", "search", "graviton", "--json"]);
