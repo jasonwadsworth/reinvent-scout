@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AuthRequiredError,
   CatalogMissingError,
+  CatalogUnusableError,
   NotFoundError,
   NotRegisteredError,
   OperationUnavailableError,
@@ -51,6 +52,29 @@ describe("CatalogMissingError", () => {
     const err = new CatalogMissingError("custom reason");
 
     expect(err.message).toBe("custom reason");
+  });
+});
+
+describe("CatalogUnusableError", () => {
+  it("carries a reason distinguishing an outdated format from an unreadable one, plus a message", () => {
+    const outdated = new CatalogUnusableError("outdated", "rebuild it");
+    const corrupt = new CatalogUnusableError("corrupt", "rebuild it too");
+
+    expect(outdated).toBeInstanceOf(Error);
+    expect(outdated.name).toBe("CatalogUnusableError");
+    expect(outdated.reason).toBe("outdated");
+    expect(outdated.message).toBe("rebuild it");
+    expect(corrupt.reason).toBe("corrupt");
+  });
+
+  it("is distinguishable from CatalogMissingError, since the remedies genuinely differ", () => {
+    // CatalogMissingError means "never synced" -- needs network and a signed-in session.
+    // CatalogUnusableError means "synced, but the local index can't be trusted" -- a local
+    // rebuild fixes it, no network or session required. A caller (part 3's MCP tools especially)
+    // needs to branch on which one it got rather than treating both as "go run catalog sync".
+    const err = new CatalogUnusableError("outdated", "rebuild it");
+
+    expect(err).not.toBeInstanceOf(CatalogMissingError);
   });
 });
 

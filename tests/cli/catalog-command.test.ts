@@ -447,3 +447,52 @@ describe("catalog show command", () => {
     }
   });
 });
+
+describe("catalog search and show against an unusable index", () => {
+  let home: TempHome;
+
+  beforeEach(() => {
+    home = createTempHome();
+    // An index written by an older version of this tool: same data, older schema version. The
+    // read path must refuse it with the rebuild remedy rather than serving possibly-poisoned terms.
+    writeCatalog(
+      {
+        raw: fixture,
+        index: fixture.map(buildIndexRecord),
+        meta: {
+          schemaVersion: CURRENT_SCHEMA_VERSION - 1,
+          eventId: "reinvent2026",
+          syncedAt: 1_700_000_000_000,
+          totalCount: fixture.length,
+          count: fixture.length,
+          includedAbstracts: true,
+        },
+      },
+      { storeRoot: home.path },
+    );
+  });
+
+  afterEach(() => {
+    process.exitCode = 0;
+    home.cleanup();
+  });
+
+  it("search tells the user to rebuild the index and exits non-zero instead of throwing", async () => {
+    const h = localHarness(home.path);
+
+    await h.run(["catalog", "search", "graviton"]);
+
+    expect(h.printed.join("\n")).toContain("catalog sync");
+    expect(h.printed.join("\n")).toMatch(/older format|rebuilt/);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("show tells the user to rebuild the index and exits non-zero instead of throwing", async () => {
+    const h = localHarness(home.path);
+
+    await h.run(["catalog", "show", "ANT301"]);
+
+    expect(h.printed.join("\n")).toContain("catalog sync");
+    expect(process.exitCode).toBe(1);
+  });
+});

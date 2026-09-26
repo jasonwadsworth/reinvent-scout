@@ -6,7 +6,13 @@ import { queryCatalog, resolveSessionRecord, type CatalogQueryResult } from "../
 import { readRaw } from "../../catalog/store.js";
 import { DEFAULT_EVENT_ID, syncCatalog, type SyncResult } from "../../catalog/sync.js";
 import { isKnownVenue } from "../../catalog/venue.js";
-import { AuthRequiredError, CatalogMissingError, NotRegisteredError, ValidationError } from "../../core/errors.js";
+import {
+  AuthRequiredError,
+  CatalogMissingError,
+  CatalogUnusableError,
+  NotRegisteredError,
+  ValidationError,
+} from "../../core/errors.js";
 import { ensureStoreRoot } from "../../core/paths.js";
 
 export interface CatalogCommandDeps {
@@ -228,7 +234,11 @@ export function registerCatalogCommands(program: Command, deps: CatalogCommandDe
         }));
         print(options.json ? JSON.stringify(withoutAbstracts) : results.map(formatSearchResultLine).join("\n"));
       } catch (err) {
-        if (err instanceof CatalogMissingError || err instanceof ValidationError) {
+        if (
+          err instanceof CatalogMissingError ||
+          err instanceof CatalogUnusableError ||
+          err instanceof ValidationError
+        ) {
           print(err.message);
           process.exitCode = 1;
           return;
@@ -277,7 +287,7 @@ export function registerCatalogCommands(program: Command, deps: CatalogCommandDe
           print(`${output.abbreviation ?? output.sessionId}: ${output.title}\n${output.abstract ?? ""}`);
         }
       } catch (err) {
-        if (err instanceof CatalogMissingError) {
+        if (err instanceof CatalogMissingError || err instanceof CatalogUnusableError) {
           print(err.message);
           process.exitCode = 1;
           return;

@@ -1,9 +1,9 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Session } from "../../src/api/types.js";
-import { CatalogMissingError } from "../../src/core/errors.js";
+import { CatalogMissingError, CatalogUnusableError } from "../../src/core/errors.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { CURRENT_SCHEMA_VERSION, writeCatalog, type CatalogMeta } from "../../src/catalog/store.js";
 import { getIndexRecord, queryCatalog, resolveSessionRecord } from "../../src/catalog/query.js";
@@ -207,8 +207,50 @@ describe("queryCatalog", () => {
       { storeRoot: home.path },
     );
 
-    expect(() => queryCatalog({ storeRoot: home.path })).toThrow(CatalogMissingError);
-    expect(() => queryCatalog({ storeRoot: home.path })).toThrow(/catalog sync/);
+    let caught: unknown;
+    try {
+      queryCatalog({ storeRoot: home.path });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(CatalogUnusableError);
+    expect((caught as CatalogUnusableError).reason).toBe("outdated");
+    expect((caught as CatalogUnusableError).message).toMatch(/catalog sync/);
+  });
+
+  it("refuses to search when meta.json is corrupt, even beside a genuinely poisoned index", () => {
+    // The reason to refuse an outdated-schema index is that it may be poisoned. When meta.json
+    // can't be parsed, the schema version is unknowable, so the index may equally be poisoned --
+    // there is no evidence either way, which makes refusing the consistent answer, not serving it
+    // through on the theory that "corrupt" and "outdated" are different problems. Verified this
+    // was a real gap before fixing it: a poisoned index behind a corrupt meta returned a NaN
+    // score, exactly as if the schema-version guard didn't exist.
+    const poisonedRecord = buildIndexRecord({
+      sessionId: "poisoned-session",
+      title: "the constructor pattern",
+    });
+    // Simulate the actual pre-fix write bug's output directly, since the current (fixed)
+    // buildIndexRecord can no longer produce it.
+    // Assign through a string-typed key so the index signature applies, rather than the
+    // `constructor: Function` member TypeScript would otherwise resolve the literal to.
+    const poisonedKey: string = "constructor";
+    (poisonedRecord.titleTerms as unknown as Record<string, string>)[poisonedKey] =
+      "function Object() { [native code] }1";
+    writeCatalog(
+      { raw: fixture, index: [poisonedRecord], meta: sampleMeta() },
+      { storeRoot: home.path },
+    );
+    // Corrupt meta.json in place, leaving the just-written (poisoned) index.json untouched.
+    writeFileSync(join(home.path, "catalog", "meta.json"), "{ truncated", "utf8");
+
+    let caught: unknown;
+    try {
+      queryCatalog({ storeRoot: home.path }, { query: "constructor" });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(CatalogUnusableError);
+    expect((caught as CatalogUnusableError).reason).toBe("corrupt");
   });
 
   it("does not refuse a catalog that is merely stale by age, only one with an outdated schema", () => {
@@ -266,9 +308,31 @@ describe("getIndexRecord", () => {
       { storeRoot: home.path },
     );
 
-    expect(() => getIndexRecord({ storeRoot: home.path }, "1780441461150001GGoc")).toThrow(
-      CatalogMissingError,
+    let caught: unknown;
+    try {
+      getIndexRecord({ storeRoot: home.path }, "1780441461150001GGoc");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(CatalogUnusableError);
+    expect((caught as CatalogUnusableError).reason).toBe("outdated");
+  });
+
+  it("refuses to read when meta.json is corrupt", () => {
+    writeCatalog(
+      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
+      { storeRoot: home.path },
     );
+    writeFileSync(join(home.path, "catalog", "meta.json"), "{ truncated", "utf8");
+
+    let caught: unknown;
+    try {
+      getIndexRecord({ storeRoot: home.path }, "1780441461150001GGoc");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(CatalogUnusableError);
+    expect((caught as CatalogUnusableError).reason).toBe("corrupt");
   });
 
   it("does not refuse a catalog that is merely stale by age", () => {

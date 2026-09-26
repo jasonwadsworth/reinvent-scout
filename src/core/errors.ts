@@ -39,6 +39,27 @@ export class CatalogMissingError extends Error {
   }
 }
 
+/**
+ * Thrown when a local catalog index exists but can't be trusted -- either it was built at an
+ * older schema version (which may carry data poisoned by a bug fixed since, see
+ * `store.ts`'s `CURRENT_SCHEMA_VERSION` history) or its sync metadata itself couldn't be read, so
+ * the version is unknowable and the index may equally be poisoned. In both cases the remedy is a
+ * local rebuild (`catalog sync`, or `catalog sync --reindex` to skip re-fetching) -- deliberately
+ * a distinct type from `CatalogMissingError` ("nothing has ever been synced," which needs network
+ * and a signed-in session instead), so a caller -- part 3's MCP tools especially -- can branch on
+ * `reason` and recover programmatically rather than treating every "you need to do something
+ * first" case the same way.
+ */
+export class CatalogUnusableError extends Error {
+  public readonly reason: "outdated" | "corrupt";
+
+  constructor(reason: "outdated" | "corrupt", message: string) {
+    super(message);
+    this.name = "CatalogUnusableError";
+    this.reason = reason;
+  }
+}
+
 /** Thrown when the API's rate limit (429) is exceeded after exhausting retries. */
 export class ThrottledError extends Error {
   constructor(message = "Too many requests. Try again in a moment.") {

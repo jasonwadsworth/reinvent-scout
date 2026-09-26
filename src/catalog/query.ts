@@ -1,4 +1,4 @@
-import { CatalogMissingError } from "../core/errors.js";
+import { CatalogMissingError, CatalogUnusableError } from "../core/errors.js";
 import { tokenize, type IndexRecord, type TermFrequencies } from "./index-record.js";
 import { getCatalogState, readIndex, type CatalogStoreDeps } from "./store.js";
 import type { Venue } from "./venue.js";
@@ -95,16 +95,27 @@ function compareByAbbreviation(a: IndexRecord, b: IndexRecord): number {
   return (a.abbreviation ?? "").localeCompare(b.abbreviation ?? "");
 }
 
+const REBUILD_REMEDY =
+  "Run `reinvent-scout catalog sync` (or `catalog sync --reindex` to skip re-fetching).";
+
 /**
- * Loads the local index, refusing rather than serving it when it was built at an older schema
- * version. A schema-version mismatch means the index on disk may have been written by a version
- * of this tool with a fixed bug since -- concretely, CURRENT_SCHEMA_VERSION 1 -> 2 exists because
- * a stale index can hold a genuinely corrupted own-property value for any term that collided
- * with `Object.prototype` on write (see index-record.ts's `tokenize`); the read-side
- * `Object.hasOwn` guard in this module only stops a *false* match on an unaffected record, it
- * cannot repair a term that really was poisoned when it was written. Refusing outright is what
- * actually makes a schema bump cause an existing index to rebuild, rather than the bump being
- * inert until something reads it.
+ * Loads the local index, refusing rather than serving it when it can't be trusted. Two cases
+ * refuse, both with `CatalogUnusableError` (distinct from `CatalogMissingError`, since the remedy
+ * here is a local rebuild, not signing in and pulling from the network again):
+ *
+ * - `reason: "outdated"` -- a schema-version mismatch means the index on disk may have been
+ *   written by a version of this tool with a fixed bug since. Concretely, `CURRENT_SCHEMA_VERSION`
+ *   1 -> 2 exists because a stale index can hold a genuinely corrupted own-property value for any
+ *   term that collided with `Object.prototype` on write (see index-record.ts's `tokenize`); the
+ *   read-side `Object.hasOwn` guard in this module only stops a *false* match on an unaffected
+ *   record, it cannot repair a term that really was poisoned when it was written.
+ * - `reason: "corrupt"` -- meta.json itself couldn't be read, so the schema version is
+ *   unknowable. The index may equally be poisoned in this case; there is no evidence either way,
+ *   which makes refusing the consistent answer, not a weaker one just because the specific defect
+ *   that motivated "outdated" can't be confirmed.
+ *
+ * Refusing outright in both cases is what actually makes a schema bump cause an existing index to
+ * rebuild, rather than the bump being inert until something reads it.
  *
  * Staleness by age alone (it's been a while since the last sync) does *not* refuse -- that says
  * nothing about whether the index's own data is trustworthy, and refusing on it would defeat the
@@ -116,9 +127,16 @@ function requireCurrentIndex(deps: CatalogStoreDeps): IndexRecord[] {
     throw new CatalogMissingError();
   }
   if (state.status === "stale" && state.reason === "schema-version") {
-    throw new CatalogMissingError(
-      "Your local catalog index is from an older format and needs to be rebuilt. Run " +
-        "`reinvent-scout catalog sync` (or `catalog sync --reindex` to skip re-fetching).",
+    throw new CatalogUnusableError(
+      "outdated",
+      `Your local catalog index is from an older format and needs to be rebuilt. ${REBUILD_REMEDY}`,
+    );
+  }
+  if (state.status === "stale" && state.reason === "corrupt") {
+    throw new CatalogUnusableError(
+      "corrupt",
+      "Your catalog's sync metadata could not be read, so its format can't be confirmed safe. " +
+        REBUILD_REMEDY,
     );
   }
 
