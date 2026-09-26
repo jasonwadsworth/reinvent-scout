@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { writeFileAtomic } from "../core/atomic-write.js";
+import { ensureDirWithMode, STORE_DIR_MODE } from "../core/paths.js";
 
 const TOKEN_FILE_NAME = "tokens.json";
 const TOKEN_FILE_MODE = 0o600;
@@ -36,9 +37,14 @@ export function tokenFilePath(storeRoot: string): string {
   return join(storeRoot, TOKEN_FILE_NAME);
 }
 
-/** Persists the tokens atomically at mode 0600, creating the store root if needed. */
+/**
+ * Persists the tokens atomically at mode 0600, creating the store root (and any missing
+ * parent directories) at 0700 if needed -- via the same hardened, umask-independent directory
+ * creation `ensureStoreRoot` uses, rather than a bare `mkdirSync` that would leave the
+ * directory at whatever mode-minus-umask the OS default gives it.
+ */
 export function saveTokens(tokens: StoredTokens, deps: TokenStoreDeps): void {
-  mkdirSync(deps.storeRoot, { recursive: true });
+  ensureDirWithMode(deps.storeRoot, STORE_DIR_MODE);
   writeFileAtomic(tokenFilePath(deps.storeRoot), () => JSON.stringify(tokens), {
     mode: TOKEN_FILE_MODE,
   });

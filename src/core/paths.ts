@@ -3,7 +3,9 @@ import { homedir as osHomedir } from "node:os";
 import { dirname, join } from "node:path";
 
 const STORE_DIR_NAME = ".reinvent-scout";
-const STORE_DIR_MODE = 0o700;
+
+/** The mode every directory under the store root is created at, including the root itself. */
+export const STORE_DIR_MODE = 0o700;
 
 export interface PathsDeps {
   /** Defaults to `process.env`. Inject a fixed object so no test reads the real environment. */
@@ -35,14 +37,19 @@ export function resolveStoreRoot(deps: PathsDeps = {}): string {
  * explicitly afterward instead of relying on that option. A directory that already exists
  * (at any level, including `path` itself) is left untouched: its mode is never widened or
  * narrowed by this call.
+ *
+ * Exported so any module that needs to create a directory under the store root at the store's
+ * own mode (currently: the token store, which writes `tokens.json` at a possibly-not-yet-
+ * created root) shares this hardening instead of falling back to a bare, umask-dependent
+ * `mkdirSync`.
  */
-function mkdirRecursiveWithMode(path: string, mode: number): void {
+export function ensureDirWithMode(path: string, mode: number): void {
   if (existsSync(path)) {
     return;
   }
   const parent = dirname(path);
   if (parent !== path) {
-    mkdirRecursiveWithMode(parent, mode);
+    ensureDirWithMode(parent, mode);
   }
   mkdirSync(path);
   chmodSync(path, mode);
@@ -56,6 +63,6 @@ function mkdirRecursiveWithMode(path: string, mode: number): void {
  */
 export function ensureStoreRoot(deps: PathsDeps = {}): string {
   const root = resolveStoreRoot(deps);
-  mkdirRecursiveWithMode(root, STORE_DIR_MODE);
+  ensureDirWithMode(root, STORE_DIR_MODE);
   return root;
 }

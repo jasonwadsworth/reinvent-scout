@@ -1,4 +1,4 @@
-import { mkdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -36,6 +36,19 @@ describe("token store", () => {
 
     const stat = statSync(tokenFilePath(home.path));
     expect(stat.mode & 0o777).toBe(0o600);
+  });
+
+  it("creates the store root at mode 0700 when it does not exist yet", () => {
+    // createTempHome's own directory already exists (and mkdtempSync happens to create it at
+    // 0700 anyway), which would mask a saveTokens that falls back to a bare, umask-dependent
+    // mkdirSync instead of the store's hardened 0700 directory creation -- so this points at a
+    // not-yet-existing child of it instead.
+    const storeRoot = join(home.path, "not-created-yet");
+    expect(existsSync(storeRoot)).toBe(false);
+
+    saveTokens(SAMPLE, { storeRoot });
+
+    expect(statSync(storeRoot).mode & 0o777).toBe(0o700);
   });
 
   it("round-trips access, refresh and id tokens with the obtainedAt stamp", () => {
