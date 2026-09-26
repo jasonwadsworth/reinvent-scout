@@ -80,6 +80,10 @@ function saturate(termFrequency: number): number {
   return termFrequency / (termFrequency + TERM_SATURATION_K);
 }
 
+function roundToTwoDecimals(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 interface TextMatchResult {
   score: number;
   matchedTerms: string[];
@@ -178,7 +182,11 @@ export function scoreSession(record: IndexRecord, query: MatchQuery): ScoredSess
     reasons.push({
       kind: "text",
       detail: `Text overlap on: ${textResult.matchedTerms.join(", ")}.`,
-      weight: textResult.score,
+      // Rounded here, at the output boundary, not in scoreText's own arithmetic: BM25-lite's
+      // saturation formula routinely produces floating-point noise (3 * (1/2.5) is
+      // 1.2000000000000002, not a clean 1.2) that carries no information, reads as unpolished in
+      // agent-facing JSON, and costs tokens for nothing.
+      weight: roundToTwoDecimals(textResult.score),
       evidence: textResult.matchedTerms.join(", "),
     });
   }

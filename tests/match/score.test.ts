@@ -12,6 +12,21 @@ function query(overrides: Partial<MatchQuery> = {}): MatchQuery {
 }
 
 describe("scoreSession", () => {
+  it("rounds a text reason's weight to two decimal places", () => {
+    // 3 * (1 / 2.5) is 1.2000000000000002 in floating point, not a clean 1.2 -- this exact
+    // fixture (a single title-only term match) reproduces that noise. It means nothing extra but
+    // reads as unpolished in agent-facing JSON and costs tokens for no information; rounded where
+    // a Reason is constructed, not in the underlying scoring arithmetic.
+    const session = record({ sessionId: "s1", title: "AWS Lambda Basics" });
+    const q = query({ text: "lambda" });
+
+    const result = scoreSession(session, q);
+
+    const textReason = result.reasons.find((r) => r.kind === "text");
+    expect(textReason?.weight).toBe(1.2);
+    expect(result.score).toBe(1.2);
+  });
+
   it("scores an exact catalog service match above a topic match", () => {
     const serviceMatch = record({
       sessionId: "s1",
