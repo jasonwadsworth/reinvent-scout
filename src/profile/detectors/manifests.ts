@@ -1,14 +1,7 @@
-import { SKIPPED_DIRECTORY_NAMES } from "../walk.js";
+import type { DetectableFile } from "../detectable-file.js";
+import { basename, isInsideSkippedDirectory } from "./paths.js";
 
-/** A file made available to a detector: a path relative to the repository root, exactly as
- * `walkRepo` returns it, and its content already read. Detectors are pure functions over this
- * list rather than over a filesystem, so they're testable without a real directory tree and
- * usable against evidence sourced some other way in the future (the plan's seam for GitHub
- * issues as intent). */
-export interface DetectableFile {
-  path: string;
-  content: string;
-}
+export type { DetectableFile } from "../detectable-file.js";
 
 export interface ManifestEvidence {
   file: string;
@@ -30,21 +23,6 @@ export interface ManifestDetectionResult {
    * rather than silently skipped, so a caller can tell "this repo genuinely has no languages"
    * apart from "a manifest here couldn't be read". */
   unreadableManifests: UnreadableManifest[];
-}
-
-/** Whether `path` passes through any directory `walkRepo` itself would never descend into.
- * Shares `SKIPPED_DIRECTORY_NAMES` with the walker rather than hard-coding its own subset --
- * independent defense against a dependency-install manifest, in case this detector is ever
- * called with a file list `walkRepo` didn't produce (its primary caller, `profile.ts`, always
- * filters this already, but this detector shouldn't have to trust that), while guaranteeing it
- * can never disagree with the walker about what counts as "inside the repository". */
-function isInsideSkippedDirectory(path: string): boolean {
-  return path.split(/[/\\]/).some((segment) => SKIPPED_DIRECTORY_NAMES.has(segment));
-}
-
-function basename(path: string): string {
-  const parts = path.split(/[/\\]/);
-  return parts[parts.length - 1] ?? path;
 }
 
 interface Detection {
