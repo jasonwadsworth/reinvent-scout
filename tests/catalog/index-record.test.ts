@@ -1,0 +1,96 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+import { buildIndexRecord } from "../../src/catalog/index-record.js";
+import type { Session } from "../../src/api/types.js";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const fixture: Session[] = JSON.parse(
+  readFileSync(join(here, "..", "fixtures", "catalog-sample.json"), "utf8"),
+);
+
+const NO_LEVEL_SESSION_ID = "1790358246094001i5t9";
+
+describe("buildIndexRecord", () => {
+  it("parses the numeric band out of a level like 300 - Advanced", () => {
+    const session: Session = { sessionId: "s1", title: "T", level: "300 - Advanced" };
+    expect(buildIndexRecord(session).levelBand).toBe(300);
+  });
+
+  it("leaves the level band null for the one session with no level", () => {
+    const session = fixture.find((s) => s.sessionId === NO_LEVEL_SESSION_ID);
+    expect(session).toBeDefined();
+    expect(session!.level).toBeUndefined();
+
+    const record = buildIndexRecord(session!);
+    expect(record.level).toBeNull();
+    expect(record.levelBand).toBeNull();
+  });
+
+  it("parses the length string into minutes", () => {
+    const session: Session = {
+      sessionId: "s1",
+      title: "T",
+      sessionTime: { date: "2026-11-30", time: "10:00", length: "60" },
+    };
+    expect(buildIndexRecord(session).lengthMinutes).toBe(60);
+  });
+
+  it("leaves startDate, startTime and lengthMinutes null when sessionTime is absent", () => {
+    const session: Session = { sessionId: "s1", title: "T" };
+    const record = buildIndexRecord(session);
+    expect(record.startDate).toBeNull();
+    expect(record.startTime).toBeNull();
+    expect(record.lengthMinutes).toBeNull();
+  });
+
+  it("defaults every taxonomy array to empty when the field is absent", () => {
+    const session: Session = { sessionId: "s1", title: "T" };
+    const record = buildIndexRecord(session);
+    expect(record.services).toEqual([]);
+    expect(record.topics).toEqual([]);
+    expect(record.areasOfInterest).toEqual([]);
+    expect(record.roles).toEqual([]);
+    expect(record.features).toEqual([]);
+    expect(record.industries).toEqual([]);
+  });
+
+  it("keeps the raw abstract out of the index record", () => {
+    const session: Session = {
+      sessionId: "s1",
+      title: "T",
+      abstract: "A distinctive multi word phrase nobody else uses anywhere",
+    };
+    const record = buildIndexRecord(session);
+    expect(record).not.toHaveProperty("abstract");
+    expect(JSON.stringify(record)).not.toContain(session.abstract);
+  });
+
+  it("tokenises title, abstract and taxonomy into a term-frequency map with stopwords removed", () => {
+    const session: Session = {
+      sessionId: "s1",
+      title: "The Amazon DynamoDB Guide",
+      abstract: "This is a guide to the Amazon DynamoDB service and how to use it.",
+      topics: ["Databases"],
+    };
+    const record = buildIndexRecord(session);
+
+    expect(record.titleTerms).toEqual({ amazon: 1, dynamodb: 1, guide: 1 });
+    expect(record.bodyTerms.the).toBeUndefined();
+    expect(record.bodyTerms.is).toBeUndefined();
+    expect(record.bodyTerms.a).toBeUndefined();
+    expect(record.bodyTerms.and).toBeUndefined();
+    expect(record.bodyTerms.amazon).toBe(1);
+    expect(record.bodyTerms.dynamodb).toBe(1);
+    expect(record.bodyTerms.databases).toBe(1);
+  });
+
+  it("builds a record for all sixty fixture sessions without throwing", () => {
+    expect(fixture.length).toBe(60);
+    for (const session of fixture) {
+      const record = buildIndexRecord(session);
+      expect(record.sessionId).toBe(session.sessionId);
+    }
+  });
+});
