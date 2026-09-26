@@ -1,6 +1,6 @@
 import { CatalogMissingError } from "../core/errors.js";
 import { tokenize, type IndexRecord, type TermFrequencies } from "./index-record.js";
-import { readIndex, type CatalogStoreDeps } from "./store.js";
+import { getCatalogState, readIndex, type CatalogStoreDeps } from "./store.js";
 import type { Venue } from "./venue.js";
 
 /** A title term match is weighted higher than the same term appearing only in the body (abstract
@@ -96,6 +96,42 @@ function compareByAbbreviation(a: IndexRecord, b: IndexRecord): number {
 }
 
 /**
+ * Loads the local index, refusing rather than serving it when it was built at an older schema
+ * version. A schema-version mismatch means the index on disk may have been written by a version
+ * of this tool with a fixed bug since -- concretely, CURRENT_SCHEMA_VERSION 1 -> 2 exists because
+ * a stale index can hold a genuinely corrupted own-property value for any term that collided
+ * with `Object.prototype` on write (see index-record.ts's `tokenize`); the read-side
+ * `Object.hasOwn` guard in this module only stops a *false* match on an unaffected record, it
+ * cannot repair a term that really was poisoned when it was written. Refusing outright is what
+ * actually makes a schema bump cause an existing index to rebuild, rather than the bump being
+ * inert until something reads it.
+ *
+ * Staleness by age alone (it's been a while since the last sync) does *not* refuse -- that says
+ * nothing about whether the index's own data is trustworthy, and refusing on it would defeat the
+ * point of syncing the catalog locally in the first place.
+ */
+function requireCurrentIndex(deps: CatalogStoreDeps): IndexRecord[] {
+  const state = getCatalogState(deps);
+  if (state.status === "missing") {
+    throw new CatalogMissingError();
+  }
+  if (state.status === "stale" && state.reason === "schema-version") {
+    throw new CatalogMissingError(
+      "Your local catalog index is from an older format and needs to be rebuilt. Run " +
+        "`reinvent-scout catalog sync` (or `catalog sync --reindex` to skip re-fetching).",
+    );
+  }
+
+  const index = readIndex(deps);
+  if (index === null) {
+    // meta.json reported present (possibly stale for another reason), but index.json itself is
+    // missing or unreadable -- same remedy as "missing" from this caller's perspective.
+    throw new CatalogMissingError();
+  }
+  return index;
+}
+
+/**
  * Searches and filters the local catalog index. Never touches the (potentially large) raw
  * session file -- abstracts and every other field not carried on `IndexRecord` are deliberately
  * unavailable here, per task 13's decision to keep the raw abstract out of the index; a caller
@@ -105,16 +141,14 @@ function compareByAbbreviation(a: IndexRecord, b: IndexRecord): number {
  * tiebreak -- ties are common (every result scores 0 when no `query` is given), so the tiebreak
  * runs constantly, not just as an edge case.
  *
- * Throws `CatalogMissingError` when nothing has ever been synced.
+ * Throws `CatalogMissingError` when nothing has ever been synced, or when the stored index is
+ * from an older schema version (see `requireCurrentIndex`).
  */
 export function queryCatalog(
   deps: CatalogStoreDeps,
   options: CatalogQueryOptions = {},
 ): CatalogQueryResult[] {
-  const index = readIndex(deps);
-  if (index === null) {
-    throw new CatalogMissingError();
-  }
+  const index = requireCurrentIndex(deps);
 
   const queryTerms = options.query === undefined ? null : Object.keys(tokenize(options.query));
 
@@ -152,9 +186,6 @@ export function queryCatalog(
  * `queryCatalog`.
  */
 export function getIndexRecord(deps: CatalogStoreDeps, sessionId: string): IndexRecord | null {
-  const index = readIndex(deps);
-  if (index === null) {
-    throw new CatalogMissingError();
-  }
+  const index = requireCurrentIndex(deps);
   return index.find((record) => record.sessionId === sessionId) ?? null;
 }

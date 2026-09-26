@@ -191,6 +191,38 @@ describe("queryCatalog", () => {
     expect(Number.isFinite(results[0]?.score)).toBe(true);
     expect(results[0]?.score).toBeGreaterThan(0);
   });
+
+  it("refuses to search an index built at an older schema version rather than silently serving it", () => {
+    // A schema-version mismatch means the on-disk index may have been built by a version of this
+    // tool with a fixed bug since (see CURRENT_SCHEMA_VERSION 1 -> 2's history: a stale index can
+    // hold a genuinely corrupted own-property value for any term that collided with
+    // Object.prototype, which the read-side Object.hasOwn guard alone cannot repair -- it only
+    // protects against a *false* match, not a term that really was poisoned on write). Confirmed
+    // this is a real gap: Object.hasOwn(poisonedMap, "constructor") is true for a record actually
+    // affected by the old bug, and multiplying its stored garbage string by the score weight
+    // still produces NaN. Refusing outright, rather than serving possibly-wrong results, is the
+    // only thing that actually makes the schema bump "cause existing indexes to rebuild".
+    writeCatalog(
+      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta({ schemaVersion: CURRENT_SCHEMA_VERSION - 1 }) },
+      { storeRoot: home.path },
+    );
+
+    expect(() => queryCatalog({ storeRoot: home.path })).toThrow(CatalogMissingError);
+    expect(() => queryCatalog({ storeRoot: home.path })).toThrow(/catalog sync/);
+  });
+
+  it("does not refuse a catalog that is merely stale by age, only one with an outdated schema", () => {
+    // Age staleness ("it's been a while since the last sync") says nothing about whether the
+    // index's own data is trustworthy -- refusing to search here would defeat the point of
+    // syncing the catalog locally in the first place.
+    writeCatalog(
+      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta({ syncedAt: 0 }) },
+      { storeRoot: home.path },
+    );
+
+    expect(() => queryCatalog({ storeRoot: home.path })).not.toThrow();
+    expect(queryCatalog({ storeRoot: home.path }, { query: "graviton" }).length).toBeGreaterThan(0);
+  });
 });
 
 describe("getIndexRecord", () => {
@@ -226,5 +258,26 @@ describe("getIndexRecord", () => {
 
   it("throws CatalogMissingError when nothing has been synced", () => {
     expect(() => getIndexRecord({ storeRoot: home.path }, "any-id")).toThrow(CatalogMissingError);
+  });
+
+  it("refuses to read an index built at an older schema version rather than silently serving it", () => {
+    writeCatalog(
+      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta({ schemaVersion: CURRENT_SCHEMA_VERSION - 1 }) },
+      { storeRoot: home.path },
+    );
+
+    expect(() => getIndexRecord({ storeRoot: home.path }, "1780441461150001GGoc")).toThrow(
+      CatalogMissingError,
+    );
+  });
+
+  it("does not refuse a catalog that is merely stale by age", () => {
+    writeCatalog(
+      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta({ syncedAt: 0 }) },
+      { storeRoot: home.path },
+    );
+
+    const record = getIndexRecord({ storeRoot: home.path }, "1780441461150001GGoc");
+    expect(record?.abbreviation).toBe("ANT301");
   });
 });
