@@ -10,6 +10,22 @@ describe("generateCodeVerifier", () => {
     expect(verifier).toMatch(/^[A-Za-z0-9_-]+$/);
     expect(verifier).not.toContain("=");
   });
+
+  it("uses the injected randomness source rather than node:crypto's own", () => {
+    const sizesRequested: number[] = [];
+    const fakeRandomBytes = (size: number): Buffer => {
+      sizesRequested.push(size);
+      return Buffer.alloc(size, 0x01);
+    };
+
+    const verifier = generateCodeVerifier({ randomBytes: fakeRandomBytes });
+
+    expect(sizesRequested).toEqual([32]);
+    // A verifier derived from real entropy would not equal this fixed value with any
+    // meaningful probability, so this is proof the injected function's output -- not
+    // node:crypto's -- flowed through to the result, not just that it was called.
+    expect(verifier).toBe(Buffer.alloc(32, 0x01).toString("base64url"));
+  });
 });
 
 describe("deriveCodeChallenge", () => {
@@ -30,5 +46,18 @@ describe("generateState", () => {
     expect(first).not.toBe(second);
     expect(first.length).toBeGreaterThan(0);
     expect(second).toMatch(/^[A-Za-z0-9_-]+$/);
+  });
+
+  it("uses the injected randomness source rather than node:crypto's own", () => {
+    const sizesRequested: number[] = [];
+    const fakeRandomBytes = (size: number): Buffer => {
+      sizesRequested.push(size);
+      return Buffer.alloc(size, 0x02);
+    };
+
+    const state = generateState({ randomBytes: fakeRandomBytes });
+
+    expect(sizesRequested).toEqual([16]);
+    expect(state).toBe(Buffer.alloc(16, 0x02).toString("base64url"));
   });
 });
