@@ -121,6 +121,17 @@ describe("buildServiceAliasIndex", () => {
     ]);
   });
 
+  it("does not drop a name's own unique alias just because one of its other aliases collided", () => {
+    // "AWS Widget" derives two aliases: "widget" (which collides with "Amazon Widget") and
+    // "awswidget" (unique to it, from the full name). Dropping the colliding alias must not also
+    // drop the unique one -- collisions are tracked per alias, not per canonical name.
+    const index = buildServiceAliasIndex(["AWS Widget", "Amazon Widget"]);
+
+    expect(index.resolve("awswidget")).toBe("AWS Widget");
+    expect(index.resolve("amazonwidget")).toBe("Amazon Widget");
+    expect(index.resolve("widget")).toBeNull();
+  });
+
   it("is not corrupted by an alias that collides with an Object.prototype member", () => {
     // "AWS Constructor" strips to "constructor" -- the name of a plain object's inherited
     // constructor property. A lookup backed by a Map (rather than a plain object used as a map)
