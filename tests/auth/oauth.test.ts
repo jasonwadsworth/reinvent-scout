@@ -237,4 +237,21 @@ describe("refreshTokens", () => {
     expect(caught).toBeInstanceOf(OAuthError);
     expect((caught as OAuthError).code).toBe("invalid_grant");
   });
+
+  it("never includes the refresh token in the string form of its errors", async () => {
+    const secretRefreshToken = "SECRET_REFRESH_TOKEN_DO_NOT_LEAK";
+    // refreshTokens puts the refresh token in the request body (unlike exchangeCodeForTokens's
+    // code/verifier, which the existing adversarial test above covers) -- an error path that
+    // echoed the request back, whether deliberately or by generic exception plumbing, would leak
+    // it. A 502 with an unparseable body is the case most likely to tempt someone into logging
+    // the request for debugging.
+    const fake = createFakeFetch([{ status: 502, text: "<html>Bad Gateway</html>" }]);
+
+    try {
+      await refreshTokens({ refreshToken: secretRefreshToken, fetchFn: fake.fetch });
+      expect.unreachable("expected refreshTokens to throw");
+    } catch (err) {
+      expect(String(err)).not.toContain(secretRefreshToken);
+    }
+  });
 });

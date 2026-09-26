@@ -80,14 +80,24 @@ async function performRefresh(
 
 /**
  * Returns a currently-valid access token, refreshing silently (and persisting the result) if
- * the stored one is within the expiry skew window. Throws `AuthRequiredError` when there is no
- * stored session, the store is corrupt, or the refresh was rejected with `invalid_grant` -- in
- * the last case, the store is cleared first so a subsequent call doesn't retry the same dead
- * refresh token.
+ * the stored one is within the expiry skew window. Throws `AuthRequiredError` in three cases,
+ * each with a message tailored to what the user should understand: no stored session at all
+ * ("not signed in"); a stored file that failed to parse or validate (left in place as evidence,
+ * message says the session "could not be read"); or a refresh rejected with `invalid_grant`,
+ * which does clear the store first so a subsequent call doesn't retry the same dead refresh
+ * token.
  */
 export async function getAccessToken(deps: TokenProviderDeps): Promise<string> {
   const state = readTokenStore(deps);
-  if (state.status !== "present") {
+  if (state.status === "corrupt") {
+    // Deliberately not cleared: the file is evidence of whatever wrote it, and the next
+    // `auth login` overwrites it regardless, so deleting it here would only destroy that
+    // evidence for no benefit to the user's next action.
+    throw new AuthRequiredError(
+      "Your stored session could not be read. Run `reinvent-scout auth login` to sign in again.",
+    );
+  }
+  if (state.status === "absent") {
     throw new AuthRequiredError();
   }
 
@@ -95,6 +105,18 @@ export async function getAccessToken(deps: TokenProviderDeps): Promise<string> {
     return state.tokens.accessToken;
   }
 
+  // Single-flight correctness depends on there being no `await` anywhere between
+  // `readTokenStore(deps)` above and the `inFlightRefreshes.set` below. `readTokenStore` is
+  // synchronous (a plain `readFileSync`), and nothing else on this path yields to the event
+  // loop, so this whole function body runs to this point in one synchronous stretch for each
+  // caller -- which is what makes the check-then-set below race-free without a lock: two
+  // concurrent callers cannot interleave between one call's `.get` and its `.set`, because
+  // nothing here ever hands control back to the scheduler in between. No test exercises this
+  // directly (a test that made the store read async would still pass under most interleavings,
+  // since the two concurrent calls in the test above usually still land in the same microtask
+  // batch), so this comment is the only guard: if `readTokenStore` -- or anything before the
+  // `.set` -- ever becomes asynchronous, this map needs a real lock instead, not just the
+  // get/set pair below.
   const existing = inFlightRefreshes.get(deps.storeRoot);
   if (existing) {
     return existing;

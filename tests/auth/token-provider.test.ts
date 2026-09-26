@@ -1,7 +1,13 @@
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AuthRequiredError } from "../../src/core/errors.js";
 import { getAccessToken } from "../../src/auth/token-provider.js";
-import { readTokenStore, saveTokens, type StoredTokens } from "../../src/auth/token-store.js";
+import {
+  readTokenStore,
+  saveTokens,
+  tokenFilePath,
+  type StoredTokens,
+} from "../../src/auth/token-store.js";
 import { OAuthError } from "../../src/auth/oauth.js";
 import { createFakeFetch } from "../helpers/fake-fetch.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
@@ -141,6 +147,25 @@ describe("getAccessToken", () => {
       getAccessToken({ storeRoot: home.path, now: () => 0, fetchFn: fake.fetch }),
     ).rejects.toBeInstanceOf(AuthRequiredError);
     expect(fake.calls).toHaveLength(0);
+  });
+
+  it("raises AuthRequiredError saying the stored session could not be read for a corrupt store, and leaves the file in place", async () => {
+    const path = tokenFilePath(home.path);
+    mkdirSync(home.path, { recursive: true });
+    writeFileSync(path, "{ this is not valid json", "utf8");
+    const fake = createFakeFetch([]);
+
+    // The message must be distinguishable from the plain "not signed in" case (nothing ever
+    // stored): a corrupt file is a different failure the user should understand differently,
+    // even though both end in the same instruction. The corrupt file is evidence and the next
+    // `auth login` overwrites it regardless, so it is deliberately not deleted here -- unlike the
+    // invalid_grant case in performRefresh, which does clear the store because a rejected
+    // refresh token is genuinely dead and retrying it can only fail again.
+    await expect(
+      getAccessToken({ storeRoot: home.path, now: () => 0, fetchFn: fake.fetch }),
+    ).rejects.toThrow(/stored session could not be read.*auth login/s);
+    expect(fake.calls).toHaveLength(0);
+    expect(existsSync(path)).toBe(true);
   });
 
   it("forces a refresh even when the stored token is still valid", async () => {
