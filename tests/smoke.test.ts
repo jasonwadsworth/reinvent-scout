@@ -1,15 +1,11 @@
+import { CommanderError } from "commander";
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { buildProgram } from "../src/cli/main.js";
+import { readPackageVersion } from "../src/cli/version.js";
 
 describe("cli", () => {
   it("exposes the package version from --version", async () => {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const pkg = JSON.parse(readFileSync(join(here, "..", "package.json"), "utf8")) as {
-      version: string;
-    };
+    const expectedVersion = readPackageVersion();
 
     const program = buildProgram();
     let out = "";
@@ -19,9 +15,20 @@ describe("cli", () => {
       },
     });
 
-    await expect(
-      program.parseAsync(["node", "reinvent-scout", "--version"]),
-    ).rejects.toThrow();
-    expect(out.trim()).toBe(pkg.version);
+    // Commander implements `--version` by printing and throwing a CommanderError with
+    // exitCode 0, rather than returning normally -- assert that specific shape (not just
+    // "it threw something") so a regression that throws a different, real failure would
+    // not be masked by a bare `.rejects.toThrow()`.
+    let caught: unknown;
+    try {
+      await program.parseAsync(["node", "reinvent-scout", "--version"]);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(CommanderError);
+    expect((caught as CommanderError).code).toBe("commander.version");
+    expect((caught as CommanderError).exitCode).toBe(0);
+    expect(out.trim()).toBe(expectedVersion);
   });
 });

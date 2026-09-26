@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { Command } from "commander";
+import { Command, CommanderError } from "commander";
+import { isMainModule } from "./entry.js";
 import { readPackageVersion } from "./version.js";
 
 /**
@@ -27,18 +28,15 @@ export async function main(argv: readonly string[] = process.argv): Promise<void
   try {
     await program.parseAsync(argv);
   } catch (err) {
-    if (err && typeof err === "object" && "exitCode" in err) {
-      process.exitCode = (err as { exitCode?: number }).exitCode ?? 1;
+    if (err instanceof CommanderError) {
+      process.exitCode = err.exitCode;
       return;
     }
     throw err;
   }
 }
 
-const invokedDirectly =
-  typeof process.argv[1] === "string" && import.meta.url === `file://${process.argv[1]}`;
-
-if (invokedDirectly) {
+if (isMainModule(import.meta.url, process.argv[1])) {
   main().catch((err: unknown) => {
     console.error(err instanceof Error ? err.message : String(err));
     process.exitCode = 1;

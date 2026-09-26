@@ -53,7 +53,7 @@ export function createFakeFetch(responses: FakeResponseInit[]): FakeFetch {
 
   const fetchFn = (async (input: unknown, init?: RequestInit) => {
     const url = typeof input === "string" ? input : String(input);
-    calls.push({ url, init });
+    calls.push(init === undefined ? { url } : { url, init });
     const resp = responses[Math.min(index, responses.length - 1)];
     if (!resp) {
       throw new Error("fake fetch called with no responses queued");
