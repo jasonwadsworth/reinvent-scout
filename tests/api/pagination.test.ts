@@ -146,6 +146,9 @@ describe("listAllSessions", () => {
     const result = await client.listAllSessions(EVENT_ID);
 
     expect(result.sessions).toEqual([]);
+    // A genuine 0 and a missing totalCount can look identical downstream (both falsy) if this
+    // isn't checked explicitly -- assert the real value, not just that sessions came back empty.
+    expect(result.totalCount).toBe(0);
     expect(fake.calls).toHaveLength(1);
   });
 });

@@ -105,6 +105,37 @@ describe("syncCatalog", () => {
     expect(result.countMismatch).toBe(false);
   });
 
+  it("treats a missing totalCount as unreported rather than persisting an invalid value, and flags it distinctly from a mismatch", async () => {
+    const client = fakeApiClient(async () => ({
+      sessions: fixture,
+      // Simulates the real API's success response omitting totalCount despite the type
+      // declaring it required -- task 10's trust-the-response policy means nothing upstream of
+      // sync.ts catches this. Comparing `count` against `undefined` would otherwise report a
+      // false countMismatch, misdiagnosing "the canary itself didn't fire" as "a partial pull".
+      totalCount: undefined as unknown as number,
+    }));
+
+    const result = await syncCatalog({ apiClient: client, storeRoot: home.path });
+
+    expect(result.totalCountMissing).toBe(true);
+    expect(result.countMismatch).toBe(false);
+    // The count actually stored is the best available total when the server never reported one --
+    // meta.json's totalCount field stays a real number rather than becoming undefined (which
+    // JSON.stringify would silently drop, leaving the key missing entirely).
+    expect(result.totalCount).toBe(fixture.length);
+    const meta = readMeta({ storeRoot: home.path });
+    expect(meta?.totalCount).toBe(fixture.length);
+  });
+
+  it("treats a non-finite totalCount the same as a missing one", async () => {
+    const client = fakeApiClient(async () => ({ sessions: fixture, totalCount: Number.NaN }));
+
+    const result = await syncCatalog({ apiClient: client, storeRoot: home.path });
+
+    expect(result.totalCountMissing).toBe(true);
+    expect(result.totalCount).toBe(fixture.length);
+  });
+
   it("rebuilds the index from the stored raw data when the schema version is stale, without re-fetching", async () => {
     // Seed a previously-synced catalog at a stale schema version, with a deliberately wrong
     // index -- if the reindex path fell through to a real re-fetch (or did nothing), the index

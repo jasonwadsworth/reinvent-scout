@@ -36,7 +36,16 @@ function formatHumanSummary(result: SyncResult): string {
   if (result.reindexed) {
     lines.push("Rebuilt the local index from the already-stored catalog without contacting the API.");
   }
-  if (result.countMismatch) {
+  if (result.totalCountMissing) {
+    // Distinct from countMismatch (which is always false in this case, since there's nothing
+    // real to compare `count` against): the server not reporting a total at all is a more
+    // serious signal than a mismatch, and must not be silent just because the mismatch check
+    // had nothing to flag.
+    lines.push(
+      "Warning: the server did not report a total session count. Unable to check whether the " +
+        "full catalog was stored.",
+    );
+  } else if (result.countMismatch) {
     lines.push(
       `Warning: the server reports ${result.totalCount} total sessions, but ${result.count} ` +
         "were stored. Some sessions may be missing from the local catalog.",

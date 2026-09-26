@@ -203,9 +203,15 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
       const seenTokens = new Set<string>();
       let nextToken: string | undefined;
       let pageCount = 0;
-      // Every page reports the same totalCount (the size of the whole catalog, not the page);
-      // the last page received is as good a source for it as any, and this way there's always a
-      // value even if the very first page is also the last.
+      // Every page is expected to report the same totalCount (the size of the whole catalog, not
+      // the page); the last page received is as good a source for it as any, and this way
+      // there's always a value even if the very first page is also the last. If pages ever
+      // disagreed, the last one deliberately wins rather than the first or the max -- consistent
+      // with trusting the server's own success response (see mapErrorResponse's doc comment) --
+      // and if the response omits totalCount entirely, `page.totalCount` is `undefined` here
+      // despite the type declaring it required, since success responses are deliberately not
+      // runtime-validated. That is caught and handled by this call's caller, not here: see
+      // catalog/sync.ts, which is where a missing or non-finite totalCount actually gets acted on.
       let totalCount = 0;
 
       for (;;) {

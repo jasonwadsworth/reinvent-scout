@@ -35,27 +35,53 @@ export interface SyncCatalogDeps extends CatalogStoreDeps {
 
 export interface SyncResult {
   eventId: string;
-  /** The `totalCount` the API reported for the whole catalog. On a reindex, this is copied
-   * unchanged from the previous sync, since a reindex never contacts the API. */
+  /** The `totalCount` treated as authoritative: the API's reported value when it was a usable
+   * finite number, otherwise the count actually stored (see `totalCountMissing`). On a reindex,
+   * this is copied from the previous sync, since a reindex never contacts the API. */
   totalCount: number;
   /** The number of sessions actually stored. */
   count: number;
   /** `true` when `count` doesn't match `totalCount` -- a partial pull, or the catalog changing
-   * mid-sync. The caller (the CLI) decides what to tell the user; `syncCatalog` itself never
-   * writes to any stream, since part 3's MCP server can't have anything land on stdout outside
-   * the protocol. */
+   * mid-sync. Always `false` when `totalCountMissing` is `true`, since there is nothing real to
+   * compare `count` against in that case. The caller (the CLI) decides what to tell the user;
+   * `syncCatalog` itself never writes to any stream, since part 3's MCP server can't have
+   * anything land on stdout outside the protocol. */
   countMismatch: boolean;
+  /** `true` when the API's response never carried a usable `totalCount` at all (missing, or not
+   * a finite number) -- despite `ListAllSessionsResult.totalCount`'s type declaring it required,
+   * runtime success responses are deliberately not validated (task 10's decision), so this can
+   * genuinely happen. This is a more serious signal than `countMismatch`: the mismatch check
+   * itself can't run without a real total to compare against, so conflating the two would
+   * misdiagnose "the canary didn't fire" as "a partial pull". */
+  totalCountMissing: boolean;
   /** `true` when this call rebuilt the index from stored raw data without contacting the API
    * (either because `reindex` was requested and there was data to reindex from). */
   reindexed: boolean;
 }
 
-function toSyncResult(meta: CatalogMeta, reindexed: boolean): SyncResult {
+/** Resolves a reported `totalCount` to a value safe to persist in `CatalogMeta`'s typed field --
+ * `undefined` is not valid JSON (`JSON.stringify` would silently drop the key), and a `NaN` or
+ * `Infinity` would compare unpredictably against `count` forever after. Anything that isn't a
+ * finite number is treated as "not reported": `fallbackCount` (the count actually available) is
+ * the best approximation of the total when the real one is unknown, and `totalCountMissing: true`
+ * flags that this fallback happened, distinctly from a genuine mismatch. */
+function resolveTotalCount(
+  reported: number | undefined,
+  fallbackCount: number,
+): { totalCount: number; totalCountMissing: boolean } {
+  if (typeof reported === "number" && Number.isFinite(reported)) {
+    return { totalCount: reported, totalCountMissing: false };
+  }
+  return { totalCount: fallbackCount, totalCountMissing: true };
+}
+
+function toSyncResult(meta: CatalogMeta, reindexed: boolean, totalCountMissing: boolean): SyncResult {
   return {
     eventId: meta.eventId,
     totalCount: meta.totalCount,
     count: meta.count,
     countMismatch: meta.count !== meta.totalCount,
+    totalCountMissing,
     reindexed,
   };
 }
@@ -71,17 +97,18 @@ function tryReindexFromStoredRaw(deps: SyncCatalogDeps): SyncResult | null {
 
   const storedMeta = readMeta(deps);
   const index = storedRaw.map(buildIndexRecord);
+  const { totalCount, totalCountMissing } = resolveTotalCount(storedMeta?.totalCount, storedRaw.length);
   const meta: CatalogMeta = {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     eventId: storedMeta?.eventId ?? deps.eventId ?? DEFAULT_EVENT_ID,
     syncedAt: storedMeta?.syncedAt ?? (deps.now ?? Date.now)(),
-    totalCount: storedMeta?.totalCount ?? storedRaw.length,
+    totalCount,
     count: storedRaw.length,
     includedAbstracts: storedMeta?.includedAbstracts ?? (deps.includeAbstracts ?? true),
   };
 
   writeCatalog({ raw: storedRaw, index, meta }, deps);
-  return toSyncResult(meta, true);
+  return toSyncResult(meta, true, totalCountMissing);
 }
 
 /**
@@ -116,8 +143,11 @@ export async function syncCatalog(deps: SyncCatalogDeps): Promise<SyncResult> {
     // instead is strictly more useful to the user than refusing.
   }
 
-  const { sessions, totalCount } = await deps.apiClient.listAllSessions(eventId, { includeAbstracts });
+  const { sessions, totalCount: reportedTotalCount } = await deps.apiClient.listAllSessions(eventId, {
+    includeAbstracts,
+  });
   const index = sessions.map(buildIndexRecord);
+  const { totalCount, totalCountMissing } = resolveTotalCount(reportedTotalCount, sessions.length);
   const meta: CatalogMeta = {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     eventId,
@@ -129,5 +159,5 @@ export async function syncCatalog(deps: SyncCatalogDeps): Promise<SyncResult> {
 
   writeCatalog({ raw: sessions, index, meta }, deps);
 
-  return toSyncResult(meta, false);
+  return toSyncResult(meta, false, totalCountMissing);
 }

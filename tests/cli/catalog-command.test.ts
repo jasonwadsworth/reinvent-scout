@@ -135,6 +135,19 @@ describe("catalog sync command", () => {
     expect(h.seenOptions?.includeAbstracts).toBe(true);
   });
 
+  it("warns distinctly when the server never reported a totalCount at all", async () => {
+    const h = harness(home.path, async () => ({
+      sessions: [{ sessionId: "s1", title: "A session" }],
+      // Simulates the response omitting totalCount entirely -- countMismatch alone would stay
+      // false here (nothing to compare against), so this must not be silent.
+      totalCount: undefined as unknown as number,
+    }));
+
+    await h.run(["catalog", "sync"]);
+
+    expect(h.printed.join("\n").toLowerCase()).toContain("did not report");
+  });
+
   it("prints a mismatch warning when the stored count does not match the reported totalCount", async () => {
     const h = harness(home.path, async () => ({
       sessions: [{ sessionId: "s1", title: "A session" }],
