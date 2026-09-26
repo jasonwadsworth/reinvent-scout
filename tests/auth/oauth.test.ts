@@ -6,6 +6,7 @@ import {
   OAUTH_CLIENT_ID,
   OAUTH_SCOPE,
   OAuthError,
+  refreshTokens,
 } from "../../src/auth/oauth.js";
 import { createFakeFetch } from "../helpers/fake-fetch.js";
 
@@ -86,6 +87,30 @@ describe("exchangeCodeForTokens", () => {
         fetchFn: fake.fetch,
       }),
     ).rejects.toThrow(/authorization code is invalid or expired/i);
+  });
+
+  it("surfaces the provider's error code alongside its description", async () => {
+    const fake = createFakeFetch([
+      {
+        status: 400,
+        json: { error: "invalid_grant", error_description: "The authorization code is invalid or expired." },
+      },
+    ]);
+
+    let caught: unknown;
+    try {
+      await exchangeCodeForTokens({
+        code: "auth-code",
+        redirectUri: "http://localhost:8486/callback",
+        codeVerifier: "verifier-value",
+        fetchFn: fake.fetch,
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(OAuthError);
+    expect((caught as OAuthError).code).toBe("invalid_grant");
   });
 
   it("surfaces a clear error when the token endpoint returns a non-JSON body", async () => {
@@ -170,5 +195,46 @@ describe("exchangeCodeForTokens", () => {
       expect(String(err)).not.toContain(secretCode);
       expect(String(err)).not.toContain(secretVerifier);
     }
+  });
+});
+
+describe("refreshTokens", () => {
+  it("sends grant_type refresh_token with the client id and refresh token", async () => {
+    const fake = createFakeFetch([
+      { status: 200, json: { access_token: "new-access", token_type: "Bearer", expires_in: 3600 } },
+    ]);
+
+    const tokens = await refreshTokens({ refreshToken: "refresh-def", fetchFn: fake.fetch });
+
+    expect(tokens).toEqual({ accessToken: "new-access", tokenType: "Bearer", expiresIn: 3600 });
+    expect(fake.calls).toHaveLength(1);
+    const body = new URLSearchParams(fake.calls[0]!.init?.body as string);
+    expect(body.get("grant_type")).toBe("refresh_token");
+    expect(body.get("client_id")).toBe(OAUTH_CLIENT_ID);
+    expect(body.get("refresh_token")).toBe("refresh-def");
+    // A refresh request has no authorization code or PKCE verifier at all -- confirm none leaks
+    // in should never apply here, but also confirm the request body doesn't carry a `code` key
+    // left over from copy-pasting the authorization_code grant.
+    expect(body.has("code")).toBe(false);
+    expect(body.has("code_verifier")).toBe(false);
+  });
+
+  it("surfaces invalid_grant when the refresh token was revoked or expired", async () => {
+    const fake = createFakeFetch([
+      {
+        status: 400,
+        json: { error: "invalid_grant", error_description: "Refresh Token has been revoked" },
+      },
+    ]);
+
+    let caught: unknown;
+    try {
+      await refreshTokens({ refreshToken: "refresh-def", fetchFn: fake.fetch });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(OAuthError);
+    expect((caught as OAuthError).code).toBe("invalid_grant");
   });
 });

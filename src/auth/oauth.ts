@@ -10,9 +10,13 @@ export const OAUTH_SCOPE = "openid email events/access";
 export const IDENTITY_PROVIDER = "AWSBuilderID";
 
 export class OAuthError extends Error {
-  constructor(message: string) {
+  /** The provider's machine-readable `error` value (e.g. `invalid_grant`), when there was one. */
+  public readonly code: string | undefined;
+
+  constructor(message: string, code?: string) {
     super(message);
     this.name = "OAuthError";
+    this.code = code;
   }
 }
 
@@ -68,6 +72,17 @@ function extractErrorDescription(payload: unknown): string | undefined {
   return undefined;
 }
 
+/** The RFC 6749 `error` field itself (e.g. `invalid_grant`), distinct from the human-readable
+ * `error_description` -- callers that need to branch on the specific failure (the token
+ * provider's invalid_grant handling) match on this, not on the description text. */
+function extractErrorCode(payload: unknown): string | undefined {
+  if (typeof payload !== "object" || payload === null) {
+    return undefined;
+  }
+  const p = payload as Record<string, unknown>;
+  return typeof p.error === "string" ? p.error : undefined;
+}
+
 function parseTokenResponse(payload: unknown): TokenResponse {
   if (typeof payload !== "object" || payload === null) {
     throw new OAuthError("The token endpoint returned an unexpected response.");
@@ -116,7 +131,10 @@ async function postToken(body: URLSearchParams, fetchFn: typeof fetch): Promise<
 
   if (!response.ok) {
     const description = extractErrorDescription(payload);
-    throw new OAuthError(description ?? `The token endpoint returned status ${response.status}.`);
+    throw new OAuthError(
+      description ?? `The token endpoint returned status ${response.status}.`,
+      extractErrorCode(payload),
+    );
   }
 
   return parseTokenResponse(payload);
@@ -131,6 +149,27 @@ export async function exchangeCodeForTokens(options: ExchangeCodeOptions): Promi
     redirect_uri: options.redirectUri,
     code: options.code,
     code_verifier: options.codeVerifier,
+  });
+  return postToken(body, fetchFn);
+}
+
+export interface RefreshTokensOptions {
+  refreshToken: string;
+  /** Defaults to the global `fetch`. Inject a fake so no test touches the network. */
+  fetchFn?: typeof fetch;
+}
+
+/**
+ * Exchanges a refresh token for a new access token. This provider's refresh grant omits
+ * `refresh_token` (the existing one stays valid) and may omit `id_token` too -- `postToken`'s
+ * shared parser already treats both as optional.
+ */
+export async function refreshTokens(options: RefreshTokensOptions): Promise<TokenResponse> {
+  const fetchFn = options.fetchFn ?? fetch;
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    client_id: OAUTH_CLIENT_ID,
+    refresh_token: options.refreshToken,
   });
   return postToken(body, fetchFn);
 }
