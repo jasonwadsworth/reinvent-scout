@@ -66,6 +66,15 @@ export interface Schedule {
   personalTime: PersonalTime[];
 }
 
+export interface ListSessionsResponseContent {
+  /** This page of sessions, ordered by `sessionId`. Empty when the event has no sessions. */
+  items: Session[];
+  /** The number of sessions in the event's whole catalog, not just this page. */
+  totalCount: number;
+  /** Pass as `nextToken` to fetch the following page. Absent on the last page. */
+  nextToken?: string;
+}
+
 /**
  * Why one session in a bulk request (favorite/unfavorite/reserve) was refused. The API
  * document is explicit that unrecognized values will be added as the platform grows, so this

@@ -7,7 +7,7 @@ import {
   ThrottledError,
   ValidationError,
 } from "../core/errors.js";
-import type { Schedule } from "./types.js";
+import type { ListSessionsResponseContent, Schedule, Session } from "./types.js";
 
 const DEFAULT_BASE_URL = "https://api.awsevents.com";
 
@@ -37,13 +37,33 @@ export interface ApiClientDeps {
   getAccessToken: (options?: GetAccessTokenOptions) => Promise<string>;
 }
 
+export interface ListSessionsOptions {
+  /** Omit each session's `abstract` when `false`. Server defaults to `true` when omitted. */
+  includeAbstracts?: boolean;
+  /** The `nextToken` from a previous page's response. */
+  nextToken?: string;
+}
+
+export interface ListAllSessionsOptions {
+  includeAbstracts?: boolean;
+}
+
 export interface ApiClient {
   getSchedule(eventId: string): Promise<Schedule>;
+  /** Fetches a single page of the event's session catalog. */
+  listSessions(eventId: string, options?: ListSessionsOptions): Promise<ListSessionsResponseContent>;
+  /** Walks every page of the event's session catalog and returns the full list. */
+  listAllSessions(eventId: string, options?: ListAllSessionsOptions): Promise<Session[]>;
 }
 
 interface GetScheduleResponseContent {
   schedule: Schedule;
 }
+
+/** Safety cap on ListSessions pagination: real catalogs run to a handful of pages (2,043
+ * sessions across 9 pages of 250 in the 2026 pull), so this is a generous ceiling against a
+ * server bug that never sets `nextToken` to absent, not a limit expected to be reached. */
+const MAX_LIST_SESSIONS_PAGES = 50;
 
 async function extractMessage(response: Response): Promise<string> {
   try {
@@ -143,6 +163,22 @@ async function requestJson<T>(
 }
 
 export function createApiClient(deps: ApiClientDeps): ApiClient {
+  async function listSessions(
+    eventId: string,
+    options: ListSessionsOptions = {},
+  ): Promise<ListSessionsResponseContent> {
+    const params = new URLSearchParams();
+    if (options.includeAbstracts !== undefined) {
+      params.set("includeAbstracts", String(options.includeAbstracts));
+    }
+    if (options.nextToken !== undefined) {
+      params.set("nextToken", options.nextToken);
+    }
+    const query = params.toString();
+    const path = `/v1/events/${encodeURIComponent(eventId)}/sessions${query ? `?${query}` : ""}`;
+    return requestJson<ListSessionsResponseContent>("GET", path, deps);
+  }
+
   return {
     async getSchedule(eventId: string): Promise<Schedule> {
       const body = await requestJson<GetScheduleResponseContent>(
@@ -151,6 +187,43 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
         deps,
       );
       return body.schedule;
+    },
+
+    listSessions,
+
+    async listAllSessions(
+      eventId: string,
+      options: ListAllSessionsOptions = {},
+    ): Promise<Session[]> {
+      const sessions: Session[] = [];
+      const seenTokens = new Set<string>();
+      let nextToken: string | undefined;
+      let pageCount = 0;
+
+      for (;;) {
+        const page = await listSessions(eventId, {
+          ...(options.includeAbstracts === undefined ? {} : { includeAbstracts: options.includeAbstracts }),
+          ...(nextToken === undefined ? {} : { nextToken }),
+        });
+        pageCount++;
+        sessions.push(...page.items);
+
+        if (page.nextToken === undefined) {
+          return sessions;
+        }
+        if (seenTokens.has(page.nextToken)) {
+          throw new Error(
+            "ListSessions returned the same nextToken twice in a row; refusing to loop forever.",
+          );
+        }
+        if (pageCount >= MAX_LIST_SESSIONS_PAGES) {
+          throw new Error(
+            `ListSessions did not terminate within the ${MAX_LIST_SESSIONS_PAGES}-page safety cap.`,
+          );
+        }
+        seenTokens.add(page.nextToken);
+        nextToken = page.nextToken;
+      }
     },
   };
 }
