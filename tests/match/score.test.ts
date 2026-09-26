@@ -277,9 +277,9 @@ describe("scoreSession with corpus statistics (inverse document frequency)", () 
   });
 
   it("weighs a term present in three quarters of the fixture at less than a fifth of a term present in only one session", () => {
-    // Real, measured document frequencies in the 60-session fixture (confirmed by direct
+    // Real, measured document frequencies in the 61-session fixture (confirmed by direct
     // inspection before writing this test, and re-verified against tests/match/match.test.ts's own
-    // real-catalog test): "amazon" appears in 45 of 60 sessions -- three quarters -- via the
+    // real-catalog test): "amazon" appears in 45 of 61 sessions -- three quarters -- via the
     // catalog's own "Amazon <service>" naming convention, while "dynamodb" appears in exactly 1.
     // Both target records below share the identical structure (a single body-only occurrence),
     // isolating the ratio to inverse document frequency alone, not incidental differences in term

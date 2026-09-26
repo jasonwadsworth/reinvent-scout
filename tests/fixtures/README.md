@@ -2,7 +2,7 @@
 
 ## `catalog-sample.json`
 
-60 sessions carved from a real `ListSessions` pull of the `reinvent2026` catalog taken on
+61 sessions carved from a real `ListSessions` pull of the `reinvent2026` catalog taken on
 **2026-09-25** (2,043 sessions across 9 pages of 250). The full pull is not committed; it lives
 only in the scratchpad used to build this fixture. The carving script is a throwaway (also not
 committed — it needs the real pull, which CI does not have) and is not required to reproduce the
@@ -36,6 +36,16 @@ otherwise-redundant `Breakout session` / `Caesars Forum` entries (that venue and
 comfortable headroom above every threshold in the list before the swap, so removing two did not
 threaten any other criterion). The re-carve was done with a throwaway script run in the scratchpad
 against the full pull (not committed, per the note above); this file is still the durable record.
+
+A 61st session, `API303-R1`, was added later the same day for match's repeat-grouping feature: the
+real catalog's own second sitting of `API303-R`'s talk (title, date and time taken verbatim from
+the snapshot's real `API303-R1` record), so the fixture has an actual repeat pair to group rather
+than a synthetic stand-in. The real catalog marks a repeat sitting's title with a trailing
+" [REPEAT]" marker, carried through here verbatim -- confirmed this isn't universal (several real
+repeat groups carry no marker on any member), so `match`'s title normalization can't assume it's
+always present. `API303-R1` reuses `API303-R`'s own five speakers rather than new synthetic names,
+the one deliberate exception to the "no two speakers share a name" rule above: they are, in
+reality, the same talk given twice by the same people.
 
 ### Speaker-name substitution
 

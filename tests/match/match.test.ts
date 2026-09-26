@@ -394,7 +394,7 @@ describe("matchSessions", () => {
   });
 
   it("ranks a candidate matching a rare term above one matching only a near-universal term, using the fixture's real corpus frequencies", () => {
-    // Real, measured frequencies in the 60-session fixture: "amazon" appears in 45 of 60 sessions
+    // Real, measured frequencies in the 61-session fixture: "amazon" appears in 45 of 61 sessions
     // (the catalog's own "Amazon <service>" naming convention makes it near-universal), while
     // "guide" appears in only 3. INV501 contains "amazon" twice (via its services, Amazon API
     // Gateway and Amazon Bedrock) but never "guide"; API318 contains "guide" once, in its abstract
@@ -425,7 +425,7 @@ describe("matchSessions", () => {
     // The reviewer's own reproduction: a profile naming Amazon DynamoDB by service. DAT414 is the
     // only session in the fixture that actually covers Amazon DynamoDB (both a "service" reason and
     // a "text" reason, since the service's own name also feeds the free-text query -- see
-    // buildMatchQuery). Every other session that merely shares the word "amazon" (45 of 60, via the
+    // buildMatchQuery). Every other session that merely shares the word "amazon" (45 of 61, via the
     // catalog's own "Amazon <service>" naming convention) gets only a "text" reason, and inverse
     // document frequency must keep every one of those strictly below DAT414 -- not just below its
     // own rank position, but below its score, since a service match is the one signal a human

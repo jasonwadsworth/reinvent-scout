@@ -52,7 +52,7 @@ function redshiftProfile(): unknown {
   };
 }
 
-/** `n` synthetic sessions that all cover AWS Lambda -- unlike the real 60-session fixture (no
+/** `n` synthetic sessions that all cover AWS Lambda -- unlike the real 61-session fixture (no
  * single service covers more than eight), this lets the default-limit test actually exercise a
  * candidate pool bigger than the default. */
 function manyLambdaSessions(n: number): Session[] {
