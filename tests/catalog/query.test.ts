@@ -6,7 +6,7 @@ import type { Session } from "../../src/api/types.js";
 import { CatalogMissingError, CatalogUnusableError } from "../../src/core/errors.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { CURRENT_SCHEMA_VERSION, writeCatalog, type CatalogMeta } from "../../src/catalog/store.js";
-import { queryCatalog, resolveSessionRecord } from "../../src/catalog/query.js";
+import { catalogServiceNames, queryCatalog, resolveSessionRecord } from "../../src/catalog/query.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -338,5 +338,35 @@ describe("resolveSessionRecord", () => {
     expect(() => resolveSessionRecord({ storeRoot: home.path }, "anything")).toThrow(
       CatalogMissingError,
     );
+  });
+});
+
+describe("catalogServiceNames", () => {
+  let home: TempHome;
+
+  beforeEach(() => {
+    home = createTempHome();
+  });
+
+  afterEach(() => {
+    home.cleanup();
+  });
+
+  it("returns every distinct service name across the whole index", () => {
+    writeCatalog(
+      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
+      { storeRoot: home.path },
+    );
+
+    const names = catalogServiceNames({ storeRoot: home.path });
+
+    expect(names).toContain("AWS Lambda");
+    expect(names).toContain("Amazon DynamoDB");
+    // No duplicates, however many sessions share a service.
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it("throws CatalogMissingError when nothing has been synced", () => {
+    expect(() => catalogServiceNames({ storeRoot: home.path })).toThrow(CatalogMissingError);
   });
 });

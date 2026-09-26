@@ -236,3 +236,23 @@ export function resolveSessionRecord(deps: CatalogStoreDeps, token: string): Ses
 
   return { status: "not-found" };
 }
+
+/**
+ * Every distinct service name across the whole local catalog index, deduplicated -- the input
+ * `catalog/service-aliases.ts`'s `buildServiceAliasIndex` needs to derive aliases from, and
+ * `profile.ts` needs to resolve an agent-authored profile's service names against. Throws
+ * `CatalogMissingError`/`CatalogUnusableError` exactly like `queryCatalog`, same as every other
+ * reader of the local index, since there's nothing to derive aliases from until a catalog has been
+ * synced.
+ */
+export function catalogServiceNames(deps: CatalogStoreDeps): string[] {
+  const index = requireCurrentIndex(deps);
+
+  const names = new Set<string>();
+  for (const record of index) {
+    for (const service of record.services) {
+      names.add(service);
+    }
+  }
+  return [...names];
+}
