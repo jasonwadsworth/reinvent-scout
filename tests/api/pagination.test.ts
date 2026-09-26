@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { createApiClient } from "../../src/api/client.js";
+import { ServiceError } from "../../src/core/errors.js";
 import type { Session } from "../../src/api/types.js";
 import { createFakeFetch, type FakeResponseInit } from "../helpers/fake-fetch.js";
 
@@ -88,7 +89,14 @@ describe("listAllSessions", () => {
     ]);
     const client = createApiClient({ fetchFn: fake.fetch, ...fakeAuth() });
 
-    await expect(client.listAllSessions(EVENT_ID)).rejects.toThrow(/nextToken/i);
+    // A bare Error here would be indistinguishable from a programmer error at the call site;
+    // ServiceError says plainly that the server is the one that misbehaved, matching every other
+    // "the server did something it should not have" outcome this client maps. Both assertions
+    // check the same rejection (a promise can be awaited more than once) rather than triggering
+    // the guard twice, since a second call would consume more of the fake's queue.
+    const rejection = client.listAllSessions(EVENT_ID);
+    await expect(rejection).rejects.toThrow(/nextToken/i);
+    await expect(rejection).rejects.toBeInstanceOf(ServiceError);
     expect(fake.calls).toHaveLength(2);
   });
 
@@ -111,7 +119,12 @@ describe("listAllSessions", () => {
 
     const client = createApiClient({ fetchFn, ...fakeAuth() });
 
-    await expect(client.listAllSessions(EVENT_ID)).rejects.toThrow(/page/i);
+    const rejection = client.listAllSessions(EVENT_ID);
+    await expect(rejection).rejects.toThrow(/page/i);
+    // Same reasoning as the duplicate-nextToken guard above: this is the server failing to
+    // terminate pagination, not a caller mistake, so it belongs in the same taxonomy as every
+    // other "the server did something it should not have" outcome.
+    await expect(rejection).rejects.toBeInstanceOf(ServiceError);
     // The cap must stop it at exactly 50 fetches -- never a 51st page.
     expect(callCount).toBe(50);
   });

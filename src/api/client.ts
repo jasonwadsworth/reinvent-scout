@@ -209,12 +209,16 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
           return sessions;
         }
         if (seenTokens.has(page.nextToken)) {
-          throw new Error(
+          // Both guards below are the server failing to behave, not a caller mistake -- an
+          // infinite loop or an unbounded page count is exactly the "the server did something it
+          // should not have" shape every other mapped failure in this client uses ServiceError
+          // for, so a bare Error here would be the one inconsistent exception in the taxonomy.
+          throw new ServiceError(
             "ListSessions returned the same nextToken twice in a row; refusing to loop forever.",
           );
         }
         if (pageCount >= MAX_LIST_SESSIONS_PAGES) {
-          throw new Error(
+          throw new ServiceError(
             `ListSessions did not terminate within the ${MAX_LIST_SESSIONS_PAGES}-page safety cap.`,
           );
         }
