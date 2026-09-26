@@ -59,18 +59,20 @@ describe("launchBrowser", () => {
     ]);
   });
 
-  it("spawns cmd /c start with an empty title placeholder and the url on win32", () => {
+  it("spawns rundll32's url.dll FileProtocolHandler with the raw url on win32", () => {
     const fake = fakeSpawner();
 
     launchBrowser(URL_WITH_AMPERSAND, { platform: "win32", spawn: fake.spawn });
 
-    // The empty string is a required placeholder for `start`'s window-title argument; without
-    // it, `start` treats the URL itself as the title whenever the URL contains an `&`, which
-    // every OAuth authorize URL does, and the URL never gets opened.
+    // `cmd /c start <url>` would route the url through cmd.exe's own command-line parser,
+    // which treats an unescaped `&` -- present in every OAuth authorize url -- as a command
+    // separator. rundll32 opens the url in the system default browser directly, with no shell
+    // in between to reinterpret it, so the url is passed through as one argv entry with nothing
+    // to quote or escape.
     expect(fake.calls).toEqual([
       {
-        command: "cmd",
-        args: ["/c", "start", "", URL_WITH_AMPERSAND],
+        command: "rundll32",
+        args: ["url.dll,FileProtocolHandler", URL_WITH_AMPERSAND],
         options: { stdio: "ignore", detached: true },
       },
     ]);

@@ -27,10 +27,14 @@ function commandFor(platform: NodeJS.Platform, url: string): { command: string; 
     return { command: "open", args: [url] };
   }
   if (platform === "win32") {
-    // The empty string is a required placeholder for `start`'s window-title argument; without
-    // it, `start` treats the URL itself as the title whenever the URL contains an `&`, which
-    // every OAuth authorize URL does, and the URL never actually gets opened.
-    return { command: "cmd", args: ["/c", "start", "", url] };
+    // `cmd /c start "" <url>` looks like the obvious choice, but `start` only runs inside
+    // cmd.exe, and cmd.exe re-parses its whole command line with its own rules -- an unescaped
+    // `&`, present in every OAuth authorize URL, is a command separator to cmd.exe regardless of
+    // how Node quoted the argument for CreateProcess, so the URL would be truncated at the first
+    // `&` and the rest run as a second command. rundll32 opens a URL in the system's default
+    // browser directly; it is not a shell, so there is no re-parsing step and nothing in the URL
+    // needs escaping.
+    return { command: "rundll32", args: ["url.dll,FileProtocolHandler", url] };
   }
   // linux and every other platform Node reports (freebsd, openbsd, ...) fall back to the
   // freedesktop.org opener, the closest thing to a universal default outside darwin/win32.
