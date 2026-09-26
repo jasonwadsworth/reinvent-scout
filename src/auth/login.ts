@@ -69,6 +69,12 @@ export async function login(deps: LoginDeps): Promise<void> {
       ...(deps.fetchFn === undefined ? {} : { fetchFn: deps.fetchFn }),
     });
 
+    // A missing refresh token makes the session unusable (nothing for the token provider to
+    // silently refresh with) and must reject. Nothing in phase 1 reads the ID token -- task 17
+    // reports only expiry, not identity -- so rejecting on its absence too is a deliberate
+    // strictness-at-the-boundary choice, not an oversight: a token endpoint response missing a
+    // field the spec says it returns is treated as broken rather than partially trusted. Loosen
+    // this deliberately, with a reason, if a later phase needs to tolerate it.
     if (tokens.refreshToken === undefined || tokens.idToken === undefined) {
       throw new OAuthError(
         "The token endpoint's response to the sign-in request was missing a refresh token or ID token.",
