@@ -144,8 +144,7 @@ async function requestJson<T>(
     if (response.status === 429) {
       attempts429++;
       if (attempts429 < MAX_ATTEMPTS_429) {
-        const retryAfterSeconds = Number(response.headers.get("Retry-After") ?? "1");
-        await sleep(retryAfterSeconds * 1000);
+        await sleep(parseRetryAfterSeconds(response.headers.get("Retry-After")) * 1000);
         continue;
       }
     }
@@ -165,6 +164,22 @@ async function requestJson<T>(
     throw await mapErrorResponse(response);
   }
 }
+
+/** Seconds to wait after a 429, from the `Retry-After` header. The API sends the seconds left in
+ * the current quota minute, so an honest value is 1..60. Anything else -- the header missing, the
+ * HTTP-date form (`Number()` of which is NaN, i.e. an immediate retry), a non-positive or
+ * non-numeric value -- falls back to one second, and larger values are capped at sixty so a
+ * misbehaving server cannot park the process for an hour. */
+export function parseRetryAfterSeconds(header: string | null): number {
+  const seconds = Number(header);
+  if (header === null || header.trim() === "" || !Number.isFinite(seconds) || seconds <= 0) {
+    return DEFAULT_RETRY_AFTER_SECONDS;
+  }
+  return Math.min(seconds, MAX_RETRY_AFTER_SECONDS);
+}
+
+const DEFAULT_RETRY_AFTER_SECONDS = 1;
+const MAX_RETRY_AFTER_SECONDS = 60;
 
 export function createApiClient(deps: ApiClientDeps): ApiClient {
   async function listSessions(

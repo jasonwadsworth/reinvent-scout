@@ -167,6 +167,54 @@ describe("createApiClient", () => {
     expect(sleeper.durations).toHaveLength(2);
   });
 
+  it("falls back to a one-second wait when Retry-After is an HTTP-date rather than seconds", async () => {
+    const fake = createFakeFetch([
+      { status: 429, headers: { "Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT" }, json: { message: "Slow down" } },
+      { status: 200, json: EMPTY_SCHEDULE_BODY },
+    ]);
+    const auth = fakeAuth(["token-abc"]);
+    const sleeper = fakeSleep();
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: auth.getAccessToken, sleep: sleeper.sleep });
+
+    await client.getSchedule(EVENT_ID);
+
+    expect(fake.calls).toHaveLength(2);
+    // Number("Wed, ...") is NaN; a naive implementation would sleep NaN ms, i.e. retry immediately.
+    expect(sleeper.durations).toEqual([1000]);
+  });
+
+  it("falls back to a one-second wait when Retry-After is missing or not a positive number", async () => {
+    for (const headers of [{}, { "Retry-After": "" }, { "Retry-After": "-5" }, { "Retry-After": "soon" }]) {
+      const fake = createFakeFetch([
+        { status: 429, headers, json: { message: "Slow down" } },
+        { status: 200, json: EMPTY_SCHEDULE_BODY },
+      ]);
+      const auth = fakeAuth(["token-abc"]);
+      const sleeper = fakeSleep();
+      const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: auth.getAccessToken, sleep: sleeper.sleep });
+
+      await client.getSchedule(EVENT_ID);
+
+      expect(sleeper.durations, JSON.stringify(headers)).toEqual([1000]);
+    }
+  });
+
+  it("caps the Retry-After wait at sixty seconds", async () => {
+    const fake = createFakeFetch([
+      { status: 429, headers: { "Retry-After": "3600" }, json: { message: "Slow down" } },
+      { status: 200, json: EMPTY_SCHEDULE_BODY },
+    ]);
+    const auth = fakeAuth(["token-abc"]);
+    const sleeper = fakeSleep();
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: auth.getAccessToken, sleep: sleeper.sleep });
+
+    await client.getSchedule(EVENT_ID);
+
+    // The API's quota resets each minute, so no honest Retry-After exceeds 60; anything larger is
+    // treated as a bounded wait rather than parking the process for an hour.
+    expect(sleeper.durations).toEqual([60_000]);
+  });
+
   it("retries 503 with exponential backoff", async () => {
     const fake = createFakeFetch([
       { status: 503, json: { message: "Unavailable" } },
