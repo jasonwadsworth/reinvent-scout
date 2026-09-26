@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { detectManifests, type DetectableFile } from "../../../src/profile/detectors/manifests.js";
+import { SKIPPED_DIRECTORY_NAMES } from "../../../src/profile/walk.js";
 
 function file(path: string, content: string): DetectableFile {
   return { path, content };
@@ -77,6 +78,25 @@ describe("detectManifests", () => {
     expect(result.evidence).toEqual([]);
   });
 
+  it.each([...SKIPPED_DIRECTORY_NAMES])(
+    "ignores a manifest under the shared skip directory %s",
+    (skippedDir) => {
+      // Driven from the walker's own exported SKIPPED_DIRECTORY_NAMES rather than a
+      // locally-hardcoded list, so adding a name to the walker's skip policy automatically
+      // extends this assertion -- there is exactly one skip policy, not a detector-specific
+      // subset that could quietly drift from it.
+      const decoy = file(
+        `${skippedDir}/nested/package.json`,
+        JSON.stringify({ name: "x", devDependencies: { typescript: "^5.9.0" } }),
+      );
+
+      const result = detectManifests([decoy]);
+
+      expect(result.languages).toEqual([]);
+      expect(result.evidence).toEqual([]);
+    },
+  );
+
   it("does not throw on a malformed package.json and reports it as unreadable", () => {
     const malformed = file("package.json", "{ this is not valid json");
 
@@ -85,7 +105,12 @@ describe("detectManifests", () => {
       result = detectManifests([malformed]);
     }).not.toThrow();
 
-    expect(result?.unreadableManifests).toEqual(["package.json"]);
+    expect(result?.unreadableManifests).toHaveLength(1);
+    expect(result?.unreadableManifests[0]?.path).toBe("package.json");
+    // The exact wording is V8's own JSON.parse error message, which isn't worth pinning
+    // character-for-character -- what matters is that a reason travels with the path at all, so
+    // the next person doesn't have to reopen the file to learn it was e.g. a trailing comma.
+    expect(result?.unreadableManifests[0]?.reason.length).toBeGreaterThan(0);
     expect(result?.languages).toEqual([]);
   });
 

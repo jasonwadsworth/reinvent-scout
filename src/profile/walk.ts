@@ -4,8 +4,14 @@ import { join, relative, sep } from "node:path";
 /** Directory names never descended into, wherever they appear in the tree -- dependency
  * installs, VCS internals, and build/tool caches that are both huge and never authored by the
  * repository itself. Matched against the entry's own name, not a full path, so `foo/vendor` is
- * skipped exactly like `vendor` at the root. */
-const SKIPPED_DIRECTORY_NAMES: ReadonlySet<string> = new Set([
+ * skipped exactly like `vendor` at the root.
+ *
+ * Exported so every detector that filters paths shares this one policy rather than hard-coding
+ * its own subset: two independent skip lists would let a detector called with an unfiltered file
+ * list (see `detectors/manifests.ts`'s doc comment on why that's a real, supported case, not a
+ * hypothetical) disagree with `walkRepo` about what a repository contains -- e.g. detecting
+ * dependencies from a `.venv` a real walk would never have surfaced in the first place. */
+export const SKIPPED_DIRECTORY_NAMES: ReadonlySet<string> = new Set([
   "node_modules",
   ".git",
   "dist",
@@ -16,12 +22,13 @@ const SKIPPED_DIRECTORY_NAMES: ReadonlySet<string> = new Set([
   ".terraform",
 ]);
 
-/** File names never read, regardless of extension. */
-const SKIPPED_FILE_NAMES: ReadonlySet<string> = new Set([".env"]);
+/** File names never read, regardless of extension. Exported for the same reason as
+ * `SKIPPED_DIRECTORY_NAMES`. */
+export const SKIPPED_FILE_NAMES: ReadonlySet<string> = new Set([".env"]);
 
 /** File extensions never read -- private key material, whatever manifest or import statement
- * might otherwise reference it. */
-const SKIPPED_FILE_EXTENSIONS: ReadonlySet<string> = new Set([".pem", ".key"]);
+ * might otherwise reference it. Exported for the same reason as `SKIPPED_DIRECTORY_NAMES`. */
+export const SKIPPED_FILE_EXTENSIONS: ReadonlySet<string> = new Set([".pem", ".key"]);
 
 const DEFAULT_MAX_DEPTH = 8;
 const DEFAULT_MAX_FILES = 5000;
