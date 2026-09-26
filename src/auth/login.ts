@@ -72,11 +72,13 @@ export async function login(deps: LoginDeps): Promise<void> {
     // A missing refresh token makes the session unusable: there is nothing for the token
     // provider to ever silently refresh with. A missing ID token is rejected too, deliberately:
     // the provider always sends one on this initial authorization_code grant, so its absence
-    // signals a malformed exchange rather than a provider quirk to tolerate, and `auth status`
-    // uses it to report who is signed in. This is deliberately stricter than a refresh grant,
-    // which omits both fields by design (see token-provider.ts's performRefresh) -- that
-    // leniency belongs to a different response shape from a different grant type and is not a
-    // reason to loosen this check.
+    // signals a malformed exchange rather than a provider quirk to tolerate. Nothing in phase 1
+    // reads the ID token -- `auth status` (task 17) reports only expiry and event registration,
+    // never identity -- but if a later phase wants to report identity, the ID token is where it
+    // would come from. This is deliberately stricter than a refresh grant, which omits both
+    // fields by design (see token-provider.ts's performRefresh) -- that leniency belongs to a
+    // different response shape from a different grant type and is not a reason to loosen this
+    // check.
     if (tokens.refreshToken === undefined || tokens.idToken === undefined) {
       throw new OAuthError(
         "The token endpoint's response to the sign-in request was missing a refresh token or ID token.",
