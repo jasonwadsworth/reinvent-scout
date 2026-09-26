@@ -12,9 +12,9 @@ describe("normalizeServiceKey", () => {
   });
 
   it("collapses every spelling of bedrock-runtime to bedrock", () => {
-    // The four spellings a real detector across four languages actually produces (see
-    // detectors/sdk-usage.test.ts's cross-language test): JS/Python keep the hyphen, Go/Java
-    // can't carry one at all. All four must land on the same canonical key.
+    // Real spellings this service's name takes across ecosystems: an npm package name or a
+    // boto3 client name keeps the hyphen ("bedrock-runtime"); a Go package or Java class name
+    // can't carry one at all ("bedrockruntime"). Both must land on the same canonical key.
     expect(normalizeServiceKey("bedrock-runtime")).toBe("bedrock");
     expect(normalizeServiceKey("bedrockruntime")).toBe("bedrock");
     expect(normalizeServiceKey("Bedrock-Runtime")).toBe("bedrock");
