@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, rmSync, statSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -47,6 +47,16 @@ describe("ensureStoreRoot", () => {
     expect(created).toBe(root);
     expect(existsSync(root)).toBe(true);
     expect(statSync(root).mode & 0o777).toBe(0o700);
+  });
+
+  it("refuses a regular file sitting where the store directory should be, naming the path", () => {
+    const rootPath = join(home.path, ".reinvent-scout");
+    writeFileSync(rootPath, "not a directory", "utf8");
+    const env = { REINVENT_SCOUT_HOME: rootPath };
+
+    expect(() => ensureStoreRoot({ env })).toThrow(rootPath);
+    // The file must be left exactly as it was: never replaced, never removed.
+    expect(statSync(rootPath).isFile()).toBe(true);
   });
 
   it("does not widen the mode of an existing directory", () => {

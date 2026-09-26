@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync, statSync } from "node:fs";
 import { homedir as osHomedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -44,14 +44,25 @@ export function resolveStoreRoot(deps: PathsDeps = {}): string {
  * `mkdirSync`.
  */
 export function ensureDirWithMode(path: string, mode: number): void {
-  if (existsSync(path)) {
-    return;
-  }
   const parent = dirname(path);
   if (parent !== path) {
     ensureDirWithMode(parent, mode);
   }
-  mkdirSync(path);
+  // Create first and treat "already exists" as the answer, rather than checking existence and
+  // then creating: two processes (the CLI and the MCP server share one store) can race between
+  // those two steps, and the loser would throw EEXIST out of a function whose whole job is to
+  // make the directory exist. An existing directory is left exactly as it is, mode included.
+  try {
+    mkdirSync(path);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "EEXIST") {
+      throw err;
+    }
+    if (!statSync(path).isDirectory()) {
+      throw new Error(`Cannot create directory ${path}: a file already exists at that path.`);
+    }
+    return;
+  }
   chmodSync(path, mode);
 }
 
