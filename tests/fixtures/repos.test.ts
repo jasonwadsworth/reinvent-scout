@@ -45,9 +45,16 @@ describe("synthetic repository fixtures", () => {
     expect(stack).toContain('from "aws-cdk-lib/aws-lambda"');
     expect(stack).toContain('from "aws-cdk-lib/aws-dynamodb"');
 
-    // Decoys that a real walker must skip, but which genuinely exist on disk here.
-    expect(readText("serverless-ts", ".env")).toContain("SECRET");
-    expect(() => readText("serverless-ts", "node_modules", "some-package", "package.json")).not.toThrow();
+    // Decoys that a real walker must skip -- each one is genuinely dangerous or genuinely
+    // detectable if the skip fails, not inert content that would pass this test either way. The
+    // .env carries a real-looking (but AWS's own published example, never a live) access key
+    // pair; the node_modules package declares a real AWS SDK dependency a manifest detector would
+    // otherwise flag.
+    expect(readText("serverless-ts", ".env")).toMatch(/AWS_SECRET_ACCESS_KEY=\S+/);
+    const decoyPackage = JSON.parse(
+      readText("serverless-ts", "node_modules", "some-package", "package.json"),
+    ) as { dependencies?: Record<string, string> };
+    expect(decoyPackage.dependencies?.["aws-sdk"]).toBeDefined();
   });
 
   it("provides a python repo with boto3 usage and a requirements file", () => {
@@ -59,7 +66,11 @@ describe("synthetic repository fixtures", () => {
     expect(app).toContain("boto3.resource('dynamodb')");
     expect(app).toContain('boto3.client("s3")');
 
-    expect(readText("python-boto3", ".env")).toContain("SECRET");
+    expect(readText("python-boto3", ".env")).toMatch(/AWS_SECRET_ACCESS_KEY=\S+/);
+    // The .venv decoy contains a real boto3.client(...) call shape -- if the walker ever failed
+    // to skip .venv, the sdk-usage detector would flag this service, which is exactly what makes
+    // the decoy meaningful rather than inert.
+    expect(readText("python-boto3", ".venv", "lib", "decoy.py")).toContain('boto3.client("this-should-never-be-detected")');
   });
 
   it("provides a terraform plus go repo", () => {
@@ -75,9 +86,14 @@ describe("synthetic repository fixtures", () => {
     expect(mainTf).toContain('resource "aws_dynamodb_table"');
     expect(mainTf).toContain('resource "aws_ecs_service"');
 
-    // Decoys a real walker must skip.
-    expect(() => readText("terraform-go", ".terraform", "modules", "decoy.tf")).not.toThrow();
-    expect(() => readText("terraform-go", "vendor", "github.com", "aws", "decoy.go")).not.toThrow();
+    expect(readText("terraform-go", ".env")).toMatch(/AWS_SECRET_ACCESS_KEY=\S+/);
+    // Both decoys carry content a real detector would flag if the walker failed to skip them.
+    expect(readText("terraform-go", ".terraform", "modules", "decoy.tf")).toContain(
+      'resource "aws_s3_bucket"',
+    );
+    expect(readText("terraform-go", "vendor", "github.com", "aws", "decoy.go")).toContain(
+      '"github.com/aws/aws-sdk-go-v2/service/kms"',
+    );
   });
 
   it("provides a repo with no aws signals at all", () => {
@@ -95,5 +111,21 @@ describe("synthetic repository fixtures", () => {
       const files = listFilesRecursively(join(REPOS_ROOT, repo));
       expect(files.length).toBeLessThan(20);
     }
+  });
+
+  it("stays excluded from the project's own typecheck and lint", () => {
+    // These fixtures deliberately import packages (aws-cdk-lib, @aws-sdk/*) that are never
+    // installed as real dependencies. Without this exclusion, `npm run check` fails on the
+    // fixtures themselves rather than on anything this repo actually ships -- pinned here so a
+    // future change can't "fix" a broken typecheck by silently deleting the exclusion instead of
+    // understanding why it exists.
+    const repoRoot = join(here, "..", "..");
+    const tsconfigTests = JSON.parse(readFileSync(join(repoRoot, "tsconfig.tests.json"), "utf8")) as {
+      exclude?: string[];
+    };
+    expect(tsconfigTests.exclude).toContain("tests/fixtures/repos");
+
+    const eslintConfigSource = readFileSync(join(repoRoot, "eslint.config.js"), "utf8");
+    expect(eslintConfigSource).toContain("tests/fixtures/repos/**");
   });
 });
