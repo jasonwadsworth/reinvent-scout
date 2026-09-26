@@ -2,6 +2,12 @@
  * A minimal, queue-based stand-in for the global `fetch`, injected into every module that makes
  * HTTP calls so no test ever touches the network. Responses are consumed in order; the last one
  * given is reused for any extra calls beyond the queue's length, which keeps retry tests short.
+ *
+ * CAUTION for retry/backoff tests: because the last response repeats forever, a test like
+ * "gives up after three 429s" or "does not retry on 400" will still pass even if the code under
+ * test retries far more than expected (or retries when it shouldn't), since the repeated
+ * response keeps producing the same outcome either way. Always assert `fake.calls.length`
+ * explicitly in those tests -- it's the only thing that actually pins the call count.
  */
 export interface FakeResponseInit {
   status?: number;

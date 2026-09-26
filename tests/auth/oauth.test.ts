@@ -105,4 +105,70 @@ describe("exchangeCodeForTokens", () => {
       }),
     ).rejects.toThrow(OAuthError);
   });
+
+  it("treats refresh_token and id_token as optional in the token response", async () => {
+    // A refresh_token grant against this provider is expected to omit refresh_token (the
+    // existing one stays valid) and may omit id_token too; the parser must not require either.
+    const fake = createFakeFetch([
+      {
+        status: 200,
+        json: {
+          access_token: "access-abc",
+          token_type: "Bearer",
+          expires_in: 3600,
+        },
+      },
+    ]);
+
+    const tokens = await exchangeCodeForTokens({
+      code: "auth-code",
+      redirectUri: "http://localhost:8486/callback",
+      codeVerifier: "verifier-value",
+      fetchFn: fake.fetch,
+    });
+
+    expect(tokens).toEqual({
+      accessToken: "access-abc",
+      tokenType: "Bearer",
+      expiresIn: 3600,
+    });
+  });
+
+  it("sends Accept: application/json on the token request", async () => {
+    const fake = createFakeFetch([
+      {
+        status: 200,
+        json: { access_token: "a", token_type: "Bearer", expires_in: 3600 },
+      },
+    ]);
+
+    await exchangeCodeForTokens({
+      code: "auth-code",
+      redirectUri: "http://localhost:8486/callback",
+      codeVerifier: "verifier-value",
+      fetchFn: fake.fetch,
+    });
+
+    const headers = new Headers(fake.calls[0]!.init?.headers);
+    expect(headers.get("Accept")).toBe("application/json");
+  });
+
+  it("never includes the authorization code or verifier in the string form of its errors", async () => {
+    const secretCode = "SECRET_AUTH_CODE_DO_NOT_LEAK";
+    const secretVerifier = "SECRET_VERIFIER_DO_NOT_LEAK";
+    const fake = createFakeFetch([{ status: 502, text: "<html>Bad Gateway</html>" }]);
+
+    try {
+      await exchangeCodeForTokens({
+        code: secretCode,
+        redirectUri: "http://localhost:8486/callback",
+        codeVerifier: secretVerifier,
+        fetchFn: fake.fetch,
+      });
+      expect.unreachable("expected exchangeCodeForTokens to throw");
+    } catch (err) {
+      expect(String(err)).not.toContain(secretCode);
+      expect(String(err)).not.toContain(secretVerifier);
+    }
+  });
 });

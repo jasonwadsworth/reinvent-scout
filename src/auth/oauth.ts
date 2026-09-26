@@ -38,8 +38,10 @@ export function buildAuthorizeUrl(options: BuildAuthorizeUrlOptions): string {
 
 export interface TokenResponse {
   accessToken: string;
-  refreshToken: string;
-  idToken: string;
+  /** Absent on a refresh_token grant response: the existing refresh token stays valid. */
+  refreshToken?: string;
+  /** Present on an authorization_code grant; a refresh response may omit it too. */
+  idToken?: string;
   tokenType: string;
   expiresIn: number;
 }
@@ -71,28 +73,35 @@ function parseTokenResponse(payload: unknown): TokenResponse {
     throw new OAuthError("The token endpoint returned an unexpected response.");
   }
   const p = payload as Record<string, unknown>;
+  // refresh_token and id_token are deliberately not required here: a refresh_token grant
+  // against this provider omits refresh_token (the existing one stays valid) and may omit
+  // id_token too. Only the fields every grant type actually returns are required.
   if (
     typeof p.access_token !== "string" ||
-    typeof p.refresh_token !== "string" ||
-    typeof p.id_token !== "string" ||
     typeof p.token_type !== "string" ||
     typeof p.expires_in !== "number"
   ) {
     throw new OAuthError("The token endpoint returned an unexpected response.");
   }
-  return {
+
+  const tokens: TokenResponse = {
     accessToken: p.access_token,
-    refreshToken: p.refresh_token,
-    idToken: p.id_token,
     tokenType: p.token_type,
     expiresIn: p.expires_in,
   };
+  if (typeof p.refresh_token === "string") {
+    tokens.refreshToken = p.refresh_token;
+  }
+  if (typeof p.id_token === "string") {
+    tokens.idToken = p.id_token;
+  }
+  return tokens;
 }
 
 async function postToken(body: URLSearchParams, fetchFn: typeof fetch): Promise<TokenResponse> {
   const response = await fetchFn(TOKEN_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
     body: body.toString(),
   });
 
