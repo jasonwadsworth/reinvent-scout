@@ -8,7 +8,7 @@ describe("normalizeServiceKey", () => {
 
   it("leaves an already-canonical key unchanged", () => {
     expect(normalizeServiceKey("dynamodb")).toBe("dynamodb");
-    expect(normalizeServiceKey("sfn")).toBe("sfn");
+    expect(normalizeServiceKey("s3")).toBe("s3");
   });
 
   it("collapses every spelling of bedrock-runtime to bedrock", () => {
@@ -23,6 +23,13 @@ describe("normalizeServiceKey", () => {
   it("collapses every spelling of sagemaker-runtime to sagemaker", () => {
     expect(normalizeServiceKey("sagemaker-runtime")).toBe("sagemaker");
     expect(normalizeServiceKey("sagemakerruntime")).toBe("sagemaker");
+  });
+
+  it("unifies sfn and stepfunctions to the same canonical key", () => {
+    // Punctuation-stripping alone cannot unify these two -- they differ in letters, not
+    // punctuation -- which is exactly why the alias step exists, not just the character filter.
+    expect(normalizeServiceKey("sfn")).toBe("stepfunctions");
+    expect(normalizeServiceKey("stepfunctions")).toBe("stepfunctions");
   });
 
   it("does not collapse an unrelated key that merely ends in runtime", () => {

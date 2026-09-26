@@ -43,6 +43,17 @@ export const SERVICE_KEY_OVERRIDES: Readonly<Record<string, string>> = {
 const KEY_NORMALIZATION_OVERRIDES: Readonly<Record<string, string>> = {
   bedrockruntime: "bedrock",
   sagemakerruntime: "sagemaker",
+  // The CDK detector naturally emits "stepfunctions" (from the `aws-cdk-lib/aws-stepfunctions`
+  // submodule path, and the CDK for Python's `aws_cdk.aws_stepfunctions`), while the SDK usage
+  // detector naturally emits "sfn" (the Go SDK's package name). These are different words, not
+  // different punctuation of the same word, so the character-stripping step above cannot unify
+  // them on its own -- this is the case that makes the alias step load-bearing rather than
+  // optional. "stepfunctions" is the canonical key, not "sfn": it's what two of the three
+  // detectors that touch this service already produce, and it resolves through the ordinary
+  // derivation rules in catalog/service-aliases.ts with no override needed at all (unlike "sfn",
+  // which is why SERVICE_KEY_OVERRIDES above still carries its own "sfn" entry as
+  // defense-in-depth for a caller that resolves a raw key directly).
+  sfn: "stepfunctions",
 };
 
 /**
