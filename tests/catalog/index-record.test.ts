@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { buildIndexRecord } from "../../src/catalog/index-record.js";
+import { buildIndexRecord, tokenize } from "../../src/catalog/index-record.js";
 import type { Session } from "../../src/api/types.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -84,6 +84,26 @@ describe("buildIndexRecord", () => {
     expect(record.bodyTerms.amazon).toBe(1);
     expect(record.bodyTerms.dynamodb).toBe(1);
     expect(record.bodyTerms.databases).toBe(1);
+  });
+
+  it("tokenises a term that collides with Object.prototype (constructor) as a real count", () => {
+    // A plain object literal's `counts[word] ?? 0` resolves "constructor" to the inherited
+    // Object constructor function rather than undefined, so `+ 1` becomes string concatenation
+    // instead of arithmetic -- verified against the pre-fix code to produce
+    // "function Object() { [native code] }11" rather than the number 1.
+    const counts = tokenize("the constructor pattern");
+
+    expect(counts.constructor).toBe(1);
+    expect(typeof counts.constructor).toBe("number");
+    expect(Object.hasOwn(counts, "constructor")).toBe(true);
+  });
+
+  it("does not report Object.prototype members as present when the text never contains them", () => {
+    const counts = tokenize("hello world");
+
+    expect(Object.hasOwn(counts, "constructor")).toBe(false);
+    expect(Object.hasOwn(counts, "hasownproperty")).toBe(false);
+    expect(Object.hasOwn(counts, "tostring")).toBe(false);
   });
 
   it("builds a record for all sixty fixture sessions without throwing", () => {

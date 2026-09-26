@@ -19,7 +19,12 @@ export type TermFrequencies = Record<string, number>;
  * build the index it searches -- a query term that doesn't survive the same lowercasing,
  * word-splitting and stopword removal as the indexed text would never be able to match it. */
 export function tokenize(text: string): TermFrequencies {
-  const counts: TermFrequencies = {};
+  // A plain object literal inherits Object.prototype, so a tokenized word that collides with one
+  // of its members (`constructor`, `hasOwnProperty`, `toString`, ...) reads back a function
+  // instead of undefined from `counts[word]`, silently turning `+ 1` into string concatenation.
+  // Object.create(null) has no prototype at all, so every lookup below reflects only what this
+  // function itself has written.
+  const counts: TermFrequencies = Object.create(null) as TermFrequencies;
   const words = text.toLowerCase().match(/[a-z0-9]+/g) ?? [];
   for (const word of words) {
     if (STOPWORDS.has(word)) {

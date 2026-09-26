@@ -154,6 +154,43 @@ describe("queryCatalog", () => {
   it("returns a clear CatalogMissingError when nothing has been synced", () => {
     expect(() => queryCatalog({ storeRoot: home.path })).toThrow(CatalogMissingError);
   });
+
+  it("does not match every session on a query term that collides with Object.prototype", () => {
+    // None of the 60 fixture sessions contains "constructor" anywhere (confirmed against the
+    // fixture directly). A bare `record.titleTerms[term]` read would resolve to the inherited
+    // Object constructor function for every one of them regardless, since JSON.parse always
+    // produces Object.prototype-inheriting objects on the read side no matter how the index was
+    // built -- so this must return nothing, not the whole catalog scored NaN.
+    seedCatalog();
+
+    const results = queryCatalog({ storeRoot: home.path }, { query: "constructor" });
+
+    expect(results).toEqual([]);
+  });
+
+  it("scores a genuine constructor match correctly and excludes sessions that do not contain it", () => {
+    const constructorSession: Session = {
+      sessionId: "synthetic-constructor-session",
+      abbreviation: "SYN001",
+      title: "A deep dive into the constructor pattern",
+    };
+    const augmentedRaw = [...fixture, constructorSession];
+    writeCatalog(
+      {
+        raw: augmentedRaw,
+        index: augmentedRaw.map(buildIndexRecord),
+        meta: sampleMeta({ totalCount: augmentedRaw.length, count: augmentedRaw.length }),
+      },
+      { storeRoot: home.path },
+    );
+
+    const results = queryCatalog({ storeRoot: home.path }, { query: "constructor" });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.record.sessionId).toBe("synthetic-constructor-session");
+    expect(Number.isFinite(results[0]?.score)).toBe(true);
+    expect(results[0]?.score).toBeGreaterThan(0);
+  });
 });
 
 describe("getIndexRecord", () => {

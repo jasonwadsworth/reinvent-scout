@@ -1,5 +1,5 @@
 import { CatalogMissingError } from "../core/errors.js";
-import { tokenize, type IndexRecord } from "./index-record.js";
+import { tokenize, type IndexRecord, type TermFrequencies } from "./index-record.js";
 import { readIndex, type CatalogStoreDeps } from "./store.js";
 import type { Venue } from "./venue.js";
 
@@ -56,6 +56,20 @@ function matchesFilters(record: IndexRecord, options: CatalogQueryOptions): bool
   return true;
 }
 
+/**
+ * Reads a term's count from a term-frequency map, own-property only. `titleTerms`/`bodyTerms`
+ * are written with a null prototype (see `index-record.ts`'s `tokenize`), but that guarantee
+ * evaporates the moment they round-trip through `JSON.parse` to build the in-memory index this
+ * function actually reads -- `JSON.parse` always produces plain, Object.prototype-inheriting
+ * objects, regardless of the prototype of whatever was serialized. So a bare `map[term]` read
+ * here would resolve a term like `constructor` to the inherited `Object` constructor function
+ * for every record, not `undefined`, however the write side is hardened. `Object.hasOwn` is the
+ * only check that is actually safe against this on the read side.
+ */
+function getOwnTermCount(map: TermFrequencies, term: string): number | undefined {
+  return Object.hasOwn(map, term) ? (map[term] as number) : undefined;
+}
+
 /** Scores a record against the query's terms. Returns `null` (rather than a zero score) when a
  * query was given but none of its terms matched anywhere -- the caller excludes the record
  * entirely in that case, since a text search with zero relevance is a non-match, not a weak one. */
@@ -63,12 +77,12 @@ function scoreAgainstQuery(record: IndexRecord, queryTerms: string[]): number | 
   let score = 0;
   let matched = false;
   for (const term of queryTerms) {
-    const titleCount = record.titleTerms[term];
+    const titleCount = getOwnTermCount(record.titleTerms, term);
     if (titleCount !== undefined) {
       score += TITLE_TERM_WEIGHT * titleCount;
       matched = true;
     }
-    const bodyCount = record.bodyTerms[term];
+    const bodyCount = getOwnTermCount(record.bodyTerms, term);
     if (bodyCount !== undefined) {
       score += BODY_TERM_WEIGHT * bodyCount;
       matched = true;

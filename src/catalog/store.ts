@@ -13,8 +13,16 @@ const FILE_MODE = 0o600;
 
 /** Bumped whenever the on-disk `IndexRecord` shape changes incompatibly; a stored catalog at an
  * older version is reported stale so `catalog sync --reindex`-equivalent logic (task 15) can
- * rebuild the index from the stored raw data without a new API pull. */
-export const CURRENT_SCHEMA_VERSION = 1;
+ * rebuild the index from the stored raw data without a new API pull.
+ *
+ * Bumped 1 -> 2: `titleTerms`/`bodyTerms` built before this version can hold a poisoned entry for
+ * any term that collides with an `Object.prototype` member (`constructor`, `hasOwnProperty`,
+ * ...), from tokenizing into a plain object literal instead of one with a null prototype. The
+ * read-side fix (`query.ts`'s `Object.hasOwn` guard) handles a poisoned map safely, but a stale
+ * index still round-trips whatever bad value was written for that term the last time it synced;
+ * this bump forces every existing index to rebuild from raw data with the fixed tokenizer rather
+ * than carrying that forward indefinitely. */
+export const CURRENT_SCHEMA_VERSION = 2;
 
 const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 
