@@ -74,6 +74,40 @@ describe("token store", () => {
     expect(state.status).toBe("corrupt");
   });
 
+  it("reports a corrupt store rather than throwing when the token file path is a directory", () => {
+    // A directory where tokens.json should be -- e.g. from some other tool's bad write, or a
+    // half-finished manual recovery attempt. readFileSync throws EISDIR for this, which an
+    // exists-then-read check does not protect against (the path does exist).
+    mkdirSync(tokenFilePath(home.path), { recursive: true });
+
+    expect(() => readTokenStore({ storeRoot: home.path })).not.toThrow();
+    expect(readTokenStore({ storeRoot: home.path }).status).toBe("corrupt");
+  });
+
+  it("reports a corrupt store when expiresIn is not a finite number", () => {
+    mkdirSync(home.path, { recursive: true });
+    // `1e400` is valid JSON number syntax that JSON.parse evaluates to Infinity -- a `typeof
+    // === "number"` check alone accepts it, but it can never produce a sane expiry.
+    writeFileSync(
+      tokenFilePath(home.path),
+      '{"accessToken":"a","refreshToken":"r","idToken":"i","tokenType":"Bearer","expiresIn":1e400,"obtainedAt":0}',
+      { mode: 0o600 },
+    );
+
+    expect(readTokenStore({ storeRoot: home.path }).status).toBe("corrupt");
+  });
+
+  it("reports a corrupt store when obtainedAt is not a finite number", () => {
+    mkdirSync(home.path, { recursive: true });
+    writeFileSync(
+      tokenFilePath(home.path),
+      '{"accessToken":"a","refreshToken":"r","idToken":"i","tokenType":"Bearer","expiresIn":3600,"obtainedAt":1e400}',
+      { mode: 0o600 },
+    );
+
+    expect(readTokenStore({ storeRoot: home.path }).status).toBe("corrupt");
+  });
+
   it("treats the access token as expired 120 seconds before its real expiry", () => {
     const tokens: StoredTokens = { ...SAMPLE, expiresIn: 3600, obtainedAt: 0 };
     const realExpiryMs = tokens.expiresIn * 1000;

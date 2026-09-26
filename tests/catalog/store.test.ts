@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -111,5 +111,22 @@ describe("catalog store", () => {
 
     const state = getCatalogState({ storeRoot: home.path, now: () => 1_000_000 + 60_000 });
     expect(state).toEqual({ status: "fresh", meta });
+  });
+
+  it("reports the catalog as stale with reason corrupt rather than throwing when meta.json is not valid JSON", () => {
+    mkdirSync(join(home.path, "catalog"), { recursive: true });
+    writeFileSync(join(home.path, "catalog", "meta.json"), "{ not valid json", { mode: 0o600 });
+
+    expect(() => getCatalogState({ storeRoot: home.path })).not.toThrow();
+    expect(getCatalogState({ storeRoot: home.path })).toEqual({ status: "stale", reason: "corrupt" });
+  });
+
+  it("reports the catalog as stale with reason corrupt rather than throwing when the meta file path is a directory", () => {
+    // A directory where meta.json should be. readFileSync throws EISDIR for this; an
+    // exists-then-read check does not protect against it, since the path does exist.
+    mkdirSync(join(home.path, "catalog", "meta.json"), { recursive: true });
+
+    expect(() => getCatalogState({ storeRoot: home.path })).not.toThrow();
+    expect(getCatalogState({ storeRoot: home.path })).toEqual({ status: "stale", reason: "corrupt" });
   });
 });

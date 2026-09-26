@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import { readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { writeFileAtomic } from "../core/atomic-write.js";
 import { ensureDirWithMode, STORE_DIR_MODE } from "../core/paths.js";
@@ -60,24 +60,40 @@ function isStoredTokens(value: unknown): value is StoredTokens {
     typeof v.refreshToken === "string" &&
     typeof v.idToken === "string" &&
     typeof v.tokenType === "string" &&
+    // `typeof === "number"` alone accepts NaN and +/-Infinity -- both valid JS numbers, and
+    // Infinity is even reachable from JSON.parse (`1e400` is valid JSON syntax that overflows to
+    // it) -- neither of which can ever produce a sane expiry calculation.
     typeof v.expiresIn === "number" &&
-    typeof v.obtainedAt === "number"
+    Number.isFinite(v.expiresIn) &&
+    typeof v.obtainedAt === "number" &&
+    Number.isFinite(v.obtainedAt)
   );
 }
 
 /**
- * Reads the token store. Never throws: a missing file is "absent", and invalid JSON or a
- * malformed shape is "corrupt" with a fixed, generic reason string -- never the raw file
- * content or a native parse error's message, either of which could echo real token material
- * back out in an error.
+ * Reads the token store. Never throws: a missing file is "absent", and anything else that
+ * keeps this from producing a valid session -- invalid JSON, a malformed or non-finite-timestamp
+ * shape, the path being a directory instead of a file, a permissions error, or any other read
+ * failure -- is "corrupt" with a fixed, generic reason string, never the raw file content or a
+ * native error's message, either of which could echo real token material back out in an error.
+ *
+ * Deliberately reads the file directly rather than checking `existsSync` first: that check-then-
+ * read pattern has a race (the file can vanish or change between the check and the read) and,
+ * more importantly, does nothing for a path that exists but isn't a readable file -- a directory
+ * left at `tokens.json`'s path throws `EISDIR` on read regardless of whether it "exists".
  */
 export function readTokenStore(deps: TokenStoreDeps): TokenStoreState {
   const path = tokenFilePath(deps.storeRoot);
-  if (!existsSync(path)) {
-    return { status: "absent" };
-  }
 
-  const raw = readFileSync(path, "utf8");
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      return { status: "absent" };
+    }
+    return { status: "corrupt", reason: "The stored session file could not be read." };
+  }
 
   let parsed: unknown;
   try {
