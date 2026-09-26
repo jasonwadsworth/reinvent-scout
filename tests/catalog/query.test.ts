@@ -6,7 +6,7 @@ import type { Session } from "../../src/api/types.js";
 import { CatalogMissingError, CatalogUnusableError } from "../../src/core/errors.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { CURRENT_SCHEMA_VERSION, writeCatalog, type CatalogMeta } from "../../src/catalog/store.js";
-import { getIndexRecord, queryCatalog, resolveSessionRecord } from "../../src/catalog/query.js";
+import { queryCatalog, resolveSessionRecord } from "../../src/catalog/query.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -264,85 +264,6 @@ describe("queryCatalog", () => {
 
     expect(() => queryCatalog({ storeRoot: home.path })).not.toThrow();
     expect(queryCatalog({ storeRoot: home.path }, { query: "graviton" }).length).toBeGreaterThan(0);
-  });
-});
-
-describe("getIndexRecord", () => {
-  let home: TempHome;
-
-  beforeEach(() => {
-    home = createTempHome();
-  });
-
-  afterEach(() => {
-    home.cleanup();
-  });
-
-  it("returns the record for a known session id", () => {
-    writeCatalog(
-      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
-      { storeRoot: home.path },
-    );
-
-    const record = getIndexRecord({ storeRoot: home.path }, "1780441461150001GGoc");
-
-    expect(record?.abbreviation).toBe("ANT301");
-  });
-
-  it("returns null for a session id that is not in the catalog", () => {
-    writeCatalog(
-      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
-      { storeRoot: home.path },
-    );
-
-    expect(getIndexRecord({ storeRoot: home.path }, "does-not-exist")).toBeNull();
-  });
-
-  it("throws CatalogMissingError when nothing has been synced", () => {
-    expect(() => getIndexRecord({ storeRoot: home.path }, "any-id")).toThrow(CatalogMissingError);
-  });
-
-  it("refuses to read an index built at an older schema version rather than silently serving it", () => {
-    writeCatalog(
-      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta({ schemaVersion: CURRENT_SCHEMA_VERSION - 1 }) },
-      { storeRoot: home.path },
-    );
-
-    let caught: unknown;
-    try {
-      getIndexRecord({ storeRoot: home.path }, "1780441461150001GGoc");
-    } catch (err) {
-      caught = err;
-    }
-    expect(caught).toBeInstanceOf(CatalogUnusableError);
-    expect((caught as CatalogUnusableError).reason).toBe("outdated");
-  });
-
-  it("refuses to read when meta.json is corrupt", () => {
-    writeCatalog(
-      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
-      { storeRoot: home.path },
-    );
-    writeFileSync(join(home.path, "catalog", "meta.json"), "{ truncated", "utf8");
-
-    let caught: unknown;
-    try {
-      getIndexRecord({ storeRoot: home.path }, "1780441461150001GGoc");
-    } catch (err) {
-      caught = err;
-    }
-    expect(caught).toBeInstanceOf(CatalogUnusableError);
-    expect((caught as CatalogUnusableError).reason).toBe("corrupt");
-  });
-
-  it("does not refuse a catalog that is merely stale by age", () => {
-    writeCatalog(
-      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta({ syncedAt: 0 }) },
-      { storeRoot: home.path },
-    );
-
-    const record = getIndexRecord({ storeRoot: home.path }, "1780441461150001GGoc");
-    expect(record?.abbreviation).toBe("ANT301");
   });
 });
 

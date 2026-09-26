@@ -50,6 +50,7 @@ interface ShowCommandOptions {
 }
 
 const DEFAULT_SEARCH_LIMIT = 20;
+const NO_MATCHES_MESSAGE = "No sessions matched.";
 
 function defaultBuildApiClient(storeRoot: string): ApiClient {
   return createApiClient({ getAccessToken: createTokenProviderAdapter({ storeRoot }) });
@@ -234,9 +235,11 @@ export function registerCatalogCommands(program: Command, deps: CatalogCommandDe
           print(
             options.json
               ? JSON.stringify(withAbstracts)
-              : results
-                  .map((result, i) => formatSearchResultWithAbstract(result, withAbstracts[i]?.abstract ?? null))
-                  .join("\n\n"),
+              : results.length === 0
+                ? NO_MATCHES_MESSAGE
+                : results
+                    .map((result, i) => formatSearchResultWithAbstract(result, withAbstracts[i]?.abstract ?? null))
+                    .join("\n\n"),
           );
           return;
         }
@@ -245,7 +248,13 @@ export function registerCatalogCommands(program: Command, deps: CatalogCommandDe
           ...toPublicRecord(result.record),
           score: result.score,
         }));
-        print(options.json ? JSON.stringify(withoutAbstracts) : results.map(formatSearchResultLine).join("\n"));
+        print(
+          options.json
+            ? JSON.stringify(withoutAbstracts)
+            : results.length === 0
+              ? NO_MATCHES_MESSAGE
+              : results.map(formatSearchResultLine).join("\n"),
+        );
       } catch (err) {
         if (
           err instanceof CatalogMissingError ||

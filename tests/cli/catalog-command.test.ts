@@ -324,6 +324,19 @@ describe("catalog search command", () => {
     expect(h.printed.join("\n")).toContain("ANT301");
   });
 
+  it("prints a human-readable message when nothing matches, but an empty json array under --json", async () => {
+    const h = localHarness(home.path);
+
+    await h.run(["catalog", "search", "zzznomatchzzz"]);
+
+    expect(h.printed).toEqual(["No sessions matched."]);
+
+    const jsonHarness = localHarness(home.path);
+    await jsonHarness.run(["catalog", "search", "zzznomatchzzz", "--json"]);
+
+    expect(jsonHarness.printed).toEqual(["[]"]);
+  });
+
   it("tells the user to sync first when nothing has been synced", async () => {
     const emptyHome = createTempHome();
     try {

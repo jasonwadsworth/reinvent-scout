@@ -159,8 +159,9 @@ function requireCurrentIndex(deps: CatalogStoreDeps): IndexRecord[] {
  * tiebreak -- ties are common (every result scores 0 when no `query` is given), so the tiebreak
  * runs constantly, not just as an edge case.
  *
- * Throws `CatalogMissingError` when nothing has ever been synced, or when the stored index is
- * from an older schema version (see `requireCurrentIndex`).
+ * Throws `CatalogMissingError` when nothing has ever been synced, or `CatalogUnusableError` when
+ * the stored index can't be trusted -- an older schema version, or unreadable sync metadata (see
+ * `requireCurrentIndex`).
  */
 export function queryCatalog(
   deps: CatalogStoreDeps,
@@ -195,17 +196,6 @@ export function queryCatalog(
   });
 
   return options.limit === undefined ? results : results.slice(0, options.limit);
-}
-
-/**
- * Looks up a single session by id in the local index -- for `catalog show`. Returns `null` when
- * the id isn't in the catalog (a typo, or a session favorited before the last sync that no
- * longer exists); throws `CatalogMissingError` when nothing has ever been synced, same as
- * `queryCatalog`.
- */
-export function getIndexRecord(deps: CatalogStoreDeps, sessionId: string): IndexRecord | null {
-  const index = requireCurrentIndex(deps);
-  return index.find((record) => record.sessionId === sessionId) ?? null;
 }
 
 export type SessionLookupResult =

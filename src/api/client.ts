@@ -170,7 +170,7 @@ async function requestJson<T>(
  * HTTP-date form (`Number()` of which is NaN, i.e. an immediate retry), a non-positive or
  * non-numeric value -- falls back to one second, and larger values are capped at sixty so a
  * misbehaving server cannot park the process for an hour. */
-export function parseRetryAfterSeconds(header: string | null): number {
+function parseRetryAfterSeconds(header: string | null): number {
   const seconds = Number(header);
   if (header === null || header.trim() === "" || !Number.isFinite(seconds) || seconds <= 0) {
     return DEFAULT_RETRY_AFTER_SECONDS;
