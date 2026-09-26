@@ -420,4 +420,54 @@ describe("matchSessions", () => {
     expect(universalTermMatch).toBeDefined();
     expect(rareTermMatch!.score).toBeGreaterThan(universalTermMatch!.score);
   });
+
+  it("ranks every session with a real service or topic match above one whose only connection is the near-universal word 'amazon'", () => {
+    // The reviewer's own reproduction: a profile naming Amazon DynamoDB by service. DAT414 is the
+    // only session in the fixture that actually covers Amazon DynamoDB (both a "service" reason and
+    // a "text" reason, since the service's own name also feeds the free-text query -- see
+    // buildMatchQuery). Every other session that merely shares the word "amazon" (45 of 60, via the
+    // catalog's own "Amazon <service>" naming convention) gets only a "text" reason, and inverse
+    // document frequency must keep every one of those strictly below DAT414 -- not just below its
+    // own rank position, but below its score, since a service match is the one signal a human
+    // should trust most.
+    writeCatalog(
+      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
+      { storeRoot: home.path },
+    );
+
+    // The service's own `name` (not just its resolved `catalogName`) feeds the free-text query
+    // (see buildMatchQuery) -- naming it the way the catalog itself does, "Amazon DynamoDB" rather
+    // than a short key like "dynamodb", is what actually puts "amazon" into the query text at all,
+    // matching the reviewer's own reproduction.
+    const profile = resolvedProfile({
+      services: [
+        {
+          name: "Amazon DynamoDB",
+          evidence: [{ repo: ".", file: "x" }],
+          catalogName: "Amazon DynamoDB",
+        },
+      ],
+    });
+
+    const results = matchSessions(profile, { storeRoot: home.path });
+
+    const withStructuredReason = results.filter((r) =>
+      r.reasons.some((reason) => reason.kind === "service" || reason.kind === "topic"),
+    );
+    const amazonOnlyTextMatches = results.filter(
+      (r) =>
+        r.reasons.every((reason) => reason.kind === "text") &&
+        r.reasons.some((reason) => reason.evidence.split(", ").includes("amazon")),
+    );
+
+    // Sanity check on the test itself: if either group were empty, the comparison below would
+    // pass vacuously.
+    expect(withStructuredReason.length).toBeGreaterThan(0);
+    expect(amazonOnlyTextMatches.length).toBeGreaterThan(0);
+
+    const minStructuredScore = Math.min(...withStructuredReason.map((r) => r.score));
+    const maxAmazonOnlyScore = Math.max(...amazonOnlyTextMatches.map((r) => r.score));
+
+    expect(maxAmazonOnlyScore).toBeLessThan(minStructuredScore);
+  });
 });

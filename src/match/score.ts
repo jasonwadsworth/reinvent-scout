@@ -73,27 +73,28 @@ export function buildCorpusStats(records: readonly IndexRecord[]): CorpusStats {
 }
 
 /**
- * A term's inverse document frequency: `ln(totalDocuments / documentFrequency)`. Zero for a term
- * that appears in every single document in the corpus (it distinguishes nothing between them), and
- * largest for a term that appears in only one. `corpusStats` is optional: omitting it treats every
- * term as equally informative (weight 1, the pre-idf behavior), which is what almost every other
- * test in this module's own test file wants -- they test term-frequency saturation and
- * title-weighting in isolation and would otherwise need to construct an unrelated corpus just to
- * keep scoring anything. `match.ts`, the only real caller, always supplies real statistics built
- * from the whole loaded catalog.
+ * A term's inverse document frequency, Okapi BM25's own formula:
+ * `ln((totalDocuments - documentFrequency + 0.5) / (documentFrequency + 0.5) + 1)`. Small for a
+ * term that appears in nearly every document in the corpus (it distinguishes almost nothing between
+ * them) and largest for a term that appears in only one or two -- but never exactly zero and never
+ * negative, however common the term is, because of the "+1" inside the outer log: a plain
+ * `ln(totalDocuments / documentFrequency)` would hit exactly zero for a fully-universal term, which
+ * is a sharper cliff than real corpora need (a term in 100% of documents today could easily be in
+ * 98% after the next sync) and needlessly special-cases something the "+1" already handles for
+ * free. `corpusStats` is optional: omitting it treats every term as equally informative (weight 1,
+ * the pre-idf behavior), which is what almost every other test in this module's own test file wants
+ * -- they test term-frequency saturation and title-weighting in isolation and would otherwise need
+ * to construct an unrelated corpus just to keep scoring anything. `match.ts`, the only real caller,
+ * always supplies real statistics built from the whole loaded catalog.
  */
 function idfWeight(term: string, corpusStats: CorpusStats | undefined): number {
   if (corpusStats === undefined) {
     return 1;
   }
   const documentFrequency = corpusStats.documentFrequencies.get(term) ?? 0;
-  if (documentFrequency === 0) {
-    // A term with zero document frequency can't have matched any real record in this corpus in
-    // the first place -- scoreText only looks this up for a term that already matched the record
-    // it's currently scoring. Zero is the safe, information-free answer, not a division by zero.
-    return 0;
-  }
-  return Math.log(corpusStats.totalDocuments / documentFrequency);
+  return Math.log(
+    (corpusStats.totalDocuments - documentFrequency + 0.5) / (documentFrequency + 0.5) + 1,
+  );
 }
 
 /** An exact catalog service match is the strongest signal this scorer has: the profile named a

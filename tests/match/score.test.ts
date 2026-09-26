@@ -1,7 +1,15 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { Session } from "../../src/api/types.js";
 import { buildIndexRecord, type IndexRecord } from "../../src/catalog/index-record.js";
 import { buildCorpusStats, scoreSession, type MatchQuery } from "../../src/match/score.js";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const fixture: Session[] = JSON.parse(
+  readFileSync(join(here, "..", "fixtures", "catalog-sample.json"), "utf8"),
+);
 
 function record(overrides: Partial<Session> & { sessionId: string; title: string }): IndexRecord {
   return buildIndexRecord(overrides);
@@ -249,18 +257,41 @@ describe("scoreSession with corpus statistics (inverse document frequency)", () 
     expect(rareResult.score).toBeGreaterThan(commonResult.score);
   });
 
-  it("gives zero weight, and omits the text reason entirely, for a term that appears in every document in the corpus", () => {
-    // A term with no discriminating power at all (every document has it) should contribute
-    // nothing -- ln(totalDocuments / documentFrequency) is exactly zero when documentFrequency
-    // equals totalDocuments.
+  it("gives a term that appears in every document in the corpus a small, non-zero weight -- Okapi BM25's idf, not a plain ln(N/df)", () => {
+    // Standard BM25's idf includes a "+1" inside the outer log specifically so a term with no
+    // discriminating power at all (every document has it) still contributes something small,
+    // rather than collapsing to exactly zero the way a plain ln(totalDocuments / documentFrequency)
+    // would -- verified against a rarer term in the same corpus to confirm it's genuinely small,
+    // not merely present.
     const target = record({ sessionId: "target", title: "Unrelated filler", abstract: "everywhere" });
-    const otherDoc = record({ sessionId: "other", title: "Another filler", abstract: "everywhere" });
+    const otherDoc = record({ sessionId: "other", title: "Another filler", abstract: "everywhere rare" });
     const corpusStats = buildCorpusStats([target, otherDoc]);
 
-    const result = scoreSession(target, query({ text: "everywhere" }), corpusStats);
+    const universalResult = scoreSession(target, query({ text: "everywhere" }), corpusStats);
+    const rareResult = scoreSession(otherDoc, query({ text: "rare" }), corpusStats);
 
-    expect(result.reasons.find((r) => r.kind === "text")).toBeUndefined();
-    expect(result.score).toBe(0);
+    const universalTextReason = universalResult.reasons.find((r) => r.kind === "text");
+    expect(universalTextReason).toBeDefined();
+    expect(universalTextReason!.weight).toBeGreaterThan(0);
+    expect(universalTextReason!.weight).toBeLessThan(rareResult.score);
+  });
+
+  it("weighs a term present in three quarters of the fixture at less than a fifth of a term present in only one session", () => {
+    // Real, measured document frequencies in the 60-session fixture (confirmed by direct
+    // inspection before writing this test, and re-verified against tests/match/match.test.ts's own
+    // real-catalog test): "amazon" appears in 45 of 60 sessions -- three quarters -- via the
+    // catalog's own "Amazon <service>" naming convention, while "dynamodb" appears in exactly 1.
+    // Both target records below share the identical structure (a single body-only occurrence),
+    // isolating the ratio to inverse document frequency alone, not incidental differences in term
+    // frequency or title placement between real, messy session records.
+    const realCorpusStats = buildCorpusStats(fixture.map(buildIndexRecord));
+    const universalTermTarget = record({ sessionId: "u", title: "Unrelated filler", abstract: "amazon" });
+    const rareTermTarget = record({ sessionId: "r", title: "Unrelated filler", abstract: "dynamodb" });
+
+    const universalResult = scoreSession(universalTermTarget, query({ text: "amazon" }), realCorpusStats);
+    const rareResult = scoreSession(rareTermTarget, query({ text: "dynamodb" }), realCorpusStats);
+
+    expect(universalResult.score).toBeLessThan(rareResult.score * 0.2);
   });
 
   it("treats every term as equally informative when no corpus statistics are supplied", () => {
@@ -271,13 +302,37 @@ describe("scoreSession with corpus statistics (inverse document frequency)", () 
     const q = query({ text: "lambda" });
 
     const withoutCorpusStats = scoreSession(session, q);
-    const withNeutralCorpusStats = scoreSession(session, q, buildCorpusStats([session]));
+    const withRealCorpusStats = scoreSession(session, q, buildCorpusStats([session]));
 
-    // A single-document corpus containing the term gives it documentFrequency === totalDocuments,
-    // i.e. idf 0 -- the opposite of "no corpus stats" (idf 1) -- so if omitting corpusStats were
-    // silently falling back to a real, empty corpus rather than a genuine neutral default, this
-    // would equal 0, not the undamped raw value.
+    // A single-document corpus containing the term gives it documentFrequency === totalDocuments --
+    // Okapi BM25's idf there is small but not zero (unlike a plain ln(N/df)), and always strictly
+    // less than the neutral weight 1 that omitting corpusStats uses -- so if omitting corpusStats
+    // were silently falling back to a real, empty corpus rather than a genuine neutral default,
+    // this would be smaller than it is, not equal to the undamped raw value.
     expect(withoutCorpusStats.score).toBe(1.2000000000000002);
-    expect(withNeutralCorpusStats.score).toBe(0);
+    expect(withRealCorpusStats.score).toBeLessThan(withoutCorpusStats.score);
+  });
+
+  it("produces byte-identical output for the same corpus-aware inputs across two runs", () => {
+    // The same determinism guarantee this file's other byte-identical-output test makes for the
+    // no-corpus-stats path, but exercised through buildCorpusStats and the idf-weighted path
+    // specifically -- Map iteration order or floating-point summation order could in principle
+    // introduce nondeterminism that a corpus-unaware test would never see.
+    function buildInputs(): { session: IndexRecord; q: MatchQuery; corpusStats: ReturnType<typeof buildCorpusStats> } {
+      const target = record({ sessionId: "s1", title: "Serverless orders processing", abstract: "orders" });
+      const filler = record({ sessionId: "s2", title: "Unrelated filler" });
+      return {
+        session: target,
+        q: query({ text: "orders" }),
+        corpusStats: buildCorpusStats([target, filler]),
+      };
+    }
+
+    const first = buildInputs();
+    const result1 = scoreSession(first.session, first.q, first.corpusStats);
+    const second = buildInputs();
+    const result2 = scoreSession(second.session, second.q, second.corpusStats);
+
+    expect(JSON.stringify(result1)).toBe(JSON.stringify(result2));
   });
 });
