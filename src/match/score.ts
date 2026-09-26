@@ -41,6 +41,61 @@ export interface ScoredSession {
   reasons: Reason[];
 }
 
+export interface CorpusStats {
+  /** Total number of documents `documentFrequencies` below was computed over. */
+  totalDocuments: number;
+  /** How many documents (title or body, regardless of how many times within one) contain each
+   * term at all. Only terms present in at least one document need appear here. */
+  documentFrequencies: ReadonlyMap<string, number>;
+}
+
+/**
+ * Builds corpus-wide statistics from every record in a loaded index -- specifically, each term's
+ * document frequency, the "how rare is this term across the whole catalog" half of BM25 that
+ * per-document term-frequency saturation alone can't provide. Saturation only caps how much
+ * *repeating a term within one document* can matter; it says nothing about a term that shows up in
+ * nearly every document to begin with (see `scoreText`'s own inverse-document-frequency weighting
+ * below, and `tests/match/match.test.ts`'s real-catalog "amazon" vs. "guide" test, which is the
+ * concrete case this exists to fix).
+ */
+export function buildCorpusStats(records: readonly IndexRecord[]): CorpusStats {
+  const documentFrequencies = new Map<string, number>();
+  for (const recordInCorpus of records) {
+    const termsInRecord = new Set<string>([
+      ...Object.keys(recordInCorpus.titleTerms),
+      ...Object.keys(recordInCorpus.bodyTerms),
+    ]);
+    for (const term of termsInRecord) {
+      documentFrequencies.set(term, (documentFrequencies.get(term) ?? 0) + 1);
+    }
+  }
+  return { totalDocuments: records.length, documentFrequencies };
+}
+
+/**
+ * A term's inverse document frequency: `ln(totalDocuments / documentFrequency)`. Zero for a term
+ * that appears in every single document in the corpus (it distinguishes nothing between them), and
+ * largest for a term that appears in only one. `corpusStats` is optional: omitting it treats every
+ * term as equally informative (weight 1, the pre-idf behavior), which is what almost every other
+ * test in this module's own test file wants -- they test term-frequency saturation and
+ * title-weighting in isolation and would otherwise need to construct an unrelated corpus just to
+ * keep scoring anything. `match.ts`, the only real caller, always supplies real statistics built
+ * from the whole loaded catalog.
+ */
+function idfWeight(term: string, corpusStats: CorpusStats | undefined): number {
+  if (corpusStats === undefined) {
+    return 1;
+  }
+  const documentFrequency = corpusStats.documentFrequencies.get(term) ?? 0;
+  if (documentFrequency === 0) {
+    // A term with zero document frequency can't have matched any real record in this corpus in
+    // the first place -- scoreText only looks this up for a term that already matched the record
+    // it's currently scoring. Zero is the safe, information-free answer, not a division by zero.
+    return 0;
+  }
+  return Math.log(corpusStats.totalDocuments / documentFrequency);
+}
+
 /** An exact catalog service match is the strongest signal this scorer has: the profile named a
  * real service by its catalog display name, and the session covers exactly that service. */
 const SERVICE_MATCH_WEIGHT = 50;
@@ -85,7 +140,11 @@ interface TextMatchResult {
   matchedTerms: string[];
 }
 
-function scoreText(record: IndexRecord, queryText: string): TextMatchResult | null {
+function scoreText(
+  record: IndexRecord,
+  queryText: string,
+  corpusStats: CorpusStats | undefined,
+): TextMatchResult | null {
   const queryTerms = Object.keys(tokenize(queryText));
   if (queryTerms.length === 0) {
     return null;
@@ -97,16 +156,17 @@ function scoreText(record: IndexRecord, queryText: string): TextMatchResult | nu
 
   for (const term of queryTerms) {
     let matched = false;
+    const weight = idfWeight(term, corpusStats);
 
     const titleTf = getOwnTermCount(record.titleTerms, term);
     if (titleTf !== undefined) {
-      titleScore += TITLE_TERM_WEIGHT * saturate(titleTf);
+      titleScore += TITLE_TERM_WEIGHT * saturate(titleTf) * weight;
       matched = true;
     }
 
     const bodyTf = getOwnTermCount(record.bodyTerms, term);
     if (bodyTf !== undefined) {
-      rawBodyScore += BODY_TERM_WEIGHT * saturate(bodyTf);
+      rawBodyScore += BODY_TERM_WEIGHT * saturate(bodyTf) * weight;
       matched = true;
     }
 
@@ -134,8 +194,17 @@ function scoreText(record: IndexRecord, queryText: string): TextMatchResult | nu
  *
  * Returns `{ score: 0, reasons: [] }` for a session sharing nothing with the query -- a zero
  * score is a real, reportable outcome, not an error.
+ *
+ * `corpusStats` (optional, see `buildCorpusStats`) weights each matched text term by its inverse
+ * document frequency across the corpus it was built from -- omit it to treat every term as equally
+ * informative, which is what this module's own tests want when they're testing something other
+ * than corpus-wide rarity itself.
  */
-export function scoreSession(record: IndexRecord, query: MatchQuery): ScoredSession {
+export function scoreSession(
+  record: IndexRecord,
+  query: MatchQuery,
+  corpusStats?: CorpusStats,
+): ScoredSession {
   const reasons: Reason[] = [];
 
   for (const service of query.services) {
@@ -173,7 +242,7 @@ export function scoreSession(record: IndexRecord, query: MatchQuery): ScoredSess
     }
   }
 
-  const textResult = scoreText(record, query.text);
+  const textResult = scoreText(record, query.text, corpusStats);
   if (textResult !== null && textResult.score > 0) {
     // Deliberately not rounded here: BM25-lite's saturation formula routinely produces
     // floating-point noise (3 * (1/2.5) is 1.2000000000000002, not a clean 1.2), but this value

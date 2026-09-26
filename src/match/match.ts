@@ -3,7 +3,7 @@ import { requireCurrentIndex } from "../catalog/query.js";
 import type { IndexRecord } from "../catalog/index-record.js";
 import type { ResolvedProfile } from "../profile/profile.js";
 import { getLensProfile, type Lens } from "./lens.js";
-import { scoreSession, type MatchQuery, type Reason } from "./score.js";
+import { buildCorpusStats, scoreSession, type MatchQuery, type Reason } from "./score.js";
 
 export interface MatchOptions {
   /** Defaults to `"all"` -- no level restriction, no format preference. */
@@ -121,6 +121,11 @@ export function matchSessions(
   const lensProfile = getLensProfile(lens);
   const index = requireCurrentIndex(deps);
   const query = buildMatchQuery(profile);
+  // Built once, over the whole loaded catalog, and reused for every candidate below -- inverse
+  // document frequency is a corpus-wide statistic, not a per-record one; computing it fresh per
+  // record would be both wasteful and simply wrong, since it needs to see every document to know
+  // how rare a term actually is.
+  const corpusStats = buildCorpusStats(index);
 
   const candidates: MatchCandidate[] = [];
 
@@ -131,7 +136,7 @@ export function matchSessions(
       }
     }
 
-    const base = scoreSession(record, query);
+    const base = scoreSession(record, query, corpusStats);
     const reasons = [...base.reasons];
     let score = base.score;
 

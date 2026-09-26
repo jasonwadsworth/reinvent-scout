@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Session } from "../../src/api/types.js";
 import { buildIndexRecord, type IndexRecord } from "../../src/catalog/index-record.js";
-import { scoreSession, type MatchQuery } from "../../src/match/score.js";
+import { buildCorpusStats, scoreSession, type MatchQuery } from "../../src/match/score.js";
 
 function record(overrides: Partial<Session> & { sessionId: string; title: string }): IndexRecord {
   return buildIndexRecord(overrides);
@@ -221,5 +221,63 @@ describe("scoreSession", () => {
     const incidentalResult = scoreSession(incidentalOverlap, q).score;
 
     expect(realResult).toBeGreaterThan(incidentalResult);
+  });
+});
+
+describe("scoreSession with corpus statistics (inverse document frequency)", () => {
+  it("weighs an equally-repeated term higher when it's rare across the corpus than when it's common", () => {
+    // A term-frequency match alone can't tell a genuinely rare, specific term from a word nearly
+    // every document happens to share -- that's the missing half of BM25 this corpus-aware form
+    // adds. Ten documents total: "rare" appears in exactly one of them, "common" in nine.
+    const rareTarget = record({ sessionId: "rare-target", title: "Unrelated filler", abstract: "rare" });
+    const commonTarget = record({
+      sessionId: "common-target",
+      title: "Unrelated filler",
+      abstract: "common",
+    });
+    const commonFillers = Array.from({ length: 8 }, (_, i) =>
+      record({ sessionId: `common-filler-${i}`, title: "Unrelated filler", abstract: "common" }),
+    );
+    const corpus = [rareTarget, commonTarget, ...commonFillers];
+    const corpusStats = buildCorpusStats(corpus);
+
+    // Same term frequency (one occurrence, body only) in both target records -- the only variable
+    // is how many other documents in the corpus also contain the query's term.
+    const rareResult = scoreSession(rareTarget, query({ text: "rare" }), corpusStats);
+    const commonResult = scoreSession(commonTarget, query({ text: "common" }), corpusStats);
+
+    expect(rareResult.score).toBeGreaterThan(commonResult.score);
+  });
+
+  it("gives zero weight, and omits the text reason entirely, for a term that appears in every document in the corpus", () => {
+    // A term with no discriminating power at all (every document has it) should contribute
+    // nothing -- ln(totalDocuments / documentFrequency) is exactly zero when documentFrequency
+    // equals totalDocuments.
+    const target = record({ sessionId: "target", title: "Unrelated filler", abstract: "everywhere" });
+    const otherDoc = record({ sessionId: "other", title: "Another filler", abstract: "everywhere" });
+    const corpusStats = buildCorpusStats([target, otherDoc]);
+
+    const result = scoreSession(target, query({ text: "everywhere" }), corpusStats);
+
+    expect(result.reasons.find((r) => r.kind === "text")).toBeUndefined();
+    expect(result.score).toBe(0);
+  });
+
+  it("treats every term as equally informative when no corpus statistics are supplied", () => {
+    // Backward-compatible default for callers -- almost every other test in this file -- that
+    // don't care about corpus-wide rarity and would otherwise have to construct one just to keep
+    // testing term-frequency saturation and title-weighting in isolation.
+    const session = record({ sessionId: "s1", title: "AWS Lambda Basics" });
+    const q = query({ text: "lambda" });
+
+    const withoutCorpusStats = scoreSession(session, q);
+    const withNeutralCorpusStats = scoreSession(session, q, buildCorpusStats([session]));
+
+    // A single-document corpus containing the term gives it documentFrequency === totalDocuments,
+    // i.e. idf 0 -- the opposite of "no corpus stats" (idf 1) -- so if omitting corpusStats were
+    // silently falling back to a real, empty corpus rather than a genuine neutral default, this
+    // would equal 0, not the undamped raw value.
+    expect(withoutCorpusStats.score).toBe(1.2000000000000002);
+    expect(withNeutralCorpusStats.score).toBe(0);
   });
 });

@@ -358,20 +358,27 @@ describe("matchSessions", () => {
   });
 
   it("rounds the emitted score and reason weights to two decimal places, without disturbing ranking precision", () => {
-    // 3 * (1 / 2.5) is 1.2000000000000002 raw -- the same floating-point noise
-    // tests/match/score.test.ts's scoreSession test reproduces directly. The scorer itself must
-    // keep that full precision internally for correct ranking (see score.test.ts); only this
-    // module's final, agent-facing output gets rounded, once, after ranking is settled.
+    // A title-only match on "lambda", the only document (of two) that contains it -- BM25-lite's
+    // saturation and inverse-document-frequency arithmetic together produce a long, non-clean
+    // floating-point value here (raw: 3 * (1/2.5) * ln(2/1) = 0.8317766166719345), which is exactly
+    // the kind of noise this rounding exists to hide. The scorer itself must keep that full
+    // precision internally for correct ranking (see score.test.ts); only this module's final,
+    // agent-facing output gets rounded, once, after ranking is settled.
     const session: Session = {
       sessionId: "s1",
       abbreviation: "LAM100",
       title: "AWS Lambda Basics",
     };
+    // A second, unrelated document so "lambda" isn't in literally every document in the corpus --
+    // with only one document, its own inverse document frequency would be exactly zero (see
+    // score.test.ts's corpus-statistics tests), which would hide the rounding this test exists to
+    // check rather than exercise it.
+    const filler: Session = { sessionId: "s2", abbreviation: "FIL100", title: "Unrelated filler" };
     writeCatalog(
       {
-        raw: [session],
-        index: [buildIndexRecord(session)],
-        meta: sampleMeta({ totalCount: 1, count: 1 }),
+        raw: [session, filler],
+        index: [session, filler].map(buildIndexRecord),
+        meta: sampleMeta({ totalCount: 2, count: 2 }),
       },
       { storeRoot: home.path },
     );
@@ -380,8 +387,37 @@ describe("matchSessions", () => {
 
     const results = matchSessions(profile, { storeRoot: home.path });
 
-    expect(results[0]?.score).toBe(1.2);
+    expect(results[0]?.record.abbreviation).toBe("LAM100");
+    expect(results[0]?.score).toBe(0.83);
     const textReason = results[0]?.reasons.find((r) => r.kind === "text");
-    expect(textReason?.weight).toBe(1.2);
+    expect(textReason?.weight).toBe(0.83);
+  });
+
+  it("ranks a candidate matching a rare term above one matching only a near-universal term, using the fixture's real corpus frequencies", () => {
+    // Real, measured frequencies in the 60-session fixture: "amazon" appears in 45 of 60 sessions
+    // (the catalog's own "Amazon <service>" naming convention makes it near-universal), while
+    // "guide" appears in only 3. INV501 contains "amazon" twice (via its services, Amazon API
+    // Gateway and Amazon Bedrock) but never "guide"; API318 contains "guide" once, in its abstract
+    // ("...a real production example to guide your next serverless workflow decision"), but never
+    // "amazon". On raw term frequency alone (no inverse document frequency), INV501's two "amazon"
+    // occurrences actually outscore API318's one "guide" occurrence -- confirmed by hand against
+    // this module's own scoring constants before this test was written. Inverse document frequency
+    // must flip that: a term nearly every session shares says almost nothing about relevance,
+    // while a term only three sessions use says a great deal.
+    writeCatalog(
+      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
+      { storeRoot: home.path },
+    );
+
+    const profile = resolvedProfile({ intents: [{ kind: "goal", text: "guide amazon" }] });
+
+    const results = matchSessions(profile, { storeRoot: home.path });
+
+    const rareTermMatch = results.find((r) => r.record.abbreviation === "API318");
+    const universalTermMatch = results.find((r) => r.record.abbreviation === "INV501");
+
+    expect(rareTermMatch).toBeDefined();
+    expect(universalTermMatch).toBeDefined();
+    expect(rareTermMatch!.score).toBeGreaterThan(universalTermMatch!.score);
   });
 });
