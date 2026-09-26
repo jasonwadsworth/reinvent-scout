@@ -71,6 +71,12 @@ describe("buildServiceAliasIndex", () => {
     expect(index.resolve("bedrock-runtime")).toBe("Amazon Bedrock");
   });
 
+  it("resolves sagemaker-runtime to Amazon SageMaker through the override table", () => {
+    const index = buildServiceAliasIndex(uniqueFixtureServiceNames());
+
+    expect(index.resolve("sagemaker-runtime")).toBe("Amazon SageMaker");
+  });
+
   it("returns null for sns, which has no counterpart in the catalog", () => {
     const index = buildServiceAliasIndex(uniqueFixtureServiceNames());
 

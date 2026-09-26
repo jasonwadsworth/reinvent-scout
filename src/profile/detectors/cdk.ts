@@ -1,4 +1,5 @@
 import type { DetectableFile } from "../detectable-file.js";
+import { normalizeServiceKey } from "../service-keys.js";
 import { extensionOf, isInsideSkippedDirectory } from "./paths.js";
 
 export type { DetectableFile } from "../detectable-file.js";
@@ -77,6 +78,10 @@ function stripLeadingAwsDash(name: string): string {
  *
  * Ignores any file under a directory `walkRepo` itself would skip, sharing the walker's own
  * `SKIPPED_DIRECTORY_NAMES` (see `detectors/paths.ts`).
+ *
+ * Every extracted key passes through `service-keys.ts`'s `normalizeServiceKey`, the same
+ * function `detectors/sdk-usage.ts` uses, so a service imported both via CDK and directly via an
+ * SDK client converges on one key `profile.ts` (task 10) can merge on.
  */
 export function detectCdkUsage(files: readonly DetectableFile[]): CdkDetectionResult {
   const evidenceByKey = new Map<string, CdkEvidence[]>();
@@ -122,7 +127,7 @@ export function detectCdkUsage(files: readonly DetectableFile[]): CdkDetectionRe
           for (const match of lineText.matchAll(CDK_GROUPED_IMPORT_PATTERN)) {
             const sub = match.groups?.sub;
             if (sub !== undefined) {
-              record(sub, path, lineNumber, snippet);
+              record(normalizeServiceKey(sub), path, lineNumber, snippet);
             }
           }
         }
@@ -133,7 +138,7 @@ export function detectCdkUsage(files: readonly DetectableFile[]): CdkDetectionRe
             continue;
           }
           recordIac(path, lineNumber, snippet);
-          record(stripLeadingAwsDash(sub), path, lineNumber, snippet);
+          record(normalizeServiceKey(stripLeadingAwsDash(sub)), path, lineNumber, snippet);
         }
       }
 
@@ -144,7 +149,7 @@ export function detectCdkUsage(files: readonly DetectableFile[]): CdkDetectionRe
             continue;
           }
           recordIac(path, lineNumber, snippet);
-          record(sub, path, lineNumber, snippet);
+          record(normalizeServiceKey(sub), path, lineNumber, snippet);
         }
       }
     }

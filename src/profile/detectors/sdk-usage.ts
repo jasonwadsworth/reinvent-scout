@@ -1,4 +1,5 @@
 import type { DetectableFile } from "../detectable-file.js";
+import { normalizeServiceKey } from "../service-keys.js";
 import { basename, extensionOf, isInsideSkippedDirectory } from "./paths.js";
 
 export type { DetectableFile } from "../detectable-file.js";
@@ -39,15 +40,6 @@ const JS_FILE_EXTENSIONS: ReadonlySet<string> = new Set([
  * pattern covers both without needing to know which kind of file it's scanning. */
 const JS_CLIENT_PATTERN = /@aws-sdk\/client-(?<key>[a-z0-9][a-z0-9-]*)/g;
 
-/** A handful of AWS SDK for JavaScript v3 client packages are named after a specific API
- * variant (`-runtime`, `-data`, ...) that the catalog and every other language's SDK naming
- * collapse into the parent service; normalized here so the JS detector's key already matches
- * what the derivation rules in `catalog/service-aliases.ts` produce from the parent service's
- * display name, with no override-table entry needed for this spelling. */
-const JS_CLIENT_KEY_OVERRIDES: Readonly<Record<string, string>> = {
-  "bedrock-runtime": "bedrock",
-};
-
 /** `boto3.client('name')` or `boto3.resource("name")` -- the quote character is captured and
  * backreferenced so a stray unmatched quote elsewhere on the line can't pair a single-quote open
  * with a double-quote close. */
@@ -78,6 +70,14 @@ function isJsFile(path: string): boolean {
  * no additional accuracy this detector needs. Evidence is capped at
  * `MAX_EVIDENCE_PER_SERVICE` occurrences per service, in scan order; the service is still
  * reported once past the cap, only further evidence stops accumulating.
+ *
+ * Every raw key extracted from any of the four languages passes through
+ * `service-keys.ts`'s `normalizeServiceKey` before being recorded -- the *only* place a key's
+ * shape is decided, so all four languages' own spelling conventions for the same AWS API variant
+ * (e.g. a hyphen JS/Python can carry that Go/Java cannot) converge on one identical key, letting
+ * `profile.ts` (task 10) merge detections of the same service across languages and detectors by
+ * key alone. This matters even for a service with no catalog counterpart at all (SNS today),
+ * where there is no resolved catalog name to merge on instead.
  *
  * Ignores any file under a directory `walkRepo` itself would skip (`node_modules`, `.venv`,
  * ...) -- independent defense-in-depth against a file list `walkRepo` didn't produce, sharing
@@ -125,38 +125,37 @@ export function detectSdkUsage(files: readonly DetectableFile[]): SdkUsageDetect
           if (raw === undefined) {
             continue;
           }
-          const key = JS_CLIENT_KEY_OVERRIDES[raw] ?? raw;
-          record(key, path, lineNumber, snippet);
+          record(normalizeServiceKey(raw), path, lineNumber, snippet);
         }
       }
 
       if (isPython) {
         for (const match of lineText.matchAll(PYTHON_BOTO3_PATTERN)) {
-          const key = match.groups?.key;
-          if (key === undefined) {
+          const raw = match.groups?.key;
+          if (raw === undefined) {
             continue;
           }
-          record(key, path, lineNumber, snippet);
+          record(normalizeServiceKey(raw), path, lineNumber, snippet);
         }
       }
 
       if (isGo) {
         for (const match of lineText.matchAll(GO_SDK_PATTERN)) {
-          const key = match.groups?.key;
-          if (key === undefined) {
+          const raw = match.groups?.key;
+          if (raw === undefined) {
             continue;
           }
-          record(key, path, lineNumber, snippet);
+          record(normalizeServiceKey(raw), path, lineNumber, snippet);
         }
       }
 
       if (isJava) {
         for (const match of lineText.matchAll(JAVA_SDK_PATTERN)) {
-          const key = match.groups?.key;
-          if (key === undefined) {
+          const raw = match.groups?.key;
+          if (raw === undefined) {
             continue;
           }
-          record(key, path, lineNumber, snippet);
+          record(normalizeServiceKey(raw), path, lineNumber, snippet);
         }
       }
     }

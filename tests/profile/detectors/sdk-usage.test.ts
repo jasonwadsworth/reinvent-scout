@@ -56,17 +56,55 @@ describe("detectSdkUsage", () => {
     expect(findService(result, "bedrock-runtime")).toBeUndefined();
   });
 
-  it("does not mangle a real client package whose key legitimately ends in -runtime", () => {
+  it("maps @aws-sdk/client-sagemaker-runtime to the sagemaker key, the same product decision as bedrock-runtime", () => {
     // "@aws-sdk/client-sagemaker-runtime" is a real, distinct AWS SDK v3 package (the SageMaker
-    // Runtime API for invoking deployed endpoints, separate from "@aws-sdk/client-sagemaker").
-    // The bedrock-runtime mapping is an exact lookup for that one spelling, not a generic
-    // "strip a trailing -runtime" rule -- a generic rule would wrongly collapse this one too.
+    // Runtime API for invoking deployed endpoints). A repo calling it uses SageMaker and should
+    // surface SageMaker sessions -- normalizeServiceKey collapses this spelling the same way it
+    // collapses bedrock-runtime, via its own curated, exact-lookup table (see
+    // tests/profile/service-keys.test.ts's "does not collapse an unrelated key that merely ends
+    // in runtime" for proof this isn't a generic suffix-strip rule).
     const content = 'import { SageMakerRuntimeClient } from "@aws-sdk/client-sagemaker-runtime";';
 
     const result = detectSdkUsage([file("src/predict.ts", content)]);
 
-    expect(findService(result, "sagemaker-runtime")).toBeDefined();
-    expect(findService(result, "sagemaker")).toBeUndefined();
+    expect(findService(result, "sagemaker")).toBeDefined();
+    expect(findService(result, "sagemaker-runtime")).toBeUndefined();
+  });
+
+  it("detects the same service through all four language paths with one identical key", () => {
+    // JS and Python keep the hyphen in their own spelling; Go and Java can't carry one at all.
+    // All four must still land on exactly one merged entry keyed "bedrock", which is what lets
+    // profile.ts (task 10) raise confidence for a service two independent detectors both found,
+    // rather than listing the same service twice under two different spellings.
+    const files: DetectableFile[] = [
+      file("src/ai.ts", 'import { BedrockRuntimeClient } from "@aws-sdk/client-bedrock-runtime";'),
+      file("app.py", "client = boto3.client('bedrock-runtime')\n"),
+      file("main.go", 'import "github.com/aws/aws-sdk-go-v2/service/bedrockruntime"\n'),
+      file("Main.java", "import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient;\n"),
+    ];
+
+    const result = detectSdkUsage(files);
+
+    const bedrockEntries = result.services.filter((s) => s.key === "bedrock");
+    expect(bedrockEntries).toHaveLength(1);
+    expect(bedrockEntries[0]?.evidence).toHaveLength(3); // capped, but drawn from all four files
+    const filesWithEvidence = new Set(bedrockEntries[0]?.evidence.map((e) => e.file));
+    expect(filesWithEvidence.size).toBeGreaterThan(1);
+  });
+
+  it("merges a service with no catalog counterpart under one identical key across languages", () => {
+    // sns has no catalog entry at all (see catalog/service-aliases.test.ts), which is exactly
+    // why merging must happen on the key rather than a resolved catalog name -- there is no name
+    // to merge on for this service, in any language.
+    const files: DetectableFile[] = [
+      file("src/notify.ts", 'import { SNSClient } from "@aws-sdk/client-sns";'),
+      file("notify.py", "client = boto3.client('sns')\n"),
+    ];
+
+    const result = detectSdkUsage(files);
+
+    const snsEntries = result.services.filter((s) => s.key === "sns");
+    expect(snsEntries).toHaveLength(1);
   });
 
   it("detects boto3.client with a single-quoted service name", () => {
