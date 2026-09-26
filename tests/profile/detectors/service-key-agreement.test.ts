@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DetectableFile } from "../../../src/profile/detectable-file.js";
 import { detectCdkUsage } from "../../../src/profile/detectors/cdk.js";
+import { detectCloudFormation } from "../../../src/profile/detectors/cloudformation.js";
 import { detectSdkUsage } from "../../../src/profile/detectors/sdk-usage.js";
 
 function file(path: string, content: string): DetectableFile {
@@ -40,5 +41,31 @@ describe("service key agreement across detectors", () => {
 
     expect(cdkResult.services.map((s) => s.key)).toEqual(["sns"]);
     expect(sdkResult.services.map((s) => s.key)).toEqual(["sns"]);
+  });
+
+  it("produces the same key from the CloudFormation detector and the SDK detector for AWS::Serverless::Function", () => {
+    // AWS::Serverless::Function crosses AWS's own naming scheme entirely -- "Serverless" isn't a
+    // real service, it's SAM's macro name -- so this is a materially different case from a
+    // language spelling difference: nothing about it looks like "lambda" without the explicit
+    // SAM_RESOURCE_TYPE_OVERRIDES entry. A SAM template defining a function plus an SDK call to
+    // invoke one is an ordinary serverless repo (the shape of tests/fixtures/repos/serverless-ts).
+    const cfnResult = detectCloudFormation([
+      file(
+        "template.yaml",
+        [
+          'AWSTemplateFormatVersion: "2010-09-09"',
+          "Transform: AWS::Serverless-2016-10-31",
+          "Resources:",
+          "  MyFunction:",
+          "    Type: AWS::Serverless::Function",
+        ].join("\n"),
+      ),
+    ]);
+    const sdkResult = detectSdkUsage([
+      file("src/invoke.ts", 'import { LambdaClient } from "@aws-sdk/client-lambda";'),
+    ]);
+
+    expect(cfnResult.services.map((s) => s.key)).toEqual(["lambda"]);
+    expect(sdkResult.services.map((s) => s.key)).toEqual(["lambda"]);
   });
 });
