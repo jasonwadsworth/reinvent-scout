@@ -3,6 +3,7 @@ import type { DetectableFile } from "../../../src/profile/detectable-file.js";
 import { detectCdkUsage } from "../../../src/profile/detectors/cdk.js";
 import { detectCloudFormation } from "../../../src/profile/detectors/cloudformation.js";
 import { detectSdkUsage } from "../../../src/profile/detectors/sdk-usage.js";
+import { detectTerraform } from "../../../src/profile/detectors/terraform.js";
 
 function file(path: string, content: string): DetectableFile {
   return { path, content };
@@ -67,5 +68,23 @@ describe("service key agreement across detectors", () => {
 
     expect(cfnResult.services.map((s) => s.key)).toEqual(["lambda"]);
     expect(sdkResult.services.map((s) => s.key)).toEqual(["lambda"]);
+  });
+
+  it("produces the same key from the Terraform detector and the CDK detector for AWS Step Functions", () => {
+    // Terraform's own resource-type prefix for Step Functions is "sfn" (aws_sfn_state_machine),
+    // matching the Go SDK's package name rather than the CDK's "stepfunctions" -- a third naming
+    // convention for the same service, extending the case already fixed for CDK vs SDK.
+    const terraformResult = detectTerraform([
+      file(
+        "main.tf",
+        ['resource "aws_sfn_state_machine" "workflow" {', '  name = "workflow"', "}"].join("\n"),
+      ),
+    ]);
+    const cdkResult = detectCdkUsage([
+      file("src/stack.ts", 'import * as stepfunctions from "aws-cdk-lib/aws-stepfunctions";'),
+    ]);
+
+    expect(terraformResult.services.map((s) => s.key)).toEqual(["stepfunctions"]);
+    expect(cdkResult.services.map((s) => s.key)).toEqual(["stepfunctions"]);
   });
 });
