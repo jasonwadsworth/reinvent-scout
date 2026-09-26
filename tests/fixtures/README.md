@@ -24,16 +24,30 @@ Selection criteria, each verified against the selection before it was written to
   populated alongside `services`/`speakers` in the small sample checked, so this combination is
   worth exercising deliberately.
 - At least one session on each of the five conference dates (`2026-11-30` through `2026-12-04`).
+- At least one session with `Amazon DynamoDB` in `services`, and at least one with
+  `Elastic Load Balancing (ELB)` — the exact display names the real pull uses, confirmed against
+  the snapshot rather than assumed.
 - The remainder of the 60 are sessions with both `services` and `speakers` populated, to keep the
   fixture representative of a typical session rather than skewed toward edge cases.
 
+The fixture was re-carved on **2026-09-26** from the same 2026-09-25 snapshot to add the DynamoDB
+and ELB coverage above, by swapping in two real sessions carrying those services in place of two
+otherwise-redundant `Breakout session` / `Caesars Forum` entries (that venue and session type had
+comfortable headroom above every threshold in the list before the swap, so removing two did not
+threaten any other criterion). The re-carve was done with a throwaway script run in the scratchpad
+against the full pull (not committed, per the note above); this file is still the durable record.
+
 ### Speaker-name substitution
 
-Every `speakers[].name` in this file has been replaced with a synthetic name drawn from a small
-fixed list of first/last name combinations. Speaker names are the only person-data present in the
-catalog pull. Every other field — including `title` and `abstract`, which are the primary text
-signal for the matcher — is public catalog copy and is kept verbatim, so text scoring in the test
-suite runs against realistic input rather than lorem-ipsum placeholders.
+Every `speakers[].name` in this file has been replaced with a synthetic name drawn from 20 first
+names crossed with 20 surnames spanning a range of naming traditions (e.g. Suzuki, Kowalski,
+Okonkwo, Rahman, Silva, Larsen, Petrov, Mensah), assigned by shuffling the full 400-combination
+list with a fixed seed and taking one combination per speaker slot — 56 slots across the fixture,
+so no two speakers in the file share a name and the fixture does not skew toward any one surname
+or origin. Speaker names are the only person-data present in the catalog pull. Every other field —
+including `title` and `abstract`, which are the primary text signal for the matcher — is public
+catalog copy and is kept verbatim, so text scoring in the test suite runs against realistic input
+rather than lorem-ipsum placeholders.
 
 ### Field shape
 

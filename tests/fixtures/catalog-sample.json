@@ -1,801 +1,743 @@
 [
   {
+    "sessionId": "1780441461150001GGoc",
+    "title": "Graviton. Serverless. Apache Iceberg. Your guide to a modern data warehouse strategy",
     "abbreviation": "ANT301",
     "abstract": "You need your data warehouse to be fast, open, and accessible to everyone on your team. This session shows you how to get there with Amazon Redshift. Take advantage of Graviton-powered RG instances for faster analytics at lower cost. Eliminate the complexity of managing infrastructure with Redshift Serverless. Query open data formats directly in your data lake with native Apache Iceberg support. And put insights in the hands of every team with natural language access. You'll also learn how multi-warehouse architectures let teams scale independently without duplicating data. Leave with a clear architecture strategy you can apply to your environment.",
-    "features": [
-      "Lecture-style"
-    ],
+    "type": "Breakout session",
+    "level": "300 - Advanced",
+    "venue": "MGM Grand",
+    "room": "Level 3 | Chairman's 363 | Content Hub | White Theater",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "300 - Advanced",
-    "room": "Level 3 | Chairman's 363 | Content Hub | White Theater",
-    "services": [
-      "Amazon Redshift"
-    ],
-    "sessionId": "1780441461150001GGoc",
     "sessionTime": {
       "date": "2026-11-30",
       "length": "60",
       "time": "10:30"
     },
-    "title": "Graviton. Serverless. Apache Iceberg. Your guide to a modern data warehouse strategy",
+    "services": [
+      "Amazon Redshift"
+    ],
     "topics": [
       "Analytics"
     ],
-    "type": "Breakout session",
-    "venue": "MGM Grand"
+    "features": [
+      "Lecture-style"
+    ]
   },
   {
+    "sessionId": "1780441491675001GHkU",
+    "title": "Building real-time applications with event-driven architectures",
     "abbreviation": "API303-R",
     "abstract": "Build real-time features using AWS AppSync Events in this hands-on builders' session. Working in small groups with guidance from AWS experts, you'll implement in-app notifications and live updates, configure WebSocket connections, and design data persistence strategies. Using provided code samples, you'll gain practical experience creating responsive, event-driven applications that push updates to connected clients instantly. By the end of this 60-minute session, you'll have working real-time patterns you can apply directly to your own applications. Bring your laptop and come ready to code!",
-    "areasOfInterest": [
-      "Event-Driven Architecture"
-    ],
-    "features": [
-      "Hands-on"
-    ],
+    "type": "Builders' session",
+    "level": "300 - Advanced",
+    "venue": "Caesars Forum",
+    "room": "Level 1 | Forum 120 | Content Hub | Builders' Session 2",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "300 - Advanced",
-    "roles": [
-      "Developer / Engineer",
-      "IT Professional / Technical Manager",
-      "Solution / Systems Architect"
-    ],
-    "room": "Level 1 | Forum 120 | Content Hub | Builders' Session 2",
-    "services": [
-      "AWS AppSync"
-    ],
-    "sessionId": "1780441491675001GHkU",
     "sessionTime": {
       "date": "2026-11-30",
       "length": "60",
       "time": "14:30"
     },
-    "speakers": [
-      {
-        "name": "Avery Blackwood"
-      },
-      {
-        "name": "Jordan Blackwood"
-      },
-      {
-        "name": "Riley Blackwood"
-      },
-      {
-        "name": "Priya Blackwood"
-      },
-      {
-        "name": "Kenji Blackwood"
-      }
+    "services": [
+      "AWS AppSync"
     ],
-    "title": "Building real-time applications with event-driven architectures",
     "topics": [
       "Serverless"
     ],
-    "type": "Builders' session",
-    "venue": "Caesars Forum"
-  },
-  {
-    "abbreviation": "INV501",
-    "abstract": "Can an AI system move beyond answering questions to actually conducting research alongside you? We built one. AtoZ AI Co-Scientist is a multi-agent orchestration platform where specialized agents collaborate through a unified interface to discover literature, synthesize knowledge via graph-routed retrieval, generate hypotheses, implement baselines from papers, and run experiments autonomously. In this chalk talk, we dissect the compositional architecture, the graph-routed retrieval system achieving <200ms with structural signals flat search cannot capture, and Co-Scientist Bench—our agent-agnostic evaluation framework. Bring hard questions about reliability, memory, and human oversight.",
     "areasOfInterest": [
-      "Agentic AI",
-      "Generative AI",
-      "Innovation & Transformation"
+      "Event-Driven Architecture"
+    ],
+    "roles": [
+      "Developer / Engineer",
+      "IT Professional / Technical Manager",
+      "Solution / Systems Architect"
+    ],
+    "speakers": [
+      {
+        "name": "Priya Rahman"
+      },
+      {
+        "name": "Yuki Moreau"
+      },
+      {
+        "name": "Avery Larsen"
+      },
+      {
+        "name": "Avery Novak"
+      },
+      {
+        "name": "Malik Park"
+      }
     ],
     "features": [
-      "Discussion"
-    ],
+      "Hands-on"
+    ]
+  },
+  {
+    "sessionId": "1780441493349001G6lf",
+    "title": "AtoZ AI Co-Scientist: Multi-Agent Systems That Do Research With You",
+    "abbreviation": "INV501",
+    "abstract": "Can an AI system move beyond answering questions to actually conducting research alongside you? We built one. AtoZ AI Co-Scientist is a multi-agent orchestration platform where specialized agents collaborate through a unified interface to discover literature, synthesize knowledge via graph-routed retrieval, generate hypotheses, implement baselines from papers, and run experiments autonomously. In this chalk talk, we dissect the compositional architecture, the graph-routed retrieval system achieving <200ms with structural signals flat search cannot capture, and Co-Scientist Bench\u2014our agent-agnostic evaluation framework. Bring hard questions about reliability, memory, and human oversight.",
+    "type": "Chalk talk",
+    "level": "500 - Distinguished",
+    "venue": "Caesars Forum",
+    "room": "Level 1 | Forum 103",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "500 - Distinguished",
-    "roles": [
-      "Academic / Researcher",
-      "Advisor / Consultant",
-      "Data Scientist"
-    ],
-    "room": "Level 1 | Forum 103",
+    "sessionTime": {
+      "date": "2026-11-30",
+      "length": "60",
+      "time": "08:30"
+    },
     "services": [
       "Amazon API Gateway",
       "Amazon Bedrock",
       "Kiro"
     ],
-    "sessionId": "1780441493349001G6lf",
-    "sessionTime": {
-      "date": "2026-11-30",
-      "length": "60",
-      "time": "08:30"
-    },
-    "speakers": [
-      {
-        "name": "Mateo Blackwood"
-      },
-      {
-        "name": "Noor Blackwood"
-      }
-    ],
-    "title": "AtoZ AI Co-Scientist: Multi-Agent Systems That Do Research With You",
     "topics": [
       "Analytics",
       "Architecture",
       "Artificial Intelligence"
     ],
-    "type": "Chalk talk",
-    "venue": "Caesars Forum"
-  },
-  {
-    "abbreviation": "OPN406-R",
-    "abstract": "AI agents degrade as conversations exceed context windows. You need retrieval strategies, compression policies, and adaptive storage backends. This code talk covers the three-tier context cache hierarchy of AWS's open source Strands Agents SDK. We'll discuss context management as composable primitives with extension points for custom backends, compression, and retrieval. We'll explore trade-offs between framework and agent-controlled context, how plugins compose without coupling, and where abstractions break under extreme workloads. For developers building or extending agent frameworks.",
     "areasOfInterest": [
       "Agentic AI",
-      "Cost Optimization"
+      "Generative AI",
+      "Innovation & Transformation"
+    ],
+    "roles": [
+      "Academic / Researcher",
+      "Advisor / Consultant",
+      "Data Scientist"
+    ],
+    "speakers": [
+      {
+        "name": "Ingrid Novak"
+      },
+      {
+        "name": "Elena Donnelly"
+      }
     ],
     "features": [
       "Discussion"
-    ],
+    ]
+  },
+  {
+    "sessionId": "1780441501760001G4Ey",
+    "title": "Cut token costs by 50%: Building context efficient agents with Strands",
+    "abbreviation": "OPN406-R",
+    "abstract": "AI agents degrade as conversations exceed context windows. You need retrieval strategies, compression policies, and adaptive storage backends. This code talk covers the three-tier context cache hierarchy of AWS's open source Strands Agents SDK. We'll discuss context management as composable primitives with extension points for custom backends, compression, and retrieval. We'll explore trade-offs between framework and agent-controlled context, how plugins compose without coupling, and where abstractions break under extreme workloads. For developers building or extending agent frameworks.",
+    "type": "Code talk",
+    "level": "400 - Expert",
+    "venue": "Caesars Forum",
+    "room": "Level 1 | Forum 120 | Content Hub | Code Talk",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "400 - Expert",
-    "roles": [
-      "Academic / Researcher",
-      "Developer / Engineer",
-      "Solution / Systems Architect"
-    ],
-    "room": "Level 1 | Forum 120 | Content Hub | Code Talk",
-    "sessionId": "1780441501760001G4Ey",
     "sessionTime": {
       "date": "2026-11-30",
       "length": "60",
       "time": "10:30"
     },
-    "speakers": [
-      {
-        "name": "Elena Blackwood"
-      },
-      {
-        "name": "Sam Blackwood"
-      }
-    ],
-    "title": "Cut token costs by 50%: Building context efficient agents with Strands",
     "topics": [
       "Artificial Intelligence"
     ],
-    "type": "Code talk",
-    "venue": "Caesars Forum"
-  },
-  {
-    "abbreviation": "GHJ308-S",
-    "abstract": "Come with your team of four or join a team and meet new friends in the session. Are you ready to build and deploy agentic AI solutions on AWS? We provide hands-on environments where you can architect intelligent and production-ready agents. How do you orchestrate multi-step agent reasoning with tool use? How can you design agents that plan, act, and self-correct autonomously? Whether you are new to AWS or a seasoned Cloud Ninja, this Jam is your chance to demonstrate your skills and learn new ones. Structured for all experience levels, our sessions include guided exercises, helpful clues, and support from AWS experts to accelerate your agentic AI expertise. Team up, compete with others, climb the leaderboard, and win prizes based on speed and accuracy. With expert guidance every step of the way, all you need is a computer, a desire to learn, and a competitive spirit.",
     "areasOfInterest": [
-      "Agentic AI"
+      "Agentic AI",
+      "Cost Optimization"
     ],
-    "features": [
-      "AWS Partners",
-      "Hands-on"
-    ],
-    "isAllDaySession": false,
-    "isReservable": false,
-    "level": "300 - Advanced",
     "roles": [
+      "Academic / Researcher",
       "Developer / Engineer",
       "Solution / Systems Architect"
     ],
-    "room": "Caesars Palace | Emperors Level | Palace Ballroom I",
-    "services": [
-      "Amazon Bedrock",
-      "Amazon Quick",
-      "Kiro"
+    "speakers": [
+      {
+        "name": "Kenji Alvarez"
+      },
+      {
+        "name": "Ingrid Alvarez"
+      }
     ],
+    "features": [
+      "Discussion"
+    ]
+  },
+  {
     "sessionId": "1780441504229001Gmvx",
+    "title": "Agentic AI Jam - brought to you by Nvidia",
+    "abbreviation": "GHJ308-S",
+    "abstract": "Come with your team of four or join a team and meet new friends in the session. Are you ready to build and deploy agentic AI solutions on AWS? We provide hands-on environments where you can architect intelligent and production-ready agents. How do you orchestrate multi-step agent reasoning with tool use? How can you design agents that plan, act, and self-correct autonomously? Whether you are new to AWS or a seasoned Cloud Ninja, this Jam is your chance to demonstrate your skills and learn new ones. Structured for all experience levels, our sessions include guided exercises, helpful clues, and support from AWS experts to accelerate your agentic AI expertise. Team up, compete with others, climb the leaderboard, and win prizes based on speed and accuracy. With expert guidance every step of the way, all you need is a computer, a desire to learn, and a competitive spirit.",
+    "type": "Gamified learning",
+    "level": "300 - Advanced",
+    "room": "Caesars Palace | Emperors Level | Palace Ballroom I",
+    "isAllDaySession": false,
+    "isReservable": false,
     "sessionTime": {
       "date": "2026-11-30",
       "length": "180",
       "time": "14:00"
     },
-    "title": "Agentic AI Jam - brought to you by Nvidia",
+    "services": [
+      "Amazon Bedrock",
+      "Amazon Quick",
+      "Kiro"
+    ],
     "topics": [
       "Artificial Intelligence"
     ],
-    "type": "Gamified learning"
-  },
-  {
-    "abbreviation": "API318",
-    "abstract": "Both AWS Lambda durable functions and AWS Step Functions handle retries, long-running execution, and failure recovery - so how do you choose? In this session, we cut through the confusion with a clear decision framework across three scenarios: human-in-the-loop approvals, long-running AI agent workflows, and multi-service sagas. We'll also show a hybrid pattern where Durable Functions handle inner business logic while Step Functions orchestrate at the macro level - code-level flexibility inside, visual observability outside. Leave with a practical framework and a real production example to guide your next serverless workflow decision.",
     "areasOfInterest": [
-      "Event-Driven Architecture"
+      "Agentic AI"
     ],
-    "features": [
-      "Lecture-style"
-    ],
-    "isAllDaySession": false,
-    "isReservable": false,
-    "level": "300 - Advanced",
     "roles": [
       "Developer / Engineer",
       "Solution / Systems Architect"
     ],
-    "room": "Wynn/Encore | Upper Convention Promenade | Cristal 2 | Content Hub | Lightning Theater",
-    "services": [
-      "AWS Lambda",
-      "AWS Step Functions"
-    ],
+    "features": [
+      "AWS Partners",
+      "Hands-on"
+    ]
+  },
+  {
     "sessionId": "1780442259407001cLXB",
+    "title": "Composing the right orchestration for serverless workflows",
+    "abbreviation": "API318",
+    "abstract": "Both AWS Lambda durable functions and AWS Step Functions handle retries, long-running execution, and failure recovery - so how do you choose? In this session, we cut through the confusion with a clear decision framework across three scenarios: human-in-the-loop approvals, long-running AI agent workflows, and multi-service sagas. We'll also show a hybrid pattern where Durable Functions handle inner business logic while Step Functions orchestrate at the macro level - code-level flexibility inside, visual observability outside. Leave with a practical framework and a real production example to guide your next serverless workflow decision.",
+    "type": "Lightning talk",
+    "level": "300 - Advanced",
+    "room": "Wynn/Encore | Upper Convention Promenade | Cristal 2 | Content Hub | Lightning Theater",
+    "isAllDaySession": false,
+    "isReservable": false,
     "sessionTime": {
       "date": "2026-12-01",
       "length": "20",
       "time": "13:30"
     },
-    "speakers": [
-      {
-        "name": "Tobias Blackwood"
-      }
+    "services": [
+      "AWS Lambda",
+      "AWS Step Functions"
     ],
-    "title": "Composing the right orchestration for serverless workflows",
     "topics": [
       "Application Integration"
     ],
-    "type": "Lightning talk"
+    "areasOfInterest": [
+      "Event-Driven Architecture"
+    ],
+    "roles": [
+      "Developer / Engineer",
+      "Solution / Systems Architect"
+    ],
+    "speakers": [
+      {
+        "name": "Zara Silva"
+      }
+    ],
+    "features": [
+      "Lecture-style"
+    ]
   },
   {
+    "sessionId": "1780442274284001c7uQ",
+    "title": "Data governance for trustworthy AI: from raw data to trusted products",
     "abbreviation": "ANT401",
-    "abstract": "In this hands-on workshop, transform fictional retailer RetailMax's raw, ungoverned data into trusted, governed data products using Amazon SageMaker platform . Learn to build a business glossary and metadata forms, create an analysis-ready dataset with an ETL job, and trace end-to-end data lineage. Gain hands-on experience enforcing data quality rules, enriching and publishing a governed data product, and sharing it through a publish-and-subscribe model with approval workflows and least-privilege access. Discover how to deliver trustworthy, explainable answers with the Gen-AI data agent. Leave equipped to build the governance and metadata foundation that makes data — and the AI that runs on it — trustworthy across your organization. You must bring your laptop to participate.",
-    "features": [
-      "Hands-on"
-    ],
+    "abstract": "In this hands-on workshop, transform fictional retailer RetailMax's raw, ungoverned data into trusted, governed data products using Amazon SageMaker platform . Learn to build a business glossary and metadata forms, create an analysis-ready dataset with an ETL job, and trace end-to-end data lineage. Gain hands-on experience enforcing data quality rules, enriching and publishing a governed data product, and sharing it through a publish-and-subscribe model with approval workflows and least-privilege access. Discover how to deliver trustworthy, explainable answers with the Gen-AI data agent. Leave equipped to build the governance and metadata foundation that makes data \u2014 and the AI that runs on it \u2014 trustworthy across your organization. You must bring your laptop to participate.",
+    "type": "Workshop",
+    "level": "400 - Expert",
+    "venue": "MGM Grand",
+    "room": "Level 1 | Grand 122",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "400 - Expert",
-    "room": "Level 1 | Grand 122",
-    "services": [
-      "Amazon SageMaker"
-    ],
-    "sessionId": "1780442274284001c7uQ",
     "sessionTime": {
       "date": "2026-12-02",
       "length": "120",
       "time": "12:00"
     },
-    "title": "Data governance for trustworthy AI: from raw data to trusted products",
+    "services": [
+      "Amazon SageMaker"
+    ],
     "topics": [
       "Analytics"
     ],
-    "type": "Workshop",
-    "venue": "MGM Grand"
-  },
-  {
-    "abbreviation": "TNC324",
-    "abstract": "Customer-facing AI Agents can resolve issues end-to-end. In this bootcamp, build two complementary AI agents on Amazon Connect AI Customer. First, create an agent-assistance copilot that watches live chats and surfaces real-time knowledge base answers and customer data lookups to human agents. Then build a self-service AI agent that handles routine customer requests autonomously, using MCP tools for Cases and Customer Profiles, and structured escalation paths that preserve full conversation context when a human is needed. ",
-    "areasOfInterest": [
-      "Agentic AI",
-      "Training & Certification"
-    ],
     "features": [
       "Hands-on"
-    ],
+    ]
+  },
+  {
+    "sessionId": "1784231859855001E5oW",
+    "title": "Build AI-Powered Contact Center Agents with Amazon Connect",
+    "abbreviation": "TNC324",
+    "abstract": "Customer-facing AI Agents can resolve issues end-to-end. In this bootcamp, build two complementary AI agents on Amazon Connect AI Customer. First, create an agent-assistance copilot that watches live chats and surfaces real-time knowledge base answers and customer data lookups to human agents. Then build a self-service AI agent that handles routine customer requests autonomously, using MCP tools for Cases and Customer Profiles, and structured escalation paths that preserve full conversation context when a human is needed.\u00a0",
+    "type": "Bootcamp",
+    "level": "300 - Advanced",
+    "room": "Caesars Palace | Emperors Level | Augustus Ballroom I",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "300 - Advanced",
-    "roles": [
-      "Developer / Engineer",
-      "Solution / Systems Architect"
-    ],
-    "room": "Caesars Palace | Emperors Level | Augustus Ballroom I",
-    "services": [
-      "Amazon Connect"
-    ],
-    "sessionId": "1784231859855001E5oW",
     "sessionTime": {
       "date": "2026-11-30",
       "length": "240",
       "time": "13:00"
     },
-    "title": "Build AI-Powered Contact Center Agents with Amazon Connect",
+    "services": [
+      "Amazon Connect"
+    ],
     "topics": [
       "Artificial Intelligence",
       "Business Agents"
     ],
-    "type": "Bootcamp"
-  },
-  {
-    "abbreviation": "TNC213",
-    "abstract": "Prepare for AWS Certified AI Practitioner by playing this 3D virtual escape room game where Certification prep meets competitive gaming. Generative AI knowledge unlocks doors here. Enter a narrative-driven 3D world, choose your avatar, and tackle progressively harder puzzles tied to AWS Certified AI Practitioner exam domains. Each locked room blends exam-style questions with hands-on labs covering foundation models, responsible AI, prompt engineering, and agentic workflows. Collaborate with teammates, solve challenges under time pressure, and race to escape before your peers to top the leaderboard. ",
     "areasOfInterest": [
       "Agentic AI",
-      "Generative AI",
       "Training & Certification"
+    ],
+    "roles": [
+      "Developer / Engineer",
+      "Solution / Systems Architect"
     ],
     "features": [
       "Hands-on"
-    ],
-    "isAllDaySession": false,
-    "isReservable": false,
+    ]
+  },
+  {
+    "sessionId": "1784231861361001EGiX",
+    "title": "AWS Escape Room: Exam Prep for AWS Certified AI Practitioner",
+    "abbreviation": "TNC213",
+    "abstract": "Prepare for AWS Certified AI Practitioner by playing this 3D virtual escape room game where Certification prep meets competitive gaming. Generative AI knowledge unlocks doors here. Enter a narrative-driven 3D world, choose your avatar, and tackle progressively harder puzzles tied to AWS Certified AI Practitioner exam domains. Each locked room blends exam-style questions with hands-on labs covering foundation models, responsible AI, prompt engineering, and agentic workflows. Collaborate with teammates, solve challenges under time pressure, and race to escape before your peers to top the leaderboard.\u00a0",
+    "type": "Exam prep",
     "level": "200 - Intermediate",
     "room": "Caesars Palace | Emperors Level | Emperors Ballroom II",
-    "services": [
-      "Amazon Bedrock",
-      "Amazon Quick"
-    ],
-    "sessionId": "1784231861361001EGiX",
+    "isAllDaySession": false,
+    "isReservable": false,
     "sessionTime": {
       "date": "2026-11-30",
       "length": "120",
       "time": "08:30"
     },
-    "title": "AWS Escape Room: Exam Prep for AWS Certified AI Practitioner",
+    "services": [
+      "Amazon Bedrock",
+      "Amazon Quick"
+    ],
     "topics": [
       "Artificial Intelligence"
     ],
-    "type": "Exam prep"
-  },
-  {
-    "abbreviation": "TNC208",
-    "abstract": "Security testing shouldn't require weeks of manual effort anymore. In this hands-on lab, configure and execute automated penetration tests using AWS Security Agent. Set up an Agent Space with VPC networking, verify target domains, scope tests by risk type, and monitor execution in real time. Analyze findings with CVSS scores and reproduction steps, then generate actionable reports for your development teams.",
     "areasOfInterest": [
       "Agentic AI",
-      "Threat Intelligence",
+      "Generative AI",
       "Training & Certification"
     ],
     "features": [
       "Hands-on"
-    ],
+    ]
+  },
+  {
+    "sessionId": "1784231861853001Etg9",
+    "title": "Automate Penetration Tests with AWS Security Agent",
+    "abbreviation": "TNC208",
+    "abstract": "Security testing shouldn't require weeks of manual effort anymore. In this hands-on lab, configure and execute automated penetration tests using AWS Security Agent. Set up an Agent Space with VPC networking, verify target domains, scope tests by risk type, and monitor execution in real time. Analyze findings with CVSS scores and reproduction steps, then generate actionable reports for your development teams.",
+    "type": "Lab",
+    "level": "200 - Intermediate",
+    "room": "Caesars Palace | Emperors Level | Palace Ballroom II",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "200 - Intermediate",
-    "roles": [
-      "Cloud Security Specialist",
-      "Solution / Systems Architect"
-    ],
-    "room": "Caesars Palace | Emperors Level | Palace Ballroom II",
-    "services": [
-      "AWS Security Agent",
-      "Amazon Virtual Private Cloud (Amazon VPC)"
-    ],
-    "sessionId": "1784231861853001Etg9",
     "sessionTime": {
       "date": "2026-12-02",
       "length": "90",
       "time": "10:00"
     },
-    "title": "Automate Penetration Tests with AWS Security Agent",
+    "services": [
+      "AWS Security Agent",
+      "Amazon Virtual Private Cloud (Amazon VPC)"
+    ],
     "topics": [
       "Security & Identity"
     ],
-    "type": "Lab"
+    "areasOfInterest": [
+      "Agentic AI",
+      "Threat Intelligence",
+      "Training & Certification"
+    ],
+    "roles": [
+      "Cloud Security Specialist",
+      "Solution / Systems Architect"
+    ],
+    "features": [
+      "Hands-on"
+    ]
   },
   {
+    "sessionId": "1780441461234001G5fg",
+    "title": "What's new in Amazon SageMaker platform",
     "abbreviation": "ANT302",
     "abstract": "Amazon SageMaker platform is where data engineering, analytics, and AI  come together. In this session, see what's new across the platform including  innovations in lakehouse architecture that eliminates silos between data  teams and AI teams, catalog capabilities for data discovery and governance,  and streamlined development experiences that get you from raw data to  production models faster. Whether you are building pipelines, running SQL  analytics, or training models, learn how SageMaker platform delivers  enterprise-grade governance with the flexibility to work the way your team  needs.",
-    "features": [
-      "Lecture-style"
-    ],
+    "type": "Breakout session",
+    "level": "300 - Advanced",
+    "venue": "MGM Grand",
+    "room": "Level 3 | Chairman's 363 | Content Hub | Blue Theater",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "300 - Advanced",
-    "room": "Level 3 | Chairman's 363 | Content Hub | Blue Theater",
-    "services": [
-      "Amazon SageMaker"
-    ],
-    "sessionId": "1780441461234001G5fg",
     "sessionTime": {
       "date": "2026-12-03",
       "length": "60",
       "time": "15:00"
     },
-    "title": "What's new in Amazon SageMaker platform",
+    "services": [
+      "Amazon SageMaker"
+    ],
     "topics": [
       "Analytics"
     ],
-    "type": "Breakout session",
-    "venue": "MGM Grand"
-  },
-  {
-    "abbreviation": "ANT303",
-    "abstract": "Stop choosing between your data lake and data warehouse.  Join this session to explore how to build a  unified, open, and secure data lakehouse architecture, on Apache Iceberg. Learn how the lakehouse breaks down data  silos and opens your data estate offering flexibility to use your preferred  query engines and tools that accelerate time to insights. Learn about recent  launches that improve data interoperability and performance, and enable large  language models (LLMs) and AI agents to interact with your data. Discover  robust security features, including consistent fine-grained access controls, attribute-based access control, and tag-based access control that help  democratize data without compromises.",
     "features": [
       "Lecture-style"
-    ],
+    ]
+  },
+  {
+    "sessionId": "1780441461294001GVt3",
+    "title": "Accelerate analytics and AI with an open lakehouse architecture on Apache Iceberg",
+    "abbreviation": "ANT303",
+    "abstract": "Stop choosing between your data lake and data warehouse.  Join this session to explore how to build a  unified, open, and secure data lakehouse architecture, on Apache Iceberg. Learn how the lakehouse breaks down data  silos and opens your data estate offering flexibility to use your preferred  query engines and tools that accelerate time to insights. Learn about recent  launches that improve data interoperability and performance, and enable large  language models (LLMs) and AI agents to interact with your data. Discover  robust security features, including consistent fine-grained access controls, attribute-based access control, and tag-based access control that help  democratize data without compromises.",
+    "type": "Breakout session",
+    "level": "300 - Advanced",
+    "venue": "MGM Grand",
+    "room": "Level 3 | Chairman's 363 | Content Hub | Blue Theater",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "300 - Advanced",
-    "room": "Level 3 | Chairman's 363 | Content Hub | Blue Theater",
-    "sessionId": "1780441461294001GVt3",
     "sessionTime": {
       "date": "2026-12-03",
       "length": "60",
       "time": "13:30"
     },
-    "title": "Accelerate analytics and AI with an open lakehouse architecture on Apache Iceberg",
     "topics": [
       "Analytics"
     ],
-    "type": "Breakout session",
-    "venue": "MGM Grand"
-  },
-  {
-    "abbreviation": "ANT308",
-    "abstract": "Cut costs, query faster, and unify your warehouse and data lake without trade-offs. In this session, learn how new Graviton-powered RG instances deliver better price-performance, a built-in data lake engine lets you read and write Apache Iceberg tables in place, multi-warehouse architecture gives teams independent scale with shared data, and Redshift Serverless improvements let you get insights on your data without managing infrastructure. Whether you're consolidating on open table formats or building the analytics backbone for AI agents, walk away knowing exactly how to put these capabilities to work.",
     "features": [
       "Lecture-style"
-    ],
+    ]
+  },
+  {
+    "sessionId": "1780441461354001Gc5p",
+    "title": "What's new in Amazon Redshift",
+    "abbreviation": "ANT308",
+    "abstract": "Cut costs, query faster, and unify your warehouse and data lake without trade-offs. In this session, learn how new Graviton-powered RG instances deliver better price-performance, a built-in data lake engine lets you read and write Apache Iceberg tables in place, multi-warehouse architecture gives teams independent scale with shared data, and Redshift Serverless improvements let you get insights on your data without managing infrastructure. Whether you're consolidating on open table formats or building the analytics backbone for AI agents, walk away knowing exactly how to put these capabilities to work.",
+    "type": "Breakout session",
+    "level": "300 - Advanced",
+    "venue": "MGM Grand",
+    "room": "Level 3 | Chairman's 363 | Content Hub | Red Theater",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "300 - Advanced",
-    "room": "Level 3 | Chairman's 363 | Content Hub | Red Theater",
-    "services": [
-      "Amazon Redshift"
-    ],
-    "sessionId": "1780441461354001Gc5p",
     "sessionTime": {
       "date": "2026-12-03",
       "length": "60",
       "time": "16:00"
     },
-    "title": "What's new in Amazon Redshift",
+    "services": [
+      "Amazon Redshift"
+    ],
     "topics": [
       "Analytics"
     ],
-    "type": "Breakout session",
-    "venue": "MGM Grand"
-  },
-  {
-    "abbreviation": "ANT433",
-    "abstract": "Organizations are  accelerating innovation with generative and agentic AI—and getting there  depends on a handful of real-time data primitives: durable, high-throughput  ingestion; stream processing and enrichment; low-latency, event-driven  delivery; and a scalable place to land and serve data. In this session, learn  how these primitives come together to power the real-time patterns behind  agentic AI—and where each one fits: streaming into a real-time semantic layer  for fresh retrieval context, event-driven agent invocation so agents act the  instant something happens, and continuously sourcing agentic data stores with  live data. We'll show how to satisfy each primitive—spanning multi-Region  resilience, seamless migration off self-managed infrastructure, direct  landing into open table formats and object storage, and simplified networking",
     "features": [
       "Lecture-style"
-    ],
+    ]
+  },
+  {
+    "sessionId": "1780441461478001GhT8",
+    "title": "Powering your agentic AI experience with AWS streaming and messaging",
+    "abbreviation": "ANT433",
+    "abstract": "Organizations are  accelerating innovation with generative and agentic AI\u2014and getting there  depends on a handful of real-time data primitives: durable, high-throughput  ingestion; stream processing and enrichment; low-latency, event-driven  delivery; and a scalable place to land and serve data. In this session, learn  how these primitives come together to power the real-time patterns behind  agentic AI\u2014and where each one fits: streaming into a real-time semantic layer  for fresh retrieval context, event-driven agent invocation so agents act the  instant something happens, and continuously sourcing agentic data stores with  live data. We'll show how to satisfy each primitive\u2014spanning multi-Region  resilience, seamless migration off self-managed infrastructure, direct  landing into open table formats and object storage, and simplified networking",
+    "type": "Breakout session",
+    "level": "400 - Expert",
+    "venue": "MGM Grand",
+    "room": "Level 3 | Premier 318",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "400 - Expert",
-    "room": "Level 3 | Premier 318",
-    "services": [
-      "Amazon Kinesis Data Streams",
-      "Amazon Managed Streaming for Apache Kafka (Amazon MSK)",
-      "Amazon Simple Queue Service (Amazon SQS)"
-    ],
-    "sessionId": "1780441461478001GhT8",
     "sessionTime": {
       "date": "2026-12-03",
       "length": "60",
       "time": "14:30"
     },
-    "title": "Powering your agentic AI experience with AWS streaming and messaging",
+    "services": [
+      "Amazon Kinesis Data Streams",
+      "Amazon Managed Streaming for Apache Kafka (Amazon MSK)",
+      "Amazon Simple Queue Service (Amazon SQS)"
+    ],
     "topics": [
       "Analytics"
     ],
-    "type": "Breakout session",
-    "venue": "MGM Grand"
-  },
-  {
-    "abbreviation": "ANT337",
-    "abstract": "Agents don't search like humans. They fire hundreds of sub-queries per task, maintain stateful memory across sessions, and demand, verified answers before taking action. Traditional search architectures weren't built for this, and at agent scale, latency budgets compress, relevance requirements compound, and retrieval failures cascade into hallucinated outputs. In this session, we walk you through how the shift from human search to agent retrieval is reshaping infrastructure requirements and how the latest capabilities in Amazon OpenSearch Service help you address these unique challenges. You'll leave with a clear understanding of what's changing, why it matters, and how to get started.",
     "features": [
       "Lecture-style"
-    ],
+    ]
+  },
+  {
+    "sessionId": "1780441461538001GymR",
+    "title": "Human search to agent retrieval: Rearchitecting with OpenSearch Service",
+    "abbreviation": "ANT337",
+    "abstract": "Agents don't search like humans. They fire hundreds of sub-queries per task, maintain stateful memory across sessions, and demand, verified answers before taking action. Traditional search architectures weren't built for this, and at agent scale, latency budgets compress, relevance requirements compound, and retrieval failures cascade into hallucinated outputs. In this session, we walk you through how the shift from human search to agent retrieval is reshaping infrastructure requirements and how the latest capabilities in Amazon OpenSearch Service help you address these unique challenges. You'll leave with a clear understanding of what's changing, why it matters, and how to get started.",
+    "type": "Breakout session",
+    "level": "300 - Advanced",
+    "venue": "MGM Grand",
+    "room": "Level 3 | Chairman's 363 | Content Hub | Red Theater",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "300 - Advanced",
-    "room": "Level 3 | Chairman's 363 | Content Hub | Red Theater",
-    "services": [
-      "OpenSearch"
-    ],
-    "sessionId": "1780441461538001GymR",
     "sessionTime": {
       "date": "2026-12-03",
       "length": "60",
       "time": "13:00"
     },
-    "title": "Human search to agent retrieval: Rearchitecting with OpenSearch Service",
+    "services": [
+      "OpenSearch"
+    ],
     "topics": [
       "Analytics"
     ],
-    "type": "Breakout session",
-    "venue": "MGM Grand"
-  },
-  {
-    "abbreviation": "API319",
-    "abstract": "Production AI agents need orchestration that handles non-deterministic behavior, multi-hour workflows, human approvals, and multi-agent coordination. Learn how AWS Step Functions and AWS Lambda durable functions provide the reliability layer that agents demand. We cover patterns for durable execution, human-in-the-loop controls, event-driven agent communication, and the scale-to-zero economics that make serverless the natural home for agentic workloads.",
-    "areasOfInterest": [
-      "Agentic AI"
-    ],
     "features": [
       "Lecture-style"
-    ],
-    "isAllDaySession": false,
-    "isReservable": false,
-    "level": "300 - Advanced",
-    "roles": [
-      "Developer / Engineer",
-      "IT Professional / Technical Manager",
-      "Solution / Systems Architect"
-    ],
-    "room": "Level 1 | Forum 120 | Content Hub | Purple Theater",
-    "services": [
-      "AWS Lambda",
-      "AWS Step Functions"
-    ],
-    "sessionId": "1780441462626001G5Mi",
-    "sessionTime": {
-      "date": "2026-11-30",
-      "length": "60",
-      "time": "16:00"
-    },
-    "speakers": [
-      {
-        "name": "Yuki Blackwood"
-      },
-      {
-        "name": "Camille Blackwood"
-      }
-    ],
-    "title": "Orchestrating AI agents with AWS serverless services",
-    "topics": [
-      "Application Integration"
-    ],
-    "type": "Breakout session",
-    "venue": "Caesars Forum"
+    ]
   },
   {
+    "sessionId": "1780441464981001GXxU",
+    "title": "Open for Business: OpenAI on AWS",
     "abbreviation": "AIM371",
     "abstract": "There is more than one way to put OpenAI to work on AWS, from coding agents that ship production code to knowledge workflows and custom agents. This session tours OpenAI on AWS, starting with the latest OpenAI models on Amazon Bedrock. Put them to work through two agentic surfaces: Codex for coding and ChatGPT Work for knowledge work. Then explore Amazon Bedrock Managed Agents powered by OpenAI, for deploying OpenAI-powered agents in your AWS environment. Leave with a map of OpenAI on AWS and when to choose each path.",
-    "features": [
-      "Lecture-style"
-    ],
+    "type": "Breakout session",
+    "level": "300 - Advanced",
+    "venue": "Caesars Forum",
+    "room": "Level 1 | Forum 120 | Content Hub | Purple Theater",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "300 - Advanced",
-    "room": "Level 1 | Forum 120 | Content Hub | Purple Theater",
-    "sessionId": "1780441464981001GXxU",
     "sessionTime": {
       "date": "2026-11-30",
       "length": "60",
       "time": "10:00"
     },
-    "speakers": [
-      {
-        "name": "Devon Blackwood"
-      }
-    ],
-    "title": "Open for Business: OpenAI on AWS",
     "topics": [
       "Artificial Intelligence"
     ],
-    "type": "Breakout session",
-    "venue": "Caesars Forum"
-  },
-  {
-    "abbreviation": "AIM372",
-    "abstract": "Your teams want Claude for coding, agents, and knowledge work, and there are more ways than ever to reach it. This session maps every path to Anthropic on AWS. Start with the models, served two ways: Amazon Bedrock, with Haiku for speed, Sonnet for balance, and Opus for long-running agentic work, or Claude Platform on AWS for Anthropic's first-party API. Add the applications on top: Claude Code for agentic development, Claude Desktop for broader knowledge work. Govern both with the Claude apps gateway, one control plane across them. Leave knowing how the layers fit your teams.",
+    "speakers": [
+      {
+        "name": "Riley Alvarez"
+      }
+    ],
     "features": [
       "Lecture-style"
-    ],
-    "isAllDaySession": false,
-    "isReservable": false,
-    "level": "300 - Advanced",
-    "room": "Level 1 | Forum 120 | Content Hub | Purple Theater",
-    "services": [
-      "Amazon Bedrock"
-    ],
-    "sessionId": "1780441465033001GxrL",
-    "sessionTime": {
-      "date": "2026-12-02",
-      "length": "60",
-      "time": "08:30"
-    },
-    "speakers": [
-      {
-        "name": "Ingrid Blackwood"
-      }
-    ],
-    "title": "Claude It Your Way: Anthropic on AWS",
-    "topics": [
-      "Artificial Intelligence"
-    ],
-    "type": "Breakout session",
-    "venue": "Caesars Forum"
+    ]
   },
   {
+    "sessionId": "1780441465086001GrFf",
+    "title": "What happens in Bedrock stays in Bedrock",
     "abbreviation": "AIM373",
     "abstract": "You want to ship AI, but your compliance team won't sign off until the solution meets their regulatory requirements. This session shows how Bedrock protects data from the hardware up, with zero operator access enforced at the chip so no one, not even AWS operators, can access your prompts and completions. See how data residency controls and strict workload separation extend that protection, and how those guarantees map to the compliance frameworks your teams already use. You leave ready to have the conversation that gets your AI workload approved.",
-    "features": [
-      "Lecture-style"
-    ],
+    "type": "Breakout session",
+    "level": "300 - Advanced",
+    "venue": "Caesars Forum",
+    "room": "Level 1 | Forum 120 | Content Hub | Purple Theater",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "300 - Advanced",
-    "room": "Level 1 | Forum 120 | Content Hub | Purple Theater",
-    "sessionId": "1780441465086001GrFf",
     "sessionTime": {
       "date": "2026-12-02",
       "length": "60",
       "time": "10:00"
     },
-    "speakers": [
-      {
-        "name": "Malik Blackwood"
-      },
-      {
-        "name": "Sofia Blackwood"
-      }
-    ],
-    "title": "What happens in Bedrock stays in Bedrock",
     "topics": [
       "Artificial Intelligence"
     ],
-    "type": "Breakout session",
-    "venue": "Caesars Forum"
-  },
-  {
-    "abbreviation": "BIZ109",
-    "abstract": "Financial services customers expect fast, personalized service but compliance, security, and regulatory requirements make automation a high-stakes challenge. Discover how Amazon Connect Customer enables financial institutions to deploy agentic AI self-service that blends autonomous reasoning with deterministic guardrails for identity verification, fraud checks, and regulatory disclosures. Learn how to automate complex interactions like account servicing, disputes, and payments while maintaining full compliance and governance. See how leading institutions are going live in weeks, reducing call volumes, improving containment, and elevating CSAT without compromising trust.",
+    "speakers": [
+      {
+        "name": "Leon Mensah"
+      },
+      {
+        "name": "Tobias Nakamura"
+      }
+    ],
     "features": [
       "Lecture-style"
-    ],
+    ]
+  },
+  {
+    "sessionId": "1780441465771001GPVt",
+    "title": "How FSI brands are navigating conversational AI for customer engagement",
+    "abbreviation": "BIZ109",
+    "abstract": "Financial services customers expect fast, personalized service but compliance, security, and regulatory requirements make automation a high-stakes challenge. Discover how Amazon Connect Customer enables financial institutions to deploy agentic AI self-service that blends autonomous reasoning with deterministic guardrails for identity verification, fraud checks, and regulatory disclosures. Learn how to automate complex interactions like account servicing, disputes, and payments while maintaining full compliance and governance. See how leading institutions are going live in weeks, reducing call volumes, improving containment, and elevating CSAT without compromising trust.",
+    "type": "Breakout session",
+    "level": "100 - Foundational",
+    "venue": "Caesars Forum",
+    "room": "Level 1 | Forum 120 | Content Hub | Orange Theater",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "100 - Foundational",
-    "room": "Level 1 | Forum 120 | Content Hub | Orange Theater",
-    "sessionId": "1780441465771001GPVt",
     "sessionTime": {
       "date": "2026-11-30",
       "length": "60",
       "time": "08:30"
     },
-    "title": "How FSI brands are navigating conversational AI for customer engagement",
     "topics": [
       "Business Agents"
     ],
-    "type": "Breakout session",
-    "venue": "Caesars Forum"
-  },
-  {
-    "abbreviation": "BIZ217",
-    "abstract": "Your data lives in one platform. Your reports live in another. Your documents live somewhere else. Every time someone needs an answer, they spend time figuring out where to look before they can act. Decisions slow down. Teams duplicate work because they cannot find what already exists. New employees take months to become productive because institutional knowledge is trapped in systems they do not know how to navigate. Hear from a customer who solved this by giving their team a single AI assistant that connects across all their enterprise systems. Instead of training people on where to find information, they ask Amazon Quick and get answers grounded in their real business data, regardless of where it lives. Learn how they configured the integration, how their teams adopted it, and what changed about the speed and quality of decision-making across the organization.",
     "features": [
       "Lecture-style"
-    ],
+    ]
+  },
+  {
+    "sessionId": "1780441465825001Gj53",
+    "title": "One AI Assistant, Every Data Source: Unifying Access with Amazon Quick",
+    "abbreviation": "BIZ217",
+    "abstract": "Your data lives in one platform. Your reports live in another. Your documents live somewhere else. Every time someone needs an answer, they spend time figuring out where to look before they can act. Decisions slow down. Teams duplicate work because they cannot find what already exists. New employees take months to become productive because institutional knowledge is trapped in systems they do not know how to navigate. Hear from a customer who solved this by giving their team a single AI assistant that connects across all their enterprise systems. Instead of training people on where to find information, they ask Amazon Quick and get answers grounded in their real business data, regardless of where it lives. Learn how they configured the integration, how their teams adopted it, and what changed about the speed and quality of decision-making across the organization.",
+    "type": "Breakout session",
+    "level": "200 - Intermediate",
+    "venue": "Caesars Forum",
+    "room": "Level 1 | Forum 120 | Content Hub | Purple Theater",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "200 - Intermediate",
-    "room": "Level 1 | Forum 120 | Content Hub | Purple Theater",
-    "sessionId": "1780441465825001Gj53",
     "sessionTime": {
       "date": "2026-12-02",
       "length": "60",
       "time": "16:00"
     },
-    "title": "One AI Assistant, Every Data Source: Unifying Access with Amazon Quick",
     "topics": [
       "Business Agents"
     ],
-    "type": "Breakout session",
-    "venue": "Caesars Forum"
-  },
-  {
-    "abbreviation": "ARC332",
-    "abstract": "After years of investigating incidents - both within AWS and across customer industries - some resilience lessons stand out. Not the obvious ones, but surprises no runbook could anticipate. We share the strangest, most counterintuitive findings from years of troubleshooting under pressure: failure modes nobody planned for, fixes that made things worse, and patterns that only emerge after enough failures. This isn't a best-practices talk - it's a field guide to building resilience from the unexpected. You'll leave with a sharper eye for hidden risks in your infrastructure - and fresh leads on things you didn't know were there.",
-    "areasOfInterest": [
-      "Resilience",
-      "Well-Architected Framework"
-    ],
     "features": [
       "Lecture-style"
-    ],
+    ]
+  },
+  {
+    "sessionId": "1780441463369001GrP4",
+    "title": "Unexpected resilience: Lessons from a thousand incidents",
+    "abbreviation": "ARC332",
+    "abstract": "After years of investigating incidents - both within AWS and across customer industries - some resilience lessons stand out. Not the obvious ones, but surprises no runbook could anticipate. We share the strangest, most counterintuitive findings from years of troubleshooting under pressure: failure modes nobody planned for, fixes that made things worse, and patterns that only emerge after enough failures. This isn't a best-practices talk - it's a field guide to building resilience from the unexpected. You'll leave with a sharper eye for hidden risks in your infrastructure - and fresh leads on things you didn't know were there.",
+    "type": "Breakout session",
+    "level": "300 - Advanced",
+    "venue": "Venetian",
+    "room": "Level 2 | Ballroom F | Content Hub | Purple Theater",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "300 - Advanced",
-    "roles": [
-      "Developer / Engineer",
-      "Solution / Systems Architect"
-    ],
-    "room": "Level 2 | Ballroom F | Content Hub | Purple Theater",
-    "sessionId": "1780441463369001GrP4",
     "sessionTime": {
       "date": "2026-12-03",
       "length": "60",
       "time": "08:30"
     },
-    "speakers": [
-      {
-        "name": "Owen Blackwood"
-      }
-    ],
-    "title": "Unexpected resilience: Lessons from a thousand incidents",
     "topics": [
       "Architecture"
     ],
-    "type": "Breakout session",
-    "venue": "Venetian"
-  },
-  {
-    "abbreviation": "AIM206",
-    "abstract": "Data sovereignty, data gravity, and latency requirements prevent many organizations from running all AI workloads in the public cloud. AWS AI Factories bring AWS and NVIDIA AI infrastructure directly into your data center, fully operated, maintained, and continuously updated by AWS. Run leading foundation models on premises for training and inference without building and managing AI infrastructure yourself or negotiating separate agreements with model providers. In this session, learn how organizations are accelerating AI adoption, reducing time to value, and maintaining full control of their data while benefiting from the AWS experience in their own facilities.",
     "areasOfInterest": [
-      "Agentic AI",
-      "Digital Sovereignty",
-      "Generative AI"
+      "Resilience",
+      "Well-Architected Framework"
+    ],
+    "roles": [
+      "Developer / Engineer",
+      "Solution / Systems Architect"
+    ],
+    "speakers": [
+      {
+        "name": "Kenji Mensah"
+      }
     ],
     "features": [
       "Lecture-style"
-    ],
+    ]
+  },
+  {
+    "sessionId": "1780441463863001G5Cr",
+    "title": "AWS AI Factories: Bring production scale AI to your data center",
+    "abbreviation": "AIM206",
+    "abstract": "Data sovereignty, data gravity, and latency requirements prevent many organizations from running all AI workloads in the public cloud. AWS AI Factories bring AWS and NVIDIA AI infrastructure directly into your data center, fully operated, maintained, and continuously updated by AWS. Run leading foundation models on premises for training and inference without building and managing AI infrastructure yourself or negotiating separate agreements with model providers. In this session, learn how organizations are accelerating AI adoption, reducing time to value, and maintaining full control of their data while benefiting from the AWS experience in their own facilities.",
+    "type": "Breakout session",
+    "level": "200 - Intermediate",
+    "venue": "Venetian",
+    "room": "Level 2 | Ballroom F | Content Hub | Blue Theater",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "200 - Intermediate",
-    "roles": [
-      "Business Executive",
-      "IT Executive",
-      "IT Professional / Technical Manager"
-    ],
-    "room": "Level 2 | Ballroom F | Content Hub | Blue Theater",
-    "services": [
-      "Amazon Bedrock",
-      "Amazon SageMaker",
-      "Amazon SageMaker AI"
-    ],
-    "sessionId": "1780441463863001G5Cr",
     "sessionTime": {
       "date": "2026-12-03",
       "length": "60",
       "time": "10:30"
     },
-    "speakers": [
-      {
-        "name": "Zara Blackwood"
-      }
+    "services": [
+      "Amazon Bedrock",
+      "Amazon SageMaker",
+      "Amazon SageMaker AI"
     ],
-    "title": "AWS AI Factories: Bring production scale AI to your data center",
     "topics": [
       "Artificial Intelligence"
     ],
-    "type": "Breakout session",
-    "venue": "Venetian"
-  },
-  {
-    "abbreviation": "AIM310",
-    "abstract": "What does it take to build a chip purpose-made for AI? In this deep dive, we explore Trainium3 architecture innovations: NeuronCore innovations that delivers higher TFLOPs, hardware-accelerated quantization, softmax acceleration, near-memory compute and Mixture-of-Experts optimizations. We'll share micro-benchmark data showing how these choices translate to real performance for Mixture-of-Experts and other demanding workloads. At the system level, we examine the Trn3 UltraServer family, scaling from 32 to 144 chips via NeuronLink fabric to enables up to 4.4x more performance. Leave with a deep understanding of how to evaluate and leverage purpose-built AI Chips for your AI workloads.",
     "areasOfInterest": [
-      "Cost Optimization",
-      "Generative AI",
-      "Machine Learning"
+      "Agentic AI",
+      "Digital Sovereignty",
+      "Generative AI"
+    ],
+    "roles": [
+      "Business Executive",
+      "IT Executive",
+      "IT Professional / Technical Manager"
+    ],
+    "speakers": [
+      {
+        "name": "Sam Suzuki"
+      }
     ],
     "features": [
       "Lecture-style"
-    ],
+    ]
+  },
+  {
+    "sessionId": "1780441463929001GEFj",
+    "title": "Inside AWS Trainium3: Hardware innovations for better AI economics",
+    "abbreviation": "AIM310",
+    "abstract": "What does it take to build a chip purpose-made for AI? In this deep dive, we explore Trainium3 architecture innovations: NeuronCore innovations that delivers higher TFLOPs, hardware-accelerated quantization, softmax acceleration, near-memory compute and Mixture-of-Experts optimizations. We'll share micro-benchmark data showing how these choices translate to real performance for Mixture-of-Experts and other demanding workloads. At the system level, we examine the Trn3 UltraServer family, scaling from 32 to 144 chips via NeuronLink fabric to enables up to 4.4x more performance. Leave with a deep understanding of how to evaluate and leverage purpose-built AI Chips for your AI workloads.",
+    "type": "Breakout session",
+    "level": "300 - Advanced",
+    "venue": "Venetian",
+    "room": "Level 2 | Ballroom F | Content Hub | Purple Theater",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "300 - Advanced",
-    "roles": [
-      "Academic / Researcher",
-      "Developer / Engineer",
-      "Solution / Systems Architect"
-    ],
-    "room": "Level 2 | Ballroom F | Content Hub | Purple Theater",
-    "services": [
-      "AWS Trainium",
-      "Amazon Elastic Compute Cloud (Amazon EC2)"
-    ],
-    "sessionId": "1780441463929001GEFj",
     "sessionTime": {
       "date": "2026-12-04",
       "length": "60",
       "time": "10:00"
     },
-    "speakers": [
-      {
-        "name": "Leon Blackwood"
-      }
+    "services": [
+      "AWS Trainium",
+      "Amazon Elastic Compute Cloud (Amazon EC2)"
     ],
-    "title": "Inside AWS Trainium3: Hardware innovations for better AI economics",
     "topics": [
       "Artificial Intelligence",
       "Compute"
     ],
-    "type": "Breakout session",
-    "venue": "Venetian"
+    "areasOfInterest": [
+      "Cost Optimization",
+      "Generative AI",
+      "Machine Learning"
+    ],
+    "roles": [
+      "Academic / Researcher",
+      "Developer / Engineer",
+      "Solution / Systems Architect"
+    ],
+    "speakers": [
+      {
+        "name": "Malik Rahman"
+      }
+    ],
+    "features": [
+      "Lecture-style"
+    ]
   },
   {
+    "sessionId": "1780441465264001Gz2N",
+    "title": "Automate AI governance and risk management",
     "abbreviation": "AIM391",
     "abstract": "Governance frameworks designed for static deployments struggle to keep pace with AI systems that learn, adapt, and act autonomously. In this session, walk through AWS Responsible AI best practices for governing AI across the full development lifecycle. Then see how AI Risk Intelligence (AIRI) puts these principles into practice, automating risk management with static checks that verify controls at the code and documentation level and dynamic checks that analyze APIs and traces in real time, giving you continuous visibility into AI risk posture as systems evolve. Learn what it takes to move from periodic manual assessments to continuous, automated governance.",
+    "type": "Breakout session",
+    "level": "300 - Advanced",
+    "venue": "Venetian",
+    "room": "Level 2 | Ballroom F | Content Hub | Red Theater",
+    "isAllDaySession": false,
+    "isReservable": false,
+    "sessionTime": {
+      "date": "2026-12-03",
+      "length": "60",
+      "time": "13:00"
+    },
+    "topics": [
+      "Artificial Intelligence"
+    ],
     "areasOfInterest": [
       "Agentic AI",
       "Generative AI",
@@ -803,1162 +745,1232 @@
     ],
     "features": [
       "Lecture-style"
-    ],
-    "isAllDaySession": false,
-    "isReservable": false,
-    "level": "300 - Advanced",
-    "room": "Level 2 | Ballroom F | Content Hub | Red Theater",
-    "sessionId": "1780441465264001Gz2N",
-    "sessionTime": {
-      "date": "2026-12-03",
-      "length": "60",
-      "time": "13:00"
-    },
-    "title": "Automate AI governance and risk management",
-    "topics": [
-      "Artificial Intelligence"
-    ],
-    "type": "Breakout session",
-    "venue": "Venetian"
+    ]
   },
   {
+    "sessionId": "1780441465993001GIUO",
+    "title": "From AI Skeptic to Enterprise AI Champion with Amazon Quick",
     "abbreviation": "BIZ213",
     "abstract": "You deployed an AI assistant. Your team tried it for a week and stopped. The tool could not access the systems where real work happens, gave generic answers because it was disconnected from your enterprise context, and security would not approve broader rollout because the governance story was unclear. That is where most AI deployments stall. Hear from a customer who lived that exact cycle: low adoption, frustrated leadership, and a growing sense that the investment was wasted. They evaluated multiple alternatives and made the switch to Amazon Quick, an AI assistant with governed access to enterprise data, native connectors to the systems their teams already use, and agentic workflows that span business units. Learn what broke in their first deployment, what they looked for in a replacement, and how governed data access turned single-digit adoption into organization-wide usage.",
-    "features": [
-      "Lecture-style"
-    ],
+    "type": "Breakout session",
+    "level": "200 - Intermediate",
+    "venue": "Venetian",
+    "room": "Level 2 | Ballroom F | Content Hub | Blue Theater",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "200 - Intermediate",
-    "room": "Level 2 | Ballroom F | Content Hub | Blue Theater",
-    "sessionId": "1780441465993001GIUO",
     "sessionTime": {
       "date": "2026-12-03",
       "length": "60",
       "time": "13:30"
     },
-    "title": "From AI Skeptic to Enterprise AI Champion with Amazon Quick",
     "topics": [
       "Business Agents"
     ],
-    "type": "Breakout session",
-    "venue": "Venetian"
-  },
-  {
-    "abbreviation": "BIZ218",
-    "abstract": "The workflows that matter most in financial services span multiple systems, require multiple types of expertise, and today rely on people as the coordination layer. One person pulls data, another reviews it for compliance, a third routes it for approval. That coordination tax is where your team's time disappears. Amazon Quick changes that equation. Instead of one AI assistant doing one task, specialized agents each handle their piece and hand off to the next automatically. The human stays in the loop for judgment calls, not for data gathering and routing. Hear from a customer who moved from standalone AI use cases to compound, multi-agent workflows with Amazon Quick. Learn how they identified which workflows to orchestrate first, how they designed agent handoffs that satisfy compliance, and what it means now that the coordination layer runs autonomously.",
     "features": [
       "Lecture-style"
-    ],
+    ]
+  },
+  {
+    "sessionId": "1780441466101001GT93",
+    "title": "From AI Tasks to Autonomous Multi-Agent Workflows with Amazon Quick",
+    "abbreviation": "BIZ218",
+    "abstract": "The workflows that matter most in financial services span multiple systems, require multiple types of expertise, and today rely on people as the coordination layer. One person pulls data, another reviews it for compliance, a third routes it for approval. That coordination tax is where your team's time disappears. Amazon Quick changes that equation. Instead of one AI assistant doing one task, specialized agents each handle their piece and hand off to the next automatically. The human stays in the loop for judgment calls, not for data gathering and routing. Hear from a customer who moved from standalone AI use cases to compound, multi-agent workflows with Amazon Quick. Learn how they identified which workflows to orchestrate first, how they designed agent handoffs that satisfy compliance, and what it means now that the coordination layer runs autonomously.",
+    "type": "Breakout session",
+    "level": "200 - Intermediate",
+    "venue": "Venetian",
+    "room": "Level 2 | Ballroom F | Content Hub | Purple Theater",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "200 - Intermediate",
-    "room": "Level 2 | Ballroom F | Content Hub | Purple Theater",
-    "sessionId": "1780441466101001GT93",
     "sessionTime": {
       "date": "2026-12-03",
       "length": "60",
       "time": "16:00"
     },
-    "title": "From AI Tasks to Autonomous Multi-Agent Workflows with Amazon Quick",
     "topics": [
       "Business Agents"
     ],
-    "type": "Breakout session",
-    "venue": "Venetian"
-  },
-  {
-    "abbreviation": "ARC301",
-    "abstract": "Modern event-driven architectures still separate cleanly into \"queues\" and \"streams,\" but real workloads no longer do. Replay, request-response, ordering, and high throughput increasingly appear across both patterns, making the wrong service choice costly to unwind. This session explores the architectural spectrum across messaging and streaming systems, drawing on services such as Amazon SQS, Amazon EventBridge, and Amazon MSK. Through a real CQRS architecture, we build a practical decision framework for when to choose messaging, streaming, or a hybrid approach, and which trade-offs matter most.",
-    "areasOfInterest": [
-      "Event-Driven Architecture"
-    ],
     "features": [
       "Lecture-style"
-    ],
+    ]
+  },
+  {
+    "sessionId": "1780441462745001GzMc",
+    "title": "Rethinking the boundary between messaging and streaming",
+    "abbreviation": "ARC301",
+    "abstract": "Modern event-driven architectures still separate cleanly into \"queues\" and \"streams,\" but real workloads no longer do. Replay, request-response, ordering, and high throughput increasingly appear across both patterns, making the wrong service choice costly to unwind. This session explores the architectural spectrum across messaging and streaming systems, drawing on services such as Amazon SQS, Amazon EventBridge, and Amazon MSK. Through a real CQRS architecture, we build a practical decision framework for when to choose messaging, streaming, or a hybrid approach, and which trade-offs matter most.",
+    "type": "Breakout session",
+    "level": "300 - Advanced",
+    "room": "Wynn/Encore | Upper Convention Promenade | Cristal 2 | Content Hub | Red Theater",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "300 - Advanced",
-    "roles": [
-      "Advisor / Consultant",
-      "Developer / Engineer",
-      "Solution / Systems Architect"
-    ],
-    "room": "Wynn/Encore | Upper Convention Promenade | Cristal 2 | Content Hub | Red Theater",
-    "sessionId": "1780441462745001GzMc",
     "sessionTime": {
       "date": "2026-12-02",
       "length": "60",
       "time": "16:30"
     },
-    "speakers": [
-      {
-        "name": "Amara Blackwood"
-      },
-      {
-        "name": "Avery Fenwick"
-      }
-    ],
-    "title": "Rethinking the boundary between messaging and streaming",
     "topics": [
       "Analytics",
       "Containers",
       "Serverless"
     ],
-    "type": "Breakout session"
+    "areasOfInterest": [
+      "Event-Driven Architecture"
+    ],
+    "roles": [
+      "Advisor / Consultant",
+      "Developer / Engineer",
+      "Solution / Systems Architect"
+    ],
+    "speakers": [
+      {
+        "name": "Priya Moreau"
+      },
+      {
+        "name": "Avery Park"
+      }
+    ],
+    "features": [
+      "Lecture-style"
+    ]
   },
   {
+    "sessionId": "1780441462975001Gavy",
+    "title": "Your regulator set your RTO. Not your architecture.",
     "abbreviation": "ARC405",
-    "abstract": "Organizations with pre-approved failover regions recover in hours. Those without recover in weeks. Same impairment. Same services. One governance decision separates them, and it’s made years before the event. This session presents architectural patterns for multi-Region recovery under sovereignty constraints, drawn from real operational experience with regulated workloads under regional pressure. Three categories: decisions that set your resilience ceiling before any event, dependencies that create circular failure during recovery, and assets nobody backs up until they become the critical path. You leave with the decisions to evaluate before your next DR test.",
+    "abstract": "Organizations with pre-approved failover regions recover in hours. Those without recover in weeks. Same impairment. Same services. One governance decision separates them, and it\u2019s made years before the event. This session presents architectural patterns for multi-Region recovery under sovereignty constraints, drawn from real operational experience with regulated workloads under regional pressure. Three categories: decisions that set your resilience ceiling before any event, dependencies that create circular failure during recovery, and assets nobody backs up until they become the critical path. You leave with the decisions to evaluate before your next DR test.",
+    "type": "Breakout session",
+    "level": "400 - Expert",
+    "room": "Wynn/Encore | Upper Convention Promenade | Cristal 2 | Content Hub | White Theater",
+    "isAllDaySession": false,
+    "isReservable": false,
+    "sessionTime": {
+      "date": "2026-12-01",
+      "length": "60",
+      "time": "16:00"
+    },
+    "topics": [
+      "Architecture"
+    ],
     "areasOfInterest": [
       "Digital Sovereignty",
       "Disaster Response & Recovery",
       "Governance, Risk & Compliance"
     ],
-    "features": [
-      "Lecture-style"
-    ],
-    "isAllDaySession": false,
-    "isReservable": false,
-    "level": "400 - Expert",
     "roles": [
       "IT Executive",
       "IT Professional / Technical Manager",
       "Solution / Systems Architect"
     ],
-    "room": "Wynn/Encore | Upper Convention Promenade | Cristal 2 | Content Hub | White Theater",
-    "sessionId": "1780441462975001Gavy",
-    "sessionTime": {
-      "date": "2026-12-01",
-      "length": "60",
-      "time": "16:00"
-    },
     "speakers": [
       {
-        "name": "Jordan Fenwick"
+        "name": "Avery Haddad"
       },
       {
-        "name": "Riley Fenwick"
+        "name": "Sam Park"
       }
     ],
-    "title": "Your regulator set your RTO. Not your architecture.",
-    "topics": [
-      "Architecture"
-    ],
-    "type": "Breakout session"
+    "features": [
+      "Lecture-style"
+    ]
   },
   {
+    "sessionId": "1780441463028001GEdS",
+    "title": "Architecting for non-deterministic components",
     "abbreviation": "ARC306",
-    "abstract": "Our systems used to behave the same way every time. Now we give them judgment and agency, so they decide and act on their own, and the same inputs can produce different outcomes. Designing reliable architectures around that non-determinism comes down to three questions: where to enforce determinism around the model, when to verify behavior through automated evaluation and reasoning versus human judgment, and how to adapt the patterns (event flows, orchestration, automation) for components that don’t behave predictably. This session presents the design patterns for building systems that decide and act, while preserving the reliability your architecture depends on.",
+    "abstract": "Our systems used to behave the same way every time. Now we give them judgment and agency, so they decide and act on their own, and the same inputs can produce different outcomes. Designing reliable architectures around that non-determinism comes down to three questions: where to enforce determinism around the model, when to verify behavior through automated evaluation and reasoning versus human judgment, and how to adapt the patterns (event flows, orchestration, automation) for components that don\u2019t behave predictably. This session presents the design patterns for building systems that decide and act, while preserving the reliability your architecture depends on.",
+    "type": "Breakout session",
+    "level": "300 - Advanced",
+    "room": "Wynn/Encore | Level 1 | Encore Ballroom 5",
+    "isAllDaySession": false,
+    "isReservable": false,
+    "sessionTime": {
+      "date": "2026-12-02",
+      "length": "60",
+      "time": "08:30"
+    },
+    "topics": [
+      "Architecture",
+      "Artificial Intelligence"
+    ],
     "areasOfInterest": [
       "Agentic AI",
       "Automation",
       "Innovation & Transformation"
     ],
-    "features": [
-      "Lecture-style"
-    ],
-    "isAllDaySession": false,
-    "isReservable": false,
-    "level": "300 - Advanced",
     "roles": [
       "IT Executive",
       "IT Professional / Technical Manager",
       "Solution / Systems Architect"
     ],
-    "room": "Wynn/Encore | Level 1 | Encore Ballroom 5",
-    "sessionId": "1780441463028001GEdS",
-    "sessionTime": {
-      "date": "2026-12-02",
-      "length": "60",
-      "time": "08:30"
-    },
     "speakers": [
       {
-        "name": "Priya Fenwick"
+        "name": "Leon Larsen"
       },
       {
-        "name": "Kenji Fenwick"
+        "name": "Sofia Nakamura"
       }
-    ],
-    "title": "Architecting for non-deterministic components",
-    "topics": [
-      "Architecture",
-      "Artificial Intelligence"
-    ],
-    "type": "Breakout session"
-  },
-  {
-    "abbreviation": "ARC203",
-    "abstract": "You’ve taken AI agents from prototype to production, and now you own the hard parts: orchestration sprawl, brittle integrations, and behavior hard to test or observe. The patterns that hold up in production look a lot like ones SOA builders already know. This session explores what emerged: multi-agent orchestration mirroring service meshes, tool-use protocols (MCP) formalizing what APIs did for services, evaluation frameworks echoing contract testing, and hard-won lessons about agent observability and trust boundaries. You leave with concrete patterns from the SOA playbook, updated for the agentic era.",
-    "areasOfInterest": [
-      "Agentic AI",
-      "Innovation & Transformation"
     ],
     "features": [
       "Lecture-style"
-    ],
+    ]
+  },
+  {
+    "sessionId": "1780441463206001GAb0",
+    "title": "What SOA taught us about building agents in production",
+    "abbreviation": "ARC203",
+    "abstract": "You\u2019ve taken AI agents from prototype to production, and now you own the hard parts: orchestration sprawl, brittle integrations, and behavior hard to test or observe. The patterns that hold up in production look a lot like ones SOA builders already know. This session explores what emerged: multi-agent orchestration mirroring service meshes, tool-use protocols (MCP) formalizing what APIs did for services, evaluation frameworks echoing contract testing, and hard-won lessons about agent observability and trust boundaries. You leave with concrete patterns from the SOA playbook, updated for the agentic era.",
+    "type": "Breakout session",
+    "level": "200 - Intermediate",
+    "room": "Wynn/Encore | Upper Convention Promenade | Cristal 2 | Content Hub | Red Theater",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "200 - Intermediate",
-    "roles": [
-      "Developer / Engineer",
-      "Solution / Systems Architect"
-    ],
-    "room": "Wynn/Encore | Upper Convention Promenade | Cristal 2 | Content Hub | Red Theater",
-    "sessionId": "1780441463206001GAb0",
     "sessionTime": {
       "date": "2026-11-30",
       "length": "60",
       "time": "15:00"
     },
-    "speakers": [
-      {
-        "name": "Mateo Fenwick"
-      }
-    ],
-    "title": "What SOA taught us about building agents in production",
     "topics": [
       "Artificial Intelligence"
     ],
-    "type": "Breakout session"
-  },
-  {
-    "abbreviation": "BIZ215",
-    "abstract": "Your AI pilot proved value with a small team. Now you need to deploy across the organization without a dedicated rollout team and without losing what made it work. Hear from a customer who scaled Amazon Quick from an initial deployment to thousands of users across their enterprise. Learn the phased strategy they used to expand Quick's capabilities: connecting teams to enterprise data, automating repetitive workflows, and rolling out agentic features that kept usage growing after the initial adoption wave. Discover what metrics justified continued investment and the operational model they built so scaling Quick did not create a support burden for IT. Walk away with a repeatable framework for taking Amazon Quick from proof-of-concept to production deployment across your organization.",
+    "areasOfInterest": [
+      "Agentic AI",
+      "Innovation & Transformation"
+    ],
+    "roles": [
+      "Developer / Engineer",
+      "Solution / Systems Architect"
+    ],
+    "speakers": [
+      {
+        "name": "Mateo Blackwood"
+      }
+    ],
     "features": [
       "Lecture-style"
-    ],
-    "isAllDaySession": false,
-    "isReservable": false,
+    ]
+  },
+  {
+    "sessionId": "1780441466368001Gh3y",
+    "title": "From Pilot to Enterprise Scale with Amazon Quick",
+    "abbreviation": "BIZ215",
+    "abstract": "Your AI pilot proved value with a small team. Now you need to deploy across the organization without a dedicated rollout team and without losing what made it work. Hear from a customer who scaled Amazon Quick from an initial deployment to thousands of users across their enterprise. Learn the phased strategy they used to expand Quick's capabilities: connecting teams to enterprise data, automating repetitive workflows, and rolling out agentic features that kept usage growing after the initial adoption wave. Discover what metrics justified continued investment and the operational model they built so scaling Quick did not create a support burden for IT. Walk away with a repeatable framework for taking Amazon Quick from proof-of-concept to production deployment across your organization.",
+    "type": "Breakout session",
     "level": "200 - Intermediate",
     "room": "Wynn/Encore | Level 1 | Encore Ballroom 5",
-    "sessionId": "1780441466368001Gh3y",
+    "isAllDaySession": false,
+    "isReservable": false,
     "sessionTime": {
       "date": "2026-12-03",
       "length": "60",
       "time": "16:00"
     },
-    "speakers": [
-      {
-        "name": "Noor Fenwick"
-      }
-    ],
-    "title": "From Pilot to Enterprise Scale with Amazon Quick",
     "topics": [
       "Business Agents"
     ],
-    "type": "Breakout session"
+    "speakers": [
+      {
+        "name": "Camille Moreau"
+      }
+    ],
+    "features": [
+      "Lecture-style"
+    ]
   },
   {
+    "sessionId": "1780441466533001G6Ew",
+    "title": "Improving operations with agentic AI",
     "abbreviation": "COP303",
     "abstract": "Your operational telemetry is growing faster than your team. Learn how agentic AI can work across your observability stack, correlating metrics, logs, and traces to detect issues, identify root cause, and initiate remediation without waiting for a human to connect the dots. Explore patterns for agents that triage alerts, reduce noise, surface actionable insights, and execute operational runbooks. See how to integrate agents into your monitoring and incident response workflows, from signal detection through resolution. Leave with practical approaches to reduce mean time to recovery, eliminate repetitive toil, and give your team time to focus on reliability improvements that matter.",
+    "type": "Breakout session",
+    "level": "300 - Advanced",
+    "room": "Wynn/Encore | Upper Convention Promenade | Cristal 2 | Content Hub | Purple Theater",
+    "isAllDaySession": false,
+    "isReservable": false,
+    "sessionTime": {
+      "date": "2026-12-01",
+      "length": "60",
+      "time": "13:30"
+    },
+    "services": [
+      "AWS DevOps Agent",
+      "Amazon CloudWatch"
+    ],
+    "topics": [
+      "Artificial Intelligence",
+      "Cloud Operations"
+    ],
     "areasOfInterest": [
       "DevOps",
       "Management & Governance",
       "Monitoring & Observability"
     ],
-    "features": [
-      "Lecture-style"
-    ],
-    "isAllDaySession": false,
-    "isReservable": false,
-    "level": "300 - Advanced",
     "roles": [
       "DevOps Engineer",
       "Developer / Engineer"
     ],
-    "room": "Wynn/Encore | Upper Convention Promenade | Cristal 2 | Content Hub | Purple Theater",
-    "services": [
-      "AWS DevOps Agent",
-      "Amazon CloudWatch"
-    ],
-    "sessionId": "1780441466533001G6Ew",
-    "sessionTime": {
-      "date": "2026-12-01",
-      "length": "60",
-      "time": "13:30"
-    },
     "speakers": [
       {
-        "name": "Elena Fenwick"
+        "name": "Zara Ibrahim"
       },
       {
-        "name": "Sam Fenwick"
+        "name": "Amara Fenwick"
       }
     ],
-    "title": "Improving operations with agentic AI",
-    "topics": [
-      "Artificial Intelligence",
-      "Cloud Operations"
-    ],
-    "type": "Breakout session"
-  },
-  {
-    "abbreviation": "ANT339",
-    "abstract": "Messaging  and streaming should be simple, elastic, and cost-efficient, no matter how  your workloads change. In this session, discover how Amazon MSK and Amazon  Kinesis Data Streams is making it easier and more affordable to build messaging  and streaming applications at any scale. Learn how you can stop worrying  about capacity planning and reduce costs automatically as your traffic scales  up and down. See how you can land your streaming data directly into Amazon S3  and S3 Tables without building or managing separate pipelines so you can  focus on deriving insights instead of maintaining infrastructure. Join us to  see how these innovations come together to help you move faster, spend less,  and eliminate operational overhead at any scale.",
     "features": [
       "Lecture-style"
-    ],
-    "isAllDaySession": false,
-    "isReservable": false,
+    ]
+  },
+  {
+    "sessionId": "1780441461419001GRxa",
+    "title": "Build scalable streaming and messaging applications with Amazon Kinesis and AmazonMSK",
+    "abbreviation": "ANT339",
+    "abstract": "Messaging  and streaming should be simple, elastic, and cost-efficient, no matter how  your workloads change. In this session, discover how Amazon MSK and Amazon  Kinesis Data Streams is making it easier and more affordable to build messaging  and streaming applications at any scale. Learn how you can stop worrying  about capacity planning and reduce costs automatically as your traffic scales  up and down. See how you can land your streaming data directly into Amazon S3  and S3 Tables without building or managing separate pipelines so you can  focus on deriving insights instead of maintaining infrastructure. Join us to  see how these innovations come together to help you move faster, spend less,  and eliminate operational overhead at any scale.",
+    "type": "Breakout session",
     "level": "300 - Advanced",
     "room": "Caesars Palace | Promenade South | Octavius 4 | Content Hub | Red Theater",
-    "services": [
-      "Amazon Kinesis Data Streams",
-      "Amazon Managed Streaming for Apache Kafka (Amazon MSK)"
-    ],
-    "sessionId": "1780441461419001GRxa",
+    "isAllDaySession": false,
+    "isReservable": false,
     "sessionTime": {
       "date": "2026-11-30",
       "length": "60",
       "time": "11:30"
     },
-    "speakers": [
-      {
-        "name": "Tobias Fenwick"
-      }
+    "services": [
+      "Amazon Kinesis Data Streams",
+      "Amazon Managed Streaming for Apache Kafka (Amazon MSK)"
     ],
-    "title": "Build scalable streaming and messaging applications with Amazon Kinesis and AmazonMSK",
     "topics": [
       "Analytics"
     ],
-    "type": "Breakout session"
-  },
-  {
-    "abbreviation": "ANT314",
-    "abstract": "Every analytics query starts with how your data is stored. In this session, learn how Amazon S3 Tables deliver purpose-built Iceberg table storage that accelerates query performance, reduces storage costs, and eliminates table maintenance overhead. See how to pair S3 Tables with Athena, Redshift, and EMR to get faster results at lower cost, automate compaction and snapshot management, and simplify your lakehouse without changing your query engine or workflow.",
+    "speakers": [
+      {
+        "name": "Owen Haddad"
+      }
+    ],
     "features": [
       "Lecture-style"
-    ],
-    "isAllDaySession": false,
-    "isReservable": false,
+    ]
+  },
+  {
+    "sessionId": "1780441461895001G679",
+    "title": "Accelerating data analytics on Apache Iceberg with Amazon S3 Tables",
+    "abbreviation": "ANT314",
+    "abstract": "Every analytics query starts with how your data is stored. In this session, learn how Amazon S3 Tables deliver purpose-built Iceberg table storage that accelerates query performance, reduces storage costs, and eliminates table maintenance overhead. See how to pair S3 Tables with Athena, Redshift, and EMR to get faster results at lower cost, automate compaction and snapshot management, and simplify your lakehouse without changing your query engine or workflow.",
+    "type": "Breakout session",
     "level": "300 - Advanced",
     "room": "Caesars Palace | Promenade South | Octavius 4 | Content Hub | Blue Theater",
-    "services": [
-      "Amazon EMR",
-      "Amazon Redshift"
-    ],
-    "sessionId": "1780441461895001G679",
+    "isAllDaySession": false,
+    "isReservable": false,
     "sessionTime": {
       "date": "2026-11-30",
       "length": "60",
       "time": "09:00"
     },
-    "speakers": [
-      {
-        "name": "Yuki Fenwick"
-      }
+    "services": [
+      "Amazon EMR",
+      "Amazon Redshift"
     ],
-    "title": "Accelerating data analytics on Apache Iceberg with Amazon S3 Tables",
     "topics": [
       "Analytics"
     ],
-    "type": "Breakout session"
-  },
-  {
-    "abbreviation": "ANT330",
-    "abstract": "Data engineering teams lose time to siloed data, manual ETL, and tribal knowledge. This session shows how agents change that in Amazon SageMaker. Use SageMaker Data Agent to trace errors, refactor code, and deploy pipelines in natural language, then bring your own agents through MCP servers to work with third-party clients and models directly on your data. See how the same agentic approach extends across SageMaker, so teams can consolidate fragmented pipelines, standardize environments, and put agents to work on more of the data engineering lifecycle.",
+    "speakers": [
+      {
+        "name": "Noor Petrov"
+      }
+    ],
     "features": [
       "Lecture-style"
-    ],
-    "isAllDaySession": false,
-    "isReservable": false,
+    ]
+  },
+  {
+    "sessionId": "1780441461960001GARZ",
+    "title": "Explore agentic data engineering in Amazon SageMaker",
+    "abbreviation": "ANT330",
+    "abstract": "Data engineering teams lose time to siloed data, manual ETL, and tribal knowledge. This session shows how agents change that in Amazon SageMaker. Use SageMaker Data Agent to trace errors, refactor code, and deploy pipelines in natural language, then bring your own agents through MCP servers to work with third-party clients and models directly on your data. See how the same agentic approach extends across SageMaker, so teams can consolidate fragmented pipelines, standardize environments, and put agents to work on more of the data engineering lifecycle.",
+    "type": "Breakout session",
     "level": "300 - Advanced",
     "room": "Caesars Palace | Promenade South | Octavius 4 | Content Hub | Purple Theater",
-    "services": [
-      "Amazon SageMaker"
-    ],
-    "sessionId": "1780441461960001GARZ",
+    "isAllDaySession": false,
+    "isReservable": false,
     "sessionTime": {
       "date": "2026-11-30",
       "length": "60",
       "time": "16:00"
     },
-    "title": "Explore agentic data engineering in Amazon SageMaker",
+    "services": [
+      "Amazon SageMaker"
+    ],
     "topics": [
       "Analytics"
     ],
-    "type": "Breakout session"
-  },
-  {
-    "abbreviation": "ANT333",
-    "abstract": "Open table formats and open-source engines like DuckDB give organizations the freedom to choose the right tool for each workload, from interactive dashboards and exploratory analytics to large-scale data processing, with no lock-in. In this session, learn how to capitalize these open tools to build on AWS and turn it into a competitive advantage for your business. We deep dive into the application of each engine, how they complement one another across the analytics lifecycle, and how data governance capabilities like catalog access, fine-grained governance, and consistent table management on AWS further simplify multi-engine architectures in production.",
     "features": [
       "Lecture-style"
-    ],
-    "isAllDaySession": false,
-    "isReservable": false,
+    ]
+  },
+  {
+    "sessionId": "1780441462237001G2A7",
+    "title": "Your data, your engine: How open source and open standards power analytics on AWS",
+    "abbreviation": "ANT333",
+    "abstract": "Open table formats and open-source engines like DuckDB give organizations the freedom to choose the right tool for each workload, from interactive dashboards and exploratory analytics to large-scale data processing, with no lock-in. In this session, learn how to capitalize these open tools to build on AWS and turn it into a competitive advantage for your business. We deep dive into the application of each engine, how they complement one another across the analytics lifecycle, and how data governance capabilities like catalog access, fine-grained governance, and consistent table management on AWS further simplify multi-engine architectures in production.",
+    "type": "Breakout session",
     "level": "300 - Advanced",
     "room": "Caesars Palace | Promenade South | Octavius 4 | Content Hub | Red Theater",
-    "services": [
-      "Amazon Athena",
-      "Amazon EMR"
-    ],
-    "sessionId": "1780441462237001G2A7",
+    "isAllDaySession": false,
+    "isReservable": false,
     "sessionTime": {
       "date": "2026-11-30",
       "length": "60",
       "time": "14:30"
     },
-    "title": "Your data, your engine: How open source and open standards power analytics on AWS",
+    "services": [
+      "Amazon Athena",
+      "Amazon EMR"
+    ],
     "topics": [
       "Analytics"
     ],
-    "type": "Breakout session"
-  },
-  {
-    "abbreviation": "ANT334",
-    "abstract": "Open data lakehouses and data lakes can quietly accumulate cost through uncompacted small files, over-partitioned tables, and inefficient scan patterns. In this session, learn advanced cost savings and tuning techniques on AWS that cut storage and compute costs while improving performance. We cover partitioning strategies, predicate pushdown optimizations, compaction tradeoffs, graviton efficiencies, intelligent-tiering storage and how to eliminate common anti-patterns that inflate your bill. Learn from practical examples of real-world workloads on Amazon S3 Tables, Amazon Athena, Amazon Redshift, Amazon S3, Amazon EMR and leave with a comprehensive playbook to lower you analytics costs.",
     "features": [
       "Lecture-style"
-    ],
-    "isAllDaySession": false,
-    "isReservable": false,
+    ]
+  },
+  {
+    "sessionId": "1780441462316001GfXD",
+    "title": "Cut your data lake and lakehouse bills: Cost and performance tuning best practices",
+    "abbreviation": "ANT334",
+    "abstract": "Open data lakehouses and data lakes can quietly accumulate cost through uncompacted small files, over-partitioned tables, and inefficient scan patterns. In this session, learn advanced cost savings and tuning techniques on AWS that cut storage and compute costs while improving performance. We cover partitioning strategies, predicate pushdown optimizations, compaction tradeoffs, graviton efficiencies, intelligent-tiering storage and how to eliminate common anti-patterns that inflate your bill. Learn from practical examples of real-world workloads on Amazon S3 Tables, Amazon Athena, Amazon Redshift, Amazon S3, Amazon EMR and leave with a comprehensive playbook to lower you analytics costs.",
+    "type": "Breakout session",
     "level": "300 - Advanced",
     "room": "Caesars Palace | Promenade South | Octavius 4 | Content Hub | Blue Theater",
-    "services": [
-      "Amazon Athena",
-      "Amazon Redshift",
-      "Amazon Simple Storage Service (Amazon S3)"
-    ],
-    "sessionId": "1780441462316001GfXD",
+    "isAllDaySession": false,
+    "isReservable": false,
     "sessionTime": {
       "date": "2026-12-02",
       "length": "60",
       "time": "13:30"
     },
-    "title": "Cut your data lake and lakehouse bills: Cost and performance tuning best practices",
+    "services": [
+      "Amazon Athena",
+      "Amazon Redshift",
+      "Amazon Simple Storage Service (Amazon S3)"
+    ],
     "topics": [
       "Analytics"
     ],
-    "type": "Breakout session"
-  },
-  {
-    "abbreviation": "ANT335",
-    "abstract": "Delivering AI at enterprise scale demands more than great models — it requires a data and analytics foundation engineered for cost efficiency from day one. This session examines proven deployment blueprints that pair AWS analytics services with AI/ML workloads to maximize price-performance. We explore patterns including right-sizing your analytics infrastructure for training data preparation, on-demand feature extraction, auto-scaling continuous ETL pipelines and selecting optimal storage formats to minimize costs. Through detailed architectural walkthroughs, you'll learn how to instrument cost observability across your analytics stack, apply tagging strategies for AI workload attribution, and implement governance guardrails that prevent runaway spend — turning your data platform into a competitive advantage for AI delivery.",
     "features": [
       "Lecture-style"
-    ],
-    "isAllDaySession": false,
-    "isReservable": false,
+    ]
+  },
+  {
+    "sessionId": "1780441462444001GDdl",
+    "title": "Optimize AI costs with practical deployment blueprints for analytics on AWS",
+    "abbreviation": "ANT335",
+    "abstract": "Delivering AI at enterprise scale demands more than great models \u2014 it requires a data and analytics foundation engineered for cost efficiency from day one. This session examines proven deployment blueprints that pair AWS analytics services with AI/ML workloads to maximize price-performance. We explore patterns including right-sizing your analytics infrastructure for training data preparation, on-demand feature extraction, auto-scaling continuous ETL pipelines and selecting optimal storage formats to minimize costs. Through detailed architectural walkthroughs, you'll learn how to instrument cost observability across your analytics stack, apply tagging strategies for AI workload attribution, and implement governance guardrails that prevent runaway spend \u2014 turning your data platform into a competitive advantage for AI delivery.",
+    "type": "Breakout session",
     "level": "300 - Advanced",
     "room": "Caesars Palace | Promenade South | Octavius 4 | Content Hub | Purple Theater",
-    "services": [
-      "Amazon EMR",
-      "Amazon Redshift"
-    ],
-    "sessionId": "1780441462444001GDdl",
+    "isAllDaySession": false,
+    "isReservable": false,
     "sessionTime": {
       "date": "2026-12-01",
       "length": "60",
       "time": "13:00"
     },
-    "title": "Optimize AI costs with practical deployment blueprints for analytics on AWS",
+    "services": [
+      "Amazon EMR",
+      "Amazon Redshift"
+    ],
     "topics": [
       "Analytics"
     ],
-    "type": "Breakout session"
-  },
-  {
-    "abbreviation": "ANT407",
-    "abstract": "AI agents generate SQL, surface insights, and take action on your data. Without governance guardrails, they hallucinate column meanings, query stale tables, and return wrong answers with high confidence. In this session, learn how to ground your AI agents in trusted metadata using AWS Glue Data Catalog. See how to flow business context like glossary terms, descriptions, and quality scores into agent workflows so they generate accurate, schema-aware queries instead of guessing. Walk away with practical patterns for governing AI-assisted analytics the same way you govern human analysts",
     "features": [
       "Lecture-style"
-    ],
+    ]
+  },
+  {
+    "sessionId": "1780441461602001Ge7H",
+    "title": "AWS Glue Data Catalog: Govern data and AI agents with lineage and business context",
+    "abbreviation": "ANT407",
+    "abstract": "AI agents generate SQL, surface insights, and take action on your data. Without governance guardrails, they hallucinate column meanings, query stale tables, and return wrong answers with high confidence. In this session, learn how to ground your AI agents in trusted metadata using AWS Glue Data Catalog. See how to flow business context like glossary terms, descriptions, and quality scores into agent workflows so they generate accurate, schema-aware queries instead of guessing. Walk away with practical patterns for governing AI-assisted analytics the same way you govern human analysts",
+    "type": "Breakout session",
+    "level": "400 - Expert",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "400 - Expert",
     "services": [
       "AWS Glue"
     ],
-    "sessionId": "1780441461602001Ge7H",
-    "speakers": [
-      {
-        "name": "Camille Fenwick"
-      }
-    ],
-    "title": "AWS Glue Data Catalog: Govern data and AI agents with lineage and business context",
     "topics": [
       "Analytics"
     ],
-    "type": "Breakout session"
-  },
-  {
-    "abbreviation": "COM319",
-    "abstract": "The demo shipped. The agent went live. Then someone pulled it back. 74% of enterprises have rolled back a deployed AI agent, and the organizations that invested in governance roll back more often, not less. 88% of pilots never reach production. The infrastructure that gets an agent from demo to production is where the gap lives. We'll walk through the failure patterns that cause rollbacks: agents that fail silently, prompts treated as safety boundaries, and monitoring blind to non-deterministic failures. You'll leave with the patterns that prevent them: infrastructure-level guardrails, blast radius containment, and observability built for probabilistic systems.",
-    "areasOfInterest": [
-      "Agentic AI",
-      "Generative AI"
+    "speakers": [
+      {
+        "name": "Tobias Kowalski"
+      }
     ],
     "features": [
-      "Community-led",
       "Lecture-style"
-    ],
+    ]
+  },
+  {
+    "sessionId": "1780441467570001GW41",
+    "title": "Stop Rolling Back AI Agents: Production Patterns That Work",
+    "abbreviation": "COM319",
+    "abstract": "The demo shipped. The agent went live. Then someone pulled it back. 74% of enterprises have rolled back a deployed AI agent, and the organizations that invested in governance roll back more often, not less. 88% of pilots never reach production. The infrastructure that gets an agent from demo to production is where the gap lives. We'll walk through the failure patterns that cause rollbacks: agents that fail silently, prompts treated as safety boundaries, and monitoring blind to non-deterministic failures. You'll leave with the patterns that prevent them: infrastructure-level guardrails, blast radius containment, and observability built for probabilistic systems.",
+    "type": "Breakout session",
+    "level": "300 - Advanced",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "300 - Advanced",
-    "roles": [
-      "Developer / Engineer",
-      "Solution / Systems Architect"
-    ],
     "services": [
       "Amazon Bedrock",
       "Amazon CloudWatch"
     ],
-    "sessionId": "1780441467570001GW41",
-    "speakers": [
-      {
-        "name": "Devon Fenwick"
-      },
-      {
-        "name": "Ingrid Fenwick"
-      }
-    ],
-    "title": "Stop Rolling Back AI Agents: Production Patterns That Work",
     "topics": [
       "Artificial Intelligence"
     ],
-    "type": "Breakout session"
-  },
-  {
-    "abbreviation": "COM320",
-    "abstract": "In six weeks on reality TV coding show The Full Stack, we built DataSwarm — a data-observability solution shipped as an open-source CLI with cloud-hosted data analysis and remediation. Great demo, wrong architecture. When real users arrived, the demo cracked. So we pivoted. Long-running agents moved off Lambda onto ephemeral ECS Fargate tasks. API keys swapped for firewalled Amazon Bedrock, feature-branched CI/CD with dev-to-prod promotion, and Next.js behind CloudFront, S3, and Lambda@Edge. We break down each tradeoff from first idea to first customer. Leave knowing how to tell demo-grade architectures from customer-grade ones — and when to make the jump.",
     "areasOfInterest": [
       "Agentic AI",
-      "Monitoring & Observability"
+      "Generative AI"
+    ],
+    "roles": [
+      "Developer / Engineer",
+      "Solution / Systems Architect"
+    ],
+    "speakers": [
+      {
+        "name": "Zara Larsen"
+      },
+      {
+        "name": "Devon Silva"
+      }
     ],
     "features": [
       "Community-led",
       "Lecture-style"
-    ],
+    ]
+  },
+  {
+    "sessionId": "1780441467622001GM4k",
+    "title": "Lights, Camera, Fargate\u2014A Reality-TV Startup Hardened for Scale on AWS",
+    "abbreviation": "COM320",
+    "abstract": "In six weeks on reality TV coding show The Full Stack, we built DataSwarm \u2014 a data-observability solution shipped as an open-source CLI with cloud-hosted data analysis and remediation. Great demo, wrong architecture. When real users arrived, the demo cracked. So we pivoted. Long-running agents moved off Lambda onto ephemeral ECS Fargate tasks. API keys swapped for firewalled Amazon Bedrock, feature-branched CI/CD with dev-to-prod promotion, and Next.js behind CloudFront, S3, and Lambda@Edge. We break down each tradeoff from first idea to first customer. Leave knowing how to tell demo-grade architectures from customer-grade ones \u2014 and when to make the jump.",
+    "type": "Breakout session",
+    "level": "300 - Advanced",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "300 - Advanced",
-    "roles": [
-      "Data Engineer",
-      "DevOps Engineer",
-      "Developer / Engineer"
-    ],
     "services": [
       "AWS Lambda",
       "Amazon Bedrock",
       "Amazon Elastic Container Service (Amazon ECS)"
     ],
-    "sessionId": "1780441467622001GM4k",
-    "title": "Lights, Camera, Fargate—A Reality-TV Startup Hardened for Scale on AWS",
     "topics": [
       "Artificial Intelligence",
       "Serverless"
     ],
-    "type": "Breakout session"
-  },
-  {
-    "abbreviation": "HMC321",
-    "abstract": "ISVs adopting multiple clouds face the same trade-offs. This breakout distills cloud-agnostic operating-model patterns from production multi-cloud estates -- workload placement, abstraction layers, resiliency, and FinOps (optimization, tokenization), and unified observability -- illustrated by SAP running at 25,000+ accounts across AWS, Azure, and GCP. SAP's team walks through what stayed cloud-specific, what they unified, and what they had to invent. Leave with operating-model patterns you can apply across clouds.",
     "areasOfInterest": [
       "Agentic AI",
-      "DevOps",
-      "Governance, Risk & Compliance"
+      "Monitoring & Observability"
+    ],
+    "roles": [
+      "Data Engineer",
+      "DevOps Engineer",
+      "Developer / Engineer"
     ],
     "features": [
+      "Community-led",
       "Lecture-style"
-    ],
-    "isAllDaySession": false,
-    "isReservable": false,
-    "level": "300 - Advanced",
-    "roles": [
-      "DevOps Engineer",
-      "IT Executive",
-      "Solution / Systems Architect"
-    ],
+    ]
+  },
+  {
     "sessionId": "1780441473347001G7EU",
     "title": "Multicloud Operating Models for ISVs",
+    "abbreviation": "HMC321",
+    "abstract": "ISVs adopting multiple clouds face the same trade-offs. This breakout distills cloud-agnostic operating-model patterns from production multi-cloud estates -- workload placement, abstraction layers, resiliency, and FinOps (optimization, tokenization), and unified observability -- illustrated by SAP running at 25,000+ accounts across AWS, Azure, and GCP. SAP's team walks through what stayed cloud-specific, what they unified, and what they had to invent. Leave with operating-model patterns you can apply across clouds.",
+    "type": "Breakout session",
+    "level": "300 - Advanced",
+    "isAllDaySession": false,
+    "isReservable": false,
     "topics": [
       "Artificial Intelligence",
       "Cloud Operations",
       "Hybrid Cloud & Multicloud"
     ],
-    "type": "Breakout session"
+    "areasOfInterest": [
+      "Agentic AI",
+      "DevOps",
+      "Governance, Risk & Compliance"
+    ],
+    "roles": [
+      "DevOps Engineer",
+      "IT Executive",
+      "Solution / Systems Architect"
+    ],
+    "features": [
+      "Lecture-style"
+    ]
   },
   {
+    "sessionId": "1790358246094001i5t9",
+    "title": "Network firewall deployment without the guesswork: codify, deploy, done",
     "abbreviation": "SEC309-R1",
     "abstract": "Level up your firewall policy operations at scale in this hands-on workshop. Learn to integrate AWS Network Firewall into an existing AWS environment using Terraform. Starting with a realistic multi-VPC setup with AWS Transit Gateway, you will deploy Network Firewall and configure routing, inspection, and logging in minutes using reusable modules. You will then implement the latest Network Firewall features such as web category filtering, JA4 fingerprinting, and EventBridge automation. By the end of this session you will have both practical experience adding Network Firewall to existing environments and reusable patterns ready for your own infrastructure.",
+    "type": "Builders' session",
+    "room": "Wynn/Encore | Upper Convention Promenade | Cristal 5",
     "isAllDaySession": false,
     "isReservable": false,
-    "room": "Wynn/Encore | Upper Convention Promenade | Cristal 5",
-    "sessionId": "1790358246094001i5t9",
     "sessionTime": {
       "date": "2026-12-02",
       "length": "120",
       "time": "12:00"
-    },
-    "title": "Network firewall deployment without the guesswork: codify, deploy, done",
-    "type": "Builders' session"
+    }
   },
   {
+    "sessionId": "1780441461828001GzX2",
+    "title": "Architect your metadata hub with AWS Glue Data Catalog",
     "abbreviation": "ANT313",
     "abstract": "Your metadata is scattered across warehouses, lakes, ML pipelines, and BI tools. In this session, learn how AWS Glue Data Catalog serves as a single metadata hub that connects all your data assets, enforces consistent governance, and makes every table, model, and feature discoverable across engines and teams. See how to register, enrich, and share metadata at scale, enable cross-account discovery, and give AI agents the context they need to query your data accurately.",
-    "features": [
-      "Lecture-style"
-    ],
+    "type": "Breakout session",
+    "level": "300 - Advanced",
+    "venue": "MGM Grand",
+    "room": "Level 3 | Chairman's 363 | Content Hub | White Theater",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "300 - Advanced",
-    "room": "Level 3 | Chairman's 363 | Content Hub | White Theater",
-    "sessionId": "1780441461828001GzX2",
     "sessionTime": {
       "date": "2026-12-02",
       "length": "60",
       "time": "15:00"
     },
-    "title": "Architect your metadata hub with AWS Glue Data Catalog",
     "topics": [
       "Analytics"
     ],
-    "type": "Breakout session",
-    "venue": "MGM Grand"
-  },
-  {
-    "abbreviation": "IND387",
-    "abstract": "Developing a new medicine takes 10–15 years and $2.6 billion — and the timeline is getting longer, not shorter. At Novartis, the Global Drug Development organization recognized that incremental optimization of siloed, sequential clinical processes wouldn't be enough. In this session, learn how Novartis is transforming clinical development with AWS by replacing fragmented legacy systems with a unified NextGen Data Platform. You'll also learn how Novartis stood up an Intelligent Decision System that simulates entire trial operations as a computational twin, and pioneering a collaborative Trial Design Studio where biostatisticians, clinical operations, regulatory, and medical teams co-create protocols in real time.",
-    "areasOfInterest": [
-      "Agentic AI"
-    ],
     "features": [
       "Lecture-style"
-    ],
-    "industries": [
-      "Healthcare & Life Sciences"
-    ],
+    ]
+  },
+  {
+    "sessionId": "1780441477261001Gaty",
+    "title": "How Novartis is Using AI to Reimagine Clinical Development on AWS",
+    "abbreviation": "IND387",
+    "abstract": "Developing a new medicine takes 10\u201315 years and $2.6 billion \u2014 and the timeline is getting longer, not shorter. At Novartis, the Global Drug Development organization recognized that incremental optimization of siloed, sequential clinical processes wouldn't be enough. In this session, learn how Novartis is transforming clinical development with AWS by replacing fragmented legacy systems with a unified NextGen Data Platform. You'll also learn how Novartis stood up an Intelligent Decision System that simulates entire trial operations as a computational twin, and pioneering a collaborative Trial Design Studio where biostatisticians, clinical operations, regulatory, and medical teams co-create protocols in real time.",
+    "type": "Breakout session",
+    "level": "300 - Advanced",
+    "room": "Wynn/Encore | Upper Convention Promenade | Cristal 2 | Content Hub | Purple Theater",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "300 - Advanced",
-    "roles": [
-      "Academic / Researcher",
-      "Solution / Systems Architect"
-    ],
-    "room": "Wynn/Encore | Upper Convention Promenade | Cristal 2 | Content Hub | Purple Theater",
-    "sessionId": "1780441477261001Gaty",
     "sessionTime": {
       "date": "2026-12-02",
       "length": "60",
       "time": "10:30"
     },
-    "title": "How Novartis is Using AI to Reimagine Clinical Development on AWS",
     "topics": [
       "Artificial Intelligence"
     ],
-    "type": "Breakout session"
-  },
-  {
-    "abbreviation": "IND391",
-    "abstract": "This chalk talk explores how to architect agentic AI workflows for generative protein design at enterprise scale. Using Bayer's oncology nanobody campaign as the reference implementation, we walk through the technical and scientific decisions behind a pipeline that generated 50,000 candidates and 3,000 prioritized candidates in weeks using Amazon Bio Discovery. Topics include: model orchestration patterns for generative and predictive models, designing scoring functions that encode biological mechanism (not just binding affinity), iterative feedback loops between computation and wet-lab validation, and scaling considerations for enterprise drug discovery programs. Attendees will leave with a reusable architectural blueprint for building agentic biomolecule design workflows on AWS.",
     "areasOfInterest": [
       "Agentic AI"
     ],
-    "features": [
-      "Discussion"
+    "roles": [
+      "Academic / Researcher",
+      "Solution / Systems Architect"
     ],
     "industries": [
       "Healthcare & Life Sciences"
     ],
+    "features": [
+      "Lecture-style"
+    ]
+  },
+  {
+    "sessionId": "1780442245909001cxe7",
+    "title": "How Bayer designed 50K proteins on Amazon Bio Discovery",
+    "abbreviation": "IND391",
+    "abstract": "This chalk talk explores how to architect agentic AI workflows for generative protein design at enterprise scale. Using Bayer's oncology nanobody campaign as the reference implementation, we walk through the technical and scientific decisions behind a pipeline that generated 50,000 candidates and 3,000 prioritized candidates in weeks using Amazon Bio Discovery. Topics include: model orchestration patterns for generative and predictive models, designing scoring functions that encode biological mechanism (not just binding affinity), iterative feedback loops between computation and wet-lab validation, and scaling considerations for enterprise drug discovery programs. Attendees will leave with a reusable architectural blueprint for building agentic biomolecule design workflows on AWS.",
+    "type": "Chalk talk",
+    "level": "300 - Advanced",
+    "room": "Wynn/Encore | Level 1 | Chopin 2",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "300 - Advanced",
-    "roles": [
-      "Developer / Engineer",
-      "Solution / Systems Architect"
-    ],
-    "room": "Wynn/Encore | Level 1 | Chopin 2",
-    "sessionId": "1780442245909001cxe7",
     "sessionTime": {
       "date": "2026-11-30",
       "length": "60",
       "time": "10:00"
     },
-    "title": "How Bayer designed 50K proteins on Amazon Bio Discovery",
     "topics": [
       "Artificial Intelligence",
       "Databases"
     ],
-    "type": "Chalk talk"
+    "areasOfInterest": [
+      "Agentic AI"
+    ],
+    "roles": [
+      "Developer / Engineer",
+      "Solution / Systems Architect"
+    ],
+    "industries": [
+      "Healthcare & Life Sciences"
+    ],
+    "features": [
+      "Discussion"
+    ]
   },
   {
+    "sessionId": "1780441462170001GiHB",
+    "title": "Accelerating Apache Spark 4.0 workloads with AWS Analytics",
     "abbreviation": "ANT422",
     "abstract": "Apache Spark 4.0 is the latest engine upgrade, and AWS is the best place to run it. Learn best practices for building high-performing Spark 4.0 applications using Amazon EMR. Explore what's new, from the ANSI-compliant type system and Variant data type to Spark Connect and Python-first APIs, and how the AWS performance-optimized runtime amplifies these improvements at scale. See how the Spark Troubleshooting and Upgrade agent accelerates migration by automatically identifying deprecated APIs and recommending code fixes, and how AWS Glue and Apache Iceberg integrations simplify pipelines with open table formats.",
-    "features": [
-      "Lecture-style"
-    ],
+    "type": "Breakout session",
+    "level": "400 - Expert",
+    "venue": "MGM Grand",
+    "room": "Level 3 | Chairman's 363 | Content Hub | Purple Theater",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "400 - Expert",
-    "room": "Level 3 | Chairman's 363 | Content Hub | Purple Theater",
-    "services": [
-      "Amazon EMR"
-    ],
-    "sessionId": "1780441462170001GiHB",
     "sessionTime": {
       "date": "2026-11-30",
       "length": "60",
       "time": "10:00"
     },
-    "speakers": [
-      {
-        "name": "Malik Fenwick"
-      }
+    "services": [
+      "Amazon EMR"
     ],
-    "title": "Accelerating Apache Spark 4.0 workloads with AWS Analytics",
     "topics": [
       "Analytics"
     ],
-    "type": "Breakout session",
-    "venue": "MGM Grand"
-  },
-  {
-    "abbreviation": "API301",
-    "abstract": "Scaling event-driven architectures across multiple AWS accounts has long meant managing fragmented buses, cross-account routing complexity, and developer friction. Explore how Amazon EventBridge delivers the scale, reliability, and developer experience that modern event-driven applications demand. It simplifies event routing across accounts and teams. Whether you're consolidating existing event infrastructure or designing a new event-driven platform, you'll leave with a clearer picture of how to reduce operational complexity and ship faster.",
-    "areasOfInterest": [
-      "Event-Driven Architecture"
+    "speakers": [
+      {
+        "name": "Jordan Suzuki"
+      }
     ],
     "features": [
       "Lecture-style"
-    ],
+    ]
+  },
+  {
+    "sessionId": "1780441462506001Gczr",
+    "title": "Operationalize enterprise event routing with Amazon EventBridge",
+    "abbreviation": "API301",
+    "abstract": "Scaling event-driven architectures across multiple AWS accounts has long meant managing fragmented buses, cross-account routing complexity, and developer friction. Explore how Amazon EventBridge delivers the scale, reliability, and developer experience that modern event-driven applications demand. It simplifies event routing across accounts and teams. Whether you're consolidating existing event infrastructure or designing a new event-driven platform, you'll leave with a clearer picture of how to reduce operational complexity and ship faster.",
+    "type": "Breakout session",
+    "level": "300 - Advanced",
+    "room": "Caesars Palace | Promenade South | Octavius 4 | Content Hub | Red Theater",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "300 - Advanced",
-    "roles": [
-      "Developer / Engineer",
-      "IT Professional / Technical Manager",
-      "Solution / Systems Architect"
-    ],
-    "room": "Caesars Palace | Promenade South | Octavius 4 | Content Hub | Red Theater",
-    "services": [
-      "Amazon EventBridge"
-    ],
-    "sessionId": "1780441462506001Gczr",
     "sessionTime": {
       "date": "2026-11-30",
       "length": "60",
       "time": "16:00"
     },
-    "speakers": [
-      {
-        "name": "Sofia Fenwick"
-      },
-      {
-        "name": "Owen Fenwick"
-      }
+    "services": [
+      "Amazon EventBridge"
     ],
-    "title": "Operationalize enterprise event routing with Amazon EventBridge",
     "topics": [
       "Application Integration"
     ],
-    "type": "Breakout session"
-  },
-  {
-    "abbreviation": "API402",
-    "abstract": "Event-driven architectures have powered serverless applications for a decade. Now AI agents bring non-deterministic producers, multi-step reasoning chains, and agent-to-agent coordination via events. Learn how the patterns you already know, such as queues, events, and retries, evolve when your consumers are autonomous agents rather than just microservices.",
     "areasOfInterest": [
       "Event-Driven Architecture"
     ],
-    "features": [
-      "Lecture-style"
-    ],
-    "isAllDaySession": false,
-    "isReservable": false,
-    "level": "400 - Expert",
     "roles": [
       "Developer / Engineer",
       "IT Professional / Technical Manager",
       "Solution / Systems Architect"
     ],
-    "room": "Caesars Palace | Promenade South | Octavius 4 | Content Hub | Purple Theater",
-    "services": [
-      "AWS Lambda",
-      "Amazon EventBridge"
+    "speakers": [
+      {
+        "name": "Owen Ibrahim"
+      },
+      {
+        "name": "Zara Suzuki"
+      }
     ],
+    "features": [
+      "Lecture-style"
+    ]
+  },
+  {
     "sessionId": "1780441462569001G7iM",
+    "title": "Building event-driven architectures in the age of AI agents",
+    "abbreviation": "API402",
+    "abstract": "Event-driven architectures have powered serverless applications for a decade. Now AI agents bring non-deterministic producers, multi-step reasoning chains, and agent-to-agent coordination via events. Learn how the patterns you already know, such as queues, events, and retries, evolve when your consumers are autonomous agents rather than just microservices.",
+    "type": "Breakout session",
+    "level": "400 - Expert",
+    "room": "Caesars Palace | Promenade South | Octavius 4 | Content Hub | Purple Theater",
+    "isAllDaySession": false,
+    "isReservable": false,
     "sessionTime": {
       "date": "2026-11-30",
       "length": "60",
       "time": "11:30"
     },
-    "speakers": [
-      {
-        "name": "Zara Fenwick"
-      },
-      {
-        "name": "Leon Fenwick"
-      }
+    "services": [
+      "AWS Lambda",
+      "Amazon EventBridge"
     ],
-    "title": "Building event-driven architectures in the age of AI agents",
     "topics": [
       "Application Integration"
     ],
-    "type": "Breakout session"
-  },
-  {
-    "abbreviation": "API201",
-    "abstract": "Join us to learn how to plan and automate your modernization. We show how to reverse-engineer architecture and dependencies from existing code, then generate a serverless, event-driven target. See how teams move from monoliths to event-driven microservices in weeks, and make their applications agent-ready in the process.",
     "areasOfInterest": [
       "Event-Driven Architecture"
     ],
-    "features": [
-      "Lecture-style"
-    ],
-    "isAllDaySession": false,
-    "isReservable": false,
-    "level": "200 - Intermediate",
     "roles": [
       "Developer / Engineer",
       "IT Professional / Technical Manager",
       "Solution / Systems Architect"
     ],
-    "room": "Caesars Palace | Promenade South | Octavius 4 | Content Hub | Red Theater",
-    "services": [
-      "AWS Lambda",
-      "Amazon EventBridge"
+    "speakers": [
+      {
+        "name": "Amara Silva"
+      },
+      {
+        "name": "Amara Alvarez"
+      }
     ],
+    "features": [
+      "Lecture-style"
+    ]
+  },
+  {
     "sessionId": "1780441462686001GM8E",
+    "title": "Modernize legacy applications into serverless event-driven systems",
+    "abbreviation": "API201",
+    "abstract": "Join us to learn how to plan and automate your modernization. We show how to reverse-engineer architecture and dependencies from existing code, then generate a serverless, event-driven target. See how teams move from monoliths to event-driven microservices in weeks, and make their applications agent-ready in the process.",
+    "type": "Breakout session",
+    "level": "200 - Intermediate",
+    "room": "Caesars Palace | Promenade South | Octavius 4 | Content Hub | Red Theater",
+    "isAllDaySession": false,
+    "isReservable": false,
     "sessionTime": {
       "date": "2026-12-03",
       "length": "60",
       "time": "11:30"
     },
-    "speakers": [
-      {
-        "name": "Amara Fenwick"
-      },
-      {
-        "name": "Avery Okafor"
-      }
+    "services": [
+      "AWS Lambda",
+      "Amazon EventBridge"
     ],
-    "title": "Modernize legacy applications into serverless event-driven systems",
     "topics": [
       "Application Integration"
     ],
-    "type": "Breakout session"
-  },
-  {
-    "abbreviation": "ARC407",
-    "abstract": "Federated data ownership is easy to draw and hard to enforce. Is governance enforced in process, or in the platform? Enforce it in the platform, and the hard part becomes the seam between central policy and self-serve provisioning most teams never build. On Amazon SageMaker Unified Studio we architect that seam: one project per data-domain for blast-radius isolation, contracts that block non-compliant publication, policy that cascades but only tightens, and a reconciler turning Git-committed JSON into infrastructure. Experian runs it across dozens of data domains in regulated financial services, cutting domain onboarding from months to self-serve.",
     "areasOfInterest": [
-      "Innovation & Transformation"
+      "Event-Driven Architecture"
+    ],
+    "roles": [
+      "Developer / Engineer",
+      "IT Professional / Technical Manager",
+      "Solution / Systems Architect"
+    ],
+    "speakers": [
+      {
+        "name": "Amara Suzuki"
+      },
+      {
+        "name": "Sam Alvarez"
+      }
     ],
     "features": [
       "Lecture-style"
-    ],
+    ]
+  },
+  {
+    "sessionId": "1780441463094001GgY3",
+    "title": "Data mesh at scale: The automation layer, proven at Experian",
+    "abbreviation": "ARC407",
+    "abstract": "Federated data ownership is easy to draw and hard to enforce. Is governance enforced in process, or in the platform? Enforce it in the platform, and the hard part becomes the seam between central policy and self-serve provisioning most teams never build. On Amazon SageMaker Unified Studio we architect that seam: one project per data-domain for blast-radius isolation, contracts that block non-compliant publication, policy that cascades but only tightens, and a reconciler turning Git-committed JSON into infrastructure. Experian runs it across dozens of data domains in regulated financial services, cutting domain onboarding from months to self-serve.",
+    "type": "Breakout session",
+    "level": "400 - Expert",
+    "venue": "MGM Grand",
+    "room": "Level 3 | Chairman's 363 | Content Hub | Red Theater",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "400 - Expert",
-    "roles": [
-      "Advisor / Consultant",
-      "Data Engineer",
-      "Solution / Systems Architect"
-    ],
-    "room": "Level 3 | Chairman's 363 | Content Hub | Red Theater",
+    "sessionTime": {
+      "date": "2026-12-03",
+      "length": "60",
+      "time": "14:30"
+    },
     "services": [
       "AWS Lake Formation",
       "AWS Step Functions",
       "Amazon SageMaker"
     ],
-    "sessionId": "1780441463094001GgY3",
-    "sessionTime": {
-      "date": "2026-12-03",
-      "length": "60",
-      "time": "14:30"
-    },
-    "speakers": [
-      {
-        "name": "Jordan Okafor"
-      },
-      {
-        "name": "Riley Okafor"
-      },
-      {
-        "name": "Priya Okafor"
-      }
-    ],
-    "title": "Data mesh at scale: The automation layer, proven at Experian",
     "topics": [
       "Architecture"
     ],
-    "type": "Breakout session",
-    "venue": "MGM Grand"
+    "areasOfInterest": [
+      "Innovation & Transformation"
+    ],
+    "roles": [
+      "Advisor / Consultant",
+      "Data Engineer",
+      "Solution / Systems Architect"
+    ],
+    "speakers": [
+      {
+        "name": "Kenji Andersson"
+      },
+      {
+        "name": "Tobias Petrov"
+      },
+      {
+        "name": "Camille Okonkwo"
+      }
+    ],
+    "features": [
+      "Lecture-style"
+    ]
   },
   {
+    "sessionId": "1780441463982001GUWd",
+    "title": "From chips to applications: How Trainium powers the next AI frontier",
     "abbreviation": "AIM211",
-    "abstract": "Every AI breakthrough demands innovation across the full stack — chips, servers, software, and the models built on top — each layer making the next faster, cheaper, and more capable. In this session, discover how AWS and frontier AI builders drive full-stack innovation on AWS Trainium to scale post-training and reinforcement learning, serve at high throughput, and bend the cost-per-token curve. Examine real architectural decisions from silicon to application, then look ahead to what's next in Trainium and AWS infrastructure. Leave with understanding of how each layer of innovation compounds and where to place your bets on AI infrastructure.",
+    "abstract": "Every AI breakthrough demands innovation across the full stack \u2014 chips, servers, software, and the models built on top \u2014 each layer making the next faster, cheaper, and more capable. In this session, discover how AWS and frontier AI builders drive full-stack innovation on AWS Trainium to scale post-training and reinforcement learning, serve at high throughput, and bend the cost-per-token curve. Examine real architectural decisions from silicon to application, then look ahead to what's next in Trainium and AWS infrastructure. Leave with understanding of how each layer of innovation compounds and where to place your bets on AI infrastructure.",
+    "type": "Breakout session",
+    "level": "200 - Intermediate",
+    "venue": "MGM Grand",
+    "room": "Level 3 | Chairman's 363 | Content Hub | Purple Theater",
+    "isAllDaySession": false,
+    "isReservable": false,
+    "sessionTime": {
+      "date": "2026-12-03",
+      "length": "60",
+      "time": "13:00"
+    },
+    "services": [
+      "AWS Trainium",
+      "Amazon Elastic Compute Cloud (Amazon EC2)"
+    ],
+    "topics": [
+      "Artificial Intelligence",
+      "Compute"
+    ],
     "areasOfInterest": [
       "Cost Optimization",
       "Generative AI",
       "Machine Learning"
     ],
-    "features": [
-      "Lecture-style"
-    ],
-    "isAllDaySession": false,
-    "isReservable": false,
-    "level": "200 - Intermediate",
     "roles": [
       "Academic / Researcher",
       "Developer / Engineer",
       "Solution / Systems Architect"
     ],
-    "room": "Level 3 | Chairman's 363 | Content Hub | Purple Theater",
-    "services": [
-      "AWS Trainium",
-      "Amazon Elastic Compute Cloud (Amazon EC2)"
-    ],
-    "sessionId": "1780441463982001GUWd",
-    "sessionTime": {
-      "date": "2026-12-03",
-      "length": "60",
-      "time": "13:00"
-    },
     "speakers": [
       {
-        "name": "Kenji Okafor"
+        "name": "Noor Park"
       }
     ],
-    "title": "From chips to applications: How Trainium powers the next AI frontier",
-    "topics": [
-      "Artificial Intelligence",
-      "Compute"
-    ],
-    "type": "Breakout session",
-    "venue": "MGM Grand"
-  },
-  {
-    "abbreviation": "AIM342",
-    "abstract": "Enterprises struggle with fragmented ML tooling, inconsistent governance, and limited model health visibility. This session demonstrates a unified platform on Amazon SageMaker AI addressing these challenges across regulated industries. We cover multi-account architecture with environment-isolated domains, SageMaker AI Studio and MLflow/Model Registry as the central governance checkpoint with approval workflows, and CI/CD-driven model promotion with validation gates. We extend this to LLM fine-tuning — adapter versioning, evaluation benchmarks, and human-in-the-loop sign-off within the same registry-driven pipeline. Finally, we close the loop with model monitoring for drift, inference logging, and automated alerting. Leave with a reference architecture and decision frameworks.",
     "features": [
       "Lecture-style"
-    ],
+    ]
+  },
+  {
+    "sessionId": "1780441464038001G5Ms",
+    "title": "Build a governed enterprise AI/ML platform on SageMaker AI",
+    "abbreviation": "AIM342",
+    "abstract": "Enterprises struggle with fragmented ML tooling, inconsistent governance, and limited model health visibility. This session demonstrates a unified platform on Amazon SageMaker AI addressing these challenges across regulated industries. We cover multi-account architecture with environment-isolated domains, SageMaker AI Studio and MLflow/Model Registry as the central governance checkpoint with approval workflows, and CI/CD-driven model promotion with validation gates. We extend this to LLM fine-tuning \u2014 adapter versioning, evaluation benchmarks, and human-in-the-loop sign-off within the same registry-driven pipeline. Finally, we close the loop with model monitoring for drift, inference logging, and automated alerting. Leave with a reference architecture and decision frameworks.",
+    "type": "Breakout session",
+    "level": "300 - Advanced",
+    "venue": "MGM Grand",
+    "room": "Level 3 | Chairman's 363 | Content Hub | Purple Theater",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "300 - Advanced",
-    "room": "Level 3 | Chairman's 363 | Content Hub | Purple Theater",
-    "services": [
-      "Amazon SageMaker AI"
-    ],
-    "sessionId": "1780441464038001G5Ms",
     "sessionTime": {
       "date": "2026-12-03",
       "length": "60",
       "time": "08:30"
     },
-    "speakers": [
-      {
-        "name": "Mateo Okafor"
-      }
-    ],
-    "title": "Build a governed enterprise AI/ML platform on SageMaker AI",
-    "topics": [
-      "Artificial Intelligence"
-    ],
-    "type": "Breakout session",
-    "venue": "MGM Grand"
-  },
-  {
-    "abbreviation": "AIM343",
-    "abstract": "Join us to see how Amazon SageMaker HyperPod lets teams build complete training pipelines, from data prep and transformations through distributed training to seamless model deployment, all on one resilient, self-healing platform with no re-platforming required. Then, hear how Tencent Games, a game AI team (not an infra team), went from first cluster to thousand-GPU training in weeks for their VISVISE engine powering 90+ titles including PUBG Mobile. Walk away with lessons learned from real production workloads and best practices for EFA networking, FSx storage, and GPU fault tolerance.",
-    "features": [
-      "Lecture-style"
-    ],
-    "isAllDaySession": false,
-    "isReservable": false,
-    "level": "300 - Advanced",
-    "room": "Level 3 | Chairman's 363 | Content Hub | Red Theater",
     "services": [
       "Amazon SageMaker AI"
     ],
+    "topics": [
+      "Artificial Intelligence"
+    ],
+    "speakers": [
+      {
+        "name": "Devon Petrov"
+      }
+    ],
+    "features": [
+      "Lecture-style"
+    ]
+  },
+  {
     "sessionId": "1780441464093001GrWo",
+    "title": "Data Prep to Deployment: How Tencent Games Scaled to 1,000 GPUs on SageMaker HyperPod",
+    "abbreviation": "AIM343",
+    "abstract": "Join us to see how Amazon SageMaker HyperPod lets teams build complete training pipelines, from data prep and transformations through distributed training to seamless model deployment, all on one resilient, self-healing platform with no re-platforming required. Then, hear how Tencent Games, a game AI team (not an infra team), went from first cluster to thousand-GPU training in weeks for their VISVISE engine powering 90+ titles including PUBG Mobile. Walk away with lessons learned from real production workloads and best practices for EFA networking, FSx storage, and GPU fault tolerance.",
+    "type": "Breakout session",
+    "level": "300 - Advanced",
+    "venue": "MGM Grand",
+    "room": "Level 3 | Chairman's 363 | Content Hub | Red Theater",
+    "isAllDaySession": false,
+    "isReservable": false,
     "sessionTime": {
       "date": "2026-11-30",
       "length": "60",
       "time": "13:00"
     },
-    "speakers": [
-      {
-        "name": "Noor Okafor"
-      },
-      {
-        "name": "Elena Okafor"
-      }
-    ],
-    "title": "Data Prep to Deployment: How Tencent Games Scaled to 1,000 GPUs on SageMaker HyperPod",
-    "topics": [
-      "Artificial Intelligence"
-    ],
-    "type": "Breakout session",
-    "venue": "MGM Grand"
-  },
-  {
-    "abbreviation": "AIM2205",
-    "abstract": "Forge accelerates AI solution development on AWS. In this session, learn about Forge's capabilities and how to use them to create custom evaluations for your use case, incorporate your data into your AI solution, and select the right model for your needs.",
-    "features": [
-      "Lecture-style"
-    ],
-    "isAllDaySession": false,
-    "isReservable": false,
-    "level": "200 - Intermediate",
-    "room": "Level 3 | Chairman's 363 | Content Hub | Red Theater",
     "services": [
       "Amazon SageMaker AI"
     ],
+    "topics": [
+      "Artificial Intelligence"
+    ],
+    "speakers": [
+      {
+        "name": "Sam Silva"
+      },
+      {
+        "name": "Leon Blackwood"
+      }
+    ],
+    "features": [
+      "Lecture-style"
+    ]
+  },
+  {
     "sessionId": "1780441464470001GPUd",
+    "title": "Accelerate Domain-Specific AI with Amazon SageMaker AI and Forge",
+    "abbreviation": "AIM2205",
+    "abstract": "Forge accelerates AI solution development on AWS. In this session, learn about Forge's capabilities and how to use them to create custom evaluations for your use case, incorporate your data into your AI solution, and select the right model for your needs.",
+    "type": "Breakout session",
+    "level": "200 - Intermediate",
+    "venue": "MGM Grand",
+    "room": "Level 3 | Chairman's 363 | Content Hub | Red Theater",
+    "isAllDaySession": false,
+    "isReservable": false,
     "sessionTime": {
       "date": "2026-12-02",
       "length": "60",
       "time": "13:00"
     },
-    "speakers": [
-      {
-        "name": "Sam Okafor"
-      },
-      {
-        "name": "Tobias Okafor"
-      }
+    "services": [
+      "Amazon SageMaker AI"
     ],
-    "title": "Accelerate Domain-Specific AI with Amazon SageMaker AI and Forge",
     "topics": [
       "Artificial Intelligence"
     ],
-    "type": "Breakout session",
-    "venue": "MGM Grand"
-  },
-  {
-    "abbreviation": "AIM360",
-    "abstract": "World models—AI systems that simulate and predict complex environments—are emerging with new modalities including Video, Vision, Language, Action to power physical AI, autonomous systems, and real-time video generation. From humanoid robotics to immersive entertainment, these models are transforming how machines perceive, think, and interact with the physical world. In this panel, hear from researchers and customers on how they're building and deploying world models in production, the business opportunities they unlock, and the unique technical challenges they present. Learn how AWS AI infrastructure powers these use cases at scale with speed, efficiency, and automatic fault recovery.",
+    "speakers": [
+      {
+        "name": "Kenji Petrov"
+      },
+      {
+        "name": "Tobias Suzuki"
+      }
+    ],
     "features": [
       "Lecture-style"
-    ],
+    ]
+  },
+  {
+    "sessionId": "1780441464527001GHt9",
+    "title": "World Models\u00a0&\u00a0Physical AI: The Next Frontier in Intelligent Systems",
+    "abbreviation": "AIM360",
+    "abstract": "World models\u2014AI systems that simulate and predict complex environments\u2014are emerging with new modalities including Video, Vision, Language, Action to power physical AI, autonomous systems, and real-time video generation. From humanoid robotics to immersive entertainment, these models are transforming how machines perceive, think, and interact with the physical world. In this panel, hear from researchers and customers on how they're building and deploying world models in production, the business opportunities they unlock, and the unique technical challenges they present. Learn how AWS AI infrastructure powers these use cases at scale with speed, efficiency, and automatic fault recovery.",
+    "type": "Breakout session",
+    "level": "300 - Advanced",
+    "venue": "MGM Grand",
+    "room": "Level 3 | Chairman's 363 | Content Hub | Purple Theater",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "300 - Advanced",
-    "room": "Level 3 | Chairman's 363 | Content Hub | Purple Theater",
-    "services": [
-      "AWS Trainium",
-      "Amazon Elastic Kubernetes Service (Amazon EKS)",
-      "Amazon SageMaker AI"
-    ],
-    "sessionId": "1780441464527001GHt9",
     "sessionTime": {
       "date": "2026-12-03",
       "length": "60",
       "time": "10:00"
     },
-    "speakers": [
-      {
-        "name": "Yuki Okafor"
-      }
+    "services": [
+      "AWS Trainium",
+      "Amazon Elastic Kubernetes Service (Amazon EKS)",
+      "Amazon SageMaker AI"
     ],
-    "title": "World Models & Physical AI: The Next Frontier in Intelligent Systems",
     "topics": [
       "Artificial Intelligence"
     ],
-    "type": "Breakout session",
-    "venue": "MGM Grand"
-  },
-  {
-    "abbreviation": "AIM361",
-    "abstract": "An off-the-shelf model may not meet the accuracy, cost, or latency requirements of your specialized business task. Across businesses from retail to financial services, organizations are customizing open-weight models to unlock higher value. In this session, learn how to customize open-weight models with Amazon SageMaker AI, including for domain-specific workflows and agents. Intuit shares how it is using SageMaker AI with features such as serverless model customization and reinforcement learning, on its proprietary data to unlock business value and cut costs.",
+    "speakers": [
+      {
+        "name": "Avery Silva"
+      }
+    ],
     "features": [
       "Lecture-style"
-    ],
+    ]
+  },
+  {
+    "sessionId": "1780441464585001G8ee",
+    "title": "Customize open models for accuracy, cost, and latency on SageMaker AI",
+    "abbreviation": "AIM361",
+    "abstract": "An off-the-shelf model may not meet the accuracy, cost, or latency requirements of your specialized business task. Across businesses from retail to financial services, organizations are customizing open-weight models to unlock higher value. In this session, learn how to customize open-weight models with Amazon SageMaker AI, including for domain-specific workflows and agents. Intuit shares how it is using SageMaker AI with features such as serverless model customization and reinforcement learning, on its proprietary data to unlock business value and cut costs.",
+    "type": "Breakout session",
+    "level": "300 - Advanced",
+    "venue": "MGM Grand",
+    "room": "Level 3 | Chairman's 363 | Content Hub | Red Theater",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "300 - Advanced",
-    "room": "Level 3 | Chairman's 363 | Content Hub | Red Theater",
-    "services": [
-      "Amazon SageMaker AI"
-    ],
-    "sessionId": "1780441464585001G8ee",
     "sessionTime": {
       "date": "2026-11-30",
       "length": "60",
       "time": "14:30"
     },
-    "speakers": [
-      {
-        "name": "Camille Okafor"
-      },
-      {
-        "name": "Devon Okafor"
-      }
+    "services": [
+      "Amazon SageMaker AI"
     ],
-    "title": "Customize open models for accuracy, cost, and latency on SageMaker AI",
     "topics": [
       "Artificial Intelligence"
     ],
-    "type": "Breakout session",
-    "venue": "MGM Grand"
-  },
-  {
-    "abbreviation": "AIM369",
-    "abstract": "The agents with the clearest ROI don't wait for a prompt. They wake on an event and run a process to completion. A new lead triggers a prospecting agent, a filed ticket triggers IT resolution, a spend threshold triggers a campaign adjustment. This session covers best practices for building workflow agents on AgentCore: triggering agents from event sources, running long tasks asynchronously on Runtime, connecting to systems of record through gateway, holding state with memory, adding human-in-the-loop approvals, and enforcing actions with policies the agent cannot bypass.",
+    "speakers": [
+      {
+        "name": "Malik Haddad"
+      },
+      {
+        "name": "Owen Petrov"
+      }
+    ],
     "features": [
       "Lecture-style"
-    ],
+    ]
+  },
+  {
+    "sessionId": "1780441464643001Gd1C",
+    "title": "Automate your business processes with workflow agents on AgentCore",
+    "abbreviation": "AIM369",
+    "abstract": "The agents with the clearest ROI don't wait for a prompt. They wake on an event and run a process to completion. A new lead triggers a prospecting agent, a filed ticket triggers IT resolution, a spend threshold triggers a campaign adjustment. This session covers best practices for building workflow agents on AgentCore: triggering agents from event sources, running long tasks asynchronously on Runtime, connecting to systems of record through gateway, holding state with memory, adding human-in-the-loop approvals, and enforcing actions with policies the agent cannot bypass.",
+    "type": "Breakout session",
+    "level": "300 - Advanced",
+    "venue": "MGM Grand",
+    "room": "Level 1 | Grand 115",
     "isAllDaySession": false,
     "isReservable": false,
-    "level": "300 - Advanced",
-    "room": "Level 1 | Grand 115",
-    "services": [
-      "Amazon Bedrock"
-    ],
-    "sessionId": "1780441464643001Gd1C",
     "sessionTime": {
       "date": "2026-12-03",
       "length": "60",
       "time": "15:00"
     },
-    "speakers": [
-      {
-        "name": "Ingrid Okafor"
-      },
-      {
-        "name": "Malik Okafor"
-      }
-    ],
-    "title": "Automate your business processes with workflow agents on AgentCore",
-    "topics": [
-      "Artificial Intelligence"
-    ],
-    "type": "Breakout session",
-    "venue": "MGM Grand"
-  },
-  {
-    "abbreviation": "AIM370",
-    "abstract": "AI agents call APIs, access databases, and act on behalf of users, making security non-negotiable before you go to production. But they introduce new attack surfaces: persistent sessions, autonomous tool execution, and permissions that compound across steps. This session shows how to secure agents end to end with Amazon Bedrock AgentCore: microVM isolation so sessions can't leak into each other, identity propagation so every action traces back to a user, Gateway policies that control which tools agents can reach, and Cedar authorization for least-privilege at every call. Leave with a blueprint for production.",
-    "features": [
-      "Lecture-style"
-    ],
-    "isAllDaySession": false,
-    "isReservable": false,
-    "level": "300 - Advanced",
-    "room": "Level 3 | Chairman's 363 | Content Hub | Purple Theater",
     "services": [
       "Amazon Bedrock"
     ],
+    "topics": [
+      "Artificial Intelligence"
+    ],
+    "speakers": [
+      {
+        "name": "Devon Nakamura"
+      },
+      {
+        "name": "Mateo Suzuki"
+      }
+    ],
+    "features": [
+      "Lecture-style"
+    ]
+  },
+  {
     "sessionId": "1780441464697001GwWk",
+    "title": "Trusting agents in production: end-to-end security with AgentCore",
+    "abbreviation": "AIM370",
+    "abstract": "AI agents call APIs, access databases, and act on behalf of users, making security non-negotiable before you go to production. But they introduce new attack surfaces: persistent sessions, autonomous tool execution, and permissions that compound across steps. This session shows how to secure agents end to end with Amazon Bedrock AgentCore: microVM isolation so sessions can't leak into each other, identity propagation so every action traces back to a user, Gateway policies that control which tools agents can reach, and Cedar authorization for least-privilege at every call. Leave with a blueprint for production.",
+    "type": "Breakout session",
+    "level": "300 - Advanced",
+    "venue": "MGM Grand",
+    "room": "Level 3 | Chairman's 363 | Content Hub | Purple Theater",
+    "isAllDaySession": false,
+    "isReservable": false,
     "sessionTime": {
       "date": "2026-11-30",
       "length": "60",
       "time": "14:30"
     },
-    "speakers": [
-      {
-        "name": "Sofia Okafor"
-      }
+    "services": [
+      "Amazon Bedrock"
     ],
-    "title": "Trusting agents in production: end-to-end security with AgentCore",
     "topics": [
       "Artificial Intelligence"
     ],
+    "speakers": [
+      {
+        "name": "Avery Alvarez"
+      }
+    ],
+    "features": [
+      "Lecture-style"
+    ]
+  },
+  {
+    "sessionId": "1780441468887001GgXR",
+    "title": "An insider\u2019s look into architecture choices for Amazon DynamoDB",
+    "abbreviation": "DAT414",
+    "abstract": "To overcome the performance and scale limitations of relational databases, AWS built Amazon DynamoDB to deliver consistent single-digit millisecond performance at any scale for the most demanding applications on the planet. In this session, learn about the architecture choices for Amazon DynamoDB. Gain a better understanding of when to use DynamoDB and why DynamoDB is used by over one million AWS customers, and powers hundreds of applications that exceed half a million requests per second. Leave with a new perspective on how to design your own applications.",
     "type": "Breakout session",
-    "venue": "MGM Grand"
+    "level": "400 - Expert",
+    "venue": "MGM Grand",
+    "room": "Level 1 | Grand 119",
+    "isAllDaySession": false,
+    "isReservable": false,
+    "sessionTime": {
+      "date": "2026-12-02",
+      "length": "60",
+      "time": "09:00"
+    },
+    "services": [
+      "Amazon DynamoDB"
+    ],
+    "topics": [
+      "Databases"
+    ],
+    "areasOfInterest": [
+      "Innovation & Transformation"
+    ],
+    "roles": [
+      "Developer / Engineer",
+      "IT Professional / Technical Manager",
+      "Solution / Systems Architect"
+    ],
+    "speakers": [
+      {
+        "name": "Camille Rahman"
+      }
+    ],
+    "features": [
+      "Lecture-style"
+    ]
+  },
+  {
+    "sessionId": "1780441479441001GarU",
+    "title": "Deep dive into Elastic Load Balancing for modern workloads",
+    "abbreviation": "NET326",
+    "abstract": "Architect high-performance, resilient network infrastructure using Network Load Balancer and Gateway Load Balancer. This deep dive covers advanced load balancing, multi-protocol support, and security appliance integration at scale. In this session, we explore NLB source IP preservation, GWLB transparent inspection architecture, and deployment patterns. Topics include performance optimization, troubleshooting methodologies, QUIC support, and resilience capabilities including Zonal Shift and Zonal Autoshift. Walk away with practical blueprints for designing architectures that deliver high availability and predictable performance while maintaining inline security inspection and compliance\u2014whether you're running financial trading platforms, gaming backends, or large-scale SaaS.",
+    "type": "Breakout session",
+    "level": "300 - Advanced",
+    "venue": "Caesars Forum",
+    "room": "Level 1 | Forum 120 | Content Hub | Purple Theater",
+    "isAllDaySession": false,
+    "isReservable": false,
+    "sessionTime": {
+      "date": "2026-11-30",
+      "length": "60",
+      "time": "13:00"
+    },
+    "services": [
+      "Amazon Route 53",
+      "Amazon Virtual Private Cloud (Amazon VPC)",
+      "Elastic Load Balancing (ELB)"
+    ],
+    "topics": [
+      "Architecture",
+      "Networking & Content Delivery"
+    ],
+    "areasOfInterest": [
+      "Global Infrastructure",
+      "Resilience",
+      "Well-Architected Framework"
+    ],
+    "roles": [
+      "Cloud Security Specialist",
+      "DevOps Engineer",
+      "Solution / Systems Architect"
+    ],
+    "speakers": [
+      {
+        "name": "Yuki Alvarez"
+      },
+      {
+        "name": "Malik Moreau"
+      }
+    ],
+    "features": [
+      "Lecture-style"
+    ]
   }
 ]

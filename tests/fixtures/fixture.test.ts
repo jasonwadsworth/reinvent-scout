@@ -98,4 +98,16 @@ describe("catalog fixture", () => {
       expect(present.has(date)).toBe(true);
     }
   });
+
+  it("includes a session with the Amazon DynamoDB service", () => {
+    const count = fixture.filter((s) => s.services?.includes("Amazon DynamoDB")).length;
+    expect(count).toBeGreaterThanOrEqual(1);
+  });
+
+  it("includes a session with the Elastic Load Balancing (ELB) service", () => {
+    const count = fixture.filter((s) =>
+      s.services?.includes("Elastic Load Balancing (ELB)"),
+    ).length;
+    expect(count).toBeGreaterThanOrEqual(1);
+  });
 });
