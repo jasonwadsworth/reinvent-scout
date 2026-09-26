@@ -57,8 +57,6 @@ describe("detectCloudFormation", () => {
   });
 
   it("extracts services from a JSON template as well as YAML", () => {
-    // Pretty-printed, one key per line -- how AWS's own console and CLI actually format a JSON
-    // template (never minified onto one line), and what the line-oriented extraction assumes.
     const content = JSON.stringify(
       {
         AWSTemplateFormatVersion: "2010-09-09",
@@ -153,6 +151,44 @@ describe("detectCloudFormation", () => {
     const result = detectCloudFormation([file("template.yaml", content)]);
 
     expect(result.services.map((s) => s.key)).toEqual(["s3"]);
+  });
+
+  it("extracts services from a single-line, minified JSON template with evidence naming the logical id", () => {
+    // No indentation at all -- the line-oriented YAML scanner's "Type" line would never be found
+    // here, since every key is smashed onto one line. JSON.parse doesn't care about layout.
+    const content = JSON.stringify({
+      AWSTemplateFormatVersion: "2010-09-09",
+      Resources: {
+        OrdersTable: { Type: "AWS::DynamoDB::Table" },
+      },
+    });
+
+    const result = detectCloudFormation([file("template.json", content)]);
+
+    const dynamodb = findService(result, "dynamodb");
+    expect(dynamodb).toBeDefined();
+    expect(dynamodb?.evidence[0]?.snippet).toContain("OrdersTable");
+    expect(dynamodb?.evidence[0]?.snippet).toContain("AWS::DynamoDB::Table");
+  });
+
+  it("reports a malformed JSON template as unreadable with a reason, and still recovers what the line scan can find", () => {
+    // Missing the closing braces -- invalid JSON -- but each key still sits on its own line, so
+    // the anchored line-scan fallback can still recover the real resource even though the exact
+    // JSON.parse path failed.
+    const content = [
+      "{",
+      '  "AWSTemplateFormatVersion": "2010-09-09",',
+      '  "Resources": {',
+      '    "OrdersTable": {',
+      '      "Type": "AWS::DynamoDB::Table"',
+    ].join("\n");
+
+    const result = detectCloudFormation([file("template.json", content)]);
+
+    expect(result.unreadableTemplates).toHaveLength(1);
+    expect(result.unreadableTemplates[0]?.path).toBe("template.json");
+    expect(result.unreadableTemplates[0]?.reason.length).toBeGreaterThan(0);
+    expect(findService(result, "dynamodb")).toBeDefined();
   });
 
   it("does not throw on malformed yaml", () => {
