@@ -131,7 +131,7 @@ export function buildServiceAliasIndex(catalogServiceNames: readonly string[]): 
   }
 
   const knownNames = new Set(uniqueNames);
-  for (const [key, canonicalName] of Object.entries(SERVICE_KEY_OVERRIDES)) {
+  for (const [key, canonicalName] of SERVICE_KEY_OVERRIDES) {
     if (knownNames.has(canonicalName)) {
       addAlias(normalizeAliasKey(key), canonicalName);
     }
