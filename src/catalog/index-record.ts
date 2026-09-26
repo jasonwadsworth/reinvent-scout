@@ -35,6 +35,21 @@ export function tokenize(text: string): TermFrequencies {
   return counts;
 }
 
+/**
+ * Reads a term's count from a term-frequency map, own-property only. `titleTerms`/`bodyTerms`
+ * are written with a null prototype (see `tokenize` above), but that guarantee evaporates the
+ * moment they round-trip through `JSON.parse` to build the in-memory index a reader actually
+ * works with -- `JSON.parse` always produces plain, `Object.prototype`-inheriting objects,
+ * regardless of the prototype of whatever was serialized. So a bare `map[term]` read here would
+ * resolve a term like `constructor` to the inherited `Object` constructor function for every
+ * record, not `undefined`, however the write side is hardened. `Object.hasOwn` is the only check
+ * that is actually safe against this on the read side. Shared by `catalog/query.ts` and
+ * `match/score.ts`, the two readers of these maps.
+ */
+export function getOwnTermCount(map: TermFrequencies, term: string): number | undefined {
+  return Object.hasOwn(map, term) ? (map[term] as number) : undefined;
+}
+
 /** Extracts the leading numeric band from a level string like `"300 - Advanced"`. Returns null
  * when the string doesn't start with a number, including when there's no level at all. */
 function parseLevelBand(level: string | undefined): number | null {
