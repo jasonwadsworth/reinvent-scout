@@ -5,7 +5,13 @@ import { parseProfile, resolveProfile } from "../../src/profile/profile.js";
 /** A synthetic but realistically-named catalog -- confirmed elsewhere in this codebase (see
  * catalog/service-aliases.test.ts and profile/service-keys.test.ts) that these exact spellings
  * derive and override correctly against the real 170-name catalog. */
-const CATALOG_SERVICE_NAMES = ["Amazon DynamoDB", "AWS Step Functions", "Amazon Bedrock"];
+const CATALOG_SERVICE_NAMES = [
+  "Amazon DynamoDB",
+  "AWS Step Functions",
+  "Amazon Bedrock",
+  "Amazon ElastiCache",
+  "Amazon ElastiCache Serverless",
+];
 
 function testAliasIndex(): ServiceAliasIndex {
   return buildServiceAliasIndex(CATALOG_SERVICE_NAMES);
@@ -45,10 +51,17 @@ describe("resolveProfile", () => {
   });
 
   it("resolves any spelling: dynamodb, Amazon DynamoDB, @aws-sdk/client-dynamodb, sfn, bedrock-runtime", () => {
+    // Seven spellings of one service (DynamoDB), plus sfn and bedrock-runtime for the two
+    // curated cross-ecosystem overrides -- every real-world form an agent transcribing code
+    // might reasonably write, in one table.
     const spellingToCatalogName: Array<[string, string]> = [
       ["dynamodb", "Amazon DynamoDB"],
       ["Amazon DynamoDB", "Amazon DynamoDB"],
       ["@aws-sdk/client-dynamodb", "Amazon DynamoDB"],
+      ["aws-cdk-lib/aws-dynamodb", "Amazon DynamoDB"],
+      ["aws_cdk.aws_dynamodb", "Amazon DynamoDB"],
+      ["software.amazon.awssdk.services.dynamodb", "Amazon DynamoDB"],
+      ["github.com/aws/aws-sdk-go-v2/service/dynamodb", "Amazon DynamoDB"],
       ["sfn", "AWS Step Functions"],
       ["bedrock-runtime", "Amazon Bedrock"],
     ];
@@ -67,6 +80,42 @@ describe("resolveProfile", () => {
     }
   });
 
+  it("resolves a Terraform-style compound resource type by longest-prefix match after stripping aws_", () => {
+    // "aws_dynamodb_table" isn't itself a catalog alias -- only "dynamodb", the segment left
+    // after "table" is dropped, is. This is the case that needs segment-based shortening rather
+    // than a single normalize-and-look-up.
+    const raw = {
+      schemaVersion: 1,
+      repos: [{ root: ".", languages: [] }],
+      services: [{ name: "aws_dynamodb_table", evidence: [{ repo: ".", file: "main.tf" }] }],
+      patterns: [],
+    };
+
+    const resolved = resolveProfile(raw, testAliasIndex());
+
+    expect(resolved.services[0]?.catalogName).toBe("Amazon DynamoDB");
+  });
+
+  it("prefers the longer, more specific catalog match over a shorter one that also resolves", () => {
+    // The catalog carries both "Amazon ElastiCache" and "Amazon ElastiCache Serverless" as
+    // distinct entries. Shortest-first segment matching would stop at "elasticache" (wrong: too
+    // eager); longest-first correctly finds "elasticache_serverless" first. This is the case
+    // that actually distinguishes the two orders -- most names (aws_dynamodb_table, for
+    // instance) resolve identically either way and prove nothing about which order is used.
+    const raw = {
+      schemaVersion: 1,
+      repos: [{ root: ".", languages: [] }],
+      services: [
+        { name: "aws_elasticache_serverless_cache", evidence: [{ repo: ".", file: "main.tf" }] },
+      ],
+      patterns: [],
+    };
+
+    const resolved = resolveProfile(raw, testAliasIndex());
+
+    expect(resolved.services[0]?.catalogName).toBe("Amazon ElastiCache Serverless");
+  });
+
   it("reports a service with no catalog counterpart as unresolved rather than dropping it", () => {
     const raw = {
       schemaVersion: 1,
@@ -81,6 +130,23 @@ describe("resolveProfile", () => {
     expect(resolved.services[0]?.name).toBe("sns");
     expect(resolved.services[0]?.catalogName).toBeNull();
     expect(resolved.unresolvedServices).toEqual(["sns"]);
+  });
+
+  it("does not let affix-stripping or segment-shortening rescue a genuinely unresolvable name", () => {
+    // "sns" has no catalog counterpart and no affix to strip -- it must come back unresolved
+    // rather than the new stripping/shortening pipeline over-reaching and resolving it to
+    // something adjacent.
+    const raw = {
+      schemaVersion: 1,
+      repos: [{ root: ".", languages: [] }],
+      services: [{ name: "aws_sns_topic", evidence: [{ repo: ".", file: "main.tf" }] }],
+      patterns: [],
+    };
+
+    const resolved = resolveProfile(raw, testAliasIndex());
+
+    expect(resolved.services[0]?.catalogName).toBeNull();
+    expect(resolved.unresolvedServices).toEqual(["aws_sns_topic"]);
   });
 
   it("rejects a service with no evidence, naming the entry", () => {
@@ -139,7 +205,7 @@ describe("resolveProfile", () => {
   });
 
   it("treats prototype-key service names as ordinary strings", () => {
-    for (const name of ["constructor", "__proto__", "toString", "hasOwnProperty"]) {
+    for (const name of ["constructor", "__proto__", "toString", "hasOwnProperty", "valueOf"]) {
       const raw = {
         schemaVersion: 1,
         repos: [{ root: ".", languages: [] }],

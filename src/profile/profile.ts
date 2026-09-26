@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { ServiceAliasIndex } from "../catalog/service-aliases.js";
-import { normalizeServiceKey } from "./service-keys.js";
+import { normalizeServiceKey, stripKnownAffix } from "./service-keys.js";
 
 /** The only schema version this build understands. Bumped whenever the shape changes
  * incompatibly; an agent (or a hand-written profile) targeting an older or newer version is
@@ -119,19 +119,55 @@ export function parseProfile(input: unknown): Profile {
 }
 
 /**
+ * Resolves one raw service name against the catalog, trying progressively shorter candidates so
+ * a Terraform-style compound name (`aws_dynamodb_table`, `aws_elasticache_serverless_cache`)
+ * resolves without a resource-type-specific rule:
+ *
+ * 1. Strip a known wrapper affix (`service-keys.ts`'s `stripKnownAffix`) -- an SDK package name,
+ *    module path, or Terraform's own `aws_` resource-type prefix.
+ * 2. Split what's left into segments on `-`/`_` (never mid-token: "s3_batch_operations" splits
+ *    into ["s3", "batch", "operations"], never something that cuts a word in half).
+ * 3. Try joining the first *N* segments, from all of them down to just the first, resolving each
+ *    candidate through `normalizeServiceKey` then `serviceAliasIndex.resolve`. The first (longest)
+ *    match wins -- when the catalog carries both a specific and a more general entry for the same
+ *    prefix (`"Amazon ElastiCache Serverless"` alongside `"Amazon ElastiCache"`), the specific one
+ *    is what such a repository is actually calling, and trying longest-first is what makes that
+ *    the answer instead of the shorter, less specific one that also happens to resolve.
+ *
+ * Returns `null` when nothing at any length resolves -- a genuinely unresolvable name (`sns`, or
+ * `aws_sns_topic` after stripping) is never rescued into something adjacent just because
+ * shortening ran out of segments to try.
+ */
+export function resolveServiceName(rawName: string, serviceAliasIndex: ServiceAliasIndex): string | null {
+  const stripped = stripKnownAffix(rawName);
+  const segments = stripped.split(/[-_]+/).filter((segment) => segment.length > 0);
+  if (segments.length === 0) {
+    return null;
+  }
+
+  for (let length = segments.length; length >= 1; length--) {
+    const candidate = segments.slice(0, length).join("_");
+    const resolved = serviceAliasIndex.resolve(normalizeServiceKey(candidate));
+    if (resolved !== null) {
+      return resolved;
+    }
+  }
+  return null;
+}
+
+/**
  * Validates a raw profile (see `parseProfile`) and resolves every service's `name` against the
- * catalog: `normalizeServiceKey` first (so "dynamodb", "Amazon DynamoDB" and
- * "@aws-sdk/client-dynamodb" all reach the same lookup), then `serviceAliasIndex.resolve`. A
- * service the catalog has no counterpart for is never dropped -- it stays in `services` with
- * `catalogName: null` and is also named in `unresolvedServices`, the same "not found is a normal
- * outcome" treatment the rest of this codebase gives an unresolvable service key.
+ * catalog via `resolveServiceName`. A service the catalog has no counterpart for is never
+ * dropped -- it stays in `services` with `catalogName: null` and is also named in
+ * `unresolvedServices`, the same "not found is a normal outcome" treatment the rest of this
+ * codebase gives an unresolvable service key.
  */
 export function resolveProfile(input: unknown, serviceAliasIndex: ServiceAliasIndex): ResolvedProfile {
   const profile = parseProfile(input);
 
   const unresolvedServices: string[] = [];
   const services: ResolvedService[] = profile.services.map((service) => {
-    const catalogName = serviceAliasIndex.resolve(normalizeServiceKey(service.name));
+    const catalogName = resolveServiceName(service.name, serviceAliasIndex);
     if (catalogName === null) {
       unresolvedServices.push(service.name);
     }

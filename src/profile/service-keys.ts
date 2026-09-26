@@ -62,13 +62,44 @@ const KEY_NORMALIZATION_OVERRIDES: ReadonlyMap<string, string> = new Map([
   ["sfn", "stepfunctions"],
 ]);
 
-/** A handful of literal prefixes stripped before normalization, for a name that's really an
- * import specifier or package name rather than a short key -- an agent authoring a profile may
- * transcribe exactly what it saw in the code (`"@aws-sdk/client-dynamodb"`) rather than
- * distilling it to `"dynamodb"` itself. Kept to the one form actually seen in practice; add
- * another prefix here, with a test, if a real profile needs it, rather than guessing at every
- * SDK's own naming convention up front. */
-const NAME_PREFIXES_TO_STRIP: readonly string[] = ["@aws-sdk/client-"];
+/**
+ * Literal prefixes stripped before normalization, for a name that's really an import specifier,
+ * package name, or fully-qualified module path rather than a short key -- an agent authoring a
+ * profile may reasonably transcribe exactly what it saw in the code or a `package.json`
+ * dependency (`"@aws-sdk/client-dynamodb"`, `"software.amazon.awssdk.services.dynamodb"`) rather
+ * than distilling it to `"dynamodb"` itself first. Order matters: `"aws_cdk.aws_"` must be
+ * checked before the shorter `"aws_"` it starts with, or `"aws_cdk.aws_dynamodb"` would only lose
+ * its first four characters and never resolve. The first matching prefix wins; there is no reason
+ * for two of these to ever match the same real name.
+ *
+ * `"aws_"` alone (Terraform's own resource-type prefix) is deliberately included even though a
+ * Terraform resource type is `aws_<service>_<resource>`, not just `aws_<service>` --
+ * `resolveServiceName` in `profile.ts` handles the remaining `<service>_<resource>` split by
+ * longest-prefix match against the catalog once this prefix is gone, rather than this function
+ * trying to guess where a resource-type suffix begins.
+ */
+export const AFFIXES_TO_STRIP: readonly string[] = [
+  "@aws-sdk/client-",
+  "aws-sdk-",
+  "aws-cdk-lib/aws-",
+  "aws_cdk.aws_",
+  "aws_",
+  "software.amazon.awssdk.services.",
+  "github.com/aws/aws-sdk-go-v2/service/",
+];
+
+/** Strips the first matching prefix from `AFFIXES_TO_STRIP`, or returns `rawName` unchanged when
+ * none matches. Exported separately from `normalizeServiceKey` so `profile.ts`'s
+ * `resolveServiceName` can split the *remainder* into segments before any further normalization
+ * collapses it into one unsplittable blob. */
+export function stripKnownAffix(rawName: string): string {
+  for (const affix of AFFIXES_TO_STRIP) {
+    if (rawName.startsWith(affix)) {
+      return rawName.slice(affix.length);
+    }
+  }
+  return rawName;
+}
 
 /**
  * Normalizes a raw service key -- however its source spelled it -- into the one canonical key
@@ -77,13 +108,7 @@ const NAME_PREFIXES_TO_STRIP: readonly string[] = ["@aws-sdk/client-"];
  * decided.
  */
 export function normalizeServiceKey(rawKey: string): string {
-  let working = rawKey;
-  for (const prefix of NAME_PREFIXES_TO_STRIP) {
-    if (working.startsWith(prefix)) {
-      working = working.slice(prefix.length);
-      break;
-    }
-  }
-  const normalized = working.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const stripped = stripKnownAffix(rawKey);
+  const normalized = stripped.toLowerCase().replace(/[^a-z0-9]/g, "");
   return KEY_NORMALIZATION_OVERRIDES.get(normalized) ?? normalized;
 }

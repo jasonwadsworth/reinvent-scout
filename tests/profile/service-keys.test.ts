@@ -45,4 +45,30 @@ describe("normalizeServiceKey", () => {
     // even though there is no catalog name to merge on instead.
     expect(normalizeServiceKey("sns")).toBe("sns");
   });
+
+  it("strips a known wrapper affix before normalizing", () => {
+    expect(normalizeServiceKey("@aws-sdk/client-dynamodb")).toBe("dynamodb");
+    expect(normalizeServiceKey("aws-cdk-lib/aws-dynamodb")).toBe("dynamodb");
+    expect(normalizeServiceKey("aws_cdk.aws_dynamodb")).toBe("dynamodb");
+    expect(normalizeServiceKey("software.amazon.awssdk.services.dynamodb")).toBe("dynamodb");
+    expect(normalizeServiceKey("github.com/aws/aws-sdk-go-v2/service/dynamodb")).toBe("dynamodb");
+  });
+
+  it("strips the more specific aws_cdk.aws_ affix rather than the shorter aws_ affix it contains", () => {
+    // "aws_cdk.aws_dynamodb" starts with both "aws_cdk.aws_" and the shorter "aws_" -- stripping
+    // the shorter one first would leave "cdk.aws_dynamodb", not "dynamodb".
+    expect(normalizeServiceKey("aws_cdk.aws_dynamodb")).toBe("dynamodb");
+  });
+
+  it("is not corrupted by every plain-object prototype member a service name could collide with", () => {
+    // constructor is the one reachable today (a bare object literal's bracket lookup returns the
+    // inherited Object constructor for it); toString, valueOf and hasOwnProperty are safe only
+    // because lowercasing rescues them ("toString" -> "tostring") and __proto__ only because
+    // punctuation-stripping does ("__proto__" -> "proto") -- pinned here so a future change to
+    // normalization can't quietly re-expose one of these by accident.
+    for (const name of ["constructor", "toString", "valueOf", "hasOwnProperty", "__proto__"]) {
+      const result = normalizeServiceKey(name);
+      expect(typeof result).toBe("string");
+    }
+  });
 });
