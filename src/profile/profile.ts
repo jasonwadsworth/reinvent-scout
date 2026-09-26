@@ -119,27 +119,44 @@ export function parseProfile(input: unknown): Profile {
 }
 
 /**
- * Resolves one raw service name against the catalog, trying progressively shorter candidates so
- * a Terraform-style compound name (`aws_dynamodb_table`, `aws_elasticache_serverless_cache`)
- * resolves without a resource-type-specific rule:
+ * Resolves one raw service name against the catalog:
  *
  * 1. Strip a known wrapper affix (`service-keys.ts`'s `stripKnownAffix`) -- an SDK package name,
  *    module path, or Terraform's own `aws_` resource-type prefix.
- * 2. Split what's left into segments on `-`/`_` (never mid-token: "s3_batch_operations" splits
- *    into ["s3", "batch", "operations"], never something that cuts a word in half).
- * 3. Try joining the first *N* segments, from all of them down to just the first, resolving each
+ * 2. If no affix matched, resolve the name as a single candidate and stop there -- see below for
+ *    why segment shortening only applies once a known code-shape affix has actually been found.
+ * 3. If an affix *did* match, the remainder may still be a Terraform-style compound
+ *    (`aws_dynamodb_table` strips to `dynamodb_table`, `aws_elasticache_serverless_cache` strips
+ *    to `elasticache_serverless_cache`) that needs its own resource-type suffix separated from
+ *    the service. Split it into segments on `-`/`_` (never mid-token: "s3_batch_operations"
+ *    splits into ["s3", "batch", "operations"], never something that cuts a word in half) and try
+ *    joining the first *N* segments, from all of them down to just the first, resolving each
  *    candidate through `normalizeServiceKey` then `serviceAliasIndex.resolve`. The first (longest)
  *    match wins -- when the catalog carries both a specific and a more general entry for the same
  *    prefix (`"Amazon ElastiCache Serverless"` alongside `"Amazon ElastiCache"`), the specific one
- *    is what such a repository is actually calling, and trying longest-first is what makes that
- *    the answer instead of the shorter, less specific one that also happens to resolve.
+ *    is what such a repository is actually calling.
  *
- * Returns `null` when nothing at any length resolves -- a genuinely unresolvable name (`sns`, or
- * `aws_sns_topic` after stripping) is never rescued into something adjacent just because
- * shortening ran out of segments to try.
+ * Segment shortening is gated on an affix having actually been stripped, rather than applying to
+ * every name unconditionally, because it is a recovery strategy for a name that arrived in a
+ * known code shape -- not a general prefix match on arbitrary text. Without that gate, an
+ * ordinary hyphenated name that happens to start with a service name would be silently
+ * misresolved: `"lambda-labs-gpu"` (a GPU hosting product) would shorten down to `"lambda"` and
+ * wrongly resolve to AWS Lambda, and `"athena-health"` (a healthcare company) would do the same
+ * for Amazon Athena. Confirmed against the real catalog before this gate existed, and confirmed
+ * gone after.
+ *
+ * Returns `null` when nothing resolves -- a genuinely unresolvable name (`sns`, or `aws_sns_topic`
+ * after stripping) is never rescued into something adjacent just because shortening ran out of
+ * segments to try.
  */
 export function resolveServiceName(rawName: string, serviceAliasIndex: ServiceAliasIndex): string | null {
   const stripped = stripKnownAffix(rawName);
+  const affixWasStripped = stripped !== rawName;
+
+  if (!affixWasStripped) {
+    return serviceAliasIndex.resolve(normalizeServiceKey(rawName));
+  }
+
   const segments = stripped.split(/[-_]+/).filter((segment) => segment.length > 0);
   if (segments.length === 0) {
     return null;

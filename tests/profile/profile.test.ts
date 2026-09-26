@@ -11,6 +11,8 @@ const CATALOG_SERVICE_NAMES = [
   "Amazon Bedrock",
   "Amazon ElastiCache",
   "Amazon ElastiCache Serverless",
+  "AWS Lambda",
+  "Amazon Athena",
 ];
 
 function testAliasIndex(): ServiceAliasIndex {
@@ -147,6 +149,28 @@ describe("resolveProfile", () => {
 
     expect(resolved.services[0]?.catalogName).toBeNull();
     expect(resolved.unresolvedServices).toEqual(["aws_sns_topic"]);
+  });
+
+  it("does not shorten a plain hyphenated name that never had a wrapper affix to strip", () => {
+    // Segment shortening is a recovery strategy for a name that arrived in a known code shape
+    // (an SDK package, a Terraform resource type) -- not a general prefix match on arbitrary
+    // text. Without gating it on an affix actually having been stripped, "lambda-labs-gpu" would
+    // shorten all the way down to "lambda" and wrongly resolve to AWS Lambda; "athena-health"
+    // would wrongly resolve to Amazon Athena the same way. Neither name has any relationship to
+    // the AWS service it happens to start with.
+    for (const name of ["lambda-labs-gpu", "athena-health"]) {
+      const raw = {
+        schemaVersion: 1,
+        repos: [{ root: ".", languages: [] }],
+        services: [{ name, evidence: [{ repo: ".", file: "package.json" }] }],
+        patterns: [],
+      };
+
+      const resolved = resolveProfile(raw, testAliasIndex());
+
+      expect(resolved.services[0]?.catalogName).toBeNull();
+      expect(resolved.unresolvedServices).toEqual([name]);
+    }
   });
 
   it("rejects a service with no evidence, naming the entry", () => {
