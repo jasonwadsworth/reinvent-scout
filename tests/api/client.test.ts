@@ -1,0 +1,250 @@
+import { describe, expect, it } from "vitest";
+import { createApiClient } from "../../src/api/client.js";
+import {
+  AuthRequiredError,
+  NotFoundError,
+  NotRegisteredError,
+  OperationUnavailableError,
+  ServiceError,
+  ThrottledError,
+  ValidationError,
+} from "../../src/core/errors.js";
+import { createFakeFetch, type FakeResponseInit } from "../helpers/fake-fetch.js";
+
+const EVENT_ID = "reinvent2026";
+const EMPTY_SCHEDULE_BODY = { schedule: { reserved: [], favorites: [], personalTime: [] } };
+
+interface GetAccessTokenCall {
+  forceRefresh?: boolean;
+}
+
+function fakeAuth(tokens: string[]): {
+  getAccessToken: (options?: { forceRefresh?: boolean }) => Promise<string>;
+  calls: GetAccessTokenCall[];
+} {
+  const calls: GetAccessTokenCall[] = [];
+  let index = 0;
+  return {
+    getAccessToken: async (options) => {
+      calls.push(options ?? {});
+      const token = tokens[Math.min(index, tokens.length - 1)]!;
+      index++;
+      return token;
+    },
+    calls,
+  };
+}
+
+function fakeSleep(): { sleep: (ms: number) => Promise<void>; durations: number[] } {
+  const durations: number[] = [];
+  return {
+    sleep: async (ms: number) => {
+      durations.push(ms);
+    },
+    durations,
+  };
+}
+
+describe("createApiClient", () => {
+  it("sends the bearer token and Accept application/json", async () => {
+    const fake = createFakeFetch([{ status: 200, json: EMPTY_SCHEDULE_BODY }]);
+    const auth = fakeAuth(["token-abc"]);
+
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: auth.getAccessToken });
+    await client.getSchedule(EVENT_ID);
+
+    expect(fake.calls).toHaveLength(1);
+    expect(fake.calls[0]!.url).toContain(`/v1/events/${EVENT_ID}/schedule`);
+    const headers = new Headers(fake.calls[0]!.init?.headers);
+    expect(headers.get("Authorization")).toBe("Bearer token-abc");
+    expect(headers.get("Accept")).toBe("application/json");
+  });
+
+  it("maps 401 to AuthRequiredError telling the user to run auth login", async () => {
+    const fake = createFakeFetch([{ status: 401, json: { message: "Unauthorized" } }]);
+    const auth = fakeAuth(["token-1", "token-2"]);
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: auth.getAccessToken });
+
+    let caught: unknown;
+    try {
+      await client.getSchedule(EVENT_ID);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(AuthRequiredError);
+    expect((caught as Error).message).toMatch(/auth login/);
+  });
+
+  it("maps 403 to NotRegisteredError stating that signing in again will not help", async () => {
+    const fake = createFakeFetch([{ status: 403, json: { message: "Not registered for this event." } }]);
+    const auth = fakeAuth(["token-abc"]);
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: auth.getAccessToken });
+
+    let caught: unknown;
+    try {
+      await client.getSchedule(EVENT_ID);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(NotRegisteredError);
+    expect((caught as Error).message).toMatch(/will not help/i);
+  });
+
+  it("retries once after forcing a token refresh when a request returns 401 with a token the provider believed valid, then fails", async () => {
+    const fake = createFakeFetch([
+      { status: 401, json: { message: "Unauthorized" } },
+      { status: 401, json: { message: "Unauthorized" } },
+    ]);
+    const auth = fakeAuth(["stale-token", "fresh-token"]);
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: auth.getAccessToken });
+
+    await expect(client.getSchedule(EVENT_ID)).rejects.toBeInstanceOf(AuthRequiredError);
+
+    expect(fake.calls).toHaveLength(2);
+    expect(new Headers(fake.calls[0]!.init?.headers).get("Authorization")).toBe("Bearer stale-token");
+    expect(new Headers(fake.calls[1]!.init?.headers).get("Authorization")).toBe("Bearer fresh-token");
+    expect(auth.calls).toEqual([{}, { forceRefresh: true }]);
+  });
+
+  it("does not force a second refresh when a fresh 401 is followed by another 401 only once", async () => {
+    // A third 401 after the forced refresh must not trigger yet another refresh attempt --
+    // exactly one retry, ever, per request.
+    const fake = createFakeFetch([
+      { status: 401, json: { message: "Unauthorized" } },
+      { status: 401, json: { message: "Unauthorized" } },
+      { status: 401, json: { message: "Unauthorized" } },
+    ]);
+    const auth = fakeAuth(["t1", "t2", "t3"]);
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: auth.getAccessToken });
+
+    await expect(client.getSchedule(EVENT_ID)).rejects.toBeInstanceOf(AuthRequiredError);
+
+    // fake-fetch repeats its last queued response, so a broken implementation that kept
+    // retrying forever would hang this test rather than pass it -- the call-count assertion is
+    // still the thing actually proving "exactly once".
+    expect(fake.calls).toHaveLength(2);
+    expect(auth.calls).toHaveLength(2);
+  });
+
+  it("waits the Retry-After seconds and retries on 429", async () => {
+    const responses: FakeResponseInit[] = [
+      { status: 429, headers: { "Retry-After": "2" }, json: { message: "Slow down" } },
+      { status: 200, json: EMPTY_SCHEDULE_BODY },
+    ];
+    const fake = createFakeFetch(responses);
+    const auth = fakeAuth(["token-abc"]);
+    const sleeper = fakeSleep();
+    const client = createApiClient({
+      fetchFn: fake.fetch,
+      getAccessToken: auth.getAccessToken,
+      sleep: sleeper.sleep,
+    });
+
+    const schedule = await client.getSchedule(EVENT_ID);
+
+    expect(schedule).toEqual(EMPTY_SCHEDULE_BODY.schedule);
+    expect(fake.calls).toHaveLength(2);
+    expect(sleeper.durations).toEqual([2000]);
+  });
+
+  it("gives up after three 429 responses and throws ThrottledError", async () => {
+    const fake = createFakeFetch([
+      { status: 429, headers: { "Retry-After": "1" }, json: { message: "Slow down" } },
+    ]);
+    const auth = fakeAuth(["token-abc"]);
+    const sleeper = fakeSleep();
+    const client = createApiClient({
+      fetchFn: fake.fetch,
+      getAccessToken: auth.getAccessToken,
+      sleep: sleeper.sleep,
+    });
+
+    await expect(client.getSchedule(EVENT_ID)).rejects.toBeInstanceOf(ThrottledError);
+
+    expect(fake.calls).toHaveLength(3);
+    expect(sleeper.durations).toHaveLength(2);
+  });
+
+  it("retries 503 with exponential backoff", async () => {
+    const fake = createFakeFetch([
+      { status: 503, json: { message: "Unavailable" } },
+      { status: 503, json: { message: "Unavailable" } },
+      { status: 200, json: EMPTY_SCHEDULE_BODY },
+    ]);
+    const auth = fakeAuth(["token-abc"]);
+    const sleeper = fakeSleep();
+    const client = createApiClient({
+      fetchFn: fake.fetch,
+      getAccessToken: auth.getAccessToken,
+      sleep: sleeper.sleep,
+    });
+
+    const schedule = await client.getSchedule(EVENT_ID);
+
+    expect(schedule).toEqual(EMPTY_SCHEDULE_BODY.schedule);
+    expect(fake.calls).toHaveLength(3);
+    expect(sleeper.durations).toHaveLength(2);
+    expect(sleeper.durations[1]).toBeGreaterThan(sleeper.durations[0]!);
+  });
+
+  it("gives up after exhausting 503 retries and throws ServiceError", async () => {
+    const fake = createFakeFetch([{ status: 503, json: { message: "Unavailable" } }]);
+    const auth = fakeAuth(["token-abc"]);
+    const sleeper = fakeSleep();
+    const client = createApiClient({
+      fetchFn: fake.fetch,
+      getAccessToken: auth.getAccessToken,
+      sleep: sleeper.sleep,
+    });
+
+    await expect(client.getSchedule(EVENT_ID)).rejects.toBeInstanceOf(ServiceError);
+  });
+
+  it("does not retry 400, 404 or 409", async () => {
+    const cases: Array<{ status: number; errorClass: new (message: string) => Error }> = [
+      { status: 400, errorClass: ValidationError },
+      { status: 404, errorClass: NotFoundError },
+      { status: 409, errorClass: OperationUnavailableError },
+    ];
+
+    for (const { status, errorClass } of cases) {
+      const fake = createFakeFetch([{ status, json: { message: `status ${status}` } }]);
+      const auth = fakeAuth(["token-abc"]);
+      const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: auth.getAccessToken });
+
+      await expect(client.getSchedule(EVENT_ID)).rejects.toBeInstanceOf(errorClass);
+      expect(fake.calls).toHaveLength(1);
+    }
+  });
+
+  it("maps 409 to OperationUnavailableError", async () => {
+    const fake = createFakeFetch([{ status: 409, json: { message: "Reservations are not open yet." } }]);
+    const auth = fakeAuth(["token-abc"]);
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: auth.getAccessToken });
+
+    await expect(client.getSchedule(EVENT_ID)).rejects.toBeInstanceOf(OperationUnavailableError);
+  });
+
+  it("includes the server message in the error but never the bearer token", async () => {
+    const secretToken = "SECRET_BEARER_TOKEN_DO_NOT_LEAK";
+    const fake = createFakeFetch([
+      { status: 404, json: { message: "No session with that id in this event." } },
+    ]);
+    const auth = fakeAuth([secretToken]);
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: auth.getAccessToken });
+
+    let caught: unknown;
+    try {
+      await client.getSchedule(EVENT_ID);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(NotFoundError);
+    expect((caught as Error).message).toContain("No session with that id in this event.");
+    expect((caught as Error).message).not.toContain(secretToken);
+    expect(String(caught)).not.toContain(secretToken);
+  });
+});
