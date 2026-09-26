@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { buildServiceAliasIndex, type ServiceAliasIndex } from "../../../src/catalog/service-aliases.js";
 import type { DetectableFile } from "../../../src/profile/detectable-file.js";
 import { detectCdkUsage } from "../../../src/profile/detectors/cdk.js";
 import { detectCloudFormation } from "../../../src/profile/detectors/cloudformation.js";
@@ -7,6 +8,11 @@ import { detectTerraform } from "../../../src/profile/detectors/terraform.js";
 
 function file(path: string, content: string): DetectableFile {
   return { path, content };
+}
+
+/** Only the catalog entries the Terraform cases in this file need to resolve. */
+function testAliasIndex(): ServiceAliasIndex {
+  return buildServiceAliasIndex(["AWS Step Functions", "Amazon DynamoDB"]);
 }
 
 /**
@@ -74,12 +80,10 @@ describe("service key agreement across detectors", () => {
     // Terraform's own resource-type prefix for Step Functions is "sfn" (aws_sfn_state_machine),
     // matching the Go SDK's package name rather than the CDK's "stepfunctions" -- a third naming
     // convention for the same service, extending the case already fixed for CDK vs SDK.
-    const terraformResult = detectTerraform([
-      file(
-        "main.tf",
-        ['resource "aws_sfn_state_machine" "workflow" {', '  name = "workflow"', "}"].join("\n"),
-      ),
-    ]);
+    const terraformResult = detectTerraform(
+      [file("main.tf", ['resource "aws_sfn_state_machine" "workflow" {', '  name = "workflow"', "}"].join("\n"))],
+      testAliasIndex(),
+    );
     const cdkResult = detectCdkUsage([
       file("src/stack.ts", 'import * as stepfunctions from "aws-cdk-lib/aws-stepfunctions";'),
     ]);
@@ -89,12 +93,10 @@ describe("service key agreement across detectors", () => {
   });
 
   it("produces the same key from the Terraform detector and the SDK detector for DynamoDB", () => {
-    const terraformResult = detectTerraform([
-      file(
-        "main.tf",
-        ['resource "aws_dynamodb_table" "orders" {', '  name = "orders"', "}"].join("\n"),
-      ),
-    ]);
+    const terraformResult = detectTerraform(
+      [file("main.tf", ['resource "aws_dynamodb_table" "orders" {', '  name = "orders"', "}"].join("\n"))],
+      testAliasIndex(),
+    );
     const sdkResult = detectSdkUsage([
       file("src/db.ts", 'import { DynamoDBClient } from "@aws-sdk/client-dynamodb";'),
     ]);

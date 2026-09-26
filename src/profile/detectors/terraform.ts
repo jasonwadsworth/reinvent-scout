@@ -1,3 +1,4 @@
+import type { ServiceAliasIndex } from "../../catalog/service-aliases.js";
 import type { DetectableFile } from "../detectable-file.js";
 import { normalizeServiceKey } from "../service-keys.js";
 import { extensionOf, isInsideSkippedDirectory } from "./paths.js";
@@ -28,53 +29,64 @@ export interface TerraformDetectionResult {
 
 const MAX_EVIDENCE_PER_KEY = 3;
 
-/** Every prefix known to appear immediately after `aws_` in a real terraform-provider-aws
- * resource type name. Matched longest-first against the resource type's own underscore-separated
- * segments (see `extractServiceKey`), which is what correctly stops
- * `aws_elasticache_serverless_cache` at "elasticache" rather than misreading a longer run of
- * segments as a more specific (and nonexistent) service. Deliberately not exhaustive -- the AWS
- * provider has hundreds of resource types; this covers what a repository's detected services
- * plausibly need, and an unrecognized `aws_*` resource is simply not detected rather than
- * mis-detected, which is the safe failure mode.
+/**
+ * A handful of real terraform-provider-aws resource-type prefixes that derive from no catalog
+ * service name at all, so `ServiceAliasIndex.resolve` alone can never recognize them -- kept as
+ * small, explicit, tested-as-necessary entries rather than a rule (see
+ * tests/profile/detectors/terraform.test.ts's "each override is genuinely unreachable by
+ * derivation"). Maps prefix -> the *key* to emit (further normalized below), not a catalog name:
+ * this is the same key -> key shape as `service-keys.ts`'s `KEY_NORMALIZATION_OVERRIDES`, for the
+ * same reason -- the catalog doesn't need to have heard of the exact spelling for a detector to
+ * still report the parent service.
  */
-const KNOWN_TERRAFORM_SERVICE_PREFIXES: ReadonlySet<string> = new Set([
-  "dynamodb",
-  "ecs",
-  "eks",
-  "ec2",
-  "lambda",
-  "s3",
-  "sqs",
-  "sns",
-  "kms",
-  "elasticache",
-  "apigatewayv2",
-  "sfn",
-  "iam",
-  "rds",
-  "vpc",
-  "cloudwatch",
-  "cloudfront",
-  "route53",
-]);
+export const TERRAFORM_PREFIX_OVERRIDES: Readonly<Record<string, string>> = {
+  // Terraform's Bedrock Agent resources use a compound "bedrockagent" prefix with no separator.
+  // The catalog has only "Amazon Bedrock", not a distinct "Bedrock Agent" entry, so this prefix
+  // derives from nothing -- collapsed to the parent service.
+  bedrockagent: "bedrock",
+  // Terraform's API Gateway v2 (HTTP APIs / WebSocket APIs) resources use a compound
+  // "apigatewayv2" prefix. The catalog has only "Amazon API Gateway", with no "v2" variant, so
+  // this prefix derives from nothing either -- collapsed to the parent service.
+  apigatewayv2: "apigateway",
+};
 
 /** A resource declaration: `resource "aws_dynamodb_table" "orders" { ... }`. Only the type
- * string is needed -- the resource's own local name is irrelevant to service detection. */
+ * string is needed -- the resource's own local name is irrelevant to service detection. Anchored
+ * to the start of the line (after only leading whitespace), so a commented-out resource or one
+ * merely mentioned elsewhere on a line -- `# resource "aws_sqs_queue" "old" {}`, a trailing
+ * comment citing an old resource -- is never mistaken for a real declaration, the same lesson
+ * `detectors/cloudformation.ts` learned about a `Type:` line. */
 const RESOURCE_DECLARATION_PATTERN = /^\s*resource\s+"(?<type>[a-z0-9_]+)"\s+"[^"]+"/;
 
 /** A provider block naming `"aws"` specifically -- the IaC-against-AWS signal, independent of
  * any particular resource type. */
 const AWS_PROVIDER_PATTERN = /^\s*provider\s+"aws"/;
 
-function extractServiceKey(resourceType: string): string | null {
+/**
+ * Resolves a Terraform resource type's service prefix by longest-prefix match of its
+ * underscore-separated segments against the catalog's own alias derivation
+ * (`serviceAliasIndex.resolve`) -- not a hand-written list of known services, which would rot as
+ * AWS ships new services and, per the plan's own worked example, must stop at the *longest*
+ * candidate a real service actually exists for (`aws_elasticache_serverless_cache` resolves via
+ * "elasticache_serverless" -- Amazon ElastiCache Serverless, a real, more specific catalog entry
+ * -- rather than the shorter "elasticache", since a catalog-derived set can recognize both and the
+ * more specific one is what the repository is actually calling). Falls back to
+ * `TERRAFORM_PREFIX_OVERRIDES` for the handful of real prefixes that derive from no catalog name
+ * at all.
+ */
+function extractServiceKey(resourceType: string, serviceAliasIndex: ServiceAliasIndex): string | null {
   if (!resourceType.startsWith("aws_")) {
     return null;
   }
   const segments = resourceType.slice("aws_".length).split("_");
   for (let length = segments.length; length >= 1; length--) {
     const candidate = segments.slice(0, length).join("_");
-    if (KNOWN_TERRAFORM_SERVICE_PREFIXES.has(candidate)) {
+    if (serviceAliasIndex.resolve(candidate) !== null) {
       return candidate;
+    }
+    const overridden = TERRAFORM_PREFIX_OVERRIDES[candidate];
+    if (overridden !== undefined) {
+      return overridden;
     }
   }
   return null;
@@ -82,12 +94,11 @@ function extractServiceKey(resourceType: string): string | null {
 
 /**
  * Detects AWS resource usage from Terraform `.tf` files: `resource "aws_<service>_<rest>" "..."
- * { ... }` declarations, resolved to a service key by longest-prefix match of the type's
- * underscore-separated segments against a small known-prefix vocabulary (see
- * `KNOWN_TERRAFORM_SERVICE_PREFIXES`) -- not a naive "first segment" split, which would
- * mis-resolve a multi-word service like `aws_elasticache_serverless_cache`. A resource from
- * another provider (`google_storage_bucket`, ...) is never matched, since the type string must
- * start with the literal `aws_` prefix.
+ * { ... }` declarations, resolved to a service key by longest-prefix match against the catalog's
+ * own alias derivation, passed in as `serviceAliasIndex` (built once per run from the synced
+ * catalog, the same way `catalog/service-aliases.ts`'s doc comment describes and the matcher will
+ * build it -- never once per candidate or per file). A resource type that doesn't start with the
+ * literal `aws_` prefix (another provider) never matches.
  *
  * Reports `iacEvidence` whenever any file declares `provider "aws"`, independent of whether a
  * specific resource type was found -- the tooling-and-target signal, distinct from any one
@@ -102,7 +113,10 @@ function extractServiceKey(resourceType: string): string | null {
  * -- Terraform's own local module and provider cache -- excluded), sharing the walker's own
  * `SKIPPED_DIRECTORY_NAMES` (see `detectors/paths.ts`).
  */
-export function detectTerraform(files: readonly DetectableFile[]): TerraformDetectionResult {
+export function detectTerraform(
+  files: readonly DetectableFile[],
+  serviceAliasIndex: ServiceAliasIndex,
+): TerraformDetectionResult {
   const evidenceByKey = new Map<string, TerraformEvidence[]>();
   const iacEvidence: TerraformEvidence[] = [];
 
@@ -137,7 +151,7 @@ export function detectTerraform(files: readonly DetectableFile[]): TerraformDete
       if (resourceType === undefined) {
         continue;
       }
-      const serviceKey = extractServiceKey(resourceType);
+      const serviceKey = extractServiceKey(resourceType, serviceAliasIndex);
       if (serviceKey === null) {
         continue;
       }
