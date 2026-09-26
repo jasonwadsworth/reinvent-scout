@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { Command, CommanderError } from "commander";
+import { registerCatalogCommands } from "./commands/catalog.js";
 import { isMainModule } from "./entry.js";
 import { readPackageVersion } from "./version.js";
 
@@ -18,6 +19,8 @@ export function buildProgram(): Command {
     )
     .version(readPackageVersion())
     .exitOverride();
+
+  registerCatalogCommands(program);
 
   return program;
 }
