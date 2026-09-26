@@ -96,6 +96,37 @@ export interface IndexRecord {
   bodyTerms: TermFrequencies;
 }
 
+/** The subset of `IndexRecord` that's safe to hand to a user or an agent -- strips `titleTerms`
+ * and `bodyTerms`, the scorer's own internal term-frequency maps, which are an implementation
+ * detail of `match/score.ts` and `catalog/query.ts`'s local search, never agent- or user-facing
+ * output on their own. Shared by `cli/commands/catalog.ts`'s `search`/`show` and
+ * `cli/commands/match.ts`, so there is exactly one list of public fields to keep in sync with
+ * `IndexRecord`, not one per caller. */
+export function toPublicIndexRecord(record: IndexRecord): Omit<IndexRecord, "titleTerms" | "bodyTerms"> {
+  return {
+    sessionId: record.sessionId,
+    abbreviation: record.abbreviation,
+    title: record.title,
+    type: record.type,
+    level: record.level,
+    levelBand: record.levelBand,
+    venue: record.venue,
+    room: record.room,
+    startDate: record.startDate,
+    startTime: record.startTime,
+    lengthMinutes: record.lengthMinutes,
+    services: record.services,
+    topics: record.topics,
+    areasOfInterest: record.areasOfInterest,
+    roles: record.roles,
+    features: record.features,
+    industries: record.industries,
+    speakerCount: record.speakerCount,
+    isReservable: record.isReservable,
+    seatAvailability: record.seatAvailability,
+  };
+}
+
 /**
  * Builds a local index record from one raw API session, tolerant of every field the real
  * catalog is known to omit (see docs/plans/2026-09-25-phase1.md's catalog facts): missing

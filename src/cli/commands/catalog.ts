@@ -1,7 +1,7 @@
 import type { Command } from "commander";
 import { createApiClient, type ApiClient } from "../../api/client.js";
 import { createTokenProviderAdapter } from "../../auth/provider-adapter.js";
-import type { IndexRecord } from "../../catalog/index-record.js";
+import { toPublicIndexRecord } from "../../catalog/index-record.js";
 import { queryCatalog, resolveSessionRecord, type CatalogQueryResult } from "../../catalog/query.js";
 import { readRaw } from "../../catalog/store.js";
 import { DEFAULT_EVENT_ID, syncCatalog, type SyncResult } from "../../catalog/sync.js";
@@ -54,33 +54,6 @@ const NO_MATCHES_MESSAGE = "No sessions matched.";
 
 function defaultBuildApiClient(storeRoot: string): ApiClient {
   return createApiClient({ getAccessToken: createTokenProviderAdapter({ storeRoot }) });
-}
-
-/** Strips the index record's internal term-frequency maps -- an implementation detail of the
- * scorer, never agent- or user-facing output. */
-function toPublicRecord(record: IndexRecord): Omit<IndexRecord, "titleTerms" | "bodyTerms"> {
-  return {
-    sessionId: record.sessionId,
-    abbreviation: record.abbreviation,
-    title: record.title,
-    type: record.type,
-    level: record.level,
-    levelBand: record.levelBand,
-    venue: record.venue,
-    room: record.room,
-    startDate: record.startDate,
-    startTime: record.startTime,
-    lengthMinutes: record.lengthMinutes,
-    services: record.services,
-    topics: record.topics,
-    areasOfInterest: record.areasOfInterest,
-    roles: record.roles,
-    features: record.features,
-    industries: record.industries,
-    speakerCount: record.speakerCount,
-    isReservable: record.isReservable,
-    seatAvailability: record.seatAvailability,
-  };
 }
 
 function parseLevelBandRange(raw: string): { min: number; max: number } {
@@ -228,7 +201,7 @@ export function registerCatalogCommands(program: Command, deps: CatalogCommandDe
         if (options.includeAbstracts) {
           const rawBySessionId = new Map((readRaw({ storeRoot }) ?? []).map((s) => [s.sessionId, s]));
           const withAbstracts = results.map((result) => ({
-            ...toPublicRecord(result.record),
+            ...toPublicIndexRecord(result.record),
             score: result.score,
             abstract: rawBySessionId.get(result.record.sessionId)?.abstract ?? null,
           }));
@@ -245,7 +218,7 @@ export function registerCatalogCommands(program: Command, deps: CatalogCommandDe
         }
 
         const withoutAbstracts = results.map((result) => ({
-          ...toPublicRecord(result.record),
+          ...toPublicIndexRecord(result.record),
           score: result.score,
         }));
         print(
@@ -301,7 +274,7 @@ export function registerCatalogCommands(program: Command, deps: CatalogCommandDe
 
         const { record } = result;
         const rawSession = (readRaw({ storeRoot }) ?? []).find((s) => s.sessionId === record.sessionId);
-        const output = { ...toPublicRecord(record), abstract: rawSession?.abstract ?? null };
+        const output = { ...toPublicIndexRecord(record), abstract: rawSession?.abstract ?? null };
 
         if (options.json) {
           print(JSON.stringify(output));
