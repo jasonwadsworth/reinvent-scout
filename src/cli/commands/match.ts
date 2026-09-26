@@ -89,7 +89,7 @@ function loadProfileContent(profileArg: string, storeRoot: string): string {
 
 function formatCandidateLine(candidate: MatchCandidate): string {
   const { record } = candidate;
-  const parts = [record.abbreviation ?? record.sessionId, record.title];
+  const parts = [candidate.code, record.title];
   if (record.type !== null) {
     parts.push(`[${record.type}]`);
   }
@@ -97,13 +97,33 @@ function formatCandidateLine(candidate: MatchCandidate): string {
   return parts.join(" -- ");
 }
 
-/** The candidate's own line, plus each reason's `detail` indented beneath it -- the scorer exists
- * to be explainable (see `match/score.ts`'s `Reason`), so the human-readable table must actually
- * show why a session was suggested, not only its score. */
+/** One offering's day, time, venue and room, however many of those this particular sitting
+ * actually has on record -- an unscheduled sitting still prints, just without a day or time. */
+function formatOfferingLine(offering: MatchCandidate["offerings"][number]): string {
+  const parts = [offering.startDate ?? "unscheduled"];
+  if (offering.startTime !== null) {
+    parts.push(offering.startTime);
+  }
+  if (offering.venue !== null) {
+    parts.push(offering.venue);
+  }
+  if (offering.room !== null) {
+    parts.push(offering.room);
+  }
+  return `    ${parts.join(" -- ")}`;
+}
+
+/** The candidate's own line (headed by its `code`, not any one sitting's own abbreviation -- see
+ * `match/match.ts`'s repeat grouping), each reason's `detail` indented beneath it -- the scorer
+ * exists to be explainable (see `match/score.ts`'s `Reason`), so the human-readable table must
+ * actually show why a session was suggested, not only its score -- and every one of its offerings
+ * (day, time, venue, room) beneath that, so a repeat's every sitting is visible even though the
+ * candidates being ranked are talks, not individual sittings. */
 function formatCandidateWithReasons(candidate: MatchCandidate): string {
   const line = formatCandidateLine(candidate);
   const reasonLines = candidate.reasons.map((reason) => `  - ${reason.detail}`);
-  return [line, ...reasonLines].join("\n");
+  const offeringLines = candidate.offerings.map(formatOfferingLine);
+  return [line, ...reasonLines, "  Offerings:", ...offeringLines].join("\n");
 }
 
 /** Registers the `match` command. */
@@ -137,9 +157,11 @@ export function registerMatchCommands(program: Command, deps: MatchCommandDeps =
         if (options.includeAbstracts) {
           const rawBySessionId = new Map((readRaw({ storeRoot }) ?? []).map((s) => [s.sessionId, s]));
           const withAbstracts = candidates.map((candidate) => ({
+            code: candidate.code,
             ...toPublicIndexRecord(candidate.record),
             score: candidate.score,
             reasons: candidate.reasons,
+            offerings: candidate.offerings,
             abstract: rawBySessionId.get(candidate.record.sessionId)?.abstract ?? null,
           }));
           print(
@@ -153,9 +175,11 @@ export function registerMatchCommands(program: Command, deps: MatchCommandDeps =
         }
 
         const withoutAbstracts = candidates.map((candidate) => ({
+          code: candidate.code,
           ...toPublicIndexRecord(candidate.record),
           score: candidate.score,
           reasons: candidate.reasons,
+          offerings: candidate.offerings,
         }));
         print(
           options.json

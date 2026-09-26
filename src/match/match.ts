@@ -1,6 +1,7 @@
 import type { CatalogStoreDeps } from "../catalog/store.js";
 import { requireCurrentIndex } from "../catalog/query.js";
 import type { IndexRecord } from "../catalog/index-record.js";
+import type { Venue } from "../catalog/venue.js";
 import type { ResolvedProfile } from "../profile/profile.js";
 import { getLensProfile, type Lens } from "./lens.js";
 import { buildCorpusStats, scoreSession, type MatchQuery, type Reason } from "./score.js";
@@ -8,14 +9,40 @@ import { buildCorpusStats, scoreSession, type MatchQuery, type Reason } from "./
 export interface MatchOptions {
   /** Defaults to `"all"` -- no level restriction, no format preference. */
   lens?: Lens;
-  /** Caps the number of candidates returned, after ranking. */
+  /** Caps the number of candidates (groups, not raw sittings -- see `MatchCandidate.offerings`)
+   * returned, after ranking. */
   limit?: number;
 }
 
+/** One scheduled sitting of a session -- a repeat carries the same talk on a different day, so an
+ * agent (or a person building a schedule) needs every sitting's own time and place even though the
+ * candidates it's choosing between are grouped by talk, not by sitting. */
+export interface MatchOffering {
+  sessionId: string;
+  abbreviation: string | null;
+  startDate: string | null;
+  startTime: string | null;
+  venue: Venue | null;
+  room: string | null;
+}
+
 export interface MatchCandidate {
+  /** The session's base code with any repeat suffix removed (see `baseSessionCode`) -- the stable
+   * identity every sitting of the same talk shares. Equal to the record's own `abbreviation` (or,
+   * lacking one, its `sessionId`) for a session with no repeats. */
+  code: string;
+  /** The best-scoring sitting's own fields, exactly as scored -- except `title`, which has any
+   * trailing " [REPEAT]" marker stripped (see `stripRepeatTitleMarker`), since the group's
+   * displayed title must read the same regardless of which specific sitting happened to score
+   * highest. */
   record: IndexRecord;
+  /** The best-scoring sitting's own score -- never a sum across repeats, which would double-count
+   * what is really one talk. */
   score: number;
   reasons: Reason[];
+  /** Every sitting of this talk, sorted by start time (unscheduled sittings last) -- always at
+   * least one element, even for a session with no repeats at all. */
+  offerings: MatchOffering[];
 }
 
 /**
@@ -67,6 +94,114 @@ function buildMatchQuery(profile: ResolvedProfile): MatchQuery {
   return { services, topics, areasOfInterest, text: textParts.join(" ") };
 }
 
+/** A per-record scoring result, before repeat sessions are grouped into a `MatchCandidate` --
+ * every field a `MatchCandidate` needs except `code` and `offerings`, which only exist once
+ * records are grouped. */
+interface ScoredRecord {
+  record: IndexRecord;
+  score: number;
+  reasons: Reason[];
+}
+
+/**
+ * The real catalog's own repeat-sitting suffix: `-R` optionally followed by digits --
+ * `ARC325-R`, `ARC325-R1`, `ARC325-R2` are the same talk sat on different days. Deliberately
+ * narrow, matching only `R`: a broader `-[A-Z]\d*$` would also match `-S`, the catalog's unrelated
+ * marker for a sponsored session, and the real catalog has at least one base code where that
+ * collision is not hypothetical -- `AIM214` (a SageMaker session) and `AIM214-S` (an unrelated
+ * sponsored talk) share a base string but are two different sessions. Merging them would attach
+ * one session's sittings to the other's title in output an agent reads as fact.
+ */
+const REPEAT_SUFFIX_PATTERN = /-R\d*$/;
+
+/** The group identity a repeat session shares with its siblings: its `abbreviation` with any
+ * repeat suffix removed, or its `sessionId` when it has no abbreviation at all (which can't
+ * collide with a real abbreviation-derived code, and can't itself be shared by two different
+ * sessions, so it's always a safe, unique fallback group of one). */
+function baseSessionCode(record: IndexRecord): string {
+  if (record.abbreviation === null) {
+    return record.sessionId;
+  }
+  return record.abbreviation.replace(REPEAT_SUFFIX_PATTERN, "");
+}
+
+/** The real catalog marks *some* (not all) repeat sittings' titles with a trailing " [REPEAT]" --
+ * confirmed inconsistent across real repeat groups (several carry no marker on any member), so a
+ * group's displayed title can't simply trust whichever member happened to score highest to already
+ * be marker-free. Strips it unconditionally; a title that never had the marker is returned
+ * unchanged. */
+const REPEAT_TITLE_MARKER_PATTERN = /\s*\[REPEAT\]\s*$/i;
+
+function stripRepeatTitleMarker(title: string): string {
+  return title.replace(REPEAT_TITLE_MARKER_PATTERN, "");
+}
+
+function toOffering(record: IndexRecord): MatchOffering {
+  return {
+    sessionId: record.sessionId,
+    abbreviation: record.abbreviation,
+    startDate: record.startDate,
+    startTime: record.startTime,
+    venue: record.venue,
+    room: record.room,
+  };
+}
+
+/** Ascending by start date then start time; a sitting with no `startDate` at all (unscheduled)
+ * sorts last, since there's nothing yet to place it relative to a scheduled one. */
+function compareOfferings(a: MatchOffering, b: MatchOffering): number {
+  if (a.startDate !== b.startDate) {
+    if (a.startDate === null) {
+      return 1;
+    }
+    if (b.startDate === null) {
+      return -1;
+    }
+    return a.startDate.localeCompare(b.startDate);
+  }
+  return (a.startTime ?? "").localeCompare(b.startTime ?? "");
+}
+
+/**
+ * Groups scored records by `baseSessionCode`, collapsing every repeat sitting of the same talk
+ * into one `MatchCandidate`. The group's `score` and `reasons` come from its best-scoring member
+ * (never a sum -- these are the same talk, not independent signals to add together), and every
+ * member, including that same top scorer, appears in `offerings`. A group of one (no repeats)
+ * still gets a one-element `offerings` list, so a caller never has to special-case "no repeats"
+ * separately from "some repeats."
+ */
+function groupByCode(scoredRecords: readonly ScoredRecord[]): MatchCandidate[] {
+  const groups = new Map<string, ScoredRecord[]>();
+  for (const scored of scoredRecords) {
+    const code = baseSessionCode(scored.record);
+    const members = groups.get(code);
+    if (members === undefined) {
+      groups.set(code, [scored]);
+    } else {
+      members.push(scored);
+    }
+  }
+
+  const candidates: MatchCandidate[] = [];
+  for (const [code, members] of groups) {
+    let winner = members[0]!;
+    for (const member of members) {
+      if (member.score > winner.score) {
+        winner = member;
+      }
+    }
+    const offerings = members.map((member) => toOffering(member.record)).sort(compareOfferings);
+    candidates.push({
+      code,
+      record: { ...winner.record, title: stripRepeatTitleMarker(winner.record.title) },
+      score: winner.score,
+      reasons: winner.reasons,
+      offerings,
+    });
+  }
+  return candidates;
+}
+
 /** Rounds to two decimal places at the output boundary only. `scoreSession`'s BM25-lite saturation
  * arithmetic routinely produces floating-point noise (3 * (1/2.5) is 1.2000000000000002, not a
  * clean 1.2) that carries no information, reads as unpolished in agent-facing JSON, and costs
@@ -79,12 +214,14 @@ function roundToTwoDecimals(value: number): number {
 
 function roundCandidate(candidate: MatchCandidate): MatchCandidate {
   return {
+    code: candidate.code,
     record: candidate.record,
     score: roundToTwoDecimals(candidate.score),
     reasons: candidate.reasons.map((reason) => ({
       ...reason,
       weight: roundToTwoDecimals(reason.weight),
     })),
+    offerings: candidate.offerings,
   };
 }
 
@@ -99,10 +236,16 @@ function roundCandidate(candidate: MatchCandidate): MatchCandidate {
  * is what makes a profile with no signals at all return an empty list instead of every session in
  * the catalog in an arbitrary order.
  *
- * Ties break first on whether the session is actually scheduled (`startDate` present) -- an
- * unscheduled session ranks below an otherwise-equal scheduled one, since there's nothing yet to
- * act on for it -- and then on `abbreviation`, the same deterministic tiebreak
- * `catalog/query.ts`'s local search already uses.
+ * Every repeat sitting of the same talk (see `baseSessionCode`) is collapsed into one
+ * `MatchCandidate` before ranking, so `options.limit` counts distinct talks, not raw sittings, and
+ * an agent asking for thirty candidates gets thirty genuinely different choices rather than the
+ * same talk occupying several slots under different suffixes. `catalog search` is deliberately
+ * left ungrouped -- it's a raw listing, not a ranked set of choices to pick between.
+ *
+ * Ties break first on whether the group's best-scoring sitting is actually scheduled (`startDate`
+ * present) -- an otherwise-equal group with nothing yet scheduled ranks below one that does, since
+ * there's nothing yet to act on for it -- and then on `code`, the same deterministic tiebreak
+ * `catalog/query.ts`'s local search uses on `abbreviation`.
  *
  * Throws `CatalogMissingError`/`CatalogUnusableError` exactly like `queryCatalog`, since there's
  * nothing to rank against until a catalog has been synced.
@@ -127,7 +270,7 @@ export function matchSessions(
   // how rare a term actually is.
   const corpusStats = buildCorpusStats(index);
 
-  const candidates: MatchCandidate[] = [];
+  const scoredRecords: ScoredRecord[] = [];
 
   for (const record of index) {
     if (lensProfile.levelBands !== null) {
@@ -155,8 +298,10 @@ export function matchSessions(
       continue;
     }
 
-    candidates.push({ record, score, reasons });
+    scoredRecords.push({ record, score, reasons });
   }
+
+  const candidates = groupByCode(scoredRecords);
 
   candidates.sort((a, b) => {
     if (b.score !== a.score) {
@@ -167,7 +312,7 @@ export function matchSessions(
     if (aScheduled !== bScheduled) {
       return aScheduled ? -1 : 1;
     }
-    return (a.record.abbreviation ?? "").localeCompare(b.record.abbreviation ?? "");
+    return a.code.localeCompare(b.code);
   });
 
   const limited = options.limit === undefined ? candidates : candidates.slice(0, options.limit);

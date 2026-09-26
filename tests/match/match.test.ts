@@ -471,3 +471,326 @@ describe("matchSessions", () => {
     expect(maxAmazonOnlyScore).toBeLessThan(minStructuredScore);
   });
 });
+
+describe("matchSessions grouping repeat sessions by base code", () => {
+  let home: TempHome;
+
+  beforeEach(() => {
+    home = createTempHome();
+  });
+
+  afterEach(() => {
+    home.cleanup();
+  });
+
+  it("collapses the fixture's real repeat pair into one candidate with two offerings", () => {
+    // API303-R and API303-R1 (see tests/fixtures/README.md) are the real catalog's own repeat
+    // pair: the same AWS AppSync talk, sat twice on different days.
+    writeCatalog(
+      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
+      { storeRoot: home.path },
+    );
+
+    const profile = resolvedProfile({
+      services: [
+        {
+          name: "AWS AppSync",
+          evidence: [{ repo: ".", file: "x" }],
+          catalogName: "AWS AppSync",
+        },
+      ],
+    });
+
+    const results = matchSessions(profile, { storeRoot: home.path });
+
+    const api303 = results.filter((r) => r.code === "API303");
+    expect(api303).toHaveLength(1);
+    expect(api303[0]!.offerings).toHaveLength(2);
+    expect(api303[0]!.offerings.map((o) => o.abbreviation)).toEqual(["API303-R", "API303-R1"]);
+    // The base sitting (2026-11-30) comes before the later repeat (2026-12-02).
+    expect(api303[0]!.offerings.map((o) => o.startDate)).toEqual(["2026-11-30", "2026-12-02"]);
+    // Neither raw member's abbreviation stands in for the group -- "API303" is the stable code
+    // both sittings share.
+    expect(results.some((r) => r.code === "API303-R" || r.code === "API303-R1")).toBe(false);
+  });
+
+  it("strips the real catalog's trailing '[REPEAT]' title marker from the group's displayed title, even when the marked sitting scores highest", () => {
+    // API303-R1's own title carries " [REPEAT]" (matching the real catalog's convention); if that
+    // sitting happens to be the group's best-scoring member, the group must still display the
+    // clean, unmarked title, not "... [REPEAT]".
+    writeCatalog(
+      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
+      { storeRoot: home.path },
+    );
+
+    // Text-only query naming API303-R1's own repeat marker plus a term only it would favor via
+    // extra title weight is unnecessary here -- both members share identical text apart from the
+    // marker, so any AWS AppSync match ties between them and the tie-break (first in index order)
+    // picks API303-R, which does NOT carry the marker. To actually exercise "the marked sitting
+    // scores highest", give the query textual overlap that only scores through the title, where
+    // API303-R1's extra word "repeat" itself would otherwise nudge it ahead if title-stripping
+    // happened before scoring rather than only at display time.
+    const profile = resolvedProfile({
+      services: [
+        { name: "AWS AppSync", evidence: [{ repo: ".", file: "x" }], catalogName: "AWS AppSync" },
+      ],
+      intents: [{ kind: "goal", text: "repeat" }],
+    });
+
+    const results = matchSessions(profile, { storeRoot: home.path });
+
+    const api303 = results.find((r) => r.code === "API303");
+    expect(api303).toBeDefined();
+    expect(api303!.record.title).toBe("Building real-time applications with event-driven architectures");
+    expect(api303!.record.title).not.toContain("REPEAT");
+  });
+
+  it("gives a session with no repeats a one-element offerings list", () => {
+    writeCatalog(
+      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
+      { storeRoot: home.path },
+    );
+
+    const profile = resolvedProfile({
+      services: [
+        { name: "Amazon Redshift", evidence: [{ repo: ".", file: "x" }], catalogName: "Amazon Redshift" },
+      ],
+    });
+
+    const results = matchSessions(profile, { storeRoot: home.path });
+
+    const ant301 = results.find((r) => r.code === "ANT301");
+    expect(ant301).toBeDefined();
+    expect(ant301!.offerings).toHaveLength(1);
+    expect(ant301!.offerings[0]!.abbreviation).toBe("ANT301");
+  });
+
+  it("keeps a three-member repeat group's every sitting in the offerings list", () => {
+    const base: Session = {
+      sessionId: "arc202-r",
+      abbreviation: "ARC202-R",
+      title: "Where do agents fit? A capability-first approach to agentic AI",
+      services: ["AWS Lambda"],
+      sessionTime: { date: "2026-12-01", time: "14:30", length: "60" },
+    };
+    const repeat1: Session = {
+      ...base,
+      sessionId: "arc202-r1",
+      abbreviation: "ARC202-R1",
+      title: `${base.title} [REPEAT]`,
+      sessionTime: { date: "2026-12-03", time: "10:00", length: "60" },
+    };
+    const repeat2: Session = {
+      ...base,
+      sessionId: "arc202-r2",
+      abbreviation: "ARC202-R2",
+      title: `${base.title} [REPEAT]`,
+      sessionTime: { date: "2026-12-02", time: "10:00", length: "60" },
+    };
+    writeCatalog(
+      {
+        raw: [base, repeat1, repeat2],
+        index: [base, repeat1, repeat2].map(buildIndexRecord),
+        meta: sampleMeta({ totalCount: 3, count: 3 }),
+      },
+      { storeRoot: home.path },
+    );
+
+    const profile = resolvedProfile({
+      services: [
+        { name: "lambda", evidence: [{ repo: ".", file: "x" }], catalogName: "AWS Lambda" },
+      ],
+    });
+
+    const results = matchSessions(profile, { storeRoot: home.path });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]!.code).toBe("ARC202");
+    // Sorted by start time: Dec 1, then Dec 2 (-R2), then Dec 3 (-R1) -- deliberately out of
+    // abbreviation-suffix order, so this fails if offerings were sorted by abbreviation instead of
+    // by their actual scheduled time.
+    expect(results[0]!.offerings.map((o) => o.abbreviation)).toEqual([
+      "ARC202-R",
+      "ARC202-R2",
+      "ARC202-R1",
+    ]);
+  });
+
+  it("does not merge a sponsored '-S' session into a same-named base code's group", () => {
+    // The real catalog's one collision between the two suffix conventions: AIM214 (a SageMaker
+    // session) and AIM214-S (an unrelated sponsored talk) happen to share a base string, but "-S"
+    // is not a repeat suffix -- a broader "-<letter><digits>?" pattern would wrongly merge them
+    // and attach one session's sittings to the other's title in output an agent reads as fact.
+    const base: Session = {
+      sessionId: "aim214",
+      abbreviation: "AIM214",
+      title: "The age of vertical models: training to deployment on SageMaker AI",
+      services: ["Amazon SageMaker AI"],
+    };
+    const sponsored: Session = {
+      sessionId: "aim214-s",
+      abbreviation: "AIM214-S",
+      title: "Ring's Security Evolution: From Doorbell to Enterprise Platform (sponsored by Ring LLC)",
+      services: ["Amazon SageMaker AI"],
+    };
+    writeCatalog(
+      {
+        raw: [base, sponsored],
+        index: [base, sponsored].map(buildIndexRecord),
+        meta: sampleMeta({ totalCount: 2, count: 2 }),
+      },
+      { storeRoot: home.path },
+    );
+
+    const profile = resolvedProfile({
+      services: [
+        {
+          name: "sagemaker",
+          evidence: [{ repo: ".", file: "x" }],
+          catalogName: "Amazon SageMaker AI",
+        },
+      ],
+    });
+
+    const results = matchSessions(profile, { storeRoot: home.path });
+
+    const codes = results.map((r) => r.code).sort();
+    expect(codes).toEqual(["AIM214", "AIM214-S"]);
+    for (const candidate of results) {
+      expect(candidate.offerings).toHaveLength(1);
+    }
+  });
+
+  it("counts groups, not raw sittings, toward --limit", () => {
+    // Three groups -- one with two members, two singletons -- four raw sittings total. A limit of
+    // two must return two whole groups (three rows' worth of data), not stop after two raw rows
+    // and clip the two-member group in half.
+    const groupA1: Session = {
+      sessionId: "a1",
+      abbreviation: "GRP100-R",
+      title: "Highest scoring talk",
+      services: ["AWS Lambda"],
+      abstract: "lambda lambda lambda",
+      sessionTime: { date: "2026-12-01", time: "10:00", length: "60" },
+    };
+    const groupA2: Session = {
+      ...groupA1,
+      sessionId: "a2",
+      abbreviation: "GRP100-R1",
+      title: `${groupA1.title} [REPEAT]`,
+      sessionTime: { date: "2026-12-02", time: "10:00", length: "60" },
+    };
+    const groupB: Session = {
+      sessionId: "b1",
+      abbreviation: "GRP200",
+      title: "Middle scoring talk",
+      services: ["AWS Lambda"],
+      abstract: "lambda",
+    };
+    const groupC: Session = {
+      sessionId: "c1",
+      abbreviation: "GRP300",
+      title: "Lowest scoring talk",
+      services: ["AWS Lambda"],
+    };
+    writeCatalog(
+      {
+        raw: [groupA1, groupA2, groupB, groupC],
+        index: [groupA1, groupA2, groupB, groupC].map(buildIndexRecord),
+        meta: sampleMeta({ totalCount: 4, count: 4 }),
+      },
+      { storeRoot: home.path },
+    );
+
+    const profile = resolvedProfile({
+      services: [
+        { name: "lambda", evidence: [{ repo: ".", file: "x" }], catalogName: "AWS Lambda" },
+      ],
+      intents: [{ kind: "goal", text: "lambda" }],
+    });
+
+    const results = matchSessions(profile, { storeRoot: home.path }, { limit: 2 });
+
+    expect(results).toHaveLength(2);
+    expect(results.map((r) => r.code)).toEqual(["GRP100", "GRP200"]);
+    // The two-member group must still carry both its offerings, not just whichever raw row
+    // happened to fall inside the old, ungrouped limit.
+    expect(results[0]!.offerings).toHaveLength(2);
+  });
+
+  it("uses the maximum member score for the group, not a sum across repeats", () => {
+    const a: Session = {
+      sessionId: "a",
+      abbreviation: "DUP100-R",
+      title: "Same talk, sitting one",
+      services: ["AWS Lambda"],
+    };
+    const b: Session = { ...a, sessionId: "b", abbreviation: "DUP100-R1", title: `${a.title} [REPEAT]` };
+    writeCatalog(
+      {
+        raw: [a, b],
+        index: [a, b].map(buildIndexRecord),
+        meta: sampleMeta({ totalCount: 2, count: 2 }),
+      },
+      { storeRoot: home.path },
+    );
+
+    // The service's own `name` feeds the free-text query too (see buildMatchQuery), which would
+    // add a small, corpus-dependent idf contribution on top of the flat exact-match weight and
+    // muddy an exact-equality check below -- a placeholder that shares no vocabulary with either
+    // sitting's title or text isolates the comparison to the exact service match alone.
+    const profile = resolvedProfile({
+      services: [
+        {
+          name: "no-overlapping-placeholder-term",
+          evidence: [{ repo: ".", file: "x" }],
+          catalogName: "AWS Lambda",
+        },
+      ],
+    });
+
+    const results = matchSessions(profile, { storeRoot: home.path });
+
+    expect(results).toHaveLength(1);
+    // A sum across the two identical members would double the service-match weight to 100; the
+    // group's score must be the same 50 either single member would score on its own.
+    expect(results[0]!.score).toBe(50);
+  });
+
+  it("orders groups by score, then by code", () => {
+    // Two groups, genuinely tied on score by construction (identical service, no repeats), so
+    // this fails on the score comparison alone if the code tiebreak weren't applied -- and codes
+    // deliberately don't sort the same way their sessionIds would, so this can't pass by accident.
+    const sessionZ: Session = {
+      sessionId: "session-z",
+      abbreviation: "ZZZ999",
+      title: "Building with the platform",
+      services: ["AWS Lambda"],
+    };
+    const sessionA: Session = {
+      sessionId: "session-a",
+      abbreviation: "AAA100",
+      title: "Building with the platform",
+      services: ["AWS Lambda"],
+    };
+    writeCatalog(
+      {
+        raw: [sessionZ, sessionA],
+        index: [sessionZ, sessionA].map(buildIndexRecord),
+        meta: sampleMeta({ totalCount: 2, count: 2 }),
+      },
+      { storeRoot: home.path },
+    );
+
+    const profile = resolvedProfile({
+      services: [
+        { name: "lambda", evidence: [{ repo: ".", file: "x" }], catalogName: "AWS Lambda" },
+      ],
+    });
+
+    const results = matchSessions(profile, { storeRoot: home.path });
+
+    expect(results[0]?.score).toBe(results[1]?.score);
+    expect(results.map((r) => r.code)).toEqual(["AAA100", "ZZZ999"]);
+  });
+});

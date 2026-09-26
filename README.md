@@ -197,6 +197,25 @@ API318 -- Deep dive into event-driven architectures with Lambda and Step Functio
   - Uses AWS Step Functions, which this session covers.
 ```
 
+The real catalog repeats many talks on more than one day, under a suffixed abbreviation
+(`ARC325-R`, `ARC325-R1`). `match` groups those into a single candidate by its base `code`, so
+asking for thirty candidates gets thirty genuinely different talks rather than the same one
+occupying several slots. Every sitting still shows up, under `offerings`:
+
+```
+ARC325 -- Serverless at 1M RPS: Lambda, DynamoDB & SQS Scaling Lessons [Breakout session] (score: 127.37)
+  - Uses AWS Lambda, which this session covers.
+  - Uses Amazon DynamoDB, which this session covers.
+  Offerings:
+    2026-12-02 -- 13:30 -- Caesars Forum -- Level 1 | Alliance 314
+    2026-12-03 -- 10:00 -- Caesars Palace -- Caesars Palace | Promenade Level | Trevi
+```
+
+A candidate's own `score` and `reasons` come from its best-scoring sitting (never a sum across
+repeats -- they're the same talk, not independent signals), and `--limit` counts these grouped
+candidates, not raw sittings. `catalog search`, by contrast, is left ungrouped: it's a raw listing
+of the catalog, not a ranked set of choices to pick between.
+
 `--profile` takes either a file path or a name previously saved with `profile save` -- whichever
 it is, it's resolved through the exact same validation and catalog-name resolution `profile
 validate` uses. Options:

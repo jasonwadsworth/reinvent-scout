@@ -255,4 +255,60 @@ describe("match command", () => {
     expect(process.exitCode).toBe(1);
     process.exitCode = 0;
   });
+
+  it("groups the fixture's real repeat pair into one JSON candidate with a code and both offerings", async () => {
+    seedFixtureCatalog(home.path);
+    writeFileSync(
+      profileFilePath,
+      JSON.stringify({
+        schemaVersion: 1,
+        repos: [{ root: ".", languages: [] }],
+        services: [
+          { name: "AWS AppSync", evidence: [{ repo: ".", file: "x" }] },
+        ],
+        patterns: [],
+      }),
+      "utf8",
+    );
+    const h = harness(home.path);
+
+    await h.run(["match", "--profile", profileFilePath, "--json"]);
+
+    const results = JSON.parse(h.printed[0]!) as Array<{
+      code: string;
+      abbreviation: string | null;
+      offerings: Array<{ abbreviation: string | null; startDate: string | null }>;
+    }>;
+    const api303 = results.find((r) => r.code === "API303");
+    expect(api303).toBeDefined();
+    expect(api303!.offerings.map((o) => o.abbreviation)).toEqual(["API303-R", "API303-R1"]);
+    // Every other candidate must not itself be broken out separately under a repeat's own
+    // abbreviation as its code.
+    expect(results.some((r) => r.code === "API303-R" || r.code === "API303-R1")).toBe(false);
+  });
+
+  it("prints each candidate's offerings beneath its reasons in the human-readable table", async () => {
+    seedFixtureCatalog(home.path);
+    writeFileSync(
+      profileFilePath,
+      JSON.stringify({
+        schemaVersion: 1,
+        repos: [{ root: ".", languages: [] }],
+        services: [
+          { name: "AWS AppSync", evidence: [{ repo: ".", file: "x" }] },
+        ],
+        patterns: [],
+      }),
+      "utf8",
+    );
+    const h = harness(home.path);
+
+    await h.run(["match", "--profile", profileFilePath]);
+
+    const text = h.printed.join("\n");
+    expect(text).toContain("API303");
+    // Both sittings' own dates must actually appear, not just a count of them.
+    expect(text).toContain("2026-11-30");
+    expect(text).toContain("2026-12-02");
+  });
 });
