@@ -42,9 +42,16 @@ const SAM_TRANSFORM_PATTERN = /AWS::Serverless-\d{4}-\d{2}-\d{2}/;
 
 /** A resource's `Type` line, in either YAML (`Type: AWS::S3::Bucket`) or JSON
  * (`"Type": "AWS::S3::Bucket"`) form -- the same pattern matches both without needing to know
- * which format is being scanned. */
+ * which format is being scanned. Anchored to the start of the line (after only leading
+ * whitespace), so a YAML comment or a JSON/YAML string value that merely *mentions* this shape --
+ * "# Considered Type: AWS::SNS::Topic here", `Description: "...Type: AWS::Kinesis::Stream..."` --
+ * is never mistaken for an actual resource declaration, since real content always precedes the
+ * pattern on that line in both cases. This assumes one key per line, which holds for realistic
+ * YAML and for JSON as AWS's own console and CLI actually format it (pretty-printed, never
+ * minified onto one line) -- consistent with the "no YAML parser dependency" design, which
+ * already accepts line-orientation as a real, deliberate limitation. */
 const RESOURCE_TYPE_PATTERN =
-  /"?Type"?\s*:\s*"?AWS::(?<service>[A-Za-z0-9]+)::(?<resource>[A-Za-z0-9]+)"?/g;
+  /^\s*"?Type"?\s*:\s*"?AWS::(?<service>[A-Za-z0-9]+)::(?<resource>[A-Za-z0-9]+)"?/g;
 
 /**
  * SAM's own resource-type shorthand crosses AWS's normal `Service::Resource` naming scheme --

@@ -57,12 +57,18 @@ describe("detectCloudFormation", () => {
   });
 
   it("extracts services from a JSON template as well as YAML", () => {
-    const content = JSON.stringify({
-      AWSTemplateFormatVersion: "2010-09-09",
-      Resources: {
-        OrdersTable: { Type: "AWS::DynamoDB::Table" },
+    // Pretty-printed, one key per line -- how AWS's own console and CLI actually format a JSON
+    // template (never minified onto one line), and what the line-oriented extraction assumes.
+    const content = JSON.stringify(
+      {
+        AWSTemplateFormatVersion: "2010-09-09",
+        Resources: {
+          OrdersTable: { Type: "AWS::DynamoDB::Table" },
+        },
       },
-    });
+      null,
+      2,
+    );
 
     const result = detectCloudFormation([file("template.json", content)]);
 
@@ -122,6 +128,26 @@ describe("detectCloudFormation", () => {
       "    Properties:",
       "      ProvisionerConfig:",
       "        Type: Storage::Provisioner",
+    ].join("\n");
+
+    const result = detectCloudFormation([file("template.yaml", content)]);
+
+    expect(result.services.map((s) => s.key)).toEqual(["s3"]);
+  });
+
+  it("does not treat a mention of the Type pattern inside a comment or description as a resource type", () => {
+    // "sns" and "kinesis" appear nowhere else in this template -- if either shows up in the
+    // result at all, the detector matched free text (a YAML comment, a Description string) that
+    // merely mentions the AWS::<Service>::<Resource> shape, rather than an actual resource
+    // declaration.
+    const content = [
+      'AWSTemplateFormatVersion: "2010-09-09"',
+      "Resources:",
+      "  MyBucket:",
+      "    # Considered Type: AWS::SNS::Topic here instead, but went with S3.",
+      "    Type: AWS::S3::Bucket",
+      "    Properties:",
+      '      Description: "Replaces the old Type: AWS::Kinesis::Stream setup."',
     ].join("\n");
 
     const result = detectCloudFormation([file("template.yaml", content)]);
