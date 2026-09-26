@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AuthRequiredError,
+  CatalogMissingError,
   NotFoundError,
   NotRegisteredError,
   OperationUnavailableError,
@@ -32,6 +33,24 @@ describe("NotRegisteredError", () => {
     expect(err).toBeInstanceOf(Error);
     expect(err.name).toBe("NotRegisteredError");
     expect(err.message).toMatch(/will not help/i);
+  });
+});
+
+describe("CatalogMissingError", () => {
+  it("is an Error with a distinct name and a default message naming the sync command", () => {
+    const err = new CatalogMissingError();
+
+    expect(err).toBeInstanceOf(Error);
+    expect(err.name).toBe("CatalogMissingError");
+    // Mirrors AuthRequiredError's pattern -- these are the pair of "you need to do something
+    // first" errors a new user will hit, and both name the exact command that fixes it.
+    expect(err.message).toMatch(/catalog sync/);
+  });
+
+  it("accepts a custom message", () => {
+    const err = new CatalogMissingError("custom reason");
+
+    expect(err.message).toBe("custom reason");
   });
 });
 

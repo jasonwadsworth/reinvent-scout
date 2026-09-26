@@ -1,9 +1,20 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { registerCatalogCommands } from "../../src/cli/commands/catalog.js";
 import type { ApiClient, ListAllSessionsOptions, ListAllSessionsResult } from "../../src/api/client.js";
+import type { Session } from "../../src/api/types.js";
 import { AuthRequiredError, NotRegisteredError } from "../../src/core/errors.js";
+import { buildIndexRecord } from "../../src/catalog/index-record.js";
+import { CURRENT_SCHEMA_VERSION, writeCatalog } from "../../src/catalog/store.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const fixture: Session[] = JSON.parse(
+  readFileSync(join(here, "..", "fixtures", "catalog-sample.json"), "utf8"),
+);
 
 /** A minimal ApiClient stand-in, same shape as the one in tests/catalog/sync.test.ts -- the CLI
  * layer's own tests only need to prove the command wires flags into syncCatalog and formats its
@@ -181,5 +192,192 @@ describe("catalog sync command", () => {
     expect(h.printed.join("\n")).toContain("not registered");
     expect(process.exitCode).toBe(1);
     process.exitCode = 0;
+  });
+});
+
+/** Search and show are pure local reads -- no ApiClient involved at all, so this harness is
+ * simpler than catalog sync's: seed a real catalog under a real temp store root, run the
+ * command, and read back what was printed. */
+function localHarness(storeRoot: string): { run: (args: string[]) => Promise<void>; printed: string[] } {
+  const printed: string[] = [];
+  const program = new Command().exitOverride();
+  registerCatalogCommands(program, {
+    resolveStoreRoot: () => storeRoot,
+    print: (message: string) => {
+      printed.push(message);
+    },
+  });
+
+  return {
+    run: async (args: string[]) => {
+      await program.parseAsync(["node", "reinvent-scout", ...args]);
+    },
+    printed,
+  };
+}
+
+describe("catalog search command", () => {
+  let home: TempHome;
+
+  beforeEach(() => {
+    home = createTempHome();
+    writeCatalog(
+      {
+        raw: fixture,
+        index: fixture.map(buildIndexRecord),
+        meta: {
+          schemaVersion: CURRENT_SCHEMA_VERSION,
+          eventId: "reinvent2026",
+          syncedAt: 1_700_000_000_000,
+          totalCount: fixture.length,
+          count: fixture.length,
+          includedAbstracts: true,
+        },
+      },
+      { storeRoot: home.path },
+    );
+  });
+
+  afterEach(() => {
+    home.cleanup();
+  });
+
+  it("prints compact JSON with no abstracts under --json", async () => {
+    const h = localHarness(home.path);
+
+    await h.run(["catalog", "search", "graviton", "--json"]);
+
+    expect(h.printed).toHaveLength(1);
+    const results = JSON.parse(h.printed[0]!) as Array<Record<string, unknown>>;
+    expect(results.some((r) => r.abbreviation === "ANT301")).toBe(true);
+    for (const result of results) {
+      expect(result).not.toHaveProperty("abstract");
+      // The internal term-frequency maps are never agent/user-facing output.
+      expect(result).not.toHaveProperty("titleTerms");
+      expect(result).not.toHaveProperty("bodyTerms");
+    }
+  });
+
+  it("includes abstracts only when --include-abstracts is passed", async () => {
+    const withoutFlag = localHarness(home.path);
+    await withoutFlag.run(["catalog", "search", "graviton", "--json"]);
+    const withoutResults = JSON.parse(withoutFlag.printed[0]!) as Array<Record<string, unknown>>;
+    const ant301Without = withoutResults.find((r) => r.abbreviation === "ANT301");
+    expect(ant301Without).not.toHaveProperty("abstract");
+
+    const withFlag = localHarness(home.path);
+    await withFlag.run(["catalog", "search", "graviton", "--json", "--include-abstracts"]);
+    const withResults = JSON.parse(withFlag.printed[0]!) as Array<Record<string, unknown>>;
+    const ant301With = withResults.find((r) => r.abbreviation === "ANT301");
+    expect(ant301With?.abstract).toBe(
+      fixture.find((s) => s.abbreviation === "ANT301")!.abstract,
+    );
+  });
+
+  it("filters by --type", async () => {
+    const h = localHarness(home.path);
+
+    await h.run(["catalog", "search", "--type", "Chalk talk", "--json"]);
+
+    const results = JSON.parse(h.printed[0]!) as Array<Record<string, unknown>>;
+    expect(results.map((r) => r.abbreviation).sort()).toEqual(["IND391", "INV501"]);
+  });
+
+  it("caps results at --limit", async () => {
+    const h = localHarness(home.path);
+
+    await h.run(["catalog", "search", "--type", "Breakout session", "--limit", "3", "--json"]);
+
+    const results = JSON.parse(h.printed[0]!) as unknown[];
+    expect(results).toHaveLength(3);
+  });
+
+  it("prints a human-readable list without --json", async () => {
+    const h = localHarness(home.path);
+
+    await h.run(["catalog", "search", "graviton"]);
+
+    expect(h.printed.join("\n")).toContain("ANT301");
+  });
+
+  it("tells the user to sync first when nothing has been synced", async () => {
+    const emptyHome = createTempHome();
+    try {
+      const h = localHarness(emptyHome.path);
+
+      await h.run(["catalog", "search", "graviton"]);
+
+      expect(h.printed.join("\n")).toContain("catalog sync");
+      expect(process.exitCode).toBe(1);
+      process.exitCode = 0;
+    } finally {
+      emptyHome.cleanup();
+    }
+  });
+});
+
+describe("catalog show command", () => {
+  let home: TempHome;
+
+  beforeEach(() => {
+    home = createTempHome();
+    writeCatalog(
+      {
+        raw: fixture,
+        index: fixture.map(buildIndexRecord),
+        meta: {
+          schemaVersion: CURRENT_SCHEMA_VERSION,
+          eventId: "reinvent2026",
+          syncedAt: 1_700_000_000_000,
+          totalCount: fixture.length,
+          count: fixture.length,
+          includedAbstracts: true,
+        },
+      },
+      { storeRoot: home.path },
+    );
+  });
+
+  afterEach(() => {
+    home.cleanup();
+  });
+
+  it("shows a session as JSON including its abstract", async () => {
+    const h = localHarness(home.path);
+    const session = fixture.find((s) => s.abbreviation === "ANT301")!;
+
+    await h.run(["catalog", "show", session.sessionId, "--json"]);
+
+    expect(h.printed).toHaveLength(1);
+    const result = JSON.parse(h.printed[0]!) as Record<string, unknown>;
+    expect(result.abbreviation).toBe("ANT301");
+    expect(result.abstract).toBe(session.abstract);
+    expect(result).not.toHaveProperty("titleTerms");
+    expect(result).not.toHaveProperty("bodyTerms");
+  });
+
+  it("reports a friendly message when the session id is not found", async () => {
+    const h = localHarness(home.path);
+
+    await h.run(["catalog", "show", "does-not-exist"]);
+
+    expect(h.printed.join("\n")).toMatch(/no session/i);
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
+  });
+
+  it("tells the user to sync first when nothing has been synced", async () => {
+    const emptyHome = createTempHome();
+    try {
+      const h = localHarness(emptyHome.path);
+
+      await h.run(["catalog", "show", "any-id"]);
+
+      expect(h.printed.join("\n")).toContain("catalog sync");
+      expect(process.exitCode).toBe(1);
+      process.exitCode = 0;
+    } finally {
+      emptyHome.cleanup();
+    }
   });
 });

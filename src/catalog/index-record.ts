@@ -15,7 +15,10 @@ const STOPWORDS: ReadonlySet<string> = new Set([
 
 export type TermFrequencies = Record<string, number>;
 
-function tokenize(text: string): TermFrequencies {
+/** Exported so `catalog/query.ts` tokenizes a search query with the exact same rules used to
+ * build the index it searches -- a query term that doesn't survive the same lowercasing,
+ * word-splitting and stopword removal as the indexed text would never be able to match it. */
+export function tokenize(text: string): TermFrequencies {
   const counts: TermFrequencies = {};
   const words = text.toLowerCase().match(/[a-z0-9]+/g) ?? [];
   for (const word of words) {

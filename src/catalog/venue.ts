@@ -15,7 +15,9 @@ const KNOWN_VENUES: ReadonlySet<string> = new Set<Venue>([
   "Caesars Palace",
 ]);
 
-function isKnownVenue(value: string): value is Venue {
+/** Exported so callers taking a venue as a raw string (the `catalog search --venue` CLI flag)
+ * can validate it against the same closed set this module treats as authoritative. */
+export function isKnownVenue(value: string): value is Venue {
   return KNOWN_VENUES.has(value);
 }
 

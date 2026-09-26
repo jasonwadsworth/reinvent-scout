@@ -26,6 +26,19 @@ export class NotRegisteredError extends Error {
   }
 }
 
+/**
+ * Thrown when an operation needs the local catalog and nothing has ever been synced (see
+ * `catalog/store.ts`'s `getCatalogState` and `catalog/query.ts`). The default message names the
+ * exact command that fixes it, mirroring `AuthRequiredError` -- these are the pair of "you need
+ * to do something first" errors a new user will hit.
+ */
+export class CatalogMissingError extends Error {
+  constructor(message = "No catalog has been synced yet. Run `reinvent-scout catalog sync` first.") {
+    super(message);
+    this.name = "CatalogMissingError";
+  }
+}
+
 /** Thrown when the API's rate limit (429) is exceeded after exhausting retries. */
 export class ThrottledError extends Error {
   constructor(message = "Too many requests. Try again in a moment.") {
