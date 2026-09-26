@@ -81,6 +81,42 @@ describe("detectTerraform", () => {
     expect(result.services).toEqual([]);
   });
 
+  it("does not treat a commented-out resource declaration as a real one", () => {
+    // "kms" is a recognized service prefix (unlike an unrecognized one, which would fail to
+    // match regardless of whether it's commented out, proving nothing) and appears nowhere else
+    // in this file -- if it shows up in the result at all, the detector matched a commented-out
+    // declaration rather than a real one.
+    const content = [
+      '# resource "aws_kms_key" "old" {',
+      '#   description = "old"',
+      "# }",
+      'resource "aws_dynamodb_table" "orders" {',
+      '  name = "orders"',
+      "}",
+    ].join("\n");
+
+    const result = detectTerraform([file("main.tf", content)]);
+
+    expect(findService(result, "kms")).toBeUndefined();
+    expect(findService(result, "dynamodb")).toBeDefined();
+  });
+
+  it("does not treat a resource-type-like mention elsewhere on the line as a real declaration", () => {
+    // The resource/type/name shape appears for real on this line (unescaped, in a trailing
+    // comment), but not at the start of it -- only a line that actually begins with "resource"
+    // is a declaration.
+    const content = [
+      'resource "aws_dynamodb_table" "orders" {',
+      '  name = "orders" # was resource "aws_sqs_queue" "legacy"',
+      "}",
+    ].join("\n");
+
+    const result = detectTerraform([file("main.tf", content)]);
+
+    expect(findService(result, "sqs")).toBeUndefined();
+    expect(findService(result, "dynamodb")).toBeDefined();
+  });
+
   it("records the resource line as evidence", () => {
     const content = [
       "# an orders table",

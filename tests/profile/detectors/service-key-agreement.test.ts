@@ -87,4 +87,19 @@ describe("service key agreement across detectors", () => {
     expect(terraformResult.services.map((s) => s.key)).toEqual(["stepfunctions"]);
     expect(cdkResult.services.map((s) => s.key)).toEqual(["stepfunctions"]);
   });
+
+  it("produces the same key from the Terraform detector and the SDK detector for DynamoDB", () => {
+    const terraformResult = detectTerraform([
+      file(
+        "main.tf",
+        ['resource "aws_dynamodb_table" "orders" {', '  name = "orders"', "}"].join("\n"),
+      ),
+    ]);
+    const sdkResult = detectSdkUsage([
+      file("src/db.ts", 'import { DynamoDBClient } from "@aws-sdk/client-dynamodb";'),
+    ]);
+
+    expect(terraformResult.services.map((s) => s.key)).toEqual(["dynamodb"]);
+    expect(sdkResult.services.map((s) => s.key)).toEqual(["dynamodb"]);
+  });
 });
