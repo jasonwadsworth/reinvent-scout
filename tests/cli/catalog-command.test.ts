@@ -380,4 +380,70 @@ describe("catalog show command", () => {
       emptyHome.cleanup();
     }
   });
+
+  it("shows a session using the abbreviation exactly as search printed it, not a hardcoded id", async () => {
+    // Deliberately does not take ANT301 from the fixture directly: search prints only the
+    // abbreviation (real session ids are opaque, e.g. "1780441461150001GGoc"), so that's the
+    // only thing a user actually has to paste back in. Parsing it out of search's own output,
+    // rather than assuming what it prints, is precisely how this defect got past review the
+    // first time.
+    const searchHarness = localHarness(home.path);
+    await searchHarness.run(["catalog", "search", "graviton"]);
+    const searchLine = searchHarness.printed
+      .join("\n")
+      .split("\n")
+      .find((line) => line.includes("Graviton"));
+    expect(searchLine).toBeDefined();
+    const token = searchLine!.split(" ")[0]!;
+
+    const showHarness = localHarness(home.path);
+    await showHarness.run(["catalog", "show", token]);
+
+    expect(showHarness.printed.join("\n")).toContain("Graviton");
+    expect(process.exitCode ?? 0).toBe(0);
+  });
+
+  it("resolves an abbreviation case-insensitively", async () => {
+    const h = localHarness(home.path);
+
+    await h.run(["catalog", "show", "ant301"]);
+
+    expect(h.printed.join("\n")).toContain("Graviton");
+  });
+
+  it("lists every candidate and exits non-zero when an abbreviation matches more than one session", async () => {
+    // Nothing in the API guarantees abbreviation uniqueness across events (only checked true for
+    // the real 2,043-session catalog) -- this must never silently pick one.
+    const ambiguousHome = createTempHome();
+    try {
+      const dupA: Session = { sessionId: "dup-session-a", abbreviation: "DUP100", title: "First" };
+      const dupB: Session = { sessionId: "dup-session-b", abbreviation: "DUP100", title: "Second" };
+      writeCatalog(
+        {
+          raw: [dupA, dupB],
+          index: [dupA, dupB].map(buildIndexRecord),
+          meta: {
+            schemaVersion: CURRENT_SCHEMA_VERSION,
+            eventId: "reinvent2026",
+            syncedAt: 1_700_000_000_000,
+            totalCount: 2,
+            count: 2,
+            includedAbstracts: true,
+          },
+        },
+        { storeRoot: ambiguousHome.path },
+      );
+      const h = localHarness(ambiguousHome.path);
+
+      await h.run(["catalog", "show", "DUP100"]);
+
+      const output = h.printed.join("\n");
+      expect(output).toContain("dup-session-a");
+      expect(output).toContain("dup-session-b");
+      expect(process.exitCode).toBe(1);
+      process.exitCode = 0;
+    } finally {
+      ambiguousHome.cleanup();
+    }
+  });
 });

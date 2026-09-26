@@ -189,3 +189,42 @@ export function getIndexRecord(deps: CatalogStoreDeps, sessionId: string): Index
   const index = requireCurrentIndex(deps);
   return index.find((record) => record.sessionId === sessionId) ?? null;
 }
+
+export type SessionLookupResult =
+  | { status: "found"; record: IndexRecord }
+  | { status: "not-found" }
+  | { status: "ambiguous"; candidates: IndexRecord[] };
+
+/**
+ * Resolves `catalog show`'s argument against the local index: first as an exact `sessionId`,
+ * then -- case-insensitively -- as an `abbreviation`. `catalog search` prints only the
+ * abbreviation (real session ids are opaque, e.g. `1780441461150001GGoc`), so the abbreviation is
+ * the only thing a user actually has to paste back in; resolving only by id would make the
+ * documented search-then-show flow unusable for every session in the catalog.
+ *
+ * Abbreviations are confirmed unique across the real 2,043-session catalog, but nothing in the
+ * API guarantees that stays true (a future event, or a bug upstream, could repeat one), so a
+ * token that matches more than one record is reported `"ambiguous"` with every candidate rather
+ * than silently resolving to the first match.
+ */
+export function resolveSessionRecord(deps: CatalogStoreDeps, token: string): SessionLookupResult {
+  const index = requireCurrentIndex(deps);
+
+  const bySessionId = index.find((record) => record.sessionId === token);
+  if (bySessionId !== undefined) {
+    return { status: "found", record: bySessionId };
+  }
+
+  const normalizedToken = token.toLowerCase();
+  const byAbbreviation = index.filter(
+    (record) => record.abbreviation !== null && record.abbreviation.toLowerCase() === normalizedToken,
+  );
+  if (byAbbreviation.length === 1) {
+    return { status: "found", record: byAbbreviation[0]! };
+  }
+  if (byAbbreviation.length > 1) {
+    return { status: "ambiguous", candidates: byAbbreviation };
+  }
+
+  return { status: "not-found" };
+}

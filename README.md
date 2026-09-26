@@ -105,10 +105,13 @@ narrowed with:
   `--include-abstracts` is also given, so a search never bloats past what you actually asked for.
 
 ```
-reinvent-scout catalog show ABC123
+reinvent-scout catalog show ANT301
 ```
 
-Shows one session's full local detail (including its abstract) by session id.
+Shows one session's full local detail (including its abstract), by either its session id or its
+abbreviation -- the abbreviation is what `catalog search` prints, and matching it is
+case-insensitive, so you can paste exactly what search showed you. (Real session ids are opaque,
+e.g. `1780441461150001GGoc`; the abbreviation is what you'll actually have on hand.)
 
 ## Where your data lives
 

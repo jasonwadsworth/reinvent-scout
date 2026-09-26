@@ -2,7 +2,7 @@ import type { Command } from "commander";
 import { createApiClient, type ApiClient } from "../../api/client.js";
 import { createTokenProviderAdapter } from "../../auth/provider-adapter.js";
 import type { IndexRecord } from "../../catalog/index-record.js";
-import { getIndexRecord, queryCatalog, type CatalogQueryResult } from "../../catalog/query.js";
+import { queryCatalog, resolveSessionRecord, type CatalogQueryResult } from "../../catalog/query.js";
 import { readRaw } from "../../catalog/store.js";
 import { DEFAULT_EVENT_ID, syncCatalog, type SyncResult } from "../../catalog/sync.js";
 import { isKnownVenue } from "../../catalog/venue.js";
@@ -240,20 +240,35 @@ export function registerCatalogCommands(program: Command, deps: CatalogCommandDe
   catalog
     .command("show")
     .description("Show one session's full local details.")
-    .argument("<sessionId>", "the session id to show")
+    .argument("<sessionOrAbbreviation>", "the session id or abbreviation to show, e.g. ANT301")
     .option("--json", "print machine-readable JSON instead of a human-readable summary")
-    .action((sessionId: string, options: ShowCommandOptions) => {
+    .action((token: string, options: ShowCommandOptions) => {
       const storeRoot = resolveStoreRoot();
 
       try {
-        const record = getIndexRecord({ storeRoot }, sessionId);
-        if (record === null) {
-          print(`No session with id "${sessionId}" in the local catalog.`);
+        const result = resolveSessionRecord({ storeRoot }, token);
+
+        if (result.status === "not-found") {
+          print(
+            `No session found for "${token}" in the local catalog (checked both session id and ` +
+              "abbreviation). If this session should exist, your catalog may be out of date -- " +
+              "try `reinvent-scout catalog sync`.",
+          );
           process.exitCode = 1;
           return;
         }
 
-        const rawSession = (readRaw({ storeRoot }) ?? []).find((s) => s.sessionId === sessionId);
+        if (result.status === "ambiguous") {
+          print(`"${token}" matches more than one session:`);
+          for (const candidate of result.candidates) {
+            print(`  ${candidate.abbreviation ?? "(no abbreviation)"} -- ${candidate.sessionId}`);
+          }
+          process.exitCode = 1;
+          return;
+        }
+
+        const { record } = result;
+        const rawSession = (readRaw({ storeRoot }) ?? []).find((s) => s.sessionId === record.sessionId);
         const output = { ...toPublicRecord(record), abstract: rawSession?.abstract ?? null };
 
         if (options.json) {

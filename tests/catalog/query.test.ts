@@ -6,7 +6,7 @@ import type { Session } from "../../src/api/types.js";
 import { CatalogMissingError } from "../../src/core/errors.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { CURRENT_SCHEMA_VERSION, writeCatalog, type CatalogMeta } from "../../src/catalog/store.js";
-import { getIndexRecord, queryCatalog } from "../../src/catalog/query.js";
+import { getIndexRecord, queryCatalog, resolveSessionRecord } from "../../src/catalog/query.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -279,5 +279,79 @@ describe("getIndexRecord", () => {
 
     const record = getIndexRecord({ storeRoot: home.path }, "1780441461150001GGoc");
     expect(record?.abbreviation).toBe("ANT301");
+  });
+});
+
+describe("resolveSessionRecord", () => {
+  let home: TempHome;
+
+  beforeEach(() => {
+    home = createTempHome();
+  });
+
+  afterEach(() => {
+    home.cleanup();
+  });
+
+  it("resolves an exact session id", () => {
+    writeCatalog(
+      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
+      { storeRoot: home.path },
+    );
+
+    const result = resolveSessionRecord({ storeRoot: home.path }, "1780441461150001GGoc");
+
+    expect(result).toEqual({
+      status: "found",
+      record: expect.objectContaining({ abbreviation: "ANT301" }),
+    });
+  });
+
+  it("resolves an abbreviation case-insensitively when the id does not match", () => {
+    writeCatalog(
+      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
+      { storeRoot: home.path },
+    );
+
+    const result = resolveSessionRecord({ storeRoot: home.path }, "ant301");
+
+    expect(result.status).toBe("found");
+    expect(result.status === "found" && result.record.sessionId).toBe("1780441461150001GGoc");
+  });
+
+  it("reports not-found for a token that matches neither an id nor an abbreviation", () => {
+    writeCatalog(
+      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
+      { storeRoot: home.path },
+    );
+
+    expect(resolveSessionRecord({ storeRoot: home.path }, "NOPE999")).toEqual({ status: "not-found" });
+  });
+
+  it("reports every candidate as ambiguous when an abbreviation matches more than one session", () => {
+    const dupA: Session = { sessionId: "dup-session-a", abbreviation: "DUP100", title: "First" };
+    const dupB: Session = { sessionId: "dup-session-b", abbreviation: "DUP100", title: "Second" };
+    writeCatalog(
+      {
+        raw: [dupA, dupB],
+        index: [dupA, dupB].map(buildIndexRecord),
+        meta: sampleMeta({ totalCount: 2, count: 2 }),
+      },
+      { storeRoot: home.path },
+    );
+
+    const result = resolveSessionRecord({ storeRoot: home.path }, "DUP100");
+
+    expect(result.status).toBe("ambiguous");
+    expect(result.status === "ambiguous" && result.candidates.map((c) => c.sessionId).sort()).toEqual([
+      "dup-session-a",
+      "dup-session-b",
+    ]);
+  });
+
+  it("throws CatalogMissingError when nothing has been synced", () => {
+    expect(() => resolveSessionRecord({ storeRoot: home.path }, "anything")).toThrow(
+      CatalogMissingError,
+    );
   });
 });
