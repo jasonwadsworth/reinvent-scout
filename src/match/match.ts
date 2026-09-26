@@ -67,6 +67,27 @@ function buildMatchQuery(profile: ResolvedProfile): MatchQuery {
   return { services, topics, areasOfInterest, text: textParts.join(" ") };
 }
 
+/** Rounds to two decimal places at the output boundary only. `scoreSession`'s BM25-lite saturation
+ * arithmetic routinely produces floating-point noise (3 * (1/2.5) is 1.2000000000000002, not a
+ * clean 1.2) that carries no information, reads as unpolished in agent-facing JSON, and costs
+ * tokens for nothing -- but that same raw precision is exactly what `candidates.sort` below needs
+ * to rank consistently, so rounding happens once, here, after sorting is already done, never
+ * inside the scorer itself. */
+function roundToTwoDecimals(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function roundCandidate(candidate: MatchCandidate): MatchCandidate {
+  return {
+    record: candidate.record,
+    score: roundToTwoDecimals(candidate.score),
+    reasons: candidate.reasons.map((reason) => ({
+      ...reason,
+      weight: roundToTwoDecimals(reason.weight),
+    })),
+  };
+}
+
 /**
  * Ranks the local catalog against a resolved profile, applying `options.lens`'s level-band
  * restriction (a session with no level band on record is excluded whenever the lens restricts by
@@ -85,6 +106,11 @@ function buildMatchQuery(profile: ResolvedProfile): MatchQuery {
  *
  * Throws `CatalogMissingError`/`CatalogUnusableError` exactly like `queryCatalog`, since there's
  * nothing to rank against until a catalog has been synced.
+ *
+ * Every emitted `score` and `reason.weight` is rounded to two decimal places -- sorting above
+ * uses each candidate's full, unrounded precision, and only the returned candidates themselves are
+ * rounded, so ranking is unaffected by the rounding and an agent never sees BM25-lite's raw
+ * floating-point noise (see `roundToTwoDecimals`).
  */
 export function matchSessions(
   profile: ResolvedProfile,
@@ -139,5 +165,6 @@ export function matchSessions(
     return (a.record.abbreviation ?? "").localeCompare(b.record.abbreviation ?? "");
   });
 
-  return options.limit === undefined ? candidates : candidates.slice(0, options.limit);
+  const limited = options.limit === undefined ? candidates : candidates.slice(0, options.limit);
+  return limited.map(roundCandidate);
 }

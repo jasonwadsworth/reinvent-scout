@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Session } from "../../src/api/types.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { CURRENT_SCHEMA_VERSION, writeCatalog, type CatalogMeta } from "../../src/catalog/store.js";
-import { CatalogMissingError } from "../../src/core/errors.js";
+import { CatalogMissingError, CatalogUnusableError } from "../../src/core/errors.js";
 import { matchSessions } from "../../src/match/match.js";
 import type { ResolvedProfile } from "../../src/profile/profile.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
@@ -298,5 +298,90 @@ describe("matchSessions", () => {
     expect(() => matchSessions(resolvedProfile(), { storeRoot: home.path })).toThrow(
       CatalogMissingError,
     );
+  });
+
+  it("errors with CatalogUnusableError, distinct from CatalogMissingError, for an outdated local index", () => {
+    // An agent acting on this needs to tell "you've never synced -- go online" apart from "your
+    // local index needs a rebuild, no network required" -- collapsing both into one error type
+    // would erase that distinction for the one caller (match) where it matters most: the profile
+    // it's holding is otherwise ready to use the moment the index is fixed.
+    writeCatalog(
+      {
+        raw: fixture,
+        index: fixture.map(buildIndexRecord),
+        meta: sampleMeta({ schemaVersion: CURRENT_SCHEMA_VERSION - 1 }),
+      },
+      { storeRoot: home.path },
+    );
+
+    let caught: unknown;
+    try {
+      matchSessions(resolvedProfile(), { storeRoot: home.path });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(CatalogUnusableError);
+    expect(caught).not.toBeInstanceOf(CatalogMissingError);
+    expect((caught as CatalogUnusableError).reason).toBe("outdated");
+  });
+
+  it("includes a session with no level band when the lens does not restrict by level", () => {
+    // The mirror image of "excludes a session with no level band under a level-restricting lens"
+    // above: the same no-level session must NOT be excluded when nothing constrains level at all
+    // -- there's no band to violate, so a null level band is only ever a problem for a lens that
+    // actually checks it.
+    const noLevelSession: Session = {
+      sessionId: "no-level-session",
+      abbreviation: "NOLVL1",
+      title: "A session with no level at all",
+      services: ["AWS Lambda"],
+    };
+    writeCatalog(
+      {
+        raw: [noLevelSession],
+        index: [buildIndexRecord(noLevelSession)],
+        meta: sampleMeta({ totalCount: 1, count: 1 }),
+      },
+      { storeRoot: home.path },
+    );
+
+    const profile = resolvedProfile({
+      services: [
+        { name: "lambda", evidence: [{ repo: ".", file: "x" }], catalogName: "AWS Lambda" },
+      ],
+    });
+
+    const results = matchSessions(profile, { storeRoot: home.path }, { lens: "all" });
+
+    expect(results.map((r) => r.record.abbreviation)).toEqual(["NOLVL1"]);
+  });
+
+  it("rounds the emitted score and reason weights to two decimal places, without disturbing ranking precision", () => {
+    // 3 * (1 / 2.5) is 1.2000000000000002 raw -- the same floating-point noise
+    // tests/match/score.test.ts's scoreSession test reproduces directly. The scorer itself must
+    // keep that full precision internally for correct ranking (see score.test.ts); only this
+    // module's final, agent-facing output gets rounded, once, after ranking is settled.
+    const session: Session = {
+      sessionId: "s1",
+      abbreviation: "LAM100",
+      title: "AWS Lambda Basics",
+    };
+    writeCatalog(
+      {
+        raw: [session],
+        index: [buildIndexRecord(session)],
+        meta: sampleMeta({ totalCount: 1, count: 1 }),
+      },
+      { storeRoot: home.path },
+    );
+
+    const profile = resolvedProfile({ intents: [{ kind: "goal", text: "lambda" }] });
+
+    const results = matchSessions(profile, { storeRoot: home.path });
+
+    expect(results[0]?.score).toBe(1.2);
+    const textReason = results[0]?.reasons.find((r) => r.kind === "text");
+    expect(textReason?.weight).toBe(1.2);
   });
 });

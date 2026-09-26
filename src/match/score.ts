@@ -80,10 +80,6 @@ function saturate(termFrequency: number): number {
   return termFrequency / (termFrequency + TERM_SATURATION_K);
 }
 
-function roundToTwoDecimals(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
 interface TextMatchResult {
   score: number;
   matchedTerms: string[];
@@ -179,14 +175,15 @@ export function scoreSession(record: IndexRecord, query: MatchQuery): ScoredSess
 
   const textResult = scoreText(record, query.text);
   if (textResult !== null && textResult.score > 0) {
+    // Deliberately not rounded here: BM25-lite's saturation formula routinely produces
+    // floating-point noise (3 * (1/2.5) is 1.2000000000000002, not a clean 1.2), but this value
+    // is still used for sorting (see match.ts), so it needs to keep full precision. Only the
+    // final, agent-facing output is rounded, once, after ranking is settled -- see
+    // match.ts's own doc comment.
     reasons.push({
       kind: "text",
       detail: `Text overlap on: ${textResult.matchedTerms.join(", ")}.`,
-      // Rounded here, at the output boundary, not in scoreText's own arithmetic: BM25-lite's
-      // saturation formula routinely produces floating-point noise (3 * (1/2.5) is
-      // 1.2000000000000002, not a clean 1.2) that carries no information, reads as unpolished in
-      // agent-facing JSON, and costs tokens for nothing.
-      weight: roundToTwoDecimals(textResult.score),
+      weight: textResult.score,
       evidence: textResult.matchedTerms.join(", "),
     });
   }
