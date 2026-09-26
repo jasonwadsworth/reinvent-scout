@@ -107,7 +107,7 @@ const REBUILD_REMEDY =
  * nothing about whether the index's own data is trustworthy, and refusing on it would defeat the
  * point of syncing the catalog locally in the first place.
  */
-function requireCurrentIndex(deps: CatalogStoreDeps): IndexRecord[] {
+export function requireCurrentIndex(deps: CatalogStoreDeps): IndexRecord[] {
   const state = getCatalogState(deps);
   if (state.status === "missing") {
     throw new CatalogMissingError();
