@@ -56,6 +56,19 @@ describe("detectSdkUsage", () => {
     expect(findService(result, "bedrock-runtime")).toBeUndefined();
   });
 
+  it("does not mangle a real client package whose key legitimately ends in -runtime", () => {
+    // "@aws-sdk/client-sagemaker-runtime" is a real, distinct AWS SDK v3 package (the SageMaker
+    // Runtime API for invoking deployed endpoints, separate from "@aws-sdk/client-sagemaker").
+    // The bedrock-runtime mapping is an exact lookup for that one spelling, not a generic
+    // "strip a trailing -runtime" rule -- a generic rule would wrongly collapse this one too.
+    const content = 'import { SageMakerRuntimeClient } from "@aws-sdk/client-sagemaker-runtime";';
+
+    const result = detectSdkUsage([file("src/predict.ts", content)]);
+
+    expect(findService(result, "sagemaker-runtime")).toBeDefined();
+    expect(findService(result, "sagemaker")).toBeUndefined();
+  });
+
   it("detects boto3.client with a single-quoted service name", () => {
     const result = detectSdkUsage([file("app.py", "client = boto3.client('dynamodb')\n")]);
 
