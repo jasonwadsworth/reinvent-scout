@@ -27,6 +27,7 @@ describe("writeFileAtomic", () => {
 
   it("replaces an existing file atomically without a window at the wrong mode", () => {
     writeFileSync(target, "old", { mode: 0o644 });
+    const originalInode = statSync(target).ino;
 
     writeFileAtomic(target, () => "new", { mode: 0o600 });
 
@@ -34,6 +35,13 @@ describe("writeFileAtomic", () => {
     expect(statSync(target).mode & 0o777).toBe(0o600);
     // No leftover temp file in the directory.
     expect(readdirSync(dir)).toEqual(["data.json"]);
+    // The path was replaced by a rename of a fully-written, already-chmod'd temp file rather
+    // than truncated and rewritten in place -- proven by the inode changing. An in-place
+    // rewrite (open + truncate + write on the existing path) would keep the same inode and
+    // would also reopen a window where a concurrent reader could observe a partial write or
+    // the pre-chmod mode; this assertion catches a regression to that approach even though it
+    // can still produce the right final bytes and mode.
+    expect(statSync(target).ino).not.toBe(originalInode);
   });
 
   it("leaves the original file intact when serialisation throws", () => {
