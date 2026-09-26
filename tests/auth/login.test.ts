@@ -123,6 +123,36 @@ describe("login", () => {
     expect(readTokenStore({ storeRoot: home.path }).status).toBe("present");
   });
 
+  it("rejects and stores nothing when the token response omits a refresh token", async () => {
+    const fake = createFakeFetch([
+      {
+        status: 200,
+        json: {
+          access_token: "access-abc",
+          id_token: "id-ghi",
+          token_type: "Bearer",
+          expires_in: 3600,
+          // No refresh_token: the provider is only required to omit this on a refresh grant, but
+          // a login (authorization_code grant) response with no refresh token leaves nothing for
+          // the token provider to ever silently refresh with, so it must be rejected rather than
+          // stored as a session that looks valid until the access token expires.
+        },
+      },
+    ]);
+
+    await expect(
+      login({
+        storeRoot: home.path,
+        fetchFn: fake.fetch,
+        print: () => {},
+        callbackServerOptions: { portRange: PORT_RANGE },
+        launchBrowser: completingLauncher({ code: "auth-code-123" }),
+      }),
+    ).rejects.toThrow(/refresh token/);
+
+    expect(readTokenStore({ storeRoot: home.path })).toEqual({ status: "absent" });
+  });
+
   it("aborts without storing anything when the callback carries an error", async () => {
     const fake = createFakeFetch([SUCCESSFUL_TOKEN_RESPONSE]);
 
