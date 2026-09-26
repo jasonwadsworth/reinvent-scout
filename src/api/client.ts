@@ -50,7 +50,14 @@ export interface ApiClient {
   /** Fetches a single page of the event's session catalog. */
   listSessions(eventId: string, options?: ListSessionsOptions): Promise<ListSessionsResponseContent>;
   /** Walks every page of the event's session catalog and returns the full list. */
-  listAllSessions(eventId: string, options?: ListAllSessionsOptions): Promise<Session[]>;
+  listAllSessions(eventId: string, options?: ListAllSessionsOptions): Promise<ListAllSessionsResult>;
+}
+
+export interface ListAllSessionsResult {
+  sessions: Session[];
+  /** The `totalCount` the API reported for the whole catalog (from the last page received),
+   * for the caller to compare against `sessions.length` and warn on a mismatch. */
+  totalCount: number;
 }
 
 interface GetScheduleResponseContent {
@@ -191,11 +198,15 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
     async listAllSessions(
       eventId: string,
       options: ListAllSessionsOptions = {},
-    ): Promise<Session[]> {
+    ): Promise<ListAllSessionsResult> {
       const sessions: Session[] = [];
       const seenTokens = new Set<string>();
       let nextToken: string | undefined;
       let pageCount = 0;
+      // Every page reports the same totalCount (the size of the whole catalog, not the page);
+      // the last page received is as good a source for it as any, and this way there's always a
+      // value even if the very first page is also the last.
+      let totalCount = 0;
 
       for (;;) {
         const page = await listSessions(eventId, {
@@ -204,9 +215,10 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
         });
         pageCount++;
         sessions.push(...page.items);
+        totalCount = page.totalCount;
 
         if (page.nextToken === undefined) {
-          return sessions;
+          return { sessions, totalCount };
         }
         if (seenTokens.has(page.nextToken)) {
           // Both guards below are the server failing to behave, not a caller mistake -- an

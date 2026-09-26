@@ -42,13 +42,23 @@ describe("listAllSessions", () => {
     const fake = createFakeFetch(pages);
     const client = createApiClient({ fetchFn: fake.fetch, ...fakeAuth() });
 
-    const sessions = await client.listAllSessions(EVENT_ID);
+    const result = await client.listAllSessions(EVENT_ID);
 
-    expect(sessions.map((s) => s.sessionId).sort()).toEqual(
+    expect(result.sessions.map((s) => s.sessionId).sort()).toEqual(
       fixture.map((s) => s.sessionId).sort(),
     );
     // 60 sessions / 25 per page = 3 pages.
     expect(fake.calls).toHaveLength(3);
+  });
+
+  it("reports the totalCount the API reported", async () => {
+    const pages = paginate(fixture, 25);
+    const fake = createFakeFetch(pages);
+    const client = createApiClient({ fetchFn: fake.fetch, ...fakeAuth() });
+
+    const result = await client.listAllSessions(EVENT_ID);
+
+    expect(result.totalCount).toBe(fixture.length);
   });
 
   it("stops only when nextToken is absent, not when a page is short", async () => {
@@ -61,9 +71,9 @@ describe("listAllSessions", () => {
     ]);
     const client = createApiClient({ fetchFn: fake.fetch, ...fakeAuth() });
 
-    const sessions = await client.listAllSessions(EVENT_ID);
+    const result = await client.listAllSessions(EVENT_ID);
 
-    expect(sessions.map((s) => s.sessionId).sort()).toEqual(
+    expect(result.sessions.map((s) => s.sessionId).sort()).toEqual(
       fixture.map((s) => s.sessionId).sort(),
     );
     expect(fake.calls).toHaveLength(3);
@@ -133,9 +143,9 @@ describe("listAllSessions", () => {
     const fake = createFakeFetch([{ status: 200, json: { items: [], totalCount: 0 } }]);
     const client = createApiClient({ fetchFn: fake.fetch, ...fakeAuth() });
 
-    const sessions = await client.listAllSessions(EVENT_ID);
+    const result = await client.listAllSessions(EVENT_ID);
 
-    expect(sessions).toEqual([]);
+    expect(result.sessions).toEqual([]);
     expect(fake.calls).toHaveLength(1);
   });
 });
