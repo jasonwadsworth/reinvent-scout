@@ -153,6 +153,36 @@ describe("login", () => {
     expect(readTokenStore({ storeRoot: home.path })).toEqual({ status: "absent" });
   });
 
+  it("refuses to store a session when the initial grant omits the id_token (deliberate: the provider always sends one)", async () => {
+    const fake = createFakeFetch([
+      {
+        status: 200,
+        json: {
+          access_token: "access-abc",
+          refresh_token: "refresh-def",
+          token_type: "Bearer",
+          expires_in: 3600,
+          // No id_token: this provider always sends one on an authorization_code grant, so its
+          // absence here signals a malformed exchange, not a variation to tolerate -- distinct
+          // from a refresh grant, which omits id_token by design and is handled leniently by
+          // token-provider.ts instead.
+        },
+      },
+    ]);
+
+    await expect(
+      login({
+        storeRoot: home.path,
+        fetchFn: fake.fetch,
+        print: () => {},
+        callbackServerOptions: { portRange: PORT_RANGE },
+        launchBrowser: completingLauncher({ code: "auth-code-123" }),
+      }),
+    ).rejects.toThrow(/ID token/);
+
+    expect(readTokenStore({ storeRoot: home.path })).toEqual({ status: "absent" });
+  });
+
   it("aborts without storing anything when the callback carries an error", async () => {
     const fake = createFakeFetch([SUCCESSFUL_TOKEN_RESPONSE]);
 
