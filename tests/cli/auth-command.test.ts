@@ -18,6 +18,13 @@ const VALID_TOKENS: StoredTokens = {
   obtainedAt: NOW,
 };
 
+/** Obtained a day ago with a one-hour lifetime -- expired 23 hours before `NOW`. */
+const EXPIRED_TOKENS: StoredTokens = {
+  ...VALID_TOKENS,
+  obtainedAt: NOW - 24 * 3600 * 1000,
+  expiresIn: 3600,
+};
+
 /** A minimal ApiClient stand-in -- auth status only ever calls getSchedule. */
 function fakeApiClient(getSchedule: ApiClient["getSchedule"]): ApiClient {
   return {
@@ -105,7 +112,23 @@ describe("auth status command", () => {
     // Adversarial, not cosmetic: assert the actual secret value cannot appear anywhere in the
     // printed output, rather than just that the output "looks right".
     expect(output).not.toContain(VALID_TOKENS.accessToken);
-    expect(output).toMatch(/expires? in/i);
+    expect(output).toMatch(/expires in/i);
+    // The other direction (an already-expired token) has its own distinct wording -- see the test
+    // below -- so a token that hasn't expired yet must never be described that way.
+    expect(output).not.toMatch(/expired/i);
+  });
+
+  it("reports an already-expired access token as expired, not as expiring, and notes it refreshes automatically", async () => {
+    saveTokens(EXPIRED_TOKENS, { storeRoot: home.path });
+    const h = harness(home.path);
+
+    await h.run(["auth", "status"]);
+
+    const output = h.printed.join("\n");
+    expect(output).not.toContain(EXPIRED_TOKENS.accessToken);
+    expect(output).toMatch(/expired \d+h \d+m ago; it will refresh automatically on next use\./i);
+    // The other direction's wording ("expires in") must not also appear for an expired token.
+    expect(output).not.toMatch(/expires in/i);
   });
 
   it("reports registered when GetSchedule returns 200", async () => {
