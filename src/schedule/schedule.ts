@@ -13,6 +13,10 @@ export interface ResolvedScheduleSession {
   abbreviation: string | null;
   startDate: string | null;
   startTime: string | null;
+  /** Minutes, from the index record's own `lengthMinutes` -- used with `startDate`/`startTime`
+   * and the event's timezone to derive the session's `endsAt`. `null` when the source event
+   * doesn't supply a length, same as an unscheduled session's null date/time. */
+  lengthMinutes: number | null;
   venue: Venue | null;
   room: string | null;
 }
@@ -61,6 +65,7 @@ function resolveAgainstIndex(sessionId: string, index: IndexRecord[] | null): Sc
     abbreviation: record.abbreviation,
     startDate: record.startDate,
     startTime: record.startTime,
+    lengthMinutes: record.lengthMinutes,
     venue: record.venue,
     room: record.room,
   };
