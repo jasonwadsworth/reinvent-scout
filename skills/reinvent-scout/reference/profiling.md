@@ -30,8 +30,9 @@ from prose that describes what it's supposed to do:
 - **CI configuration**: `.github/workflows/*.yml`, `buildspec.yml`, `.gitlab-ci.yml` -- these often
   name a deploy target or a service client the application code doesn't import directly (a
   CodeBuild project deploying to ECS, for instance).
-- **The README**: useful for the story and for open issues, but never as the source of truth for
-  what services are actually used -- see "prose" below.
+- **The README**: useful for the story, for stated goals (see "Interests" below), and for open
+  issues, but never as the source of truth for what services are actually used -- see "prose"
+  below.
 
 ## Evidence: the one rule with no exceptions
 
@@ -48,9 +49,12 @@ A citation looks like:
 { "repo": "api", "file": "src/handlers/create-order.ts", "line": 12, "snippet": "new DynamoDBClient({})" }
 ```
 
-`snippet` and `note` are optional but cheap and valuable -- a short snippet saves a reviewer a trip
-to the file, and a note is the place to say *why* the line counts as evidence when it isn't
-obvious from the snippet alone.
+`snippet` must be copied verbatim from the cited line -- never paraphrased or cleaned up. If you
+want to explain *why* the line counts as evidence, or the snippet alone doesn't make it obvious,
+say that in `note` instead of editing the snippet. Before you finish, re-check every `line` number
+against the file as it exists right now: a line shifts easily while you're still reading and citing
+other parts of the same file, and a citation that points at the wrong line is worse than no citation
+at all -- it looks verified when it isn't.
 
 ## What doesn't count as evidence
 
@@ -59,7 +63,15 @@ obvious from the snippet alone.
 - **Prose mentions.** A README that says "we plan to add caching with ElastiCache" or an
   architecture doc that describes a target state is not evidence the code does that today. A
   service named only in a comment, docstring, or description string is the same case -- it has to
-  be called, provisioned, or declared as infrastructure, not just talked about.
+  be called, provisioned, or declared as infrastructure, not just talked about. Design docs and
+  specs (an `adr/` or `docs/decisions/` directory, `.kiro/specs`, an RFC) are prose for this
+  purpose too, exactly like the README -- useful context, never a citation for a service or
+  pattern. They can inform `intents` instead (see "Fold in issues and other context" below).
+- **Code nothing deploys.** A Lambda handler file, a client class, or a module that no stack,
+  template, or Terraform resource actually wires up is not evidence the repository uses that
+  service -- the same treatment as commented-out code, just at the file level instead of the line
+  level. If it's a real, notable piece of dead code, record it as its own `dead-code` pattern (see
+  "Naming patterns" below) rather than as a service.
 
 ## Distinguish SDK generations
 
@@ -67,6 +79,25 @@ For JavaScript/TypeScript repositories, `aws-sdk` (v2, a single monolithic packa
 `@aws-sdk/client-*` (v3, one package per service) are different signals, not interchangeable
 spellings of "uses the AWS SDK." Note which generation a repository is on when it's relevant --
 it can matter for how current the codebase is, which the Fix lens (a later phase) will use.
+
+## What counts as a service
+
+A service is any AWS service, or AWS developer tool/framework, the code or infrastructure actually
+uses -- this includes CDK and Amplify client libraries, not just the services they provision or
+call. It does not include:
+
+- **Ubiquitous plumbing that's implied by everything else**, not a deliberate choice worth
+  surfacing on its own: IAM (used by virtually every AWS repository to grant permissions),
+  CloudFormation when it's only there because CDK synthesizes to it, STS calls inside a deploy
+  script, and a default (AWS-managed) KMS key. Listing these as services would swamp a profile with
+  noise that's true of almost any AWS repository and therefore matches almost nothing distinctive
+  about *this* one. If IAM policies are unusually broad rather than scoped to what the code needs,
+  that's still worth recording -- as a `gap-broad-iam` pattern (see "Naming patterns" below), not a
+  service.
+- **A feature of a service, cited as if it were a separate service.** DynamoDB Streams is DynamoDB,
+  not a separate entry; CloudWatch Logs is CloudWatch, not a separate entry. Fold the feature into
+  its parent service's own `usage` or evidence instead of listing it twice under two different
+  names.
 
 ## Prefer the specific service over its parent
 
@@ -102,18 +133,51 @@ Dependency directories (`node_modules`, `vendor`, `.venv`, `site-packages`), bui
 import found inside one of these belongs to a dependency, not to this project, and citing it would
 misattribute someone else's stack as this repository's own.
 
+## Naming patterns
+
+A pattern's `name` is a short, kebab-case, architectural noun -- reused across repositories with
+the same shape, not a one-off phrase invented per repository (`"event driven"` and
+`"event-driven-architecture"` should both just be `event-driven`). A starting vocabulary, extend it
+when a repository's shape genuinely doesn't fit any of these:
+
+`serverless`, `event-driven`, `containers`, `api`, `streaming`, `iac-cdk`, `iac-terraform`,
+`genai-single-call`, `agentic`, `multi-account`.
+
+A gap (see "Say what's missing, too" below) is a pattern too, named with a `gap-` prefix so it's
+never confused with a positive, present-tense pattern: `gap-no-dlq`, `gap-no-alarms`,
+`gap-broad-iam`, `gap-no-tests`. Code that exists but nothing deploys is `dead-code` (no `gap-`
+prefix -- it isn't an absence, it's a presence that doesn't count).
+
 ## Say what's missing, too
 
 Note real absences you notice while reading -- no test suite, no alarms or dashboards on the
 infrastructure you found, no dead-letter queues on an async pipeline, IAM policies that are broad
-rather than scoped to what the code actually needs. These aren't services or patterns in the
-`services`/`patterns` sense (they have nothing to cite a positive line for), so record them as
-`patterns` entries whose `note` says what's absent, with evidence pointing at the file where you'd
-expect to find the missing thing and didn't (a stack definition with no alarm construct, a queue
-declaration with no redrive policy). Phase 1 doesn't act on this itself, but a later "Fix" lens
+rather than scoped to what the code actually needs. These aren't services in the `services` sense
+(they have nothing to cite a positive line for), so record them as `patterns` entries named with the
+`gap-` prefix (see "Naming patterns" above). The citation rule is the same as for anything else,
+applied to the nearest relevant line: cite the resource that *lacks* the thing -- the queue
+declaration with no redrive policy, the stack with no alarm construct, the IAM statement with a
+wildcard resource -- and explain what's absent and why it matters in `note`; there's no line of
+code for an absence itself to point at. Phase 1 doesn't act on this itself, but a later "Fix" lens
 will, and this is where that signal has to come from.
 
-## Fold in open issues
+## Interests
+
+`interests` comes from the repository's own stated goals -- what the README says the team is
+working toward -- or, when you're running interactively, from asking the attendee one short
+question about what they're hoping to get out of the conference. Never invent an interest purely
+from the architecture you found; an interest is what someone *wants*, not a restatement of a
+service or pattern you already recorded elsewhere.
+
+For each interest, look for the nearest match in `reference/taxonomy.md`'s "Areas of interest" list
+and spell it exactly as the catalog does -- `"Event-Driven Architecture"`, `"Kubernetes"`, `"Cost
+Optimization"`, not a paraphrase of any of them. This matters mechanically, not just stylistically:
+`match_sessions` only produces an `areaOfInterest` reason for an exact tag match; anything else in
+`interests` still counts toward the free-text score, but only an exact tag earns that specific,
+strongest reason. Keep an interest as free text only when nothing in the real list is actually a
+good fit -- don't force a weak match just to get the stronger reason type.
+
+## Fold in issues and other context
 
 If you have access to the repository's open GitHub issues, fold ones that describe a real technical
 problem or goal into `intents`:
@@ -124,13 +188,17 @@ problem or goal into `intents`:
 
 Use `"goal"` instead of `"issue"` for something you learned isn't tracked as an issue at all -- a
 stated roadmap item from the README, or something the user told you directly. `ref` is optional and
-is the right place for an issue URL or number; leave it off for a goal with no such reference.
+is the right place for an issue URL or number; leave it off for a goal with no such reference. A
+design doc or spec (see "What doesn't count as evidence" above) can inform an `intent` the same
+way -- a documented future direction is a legitimate goal -- but never a service or pattern
+citation.
 
 ## The profile shape
 
 `validate_profile` and `match_sessions` both take this object as their `profile` argument
 (`schemaVersion` is currently always `1`; `services` and `patterns` are required arrays -- write
-them as `[]` when there's genuinely nothing to report, never omit them):
+them as `[]` when there's genuinely nothing to report, never omit them). `repos[].languages` is
+lowercase, as shown below (`"typescript"`, not `"TypeScript"`):
 
 ```json
 {
@@ -150,18 +218,32 @@ them as `[]` when there's genuinely nothing to report, never omit them):
   "patterns": [
     {
       "name": "event-driven",
-      "note": "Order creation publishes to EventBridge; no DLQ on the consumer queue.",
+      "note": "Order creation publishes to EventBridge.",
       "evidence": [
-        { "repo": "api", "file": "infra/stack.ts", "line": 44 }
+        { "repo": "api", "file": "infra/stack.ts", "line": 44, "snippet": "new events.EventBus(this, \"OrderEvents\")" }
+      ]
+    },
+    {
+      "name": "gap-no-dlq",
+      "note": "The order-created consumer queue has no dead-letter queue or redrive policy, so a repeatedly-failing message is retried forever instead of being set aside for inspection.",
+      "evidence": [
+        { "repo": "api", "file": "infra/stack.ts", "line": 61, "snippet": "new sqs.Queue(this, \"OrderCreatedQueue\")" }
       ]
     }
   ],
-  "interests": ["serverless", "cost optimization"],
+  "interests": ["Event-Driven Architecture", "Cost Optimization", "serverless"],
   "intents": [
     { "kind": "issue", "text": "Cold starts on the ingest Lambda are too slow under load", "ref": "https://github.com/org/repo/issues/142" }
   ]
 }
 ```
+
+`"Event-Driven Architecture"` and `"Cost Optimization"` here are exact `reference/taxonomy.md`
+"Areas of interest" tags -- the first mapped from a README line like "we're moving toward an
+event-driven architecture to cut coupling between services," the second from "we're trying to
+reduce our AWS bill." `"serverless"` is kept as free text because there's no "Serverless" entry in
+the Areas of interest list (it's a *topic*, not an area of interest) -- forcing it onto an unrelated
+tag would be a worse match than leaving it as text.
 
 For a multi-repository profile, add one entry per repository to `repos` and use its `root` as the
 `repo` value in every citation that belongs to it.

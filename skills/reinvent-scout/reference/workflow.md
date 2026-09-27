@@ -122,8 +122,11 @@ otherwise exceed the size budget:
 - `truncated: true` -- the response was cut for size, in ranked order (never a partially-serialized
   candidate); `omitted` is how many ranked candidates didn't fit (never confuse this with the gap
   between `requested` and `returned` when the catalog simply had fewer matches than requested --
-  that's not an omission); `hint` is a one-line suggestion ("ask again with a smaller limit or a
-  narrower lens"). Follow it rather than assuming nothing more exists.
+  that's not an omission); `hint` names the omitted count and what can actually change the ranking
+  ("N lower-ranked candidates were omitted to fit the response budget. A narrower lens or a more
+  specific profile changes what ranks highest."). A smaller `limit` cannot reach the omitted
+  candidates -- there's no `offset` here -- so don't suggest that to the user; a narrower lens or a
+  more specific profile is what actually surfaces different candidates.
 
 `code` is a session's base code with any repeat suffix removed -- the stable id across every
 sitting of the same talk. `offerings` lists every scheduled sitting (a repeat conference talk given

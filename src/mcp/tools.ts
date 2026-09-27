@@ -293,7 +293,17 @@ function toLeanCandidate(candidate: ReturnType<typeof matchSessions>[number]): R
  * make room.
  */
 const RESPONSE_BYTE_BUDGET = 30 * 1024;
-const TRUNCATION_HINT = "Ask again with a smaller limit or a narrower lens to see the rest.";
+
+/** Lead's decision, replacing an earlier hint ("ask again with a smaller limit..."): a smaller
+ * `limit` cannot reach the omitted candidates at all -- there is no `offset` on `match_sessions`,
+ * so asking for fewer just returns fewer of the exact same top-ranked set. Names the real count
+ * instead, and only suggests what can actually change which candidates rank highest. */
+function truncationHint(omitted: number): string {
+  return (
+    `${omitted} lower-ranked candidates were omitted to fit the response budget. ` +
+    "A narrower lens or a more specific profile changes what ranks highest."
+  );
+}
 
 /** Mirrors `textResult`'s own envelope shape exactly, so the byte count measured here is the same
  * one a caller (and tests/mcp/tools-catalog.test.ts's size assertions) actually measures on the
@@ -326,13 +336,14 @@ function buildResponse(
   totalMatched: number,
   truncated: boolean,
 ): MatchSessionsResponse {
+  const omitted = totalMatched - candidates.length;
   return {
     candidates,
     truncated,
     returned: candidates.length,
     requested,
-    omitted: totalMatched - candidates.length,
-    ...(truncated ? { hint: TRUNCATION_HINT } : {}),
+    omitted,
+    ...(truncated ? { hint: truncationHint(omitted) } : {}),
   };
 }
 

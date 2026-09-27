@@ -471,6 +471,30 @@ describe("match_sessions tool", () => {
     }
   });
 
+  it("names the omitted count in the truncation hint and never suggests lowering limit, which cannot reach the omitted ranks", async () => {
+    // Lead's decision: the original hint ("Ask again with a smaller limit or a narrower lens to
+    // see the rest.") was actionable advice that doesn't work -- a smaller `limit` only asks for
+    // fewer of the same top-ranked candidates; there is no `offset` to reach the omitted,
+    // lower-ranked ones. The only things that actually change which candidates rank highest are a
+    // narrower lens or a more specific profile.
+    seedCatalog(home.path, longReasonsSessions(60));
+    const client = await connectedClient({ resolveStoreRoot: () => home.path });
+
+    const result = await client.callTool({
+      name: "match_sessions",
+      arguments: { profile: longReasonsProfile(), limit: 50 },
+    });
+
+    const parsed = JSON.parse(textOf(result)) as { truncated: boolean; omitted: number; hint: string };
+    expect(parsed.truncated).toBe(true); // sanity: this scenario must actually truncate
+    expect(parsed.omitted).toBeGreaterThan(0);
+    expect(parsed.hint).toBe(
+      `${parsed.omitted} lower-ranked candidates were omitted to fit the response budget. ` +
+        "A narrower lens or a more specific profile changes what ranks highest.",
+    );
+    expect(parsed.hint).not.toMatch(/limit/i);
+  });
+
   it("truncates at the default limit too, driven by profile richness rather than the limit requested", async () => {
     // Reviewer's follow-up measurement, against the real catalog: an eight-service profile --
     // not exotic, an ordinary serverless app names Lambda, DynamoDB, S3, SQS, EventBridge, API
