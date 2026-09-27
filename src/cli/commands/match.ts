@@ -118,12 +118,19 @@ function formatOfferingLine(offering: MatchCandidate["offerings"][number]): stri
  * exists to be explainable (see `match/score.ts`'s `Reason`), so the human-readable table must
  * actually show why a session was suggested, not only its score -- and every one of its offerings
  * (day, time, venue, room) beneath that, so a repeat's every sitting is visible even though the
- * candidates being ranked are talks, not individual sittings. */
-function formatCandidateWithReasons(candidate: MatchCandidate): string {
+ * candidates being ranked are talks, not individual sittings. `abstract`, when given (only under
+ * `--include-abstracts`; `null`/absent otherwise), prints beneath the offerings, mirroring
+ * `catalog.ts`'s `formatSearchResultWithAbstract` -- a session with no abstract on record still
+ * gets its ordinary line, never invented text. */
+function formatCandidateWithReasons(candidate: MatchCandidate, abstract?: string | null): string {
   const line = formatCandidateLine(candidate);
   const reasonLines = candidate.reasons.map((reason) => `  - ${reason.detail}`);
   const offeringLines = candidate.offerings.map(formatOfferingLine);
-  return [line, ...reasonLines, "  Offerings:", ...offeringLines].join("\n");
+  const parts = [line, ...reasonLines, "  Offerings:", ...offeringLines];
+  if (abstract !== undefined && abstract !== null && abstract !== "") {
+    parts.push(`  ${abstract}`);
+  }
+  return parts.join("\n");
 }
 
 /** Registers the `match` command. */
@@ -156,20 +163,25 @@ export function registerMatchCommands(program: Command, deps: MatchCommandDeps =
 
         if (options.includeAbstracts) {
           const rawBySessionId = new Map((readRaw({ storeRoot }) ?? []).map((s) => [s.sessionId, s]));
-          const withAbstracts = candidates.map((candidate) => ({
+          const abstracts = candidates.map(
+            (candidate) => rawBySessionId.get(candidate.record.sessionId)?.abstract ?? null,
+          );
+          const withAbstracts = candidates.map((candidate, i) => ({
             code: candidate.code,
             ...toPublicIndexRecord(candidate.record),
             score: candidate.score,
             reasons: candidate.reasons,
             offerings: candidate.offerings,
-            abstract: rawBySessionId.get(candidate.record.sessionId)?.abstract ?? null,
+            abstract: abstracts[i],
           }));
           print(
             options.json
               ? JSON.stringify(withAbstracts)
               : candidates.length === 0
                 ? NO_CANDIDATES_MESSAGE
-                : candidates.map(formatCandidateWithReasons).join("\n\n"),
+                : candidates
+                    .map((candidate, i) => formatCandidateWithReasons(candidate, abstracts[i]))
+                    .join("\n\n"),
           );
           return;
         }
@@ -186,7 +198,7 @@ export function registerMatchCommands(program: Command, deps: MatchCommandDeps =
             ? JSON.stringify(withoutAbstracts)
             : candidates.length === 0
               ? NO_CANDIDATES_MESSAGE
-              : candidates.map(formatCandidateWithReasons).join("\n\n"),
+              : candidates.map((candidate) => formatCandidateWithReasons(candidate)).join("\n\n"),
         );
       } catch (err) {
         if (err instanceof z.ZodError) {

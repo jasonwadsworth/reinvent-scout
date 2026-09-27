@@ -171,6 +171,35 @@ describe("match command", () => {
     expect(ant301?.abstract).toBe(fixture.find((s) => s.abbreviation === "ANT301")!.abstract);
   });
 
+  it("prints each candidate's abstract in the human-readable table under --include-abstracts", async () => {
+    // pr-reviewer finding: both the with- and without-abstracts JSON branches built two different
+    // objects, but both human-readable branches called the exact same formatter that never looked
+    // at the abstract at all -- so --include-abstracts without --json was a silent no-op. ANT301's
+    // abstract contains "accessible to everyone on your team", a phrase that appears nowhere in any
+    // fixture title, so its presence in the printed table can only come from the abstract itself.
+    writeFileSync(profileFilePath, JSON.stringify(redshiftProfile()), "utf8");
+    seedFixtureCatalog(home.path);
+    const h = harness(home.path);
+
+    await h.run(["match", "--profile", profileFilePath, "--include-abstracts"]);
+
+    const text = h.printed.join("\n");
+    expect(text).toContain("ANT301");
+    expect(text).toContain("accessible to everyone on your team");
+  });
+
+  it("does not print an abstract in the human-readable table without --include-abstracts", async () => {
+    writeFileSync(profileFilePath, JSON.stringify(redshiftProfile()), "utf8");
+    seedFixtureCatalog(home.path);
+    const h = harness(home.path);
+
+    await h.run(["match", "--profile", profileFilePath]);
+
+    const text = h.printed.join("\n");
+    expect(text).toContain("ANT301");
+    expect(text).not.toContain("accessible to everyone on your team");
+  });
+
   it("defaults to thirty candidates and honours --limit", async () => {
     const sessions = manyLambdaSessions(35);
     writeCatalog(
