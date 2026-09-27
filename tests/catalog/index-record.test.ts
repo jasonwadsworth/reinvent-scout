@@ -131,6 +131,26 @@ describe("buildIndexRecord", () => {
     expect(Object.hasOwn(counts, "ml")).toBe(false);
   });
 
+  it("recognizes an all-caps acronym even though the stored term is lowercased -- the exception must be checked before lowercasing, not after", () => {
+    // The trap: by the time a token is lowercased, "AI" and "ai" are indistinguishable, so
+    // checking the acronym exception against the already-lowercased word can never fire. "AI" in
+    // particular is the highest-stakes case in this catalog -- 2,779 occurrences across 1,151 of
+    // 2,043 real sessions (measured against the real snapshot) -- so silently losing it would blind
+    // the matcher to more than half the catalog.
+    const counts = tokenize("Generative AI on Amazon S3");
+
+    expect(counts.ai).toBe(1);
+    expect(counts.s3).toBe(1);
+  });
+
+  it("leaves no stray contraction or possessive fragments from common apostrophe forms", () => {
+    const counts = tokenize("we'll use the agent's tools, don't wait");
+
+    expect(Object.hasOwn(counts, "ll")).toBe(false);
+    expect(Object.hasOwn(counts, "s")).toBe(false);
+    expect(Object.hasOwn(counts, "t")).toBe(false);
+  });
+
   it("does not report Object.prototype members as present when the text never contains them", () => {
     const counts = tokenize("hello world");
 
@@ -145,5 +165,19 @@ describe("buildIndexRecord", () => {
       const record = buildIndexRecord(session);
       expect(record.sessionId).toBe(session.sessionId);
     }
+  });
+
+  it("keeps the AI acronym across the real fixture -- an explicit, hard-coded count so a regression that silently drops short acronyms fails loudly", () => {
+    // Counted once against this fixture and hard-coded here deliberately, rather than computed and
+    // re-asserted against itself: a self-computed count would still pass even if the acronym
+    // exception silently stopped firing for every session, since "unchanged from itself" is true of
+    // zero just as much as it is of the real number.
+    const sessionsWithAi = fixture.filter((session) => {
+      const record = buildIndexRecord(session);
+      return Object.hasOwn(record.titleTerms, "ai") || Object.hasOwn(record.bodyTerms, "ai");
+    });
+
+    expect(sessionsWithAi.length).toBeGreaterThan(0);
+    expect(sessionsWithAi.length).toBe(40);
   });
 });
