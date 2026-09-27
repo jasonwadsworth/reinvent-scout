@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   CURRENT_SCHEMA_VERSION,
   getCatalogState,
+  isRecognizedTimeZone,
   readIndex,
   readMeta,
   readRaw,
@@ -173,6 +174,17 @@ describe("catalog store", () => {
       ["a number", 42],
       ["an object", {}],
       ["an empty string", ""],
+      // Reviewer's finding: Intl.DateTimeFormat's timeZone option is coerced via ToString before
+      // validation, so a single-element array (["America/Los_Angeles"].toString() joins to just
+      // the element) makes the Intl constructor call itself succeed without throwing -- a
+      // try/catch around the construction alone would misclassify it as "known".
+      // isRecognizedTimeZone's explicit typeof check (against the ORIGINAL value, not the
+      // Intl-coerced string) is what actually catches this; genuinely reachable here, unlike a
+      // boxed String (see isRecognizedTimeZone's own direct unit test below for that), since a
+      // corrupted or hand-edited meta.json can contain a JSON array, and JSON.parse produces one.
+      ["a single-element array whose toString() coincides with a valid zone", ["America/Los_Angeles"]],
+      ["a two-element array", ["America/Los_Angeles", "UTC"]],
+      ["a boolean", true],
     ])("reports unrecognized, carrying the raw value, for %s", (_label, badValue) => {
       writeMetaWithRawTimezone(home.path, badValue);
 
@@ -189,6 +201,27 @@ describe("catalog store", () => {
         status: "known",
         timezone: "Pacific/Kiritimati",
       });
+    });
+  });
+
+  describe("isRecognizedTimeZone", () => {
+    it("accepts a real IANA zone", () => {
+      expect(isRecognizedTimeZone("America/Los_Angeles")).toBe(true);
+    });
+
+    it("rejects a boxed String object even though Intl's own ToString coercion would accept its coerced value", () => {
+      // Reviewer's specific measurement: Intl.DateTimeFormat's timeZone option is coerced via
+      // ToString before validation, so `new Intl.DateTimeFormat(undefined, { timeZone: new
+      // String("UTC") })` does not throw -- a bare try/catch around the construction alone would
+      // misclassify this as valid. This state can never actually reach readTimezoneAvailability
+      // through meta.json (JSON.parse never produces a boxed wrapper object, only a plain string
+      // primitive), which is exactly why it needs its own direct unit test here rather than a
+      // round-trip-through-a-file test: there is no way to write this case to disk.
+      expect(isRecognizedTimeZone(new String("UTC"))).toBe(false);
+    });
+
+    it("rejects a single-element array whose toString() coincides with a valid zone", () => {
+      expect(isRecognizedTimeZone(["America/Los_Angeles"])).toBe(false);
     });
   });
 

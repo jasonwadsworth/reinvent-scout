@@ -675,6 +675,9 @@ describe("get_schedule tool", () => {
     ["a number", 42],
     ["an object", {}],
     ["an empty string", ""],
+    ["a single-element array whose toString() coincides with a valid zone", ["America/Los_Angeles"]],
+    ["a two-element array", ["America/Los_Angeles", "UTC"]],
+    ["a boolean", true],
   ])(
     "degrades to a null startsAt and an unrecognized-timezone warning, never isError, when the stored timezone is %s",
     async (_label, badValue) => {
@@ -718,6 +721,12 @@ describe("get_schedule tool", () => {
       // Names the stored (bad) value, and the remedy is "sync again", never the unfixable wording
       // used for an explicit API-reported omission.
       expect(parsed.warnings!.join(" ")).toContain("catalog_sync");
+      // Reviewer's wording point: readTimezoneAvailability can't tell "the metadata was
+      // corrupted" (a re-sync fixes it) apart from "GetEvent genuinely reports this value" (a
+      // re-sync stores the same bad value again) -- the warning must hedge, never promise a fix.
+      const warningText = parsed.warnings!.join(" ");
+      expect(warningText).toMatch(/may resolve|might resolve|likely to resolve/i);
+      expect(warningText).not.toMatch(/will (resolve|fix)|will very likely resolve/i);
     },
   );
 

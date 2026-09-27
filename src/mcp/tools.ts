@@ -656,15 +656,19 @@ function timezoneWarnings(availability: TimezoneAvailability | null): string[] {
   if (availability.status === "unrecognized") {
     // sync.ts stores whatever GetEvent returns verbatim, with no validation on write, so this can
     // genuinely happen if the API ever reports something Node's bundled ICU data doesn't
-    // recognize. Names the actual stored value (JSON.stringify handles every JSON-safe type, not
-    // just strings -- the value reaching here can be any of them) and, unlike an explicit
-    // omission, this IS potentially fixable: the API's own answer may simply have been wrong at
-    // sync time and could be corrected by the time of the next sync.
+    // recognize -- OR if the stored metadata was corrupted or hand-edited, which a re-sync WOULD
+    // fix. This reader can't tell those two apart (the sync path doesn't validate on write, by
+    // design, so meta.json stays a faithful record of whatever the API actually said), so the
+    // wording must not promise a re-sync will help: in the genuine-API-value case it demonstrably
+    // will not, since catalog_sync would just store the same unrecognized value again. Names the
+    // actual stored value (JSON.stringify handles every JSON-safe type, not just strings) so a
+    // caller can judge for themselves which situation this looks like.
     return [
       `The stored event timezone (${JSON.stringify(availability.value)}) is not a recognized ` +
         "IANA timezone, so session start times could not be converted to a common startsAt -- " +
-        "session and personal-time ordering across kinds is unreliable. Run `catalog_sync` (or " +
-        "`reinvent-scout catalog sync`) again; the API's own answer may have changed.",
+        "session and personal-time ordering across kinds is unreliable. Re-syncing " +
+        "(`catalog_sync`, or `reinvent-scout catalog sync`) may resolve this, but is not " +
+        "guaranteed to: if the API reports the same value again, syncing again will not help.",
     ];
   }
   if (availability.reason === "syncedBeforeTimezoneSupport") {

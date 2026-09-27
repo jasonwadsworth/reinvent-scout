@@ -201,8 +201,18 @@ export type TimezoneAvailability =
 /** Whether `Intl.DateTimeFormat` accepts `value` as a `timeZone` -- the only reliable way to
  * validate an IANA identifier without hand-maintaining the tz database. Never throws itself:
  * `Intl.DateTimeFormat` throws `RangeError` for a value it can't resolve to a known zone, which
- * this reports as `false` rather than letting propagate. */
-function isRecognizedTimeZone(value: unknown): value is string {
+ * this reports as `false` rather than letting propagate.
+ *
+ * The explicit `typeof value === "string"` check matters on its own, not just as a defensive
+ * extra: `Intl`'s own `timeZone` option is coerced via `ToString` before validation, so some
+ * non-string values make the constructor call itself succeed without throwing -- a single-element
+ * array (`["America/Los_Angeles"].toString()` joins to just the element) or a boxed `String`
+ * object both pass straight through a bare try/catch around the construction alone. Checking the
+ * *original* value's type, not the coerced string, is what catches both. Exported so this can be
+ * unit-tested directly against cases (like a boxed `String`) that can never actually reach
+ * `readTimezoneAvailability` in practice, since `JSON.parse` -- the only way a value gets into
+ * `meta.json` in the first place -- never produces a boxed wrapper object, only plain primitives. */
+export function isRecognizedTimeZone(value: unknown): value is string {
   try {
     new Intl.DateTimeFormat(undefined, { timeZone: value as string });
     return typeof value === "string" && value.trim() !== "";
