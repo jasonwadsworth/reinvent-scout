@@ -61,11 +61,23 @@ function isAllCapsAcronym(word: string): boolean {
   return word.length >= 2 && word === word.toUpperCase() && /[A-Z]/.test(word);
 }
 
-/** Exported so `catalog/query.ts` tokenizes a search query with the exact same rules used to
- * build the index it searches -- a query term that doesn't survive the same contraction-stripping,
- * lowercasing, word-splitting, short-fragment filtering and stopword removal as the indexed text
- * would never be able to match it. */
-export function tokenize(text: string): TermFrequencies {
+export interface TokenizeOptions {
+  /** Skips the short-token/acronym-exception filter entirely -- for parsing a *query* (a search
+   * string, or a resolved profile's free text fed to the matcher), never for building the index
+   * itself. The filter exists to keep corpus noise out of the index; applying the same rule to a
+   * query means a real, deliberately short term -- a person typing "s3", an agent's profile note
+   * saying "we use ai" -- gets silently dropped before it ever has a chance to match, even though
+   * the index may carry it (the *source* catalog copy wrote "S3"/"AI" in caps, satisfying the
+   * acronym exception on the index side; the query has no reason to be held to the same casing
+   * convention). A short query term that isn't actually present in the index just matches nothing,
+   * at no precision cost -- so there is no reason to filter it here too. */
+  keepShortTokens?: boolean;
+}
+
+/** Exported so `catalog/query.ts` and `match/score.ts` tokenize a query with the same
+ * contraction-stripping, lowercasing, word-splitting and stopword removal used to build the index
+ * they search -- but see `keepShortTokens` above for the one rule a query deliberately skips. */
+export function tokenize(text: string, options: TokenizeOptions = {}): TermFrequencies {
   // A plain object literal inherits Object.prototype, so a tokenized word that collides with one
   // of its members (`constructor`, `hasOwnProperty`, `toString`, ...) reads back a function
   // instead of undefined from `counts[word]`, silently turning `+ 1` into string concatenation.
@@ -81,7 +93,7 @@ export function tokenize(text: string): TermFrequencies {
     if (STOPWORDS.has(lower)) {
       continue;
     }
-    if (lower.length < MIN_TERM_LENGTH && !isAllCapsAcronym(word)) {
+    if (!options.keepShortTokens && lower.length < MIN_TERM_LENGTH && !isAllCapsAcronym(word)) {
       continue;
     }
     counts[lower] = (counts[lower] ?? 0) + 1;

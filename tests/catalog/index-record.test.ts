@@ -148,6 +148,20 @@ describe("buildIndexRecord", () => {
     expect(counts.s3).toBe(1);
   });
 
+  it("keeps a lowercase short token under keepShortTokens, for parsing a query rather than building the index", () => {
+    // The short-token/acronym-exception filter is a corpus-noise defense that belongs to index
+    // building, not to query parsing -- a user typing "s3" or an agent writing "we use ai" means
+    // it, and a deliberate query term that isn't actually in the index just matches nothing, at no
+    // precision cost. Without keepShortTokens (the index-building default), both are dropped.
+    const withoutOption = tokenize("we use ai and s3 heavily");
+    expect(Object.hasOwn(withoutOption, "ai")).toBe(false);
+    expect(Object.hasOwn(withoutOption, "s3")).toBe(false);
+
+    const withOption = tokenize("we use ai and s3 heavily", { keepShortTokens: true });
+    expect(withOption.ai).toBe(1);
+    expect(withOption.s3).toBe(1);
+  });
+
   it("leaves no stray contraction or possessive fragments from common apostrophe forms", () => {
     const counts = tokenize("we'll use the agent's tools, don't wait");
 

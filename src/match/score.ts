@@ -150,7 +150,10 @@ function scoreText(
   queryText: string,
   corpusStats: CorpusStats | undefined,
 ): TextMatchResult | null {
-  const queryTerms = Object.keys(tokenize(queryText));
+  // The profile's free text is a query, not source material for the index -- a lowercase "ai" in
+  // an agent's note must survive to be compared against the index, which may carry "ai" from the
+  // catalog's own capitalized "AI" copy (see index-record.ts's tokenize/keepShortTokens).
+  const queryTerms = Object.keys(tokenize(queryText, { keepShortTokens: true }));
   if (queryTerms.length === 0) {
     return null;
   }

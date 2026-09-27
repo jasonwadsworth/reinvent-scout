@@ -73,6 +73,23 @@ describe("queryCatalog", () => {
     expect(results.some((r) => r.record.abbreviation === "INV501")).toBe(true);
   });
 
+  it("matches a lowercase two-character query term against an index built from a capitalized acronym", () => {
+    // ANT314's title is "Accelerating data analytics on Apache Iceberg with Amazon S3 Tables" --
+    // the source text writes "S3" in caps, which the index keeps via the short-token/acronym
+    // exception. Searching lowercase "s3" must still find it: the short-token filter is a
+    // corpus-noise defense for what goes *into* the index, not a restriction on how a query is
+    // allowed to spell a real, short, technical term.
+    seedCatalog();
+
+    const lower = queryCatalog({ storeRoot: home.path }, { query: "s3" });
+    const upper = queryCatalog({ storeRoot: home.path }, { query: "S3" });
+
+    expect(lower.some((r) => r.record.abbreviation === "ANT314")).toBe(true);
+    expect(lower.map((r) => r.record.abbreviation).sort()).toEqual(
+      upper.map((r) => r.record.abbreviation).sort(),
+    );
+  });
+
   it("filters by session type", () => {
     seedCatalog();
 

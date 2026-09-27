@@ -155,7 +155,10 @@ export function queryCatalog(
 ): CatalogQueryResult[] {
   const index = requireCurrentIndex(deps);
 
-  const queryTerms = options.query === undefined ? null : Object.keys(tokenize(options.query));
+  const queryTerms =
+    options.query === undefined
+      ? null
+      : Object.keys(tokenize(options.query, { keepShortTokens: true }));
 
   const results: CatalogQueryResult[] = [];
   for (const record of index) {

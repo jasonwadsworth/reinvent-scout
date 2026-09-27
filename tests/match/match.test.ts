@@ -656,6 +656,23 @@ describe("matchSessions", () => {
     const topicReasons = results[0]!.reasons.filter((r) => r.kind === "topic");
     expect(topicReasons).toHaveLength(1);
   });
+
+  it("matches a profile note that writes an acronym lowercase against a session indexed from capitalized source text", () => {
+    // The query tokenizer (see index-record.ts's keepShortTokens) must not apply the index's own
+    // acronym-capitalization requirement to free text a profile author writes -- an agent noting
+    // "we use ai heavily" means the real, capitalized "AI" the catalog's own copy carries in
+    // INV501's title ("AtoZ AI Co-Scientist: Multi-Agent Systems That Do Research With You").
+    writeCatalog(
+      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
+      { storeRoot: home.path },
+    );
+
+    const profile = resolvedProfile({ intents: [{ kind: "goal", text: "we use ai heavily" }] });
+
+    const results = matchSessions(profile, { storeRoot: home.path });
+
+    expect(results.some((r) => r.code === "INV501")).toBe(true);
+  });
 });
 
 describe("matchSessions grouping repeat sessions by base code", () => {
