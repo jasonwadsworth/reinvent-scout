@@ -47,7 +47,7 @@ describe("listAllSessions", () => {
     expect(result.sessions.map((s) => s.sessionId).sort()).toEqual(
       fixture.map((s) => s.sessionId).sort(),
     );
-    // 60 sessions / 25 per page = 3 pages.
+    // 61 sessions / 25 per page = 3 pages.
     expect(fake.calls).toHaveLength(3);
   });
 

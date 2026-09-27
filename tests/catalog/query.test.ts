@@ -6,7 +6,7 @@ import type { Session } from "../../src/api/types.js";
 import { CatalogMissingError, CatalogUnusableError } from "../../src/core/errors.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { CURRENT_SCHEMA_VERSION, writeCatalog, type CatalogMeta } from "../../src/catalog/store.js";
-import { getIndexRecord, queryCatalog, resolveSessionRecord } from "../../src/catalog/query.js";
+import { catalogServiceNames, queryCatalog, resolveSessionRecord } from "../../src/catalog/query.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -71,6 +71,23 @@ describe("queryCatalog", () => {
     const results = queryCatalog({ storeRoot: home.path }, { query: "answering" });
 
     expect(results.some((r) => r.record.abbreviation === "INV501")).toBe(true);
+  });
+
+  it("matches a lowercase two-character query term against an index built from a capitalized acronym", () => {
+    // ANT314's title is "Accelerating data analytics on Apache Iceberg with Amazon S3 Tables" --
+    // the source text writes "S3" in caps, which the index keeps via the short-token/acronym
+    // exception. Searching lowercase "s3" must still find it: the short-token filter is a
+    // corpus-noise defense for what goes *into* the index, not a restriction on how a query is
+    // allowed to spell a real, short, technical term.
+    seedCatalog();
+
+    const lower = queryCatalog({ storeRoot: home.path }, { query: "s3" });
+    const upper = queryCatalog({ storeRoot: home.path }, { query: "S3" });
+
+    expect(lower.some((r) => r.record.abbreviation === "ANT314")).toBe(true);
+    expect(lower.map((r) => r.record.abbreviation).sort()).toEqual(
+      upper.map((r) => r.record.abbreviation).sort(),
+    );
   });
 
   it("filters by session type", () => {
@@ -267,85 +284,6 @@ describe("queryCatalog", () => {
   });
 });
 
-describe("getIndexRecord", () => {
-  let home: TempHome;
-
-  beforeEach(() => {
-    home = createTempHome();
-  });
-
-  afterEach(() => {
-    home.cleanup();
-  });
-
-  it("returns the record for a known session id", () => {
-    writeCatalog(
-      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
-      { storeRoot: home.path },
-    );
-
-    const record = getIndexRecord({ storeRoot: home.path }, "1780441461150001GGoc");
-
-    expect(record?.abbreviation).toBe("ANT301");
-  });
-
-  it("returns null for a session id that is not in the catalog", () => {
-    writeCatalog(
-      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
-      { storeRoot: home.path },
-    );
-
-    expect(getIndexRecord({ storeRoot: home.path }, "does-not-exist")).toBeNull();
-  });
-
-  it("throws CatalogMissingError when nothing has been synced", () => {
-    expect(() => getIndexRecord({ storeRoot: home.path }, "any-id")).toThrow(CatalogMissingError);
-  });
-
-  it("refuses to read an index built at an older schema version rather than silently serving it", () => {
-    writeCatalog(
-      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta({ schemaVersion: CURRENT_SCHEMA_VERSION - 1 }) },
-      { storeRoot: home.path },
-    );
-
-    let caught: unknown;
-    try {
-      getIndexRecord({ storeRoot: home.path }, "1780441461150001GGoc");
-    } catch (err) {
-      caught = err;
-    }
-    expect(caught).toBeInstanceOf(CatalogUnusableError);
-    expect((caught as CatalogUnusableError).reason).toBe("outdated");
-  });
-
-  it("refuses to read when meta.json is corrupt", () => {
-    writeCatalog(
-      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
-      { storeRoot: home.path },
-    );
-    writeFileSync(join(home.path, "catalog", "meta.json"), "{ truncated", "utf8");
-
-    let caught: unknown;
-    try {
-      getIndexRecord({ storeRoot: home.path }, "1780441461150001GGoc");
-    } catch (err) {
-      caught = err;
-    }
-    expect(caught).toBeInstanceOf(CatalogUnusableError);
-    expect((caught as CatalogUnusableError).reason).toBe("corrupt");
-  });
-
-  it("does not refuse a catalog that is merely stale by age", () => {
-    writeCatalog(
-      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta({ syncedAt: 0 }) },
-      { storeRoot: home.path },
-    );
-
-    const record = getIndexRecord({ storeRoot: home.path }, "1780441461150001GGoc");
-    expect(record?.abbreviation).toBe("ANT301");
-  });
-});
-
 describe("resolveSessionRecord", () => {
   let home: TempHome;
 
@@ -368,6 +306,7 @@ describe("resolveSessionRecord", () => {
     expect(result).toEqual({
       status: "found",
       record: expect.objectContaining({ abbreviation: "ANT301" }),
+      relatedAbbreviations: [],
     });
   });
 
@@ -381,6 +320,90 @@ describe("resolveSessionRecord", () => {
 
     expect(result.status).toBe("found");
     expect(result.status === "found" && result.record.sessionId).toBe("1780441461150001GGoc");
+    expect(result.status === "found" && result.relatedAbbreviations).toEqual([]);
+  });
+
+  it("resolves a base code (a repeat suffix stripped) to its earliest offering, listing the other sittings' abbreviations", () => {
+    // API303-R and API303-R1 (see tests/fixtures/README.md) are the real catalog's own repeat
+    // pair; the fixture has no bare "API303" abbreviation at all, so this can only resolve through
+    // base-code matching, not a direct abbreviation lookup.
+    writeCatalog(
+      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
+      { storeRoot: home.path },
+    );
+
+    const result = resolveSessionRecord({ storeRoot: home.path }, "API303");
+
+    expect(result.status).toBe("found");
+    // API303-R sits 2026-11-30, API303-R1 sits 2026-12-02 -- the earlier one is the "found" record.
+    expect(result.status === "found" && result.record.abbreviation).toBe("API303-R");
+    expect(result.status === "found" && result.relatedAbbreviations).toEqual(["API303-R1"]);
+  });
+
+  it("resolves a base code case-insensitively", () => {
+    writeCatalog(
+      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
+      { storeRoot: home.path },
+    );
+
+    const result = resolveSessionRecord({ storeRoot: home.path }, "api303");
+
+    expect(result.status).toBe("found");
+    expect(result.status === "found" && result.record.abbreviation).toBe("API303-R");
+  });
+
+  it("does not merge a sponsored '-S' session into a same-named base code's lookup", () => {
+    // The same trap match.ts's own grouping guards against: "-S" marks a sponsored session, not a
+    // repeat, so a lookup for "AIM214" must resolve to the real AIM214 session, never treat
+    // "AIM214-S" as one of its sittings.
+    const base: Session = {
+      sessionId: "aim214",
+      abbreviation: "AIM214",
+      title: "The age of vertical models: training to deployment on SageMaker AI",
+    };
+    const sponsored: Session = {
+      sessionId: "aim214-s",
+      abbreviation: "AIM214-S",
+      title: "Ring's Security Evolution: From Doorbell to Enterprise Platform (sponsored by Ring LLC)",
+    };
+    writeCatalog(
+      {
+        raw: [base, sponsored],
+        index: [base, sponsored].map(buildIndexRecord),
+        meta: sampleMeta({ totalCount: 2, count: 2 }),
+      },
+      { storeRoot: home.path },
+    );
+
+    const result = resolveSessionRecord({ storeRoot: home.path }, "AIM214");
+
+    expect(result.status).toBe("found");
+    expect(result.status === "found" && result.record.abbreviation).toBe("AIM214");
+    expect(result.status === "found" && result.relatedAbbreviations).toEqual([]);
+  });
+
+  it("never resolves a base-code lookup through a sponsored '-S' session, even with no bare abbreviation to shadow it", () => {
+    // Sharper than the pair above, which resolves through the direct-abbreviation path before the
+    // base-code fallback is ever consulted at all: with *only* the sponsored session present, a
+    // lookup for "AIM214" must fall through to not-found, not treat AIM214-S's own suffix as a
+    // repeat marker and resolve to it anyway.
+    const sponsored: Session = {
+      sessionId: "aim214-s",
+      abbreviation: "AIM214-S",
+      title: "Ring's Security Evolution: From Doorbell to Enterprise Platform (sponsored by Ring LLC)",
+    };
+    writeCatalog(
+      {
+        raw: [sponsored],
+        index: [sponsored].map(buildIndexRecord),
+        meta: sampleMeta({ totalCount: 1, count: 1 }),
+      },
+      { storeRoot: home.path },
+    );
+
+    const result = resolveSessionRecord({ storeRoot: home.path }, "AIM214");
+
+    expect(result).toEqual({ status: "not-found" });
   });
 
   it("reports not-found for a token that matches neither an id nor an abbreviation", () => {
@@ -417,5 +440,35 @@ describe("resolveSessionRecord", () => {
     expect(() => resolveSessionRecord({ storeRoot: home.path }, "anything")).toThrow(
       CatalogMissingError,
     );
+  });
+});
+
+describe("catalogServiceNames", () => {
+  let home: TempHome;
+
+  beforeEach(() => {
+    home = createTempHome();
+  });
+
+  afterEach(() => {
+    home.cleanup();
+  });
+
+  it("returns every distinct service name across the whole index", () => {
+    writeCatalog(
+      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
+      { storeRoot: home.path },
+    );
+
+    const names = catalogServiceNames({ storeRoot: home.path });
+
+    expect(names).toContain("AWS Lambda");
+    expect(names).toContain("Amazon DynamoDB");
+    // No duplicates, however many sessions share a service.
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it("throws CatalogMissingError when nothing has been synced", () => {
+    expect(() => catalogServiceNames({ storeRoot: home.path })).toThrow(CatalogMissingError);
   });
 });

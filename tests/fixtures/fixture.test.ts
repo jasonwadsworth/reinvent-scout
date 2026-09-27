@@ -47,8 +47,12 @@ const ALL_DATES = [
 ];
 
 describe("catalog fixture", () => {
-  it("has sixty sessions", () => {
-    expect(fixture.length).toBe(60);
+  it("has sixty-one sessions", () => {
+    // Sixty carved from the real pull, plus one added later: a genuine second sitting of
+    // API303-R (API303-R1, titled with a trailing " [REPEAT]" marker, matching the real
+    // catalog's own convention) so match's repeat-grouping feature has a real pair to group.
+    // See tests/fixtures/README.md.
+    expect(fixture.length).toBe(61);
   });
 
   it("covers all ten session types", () => {

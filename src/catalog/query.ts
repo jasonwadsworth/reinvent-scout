@@ -1,5 +1,5 @@
 import { CatalogMissingError, CatalogUnusableError } from "../core/errors.js";
-import { tokenize, type IndexRecord, type TermFrequencies } from "./index-record.js";
+import { getOwnTermCount, tokenize, type IndexRecord } from "./index-record.js";
 import { getCatalogState, readIndex, type CatalogStoreDeps } from "./store.js";
 import type { Venue } from "./venue.js";
 
@@ -56,20 +56,6 @@ function matchesFilters(record: IndexRecord, options: CatalogQueryOptions): bool
   return true;
 }
 
-/**
- * Reads a term's count from a term-frequency map, own-property only. `titleTerms`/`bodyTerms`
- * are written with a null prototype (see `index-record.ts`'s `tokenize`), but that guarantee
- * evaporates the moment they round-trip through `JSON.parse` to build the in-memory index this
- * function actually reads -- `JSON.parse` always produces plain, Object.prototype-inheriting
- * objects, regardless of the prototype of whatever was serialized. So a bare `map[term]` read
- * here would resolve a term like `constructor` to the inherited `Object` constructor function
- * for every record, not `undefined`, however the write side is hardened. `Object.hasOwn` is the
- * only check that is actually safe against this on the read side.
- */
-function getOwnTermCount(map: TermFrequencies, term: string): number | undefined {
-  return Object.hasOwn(map, term) ? (map[term] as number) : undefined;
-}
-
 /** Scores a record against the query's terms. Returns `null` (rather than a zero score) when a
  * query was given but none of its terms matched anywhere -- the caller excludes the record
  * entirely in that case, since a text search with zero relevance is a non-match, not a weak one. */
@@ -121,7 +107,7 @@ const REBUILD_REMEDY =
  * nothing about whether the index's own data is trustworthy, and refusing on it would defeat the
  * point of syncing the catalog locally in the first place.
  */
-function requireCurrentIndex(deps: CatalogStoreDeps): IndexRecord[] {
+export function requireCurrentIndex(deps: CatalogStoreDeps): IndexRecord[] {
   const state = getCatalogState(deps);
   if (state.status === "missing") {
     throw new CatalogMissingError();
@@ -159,8 +145,9 @@ function requireCurrentIndex(deps: CatalogStoreDeps): IndexRecord[] {
  * tiebreak -- ties are common (every result scores 0 when no `query` is given), so the tiebreak
  * runs constantly, not just as an edge case.
  *
- * Throws `CatalogMissingError` when nothing has ever been synced, or when the stored index is
- * from an older schema version (see `requireCurrentIndex`).
+ * Throws `CatalogMissingError` when nothing has ever been synced, or `CatalogUnusableError` when
+ * the stored index can't be trusted -- an older schema version, or unreadable sync metadata (see
+ * `requireCurrentIndex`).
  */
 export function queryCatalog(
   deps: CatalogStoreDeps,
@@ -168,7 +155,10 @@ export function queryCatalog(
 ): CatalogQueryResult[] {
   const index = requireCurrentIndex(deps);
 
-  const queryTerms = options.query === undefined ? null : Object.keys(tokenize(options.query));
+  const queryTerms =
+    options.query === undefined
+      ? null
+      : Object.keys(tokenize(options.query, { keepShortTokens: true }));
 
   const results: CatalogQueryResult[] = [];
   for (const record of index) {
@@ -197,40 +187,76 @@ export function queryCatalog(
   return options.limit === undefined ? results : results.slice(0, options.limit);
 }
 
-/**
- * Looks up a single session by id in the local index -- for `catalog show`. Returns `null` when
- * the id isn't in the catalog (a typo, or a session favorited before the last sync that no
- * longer exists); throws `CatalogMissingError` when nothing has ever been synced, same as
- * `queryCatalog`.
- */
-export function getIndexRecord(deps: CatalogStoreDeps, sessionId: string): IndexRecord | null {
-  const index = requireCurrentIndex(deps);
-  return index.find((record) => record.sessionId === sessionId) ?? null;
-}
-
 export type SessionLookupResult =
-  | { status: "found"; record: IndexRecord }
+  | { status: "found"; record: IndexRecord; relatedAbbreviations: string[] }
   | { status: "not-found" }
   | { status: "ambiguous"; candidates: IndexRecord[] };
 
 /**
- * Resolves `catalog show`'s argument against the local index: first as an exact `sessionId`,
- * then -- case-insensitively -- as an `abbreviation`. `catalog search` prints only the
+ * The real catalog's own repeat-sitting suffix: `-R` optionally followed by digits --
+ * `ARC325-R`, `ARC325-R1`, `ARC325-R2` are the same talk sat on different days. Deliberately
+ * narrow, matching only `R`: a broader `-[A-Z]\d*$` would also match `-S`, the catalog's unrelated
+ * marker for a sponsored session, and the real catalog has at least one base code where that
+ * collision is not hypothetical -- `AIM214` (a SageMaker session) and `AIM214-S` (an unrelated
+ * sponsored talk) share a base string but are two different sessions. Exported so `match.ts`
+ * groups repeat sittings by the exact same rule this module resolves `catalog show <base code>`
+ * with, rather than each maintaining its own copy that could drift apart.
+ */
+export const REPEAT_SUFFIX_PATTERN = /-R\d*$/;
+
+/** The group identity a repeat session shares with its siblings: its `abbreviation` with any
+ * repeat suffix removed, or its `sessionId` when it has no abbreviation at all (which can't
+ * collide with a real abbreviation-derived code, and can't itself be shared by two different
+ * sessions, so it's always a safe, unique fallback group of one). */
+export function baseSessionCode(record: IndexRecord): string {
+  if (record.abbreviation === null) {
+    return record.sessionId;
+  }
+  return record.abbreviation.replace(REPEAT_SUFFIX_PATTERN, "");
+}
+
+/** Ascending by start date then start time; a record with no `startDate` at all (unscheduled)
+ * sorts last, since there's nothing yet to place it relative to a scheduled one. */
+function compareByStartDateTime(a: IndexRecord, b: IndexRecord): number {
+  if (a.startDate !== b.startDate) {
+    if (a.startDate === null) {
+      return 1;
+    }
+    if (b.startDate === null) {
+      return -1;
+    }
+    return a.startDate.localeCompare(b.startDate);
+  }
+  return (a.startTime ?? "").localeCompare(b.startTime ?? "");
+}
+
+/**
+ * Resolves `catalog show`'s argument against the local index: first as an exact `sessionId`, then
+ * -- case-insensitively -- as an `abbreviation`, then -- also case-insensitively -- as a *base*
+ * code with any repeat suffix stripped (see `baseSessionCode`). `catalog search` prints only the
  * abbreviation (real session ids are opaque, e.g. `1780441461150001GGoc`), so the abbreviation is
  * the only thing a user actually has to paste back in; resolving only by id would make the
- * documented search-then-show flow unusable for every session in the catalog.
+ * documented search-then-show flow unusable for every session in the catalog. The base-code
+ * fallback matters because `match`'s own grouped output prints a candidate's `code`, not any one
+ * sitting's abbreviation (see `match.ts`), and that code often isn't a real abbreviation on its
+ * own -- `catalog show` needs to resolve exactly what `match` just printed.
+ *
+ * When several sittings share a base code, the *earliest* by start date and time is the `record`
+ * returned, and every other sitting's abbreviation is listed in `relatedAbbreviations` -- this is
+ * not reported `"ambiguous"`, since a repeat group sharing a base code is expected, not a data
+ * integrity concern the way two unrelated sessions sharing a real abbreviation would be.
  *
  * Abbreviations are confirmed unique across the real 2,043-session catalog, but nothing in the
  * API guarantees that stays true (a future event, or a bug upstream, could repeat one), so a
- * token that matches more than one record is reported `"ambiguous"` with every candidate rather
- * than silently resolving to the first match.
+ * token that matches more than one record *by abbreviation* is reported `"ambiguous"` with every
+ * candidate rather than silently resolving to the first match.
  */
 export function resolveSessionRecord(deps: CatalogStoreDeps, token: string): SessionLookupResult {
   const index = requireCurrentIndex(deps);
 
   const bySessionId = index.find((record) => record.sessionId === token);
   if (bySessionId !== undefined) {
-    return { status: "found", record: bySessionId };
+    return { status: "found", record: bySessionId, relatedAbbreviations: [] };
   }
 
   const normalizedToken = token.toLowerCase();
@@ -238,11 +264,43 @@ export function resolveSessionRecord(deps: CatalogStoreDeps, token: string): Ses
     (record) => record.abbreviation !== null && record.abbreviation.toLowerCase() === normalizedToken,
   );
   if (byAbbreviation.length === 1) {
-    return { status: "found", record: byAbbreviation[0]! };
+    return { status: "found", record: byAbbreviation[0]!, relatedAbbreviations: [] };
   }
   if (byAbbreviation.length > 1) {
     return { status: "ambiguous", candidates: byAbbreviation };
   }
 
+  const byBaseCode = index
+    .filter((record) => baseSessionCode(record).toLowerCase() === normalizedToken)
+    .sort(compareByStartDateTime);
+  if (byBaseCode.length > 0) {
+    const [earliest, ...rest] = byBaseCode;
+    return {
+      status: "found",
+      record: earliest!,
+      relatedAbbreviations: rest.map((record) => record.abbreviation).filter((a) => a !== null),
+    };
+  }
+
   return { status: "not-found" };
+}
+
+/**
+ * Every distinct service name across the whole local catalog index, deduplicated -- the input
+ * `catalog/service-aliases.ts`'s `buildServiceAliasIndex` needs to derive aliases from, and
+ * `profile.ts` needs to resolve an agent-authored profile's service names against. Throws
+ * `CatalogMissingError`/`CatalogUnusableError` exactly like `queryCatalog`, same as every other
+ * reader of the local index, since there's nothing to derive aliases from until a catalog has been
+ * synced.
+ */
+export function catalogServiceNames(deps: CatalogStoreDeps): string[] {
+  const index = requireCurrentIndex(deps);
+
+  const names = new Set<string>();
+  for (const record of index) {
+    for (const service of record.services) {
+      names.add(service);
+    }
+  }
+  return [...names];
 }

@@ -109,7 +109,16 @@ export function registerAuthCommands(program: Command, deps: AuthCommandDeps = {
       }
 
       const expiresAt = state.tokens.obtainedAt + state.tokens.expiresIn * 1000;
-      print(`Signed in. Access token expires ${formatRelativeDuration(expiresAt - now())}.`);
+      const offsetMs = expiresAt - now();
+      // A negative offset means the token already expired -- "expires ... ago" reads as if the
+      // expiry were still pending, when it's already happened. This is routine, not an error: the
+      // token provider refreshes silently on the next call that needs it, so the message says so
+      // rather than implying the session is broken.
+      print(
+        offsetMs < 0
+          ? `Signed in. Access token expired ${formatRelativeDuration(offsetMs)}; it will refresh automatically on next use.`
+          : `Signed in. Access token expires ${formatRelativeDuration(offsetMs)}.`,
+      );
 
       const apiClient = buildApiClient(storeRoot);
       try {

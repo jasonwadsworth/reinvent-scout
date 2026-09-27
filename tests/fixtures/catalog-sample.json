@@ -77,6 +77,57 @@
     ]
   },
   {
+    "sessionId": "1780441491675002GHkV",
+    "title": "Building real-time applications with event-driven architectures [REPEAT]",
+    "abbreviation": "API303-R1",
+    "abstract": "Build real-time features using AWS AppSync Events in this hands-on builders' session. Working in small groups with guidance from AWS experts, you'll implement in-app notifications and live updates, configure WebSocket connections, and design data persistence strategies. Using provided code samples, you'll gain practical experience creating responsive, event-driven applications that push updates to connected clients instantly. By the end of this 60-minute session, you'll have working real-time patterns you can apply directly to your own applications. Bring your laptop and come ready to code!",
+    "type": "Builders' session",
+    "level": "300 - Advanced",
+    "venue": "Caesars Forum",
+    "room": "Level 1 | Forum 122 | Content Hub | Builders' Session 4",
+    "isAllDaySession": false,
+    "isReservable": false,
+    "sessionTime": {
+      "date": "2026-12-02",
+      "length": "60",
+      "time": "10:30"
+    },
+    "services": [
+      "AWS AppSync"
+    ],
+    "topics": [
+      "Serverless"
+    ],
+    "areasOfInterest": [
+      "Event-Driven Architecture"
+    ],
+    "roles": [
+      "Developer / Engineer",
+      "IT Professional / Technical Manager",
+      "Solution / Systems Architect"
+    ],
+    "speakers": [
+      {
+        "name": "Priya Rahman"
+      },
+      {
+        "name": "Yuki Moreau"
+      },
+      {
+        "name": "Avery Larsen"
+      },
+      {
+        "name": "Avery Novak"
+      },
+      {
+        "name": "Malik Park"
+      }
+    ],
+    "features": [
+      "Hands-on"
+    ]
+  },
+  {
     "sessionId": "1780441493349001G6lf",
     "title": "AtoZ AI Co-Scientist: Multi-Agent Systems That Do Research With You",
     "abbreviation": "INV501",

@@ -1,7 +1,7 @@
 import type { Command } from "commander";
 import { createApiClient, type ApiClient } from "../../api/client.js";
 import { createTokenProviderAdapter } from "../../auth/provider-adapter.js";
-import type { IndexRecord } from "../../catalog/index-record.js";
+import { toPublicIndexRecord } from "../../catalog/index-record.js";
 import { queryCatalog, resolveSessionRecord, type CatalogQueryResult } from "../../catalog/query.js";
 import { readRaw } from "../../catalog/store.js";
 import { DEFAULT_EVENT_ID, syncCatalog, type SyncResult } from "../../catalog/sync.js";
@@ -50,36 +50,10 @@ interface ShowCommandOptions {
 }
 
 const DEFAULT_SEARCH_LIMIT = 20;
+const NO_MATCHES_MESSAGE = "No sessions matched.";
 
 function defaultBuildApiClient(storeRoot: string): ApiClient {
   return createApiClient({ getAccessToken: createTokenProviderAdapter({ storeRoot }) });
-}
-
-/** Strips the index record's internal term-frequency maps -- an implementation detail of the
- * scorer, never agent- or user-facing output. */
-function toPublicRecord(record: IndexRecord): Omit<IndexRecord, "titleTerms" | "bodyTerms"> {
-  return {
-    sessionId: record.sessionId,
-    abbreviation: record.abbreviation,
-    title: record.title,
-    type: record.type,
-    level: record.level,
-    levelBand: record.levelBand,
-    venue: record.venue,
-    room: record.room,
-    startDate: record.startDate,
-    startTime: record.startTime,
-    lengthMinutes: record.lengthMinutes,
-    services: record.services,
-    topics: record.topics,
-    areasOfInterest: record.areasOfInterest,
-    roles: record.roles,
-    features: record.features,
-    industries: record.industries,
-    speakerCount: record.speakerCount,
-    isReservable: record.isReservable,
-    seatAvailability: record.seatAvailability,
-  };
 }
 
 function parseLevelBandRange(raw: string): { min: number; max: number } {
@@ -227,25 +201,33 @@ export function registerCatalogCommands(program: Command, deps: CatalogCommandDe
         if (options.includeAbstracts) {
           const rawBySessionId = new Map((readRaw({ storeRoot }) ?? []).map((s) => [s.sessionId, s]));
           const withAbstracts = results.map((result) => ({
-            ...toPublicRecord(result.record),
+            ...toPublicIndexRecord(result.record),
             score: result.score,
             abstract: rawBySessionId.get(result.record.sessionId)?.abstract ?? null,
           }));
           print(
             options.json
               ? JSON.stringify(withAbstracts)
-              : results
-                  .map((result, i) => formatSearchResultWithAbstract(result, withAbstracts[i]?.abstract ?? null))
-                  .join("\n\n"),
+              : results.length === 0
+                ? NO_MATCHES_MESSAGE
+                : results
+                    .map((result, i) => formatSearchResultWithAbstract(result, withAbstracts[i]?.abstract ?? null))
+                    .join("\n\n"),
           );
           return;
         }
 
         const withoutAbstracts = results.map((result) => ({
-          ...toPublicRecord(result.record),
+          ...toPublicIndexRecord(result.record),
           score: result.score,
         }));
-        print(options.json ? JSON.stringify(withoutAbstracts) : results.map(formatSearchResultLine).join("\n"));
+        print(
+          options.json
+            ? JSON.stringify(withoutAbstracts)
+            : results.length === 0
+              ? NO_MATCHES_MESSAGE
+              : results.map(formatSearchResultLine).join("\n"),
+        );
       } catch (err) {
         if (
           err instanceof CatalogMissingError ||
@@ -290,14 +272,26 @@ export function registerCatalogCommands(program: Command, deps: CatalogCommandDe
           return;
         }
 
-        const { record } = result;
+        const { record, relatedAbbreviations } = result;
         const rawSession = (readRaw({ storeRoot }) ?? []).find((s) => s.sessionId === record.sessionId);
-        const output = { ...toPublicRecord(record), abstract: rawSession?.abstract ?? null };
+        const output = {
+          ...toPublicIndexRecord(record),
+          abstract: rawSession?.abstract ?? null,
+          relatedAbbreviations,
+        };
 
         if (options.json) {
           print(JSON.stringify(output));
         } else {
-          print(`${output.abbreviation ?? output.sessionId}: ${output.title}\n${output.abstract ?? ""}`);
+          const lines = [`${output.abbreviation ?? output.sessionId}: ${output.title}`];
+          if (relatedAbbreviations.length > 0) {
+            // `catalog show <base code>` resolves to the earliest of several repeat sittings (see
+            // query.ts's resolveSessionRecord) -- naming the others is what lets a reader actually
+            // find them, rather than silently picking one sitting and hiding that more exist.
+            lines.push(`Also offered as: ${relatedAbbreviations.join(", ")}`);
+          }
+          lines.push(output.abstract ?? "");
+          print(lines.join("\n"));
         }
       } catch (err) {
         if (err instanceof CatalogMissingError || err instanceof CatalogUnusableError) {

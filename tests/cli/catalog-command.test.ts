@@ -324,6 +324,19 @@ describe("catalog search command", () => {
     expect(h.printed.join("\n")).toContain("ANT301");
   });
 
+  it("prints a human-readable message when nothing matches, but an empty json array under --json", async () => {
+    const h = localHarness(home.path);
+
+    await h.run(["catalog", "search", "zzznomatchzzz"]);
+
+    expect(h.printed).toEqual(["No sessions matched."]);
+
+    const jsonHarness = localHarness(home.path);
+    await jsonHarness.run(["catalog", "search", "zzznomatchzzz", "--json"]);
+
+    expect(jsonHarness.printed).toEqual(["[]"]);
+  });
+
   it("tells the user to sync first when nothing has been synced", async () => {
     const emptyHome = createTempHome();
     try {
@@ -378,6 +391,38 @@ describe("catalog show command", () => {
     expect(result.abstract).toBe(session.abstract);
     expect(result).not.toHaveProperty("titleTerms");
     expect(result).not.toHaveProperty("bodyTerms");
+  });
+
+  it("resolves a base code (a repeat suffix stripped) to its earliest sitting, listing the others as JSON", async () => {
+    // API303-R/API303-R1 are the fixture's real repeat pair (see tests/fixtures/README.md); there
+    // is no bare "API303" abbreviation, so this can only resolve through the base-code fallback --
+    // exactly what a reader would type after `match` printed "API303" as a candidate's code.
+    const h = localHarness(home.path);
+
+    await h.run(["catalog", "show", "API303", "--json"]);
+
+    expect(h.printed).toHaveLength(1);
+    const result = JSON.parse(h.printed[0]!) as Record<string, unknown>;
+    expect(result.abbreviation).toBe("API303-R");
+    expect(result.relatedAbbreviations).toEqual(["API303-R1"]);
+  });
+
+  it("prints the other sittings' abbreviations in the human-readable output for a base code", async () => {
+    const h = localHarness(home.path);
+
+    await h.run(["catalog", "show", "API303"]);
+
+    const text = h.printed.join("\n");
+    expect(text).toContain("API303-R");
+    expect(text).toContain("Also offered as: API303-R1");
+  });
+
+  it("does not print an 'also offered as' line for a session with no repeats", async () => {
+    const h = localHarness(home.path);
+
+    await h.run(["catalog", "show", "ANT301"]);
+
+    expect(h.printed.join("\n")).not.toContain("Also offered as");
   });
 
   it("reports a friendly message when the session id is not found", async () => {
