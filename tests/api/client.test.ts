@@ -275,6 +275,45 @@ describe("createApiClient", () => {
     await expect(client.getSchedule(EVENT_ID)).rejects.toBeInstanceOf(OperationUnavailableError);
   });
 
+  it("sends session ids as a JSON body when associating favorites, and returns the BulkResult unchanged", async () => {
+    const bulkResult = { successful: ["s1"], failed: [{ sessionId: "s2", code: "alreadyFavorited" }] };
+    const fake = createFakeFetch([{ status: 200, json: { result: bulkResult } }]);
+    const auth = fakeAuth(["token-abc"]);
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: auth.getAccessToken });
+
+    const result = await client.associateFavorites(EVENT_ID, ["s1", "s2"]);
+
+    expect(result).toEqual(bulkResult);
+    expect(fake.calls).toHaveLength(1);
+    expect(fake.calls[0]!.url).toContain(`/v1/events/${EVENT_ID}/favorites`);
+    expect(fake.calls[0]!.init?.method).toBe("POST");
+    expect(JSON.parse(fake.calls[0]!.init?.body as string)).toEqual({ sessionIds: ["s1", "s2"] });
+    const headers = new Headers(fake.calls[0]!.init?.headers);
+    expect(headers.get("Content-Type")).toBe("application/json");
+  });
+
+  it("resolves disassociateFavorite on a 204 with no body, without attempting to parse one", async () => {
+    // fake-fetch's 204 has neither `json` nor `text` set, so `.json()` on it throws exactly like
+    // a real empty-bodied 204 would -- proving requestJson doesn't call it for a 204.
+    const fake = createFakeFetch([{ status: 204 }]);
+    const auth = fakeAuth(["token-abc"]);
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: auth.getAccessToken });
+
+    await expect(client.disassociateFavorite(EVENT_ID, "s1")).resolves.toBeUndefined();
+
+    expect(fake.calls).toHaveLength(1);
+    expect(fake.calls[0]!.url).toContain(`/v1/events/${EVENT_ID}/favorites/s1`);
+    expect(fake.calls[0]!.init?.method).toBe("DELETE");
+  });
+
+  it("maps disassociateFavorite's 404 to NotFoundError", async () => {
+    const fake = createFakeFetch([{ status: 404, json: { message: "Not favorited." } }]);
+    const auth = fakeAuth(["token-abc"]);
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: auth.getAccessToken });
+
+    await expect(client.disassociateFavorite(EVENT_ID, "s1")).rejects.toBeInstanceOf(NotFoundError);
+  });
+
   it("includes the server message in the error but never the bearer token", async () => {
     const secretToken = "SECRET_BEARER_TOKEN_DO_NOT_LEAK";
     const fake = createFakeFetch([

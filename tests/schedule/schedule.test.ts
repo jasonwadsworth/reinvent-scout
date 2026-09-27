@@ -47,6 +47,16 @@ function fakeApiClient(getScheduleImpl: (eventId: string) => Promise<Schedule>):
         "fakeApiClient: listAllSessions is not implemented, schedule.ts should never call it",
       );
     },
+    associateFavorites: async () => {
+      throw new Error(
+        "fakeApiClient: associateFavorites is not implemented, schedule.ts should never call it",
+      );
+    },
+    disassociateFavorite: async () => {
+      throw new Error(
+        "fakeApiClient: disassociateFavorite is not implemented, schedule.ts should never call it",
+      );
+    },
   };
 }
 

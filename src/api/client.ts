@@ -8,7 +8,7 @@ import {
   ThrottledError,
   ValidationError,
 } from "../core/errors.js";
-import type { ListSessionsResponseContent, Schedule, Session } from "./types.js";
+import type { BulkResult, ListSessionsResponseContent, Schedule, Session } from "./types.js";
 
 export type { GetAccessTokenOptions };
 
@@ -51,6 +51,13 @@ export interface ApiClient {
   listSessions(eventId: string, options?: ListSessionsOptions): Promise<ListSessionsResponseContent>;
   /** Walks every page of the event's session catalog and returns the full list. */
   listAllSessions(eventId: string, options?: ListAllSessionsOptions): Promise<ListAllSessionsResult>;
+  /** Marks up to ten sessions as favorites in one request (the API's own per-request cap). A 200
+   * does not mean every session succeeded -- always check `BulkResult.failed`. */
+  associateFavorites(eventId: string, sessionIds: string[]): Promise<BulkResult>;
+  /** Removes one session from favorites. Resolves on the API's 204; rejects with `NotFoundError`
+   * when the session was not favorited (the API reports that as a 404, indistinguishable here from
+   * the session not existing at all). */
+  disassociateFavorite(eventId: string, sessionId: string): Promise<void>;
 }
 
 export interface ListAllSessionsResult {
@@ -62,6 +69,10 @@ export interface ListAllSessionsResult {
 
 interface GetScheduleResponseContent {
   schedule: Schedule;
+}
+
+interface AssociateFavoritesResponseContent {
+  result: BulkResult;
 }
 
 /** Safety cap on ListSessions pagination: real catalogs run to a handful of pages (2,043
@@ -116,6 +127,7 @@ async function requestJson<T>(
   method: string,
   path: string,
   deps: ApiClientDeps,
+  body?: unknown,
 ): Promise<T> {
   const fetchFn = deps.fetchFn ?? fetch;
   const sleep = deps.sleep ?? defaultSleep;
@@ -132,7 +144,9 @@ async function requestJson<T>(
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: "application/json",
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
 
     if (response.status === 401 && !usedForcedRefresh) {
@@ -158,6 +172,13 @@ async function requestJson<T>(
     }
 
     if (response.ok) {
+      // A 204 has no body at all -- calling `.json()` on it would throw trying to parse an empty
+      // string, exactly like a real empty-bodied response does. `T` is `undefined` at every 204
+      // call site in this client, so this is a real, typed "no content" outcome, not a cast
+      // papering over a missing value.
+      if (response.status === 204) {
+        return undefined as T;
+      }
       return (await response.json()) as T;
     }
 
@@ -209,6 +230,24 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
     },
 
     listSessions,
+
+    async associateFavorites(eventId: string, sessionIds: string[]): Promise<BulkResult> {
+      const body = await requestJson<AssociateFavoritesResponseContent>(
+        "POST",
+        `/v1/events/${encodeURIComponent(eventId)}/favorites`,
+        deps,
+        { sessionIds },
+      );
+      return body.result;
+    },
+
+    async disassociateFavorite(eventId: string, sessionId: string): Promise<void> {
+      await requestJson<undefined>(
+        "DELETE",
+        `/v1/events/${encodeURIComponent(eventId)}/favorites/${encodeURIComponent(sessionId)}`,
+        deps,
+      );
+    },
 
     async listAllSessions(
       eventId: string,

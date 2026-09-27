@@ -35,6 +35,12 @@ function fakeApiClient(
       throw new Error("fakeApiClient: listSessions is not implemented, sync.ts should never call it");
     },
     listAllSessions,
+    associateFavorites: async () => {
+      throw new Error("fakeApiClient: associateFavorites is not implemented, sync.ts should never call it");
+    },
+    disassociateFavorite: async () => {
+      throw new Error("fakeApiClient: disassociateFavorite is not implemented, sync.ts should never call it");
+    },
   };
 }
 

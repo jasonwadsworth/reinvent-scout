@@ -35,6 +35,12 @@ function fakeApiClient(getSchedule: ApiClient["getSchedule"]): ApiClient {
     listAllSessions: async () => {
       throw new Error("not implemented in this fake");
     },
+    associateFavorites: async () => {
+      throw new Error("not implemented in this fake");
+    },
+    disassociateFavorite: async () => {
+      throw new Error("not implemented in this fake");
+    },
   };
 }
 

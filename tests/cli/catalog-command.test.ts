@@ -30,6 +30,12 @@ function fakeApiClient(
       throw new Error("not implemented in this fake");
     },
     listAllSessions,
+    associateFavorites: async () => {
+      throw new Error("not implemented in this fake");
+    },
+    disassociateFavorite: async () => {
+      throw new Error("not implemented in this fake");
+    },
   };
 }
 
