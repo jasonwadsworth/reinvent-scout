@@ -57,6 +57,16 @@ export interface SyncResult {
   /** `true` when this call rebuilt the index from stored raw data without contacting the API
    * (either because `reindex` was requested and there was data to reindex from). */
   reindexed: boolean;
+  /** `true` when `getEvent` failed -- the sync still completes using whatever `listAllSessions`
+   * returned (the catalog is the essential result; the timezone is auxiliary, with an already-
+   * handled `null` path for the case where the event just doesn't report one). `meta.timezone` is
+   * `null` in this case, same as it would be if the event genuinely has none; `timezoneError`
+   * distinguishes the two for a caller that wants to explain what happened. Always `false` on a
+   * reindex, which never calls `getEvent` at all. */
+  timezoneUnavailable: boolean;
+  /** The failed `getEvent` call's error message. Present only when `timezoneUnavailable` is
+   * `true`. */
+  timezoneError?: string;
 }
 
 /** Resolves a reported `totalCount` to a value safe to persist in `CatalogMeta`'s typed field --
@@ -75,7 +85,12 @@ function resolveTotalCount(
   return { totalCount: fallbackCount, totalCountMissing: true };
 }
 
-function toSyncResult(meta: CatalogMeta, reindexed: boolean, totalCountMissing: boolean): SyncResult {
+function toSyncResult(
+  meta: CatalogMeta,
+  reindexed: boolean,
+  totalCountMissing: boolean,
+  timezoneError: string | null,
+): SyncResult {
   return {
     eventId: meta.eventId,
     totalCount: meta.totalCount,
@@ -83,6 +98,8 @@ function toSyncResult(meta: CatalogMeta, reindexed: boolean, totalCountMissing: 
     countMismatch: meta.count !== meta.totalCount,
     totalCountMissing,
     reindexed,
+    timezoneUnavailable: timezoneError !== null,
+    ...(timezoneError === null ? {} : { timezoneError }),
   };
 }
 
@@ -112,7 +129,10 @@ function tryReindexFromStoredRaw(deps: SyncCatalogDeps): SyncResult | null {
   };
 
   writeCatalog({ raw: storedRaw, index, meta }, deps);
-  return toSyncResult(meta, true, totalCountMissing);
+  // A reindex never calls getEvent, so there is nothing to report as unavailable -- not "still
+  // unavailable from before", since a getEvent failure from a previous sync says nothing about
+  // whether it would succeed now, and this call never even tried.
+  return toSyncResult(meta, true, totalCountMissing, null);
 }
 
 /**
@@ -147,13 +167,34 @@ export async function syncCatalog(deps: SyncCatalogDeps): Promise<SyncResult> {
     // instead is strictly more useful to the user than refusing.
   }
 
-  // Both calls are independent reads of the same event, so they run concurrently; either
-  // rejecting propagates unchanged (same as a listAllSessions-only failure did before this event
-  // fetch existed) and writeCatalog below is never reached, leaving the previous catalog
-  // untouched -- consistent with the rest of this function never starting a write on bad input.
-  const [{ sessions, totalCount: reportedTotalCount }, event] = await Promise.all([
+  // Both calls are independent reads of the same event, and run concurrently, but they are no
+  // longer treated the same way on failure: listAllSessions rejecting still aborts the whole sync
+  // unchanged (writeCatalog below is never reached, leaving the previous catalog untouched,
+  // consistent with the rest of this function never starting a write on bad input), but getEvent
+  // is converted to a never-rejecting outcome *before* being combined with Promise.all -- a
+  // getEvent failure degrades to timezone: null plus a reported timezoneUnavailable/timezoneError
+  // rather than losing a successful session pull over an auxiliary field with an already-handled
+  // null path (lead's decision). Converting it up front, rather than after Promise.all rejects,
+  // also means a getEvent rejection can never become an unhandled promise rejection regardless of
+  // which call settles first.
+  const eventOutcomePromise = deps.apiClient.getEvent(eventId).then(
+    (event) => ({
+      // `event.timezone` is `undefined` when the API response omits it (not required by the
+      // schema); normalized to `null` here since `undefined` is not valid JSON -- JSON.stringify
+      // would silently drop the key. Never falls back to the host machine's timezone or a
+      // hardcoded zone.
+      timezone: event.timezone ?? null,
+      error: null as string | null,
+    }),
+    (err: unknown) => ({
+      timezone: null,
+      error: err instanceof Error ? err.message : String(err),
+    }),
+  );
+
+  const [{ sessions, totalCount: reportedTotalCount }, eventOutcome] = await Promise.all([
     deps.apiClient.listAllSessions(eventId, { includeAbstracts }),
-    deps.apiClient.getEvent(eventId),
+    eventOutcomePromise,
   ]);
   const index = sessions.map(buildIndexRecord);
   const { totalCount, totalCountMissing } = resolveTotalCount(reportedTotalCount, sessions.length);
@@ -164,15 +205,10 @@ export async function syncCatalog(deps: SyncCatalogDeps): Promise<SyncResult> {
     totalCount,
     count: sessions.length,
     includedAbstracts: includeAbstracts,
-    // `event.timezone` is `undefined` when the API response omits it (not required by the
-    // schema); normalized to `null` here since `undefined` is not valid JSON -- JSON.stringify
-    // would silently drop the key, and a caller reading it back could not tell "the field is
-    // absent because this meta predates the timezone feature" from "the event genuinely has
-    // none". Never falls back to the host machine's timezone or a hardcoded zone.
-    timezone: event.timezone ?? null,
+    timezone: eventOutcome.timezone,
   };
 
   writeCatalog({ raw: sessions, index, meta }, deps);
 
-  return toSyncResult(meta, false, totalCountMissing);
+  return toSyncResult(meta, false, totalCountMissing, eventOutcome.error);
 }

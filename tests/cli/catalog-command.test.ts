@@ -5,8 +5,8 @@ import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { registerCatalogCommands } from "../../src/cli/commands/catalog.js";
 import type { ApiClient, ListAllSessionsOptions, ListAllSessionsResult } from "../../src/api/client.js";
-import type { Session } from "../../src/api/types.js";
-import { AuthRequiredError, NotRegisteredError } from "../../src/core/errors.js";
+import type { Event, Session } from "../../src/api/types.js";
+import { AuthRequiredError, NotRegisteredError, ServiceError } from "../../src/core/errors.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { CURRENT_SCHEMA_VERSION, writeCatalog } from "../../src/catalog/store.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
@@ -21,6 +21,7 @@ const fixture: Session[] = JSON.parse(
  * result correctly, not re-prove sync's own logic. */
 function fakeApiClient(
   listAllSessions: (eventId: string, options?: ListAllSessionsOptions) => Promise<ListAllSessionsResult>,
+  getEvent: (eventId: string) => Promise<Event> = async (eventId) => ({ eventId }),
 ): ApiClient {
   return {
     getSchedule: async () => {
@@ -28,8 +29,9 @@ function fakeApiClient(
     },
     // syncCatalog (the real one, not a fake -- see the comment above) calls this for real on
     // every full sync, so unlike the other unused methods it must return a value rather than
-    // throw. No timezone: these tests only prove the command's own wiring, not timezone handling.
-    getEvent: async (eventId) => ({ eventId }),
+    // throw by default. No timezone by default: most of these tests only prove the command's own
+    // wiring, not timezone handling -- pass `getEvent` to control it for the tests that do.
+    getEvent,
     listSessions: async () => {
       throw new Error("not implemented in this fake");
     },
@@ -53,16 +55,20 @@ interface Harness {
 function harness(
   storeRoot: string,
   listAllSessions: (eventId: string, options?: ListAllSessionsOptions) => Promise<ListAllSessionsResult>,
+  getEvent?: (eventId: string) => Promise<Event>,
 ): Harness {
   const printed: string[] = [];
   let seenEventId: string | undefined;
   let seenOptions: ListAllSessionsOptions | undefined;
 
-  const client = fakeApiClient(async (eventId, options) => {
-    seenEventId = eventId;
-    seenOptions = options;
-    return listAllSessions(eventId, options);
-  });
+  const client = fakeApiClient(
+    async (eventId, options) => {
+      seenEventId = eventId;
+      seenOptions = options;
+      return listAllSessions(eventId, options);
+    },
+    getEvent,
+  );
 
   const program = new Command().exitOverride();
   registerCatalogCommands(program, {
@@ -178,6 +184,38 @@ describe("catalog sync command", () => {
     await h.run(["catalog", "sync"]);
 
     expect(h.printed.join("\n")).toMatch(/5/);
+  });
+
+  it("prints a warning and still succeeds when getEvent fails, never aborting the sync over it", async () => {
+    const h = harness(
+      home.path,
+      async () => ({ sessions: [{ sessionId: "s1", title: "A session" }], totalCount: 1 }),
+      async () => {
+        throw new ServiceError("simulated GetEvent 500");
+      },
+    );
+
+    await h.run(["catalog", "sync"]);
+
+    // Still a success: no exit code set, and the normal "synced" line is present alongside the
+    // warning -- getEvent failing must not read as the whole sync having failed.
+    expect(process.exitCode).not.toBe(1);
+    const output = h.printed.join("\n");
+    expect(output).toMatch(/synced 1 session/i);
+    expect(output.toLowerCase()).toContain("timezone");
+    expect(output).toContain("simulated GetEvent 500");
+  });
+
+  it("does not print a timezone warning when getEvent succeeds", async () => {
+    const h = harness(
+      home.path,
+      async () => ({ sessions: [{ sessionId: "s1", title: "A session" }], totalCount: 1 }),
+      async (eventId) => ({ eventId, timezone: "America/Los_Angeles" }),
+    );
+
+    await h.run(["catalog", "sync"]);
+
+    expect(h.printed.join("\n").toLowerCase()).not.toContain("timezone");
   });
 
   it("tells the user to run auth login when there is no session, and exits non-zero", async () => {
