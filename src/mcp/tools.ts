@@ -7,7 +7,7 @@ import { readTokenStore } from "../auth/token-store.js";
 import { toPublicIndexRecord } from "../catalog/index-record.js";
 import { catalogServiceNames } from "../catalog/query.js";
 import { buildServiceAliasIndex } from "../catalog/service-aliases.js";
-import { getCatalogState, type CatalogState } from "../catalog/store.js";
+import { getCatalogState, readMeta, type CatalogState } from "../catalog/store.js";
 import { syncCatalog } from "../catalog/sync.js";
 import { formatZodError } from "../cli/zod-errors.js";
 import {
@@ -22,6 +22,7 @@ import type { Lens } from "../match/lens.js";
 import { resolveProfile } from "../profile/profile.js";
 import { favoriteSessions, unfavoriteSession } from "../schedule/favorites.js";
 import { getSchedule, type ScheduleSession } from "../schedule/schedule.js";
+import { addMinutesToIso, zonedWallClockToUtcIso } from "../schedule/timezone.js";
 
 function defaultBuildApiClient(storeRoot: string): ApiClient {
   return createApiClient({ getAccessToken: createTokenProviderAdapter({ storeRoot }) });
@@ -424,8 +425,18 @@ type ScheduleEntryKind = "reserved" | "favorite" | "personalTime";
 
 interface MergedScheduleEntry {
   kind: ScheduleEntryKind;
+  /** A real UTC instant (ISO-8601, `Z`-suffixed), directly comparable across every entry
+   * regardless of kind -- the primary sort key. `null` when it cannot be computed: for a session,
+   * either because the event's own timezone is unknown (`eventTimezone` was `null`) or because
+   * the session itself has no fully-resolved date and time. Personal time always has a real
+   * `startsAt`, since its own `startDateTime` is UTC and required -- never `null`, unlike a
+   * session's. */
+  startsAt: string | null;
   /** `null` for an unscheduled or unresolved entry, which sorts last -- personal time is never in
-   * this state, since `startDateTime` is a required field on it. */
+   * this state, since `startDateTime` is a required field on it. Used only as a fallback level
+   * below `startsAt`, for ordering entries that share a `null` startsAt (which, per the above,
+   * only ever happens among sessions) against each other by their own raw local date/time, since
+   * `startsAt` alone gives them no ordering information at all. */
   sortDate: string | null;
   /** `null` both for an unresolved entry (no time fields at all) and a resolved one whose own
    * `startTime` is itself `null` (the index record's field is nullable independently of
@@ -440,31 +451,59 @@ interface MergedScheduleEntry {
   data: Record<string, unknown>;
 }
 
+/** Derives a resolved session's `startsAt`/`endsAt` from its local `startDate`/`startTime` (and
+ * `lengthMinutes`, for `endsAt`) via a real IANA conversion in `eventTimezone` -- `null` for
+ * either when `eventTimezone` itself is unknown, the session isn't fully scheduled, or (for
+ * `endsAt` only) its length isn't known. Never falls back to the host machine's timezone or a
+ * hardcoded offset: when `eventTimezone` is `null`, this returns `{ startsAt: null, endsAt: null }`
+ * outright rather than guessing. */
+function deriveSessionTimes(
+  session: ScheduleSession,
+  eventTimezone: string | null,
+): { startsAt: string | null; endsAt: string | null } {
+  if (eventTimezone === null || !session.resolved || session.startDate === null || session.startTime === null) {
+    return { startsAt: null, endsAt: null };
+  }
+  const startsAt = zonedWallClockToUtcIso(session.startDate, session.startTime, eventTimezone);
+  const endsAt = session.lengthMinutes === null ? null : addMinutesToIso(startsAt, session.lengthMinutes);
+  return { startsAt, endsAt };
+}
+
 function toMergedSessionEntries(
   sessions: ScheduleSession[],
   kind: "reserved" | "favorite",
+  eventTimezone: string | null,
 ): MergedScheduleEntry[] {
-  return sessions.map((session) => ({
-    kind,
-    sortDate: session.resolved ? session.startDate : null,
-    sortTime: session.resolved ? session.startTime : null,
-    tiebreaker: session.sessionId,
-    data: { kind, ...session },
-  }));
+  return sessions.map((session) => {
+    const { startsAt, endsAt } = deriveSessionTimes(session, eventTimezone);
+    return {
+      kind,
+      startsAt,
+      sortDate: session.resolved ? session.startDate : null,
+      sortTime: session.resolved ? session.startTime : null,
+      tiebreaker: session.sessionId,
+      data: { kind, ...session, startsAt, endsAt },
+    };
+  });
 }
 
 function toMergedPersonalTimeEntries(personalTime: PersonalTime[]): MergedScheduleEntry[] {
   return personalTime.map((entry) => {
     // "YYYY-MM-DDTHH:MM:SS" -- splitting on the literal separator this field's own format
     // guarantees, not parsing it as a Date, matches how index-record.ts and the rest of this
-    // codebase avoid ever assuming a timezone the API doesn't actually provide.
+    // codebase avoid ever assuming a timezone the API doesn't actually provide. The field is
+    // already UTC (per its own doc comment in api/types.ts), so startsAt/endsAt need only the
+    // literal `Z` suffix appended, no conversion.
     const [date, time] = entry.startDateTime.split("T");
+    const startsAt = `${entry.startDateTime}Z`;
+    const endsAt = `${entry.endDateTime}Z`;
     return {
       kind: "personalTime" satisfies ScheduleEntryKind,
+      startsAt,
       sortDate: date ?? null,
       sortTime: time ?? null,
       tiebreaker: entry.personalTimeId,
-      data: { kind: "personalTime" satisfies ScheduleEntryKind, ...entry },
+      data: { kind: "personalTime" satisfies ScheduleEntryKind, ...entry, startsAt, endsAt },
     };
   });
 }
@@ -490,20 +529,34 @@ function compareNullableLast(a: string | null, b: string | null): number {
 }
 
 /**
- * A genuine total order -- date, then time (both via `compareNullableLast`, so "no known date"
- * and "a date but no known time" both sort last at their own level rather than being confused
- * with each other), then `kind`, then `tiebreaker` -- so two entries are never merely "tied" the
- * way a comparator stopping at date+time would leave them. That matters specifically because
- * `get_schedule` re-reads the schedule from the API on every call: `Array.prototype.sort` is
- * stable, so same-time entries would otherwise keep whatever order the API happened to return
- * them in on that particular call, and paging (which spans multiple independent calls) would see
- * pages that overlap or skip an entry entirely if that order ever changed between calls. With a
- * full total order, the merged list's order depends only on the data, never on input order or
- * call-to-call API variation -- reviewer's finding, verified by a test where the fake API
- * deliberately reorders `favorites` between two calls and paging still produces the complete,
- * non-overlapping, correctly-ordered result regardless.
+ * A genuine total order -- `startsAt` (a real UTC instant, directly comparable across kinds),
+ * then the raw local date and time as a fallback for entries sharing a `null` startsAt (both via
+ * `compareNullableLast`, so "no known date" and "a date but no known time" both sort last at
+ * their own level rather than being confused with each other), then `kind`, then `tiebreaker` --
+ * so two entries are never merely "tied" the way a comparator stopping at date+time would leave
+ * them. That matters specifically because `get_schedule` re-reads the schedule from the API on
+ * every call: `Array.prototype.sort` is stable, so same-time entries would otherwise keep
+ * whatever order the API happened to return them in on that particular call, and paging (which
+ * spans multiple independent calls) would see pages that overlap or skip an entry entirely if
+ * that order ever changed between calls. With a full total order, the merged list's order depends
+ * only on the data, never on input order or call-to-call API variation -- reviewer's finding,
+ * verified by a test where the fake API deliberately reorders `favorites` between two calls and
+ * paging still produces the complete, non-overlapping, correctly-ordered result regardless.
+ *
+ * `startsAt` before the raw date/time fallback is what makes a personal-time block (always a real
+ * UTC instant) sort correctly against a session near a day boundary even when the session's own
+ * local date, read as a bare string, would suggest the opposite order -- see the reviewer's
+ * Pacific-evening-session-vs-UTC-personal-time test. The fallback level only ever compares
+ * entries that both have a `null` startsAt, which (per `deriveSessionTimes`) only happens among
+ * sessions, so it can never wrongly reorder a session relative to personal time; it exists purely
+ * to keep same-day sessions sensibly ordered against each other when the event's timezone (or an
+ * individual session's own time) is unknown.
  */
 function compareMergedEntries(a: MergedScheduleEntry, b: MergedScheduleEntry): number {
+  const byStartsAt = compareNullableLast(a.startsAt, b.startsAt);
+  if (byStartsAt !== 0) {
+    return byStartsAt;
+  }
   const byDate = compareNullableLast(a.sortDate, b.sortDate);
   if (byDate !== 0) {
     return byDate;
@@ -526,6 +579,10 @@ interface GetScheduleResponse {
   offset: number;
   nextOffset?: number;
   warning?: string;
+  /** Distinct from `warning` (which is specifically about no local catalog being synced at all):
+   * caveats about the entries actually returned, such as the event's timezone being unknown --
+   * present only when there's at least one. */
+  warnings?: string[];
 }
 
 function buildScheduleResponseBody(
@@ -534,6 +591,7 @@ function buildScheduleResponseBody(
   total: number,
   totals: GetScheduleResponse["totals"],
   warning: string | null,
+  warnings: string[],
 ): GetScheduleResponse {
   const nextOffset = offset + entries.length;
   return {
@@ -544,6 +602,7 @@ function buildScheduleResponseBody(
     offset,
     ...(nextOffset < total ? { nextOffset } : {}),
     ...(warning === null ? {} : { warning }),
+    ...(warnings.length === 0 ? {} : { warnings }),
   };
 }
 
@@ -559,21 +618,22 @@ function buildScheduleResponse(
   total: number,
   totals: GetScheduleResponse["totals"],
   warning: string | null,
+  warnings: string[],
 ): GetScheduleResponse {
-  const everything = buildScheduleResponseBody(windowed, offset, total, totals, warning);
+  const everything = buildScheduleResponseBody(windowed, offset, total, totals, warning, warnings);
   if (envelopeBytes(everything) <= RESPONSE_BYTE_BUDGET) {
     return everything;
   }
 
   const included: Record<string, unknown>[] = [];
   for (const entry of windowed) {
-    const trial = buildScheduleResponseBody([...included, entry], offset, total, totals, warning);
+    const trial = buildScheduleResponseBody([...included, entry], offset, total, totals, warning, warnings);
     if (envelopeBytes(trial) > RESPONSE_BYTE_BUDGET) {
       break;
     }
     included.push(entry);
   }
-  return buildScheduleResponseBody(included, offset, total, totals, warning);
+  return buildScheduleResponseBody(included, offset, total, totals, warning, warnings);
 }
 
 function registerGetScheduleTool(server: McpServer, deps: McpToolDeps): void {
@@ -584,9 +644,12 @@ function registerGetScheduleTool(server: McpServer, deps: McpToolDeps): void {
     {
       description:
         "Read the attendee's schedule -- reserved sessions, favorites and personal time, merged " +
-        "into one list sorted by start date and time (unscheduled last) and paginated with " +
-        "limit/offset (default 50, cap 100) so a large schedule never exceeds the response size " +
-        "budget. Page through with the returned nextOffset until it's absent.",
+        "into one list sorted by start time (unscheduled last) and paginated with limit/offset " +
+        "(default 50, cap 75) so a large schedule never exceeds the response size budget. Each " +
+        "entry carries a common startsAt/endsAt (a real UTC instant) alongside its raw kind-" +
+        "specific fields; startsAt is null when the event's timezone is unknown or the session " +
+        "itself isn't fully scheduled -- see warnings when that happens. Page through with the " +
+        "returned nextOffset until it's absent.",
       inputSchema: GetScheduleInputSchema,
     },
     async ({ event, limit, offset }) => {
@@ -599,9 +662,16 @@ function registerGetScheduleTool(server: McpServer, deps: McpToolDeps): void {
           ...(event === undefined ? {} : { eventId: event }),
         });
 
+        // `null` both when nothing has ever been synced (readMeta returns null) and when the
+        // event's own GetEvent response omitted a timezone -- callers can't tell those apart from
+        // this alone, but `schedule.warning` already covers the former, and `warnings` below
+        // covers the latter, so nothing here needs to distinguish them further. Never falls back
+        // to the host machine's timezone or a hardcoded zone in either case.
+        const eventTimezone = readMeta({ storeRoot })?.timezone ?? null;
+
         const merged = [
-          ...toMergedSessionEntries(schedule.reserved, "reserved"),
-          ...toMergedSessionEntries(schedule.favorites, "favorite"),
+          ...toMergedSessionEntries(schedule.reserved, "reserved", eventTimezone),
+          ...toMergedSessionEntries(schedule.favorites, "favorite", eventTimezone),
           ...toMergedPersonalTimeEntries(schedule.personalTime),
         ].sort(compareMergedEntries);
 
@@ -618,7 +688,24 @@ function registerGetScheduleTool(server: McpServer, deps: McpToolDeps): void {
           .slice(resolvedOffset, resolvedOffset + resolvedLimit)
           .map((entry) => entry.data);
 
-        const response = buildScheduleResponse(windowed, resolvedOffset, total, totals, schedule.warning);
+        const warnings: string[] =
+          eventTimezone === null
+            ? [
+                "The event's timezone is unknown (GetEvent's response omitted it), so session " +
+                  "start times could not be converted to a common startsAt -- session and " +
+                  "personal-time ordering across kinds is unreliable. Sessions still sort " +
+                  "correctly relative to each other by their local date and time.",
+              ]
+            : [];
+
+        const response = buildScheduleResponse(
+          windowed,
+          resolvedOffset,
+          total,
+          totals,
+          schedule.warning,
+          warnings,
+        );
         return textResult(response);
       } catch (err) {
         return toToolError(err);

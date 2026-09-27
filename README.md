@@ -310,11 +310,18 @@ catalog and the attendee's own data stay local; only a bounded summary ever reac
   richness, a response that would exceed the budget is truncated in ranked order, never
   mid-candidate, with `truncated`/`returned`/`requested`/`omitted` and a `hint` reporting what was
   cut.
-- `get_schedule` -- reserved sessions, favorites and personal time, merged into one list sorted by
-  start date and time and paginated with `limit`/`offset` (default 50, cap 75) plus
-  `total`/`totals`/`returned`/`nextOffset` -- unlike `match_sessions`, nothing here is ever dropped
-  permanently: a page too large for the budget is shortened and `nextOffset` reflects exactly what
-  was returned, so paging through it always reaches everything.
+- `get_schedule` -- reserved sessions, favorites and personal time, merged into one list and
+  paginated with `limit`/`offset` (default 50, cap 75) plus `total`/`totals`/`returned`/
+  `nextOffset` -- unlike `match_sessions`, nothing here is ever dropped permanently: a page too
+  large for the budget is shortened and `nextOffset` reflects exactly what was returned, so paging
+  through it always reaches everything. Every entry carries a common `startsAt`/`endsAt` (a real
+  UTC instant, via `catalog sync`'s own `GetEvent` call for the event's IANA timezone) alongside
+  its raw kind-specific fields, and the list is sorted by `startsAt` -- this is what lets a
+  personal-time block and a session sort correctly against each other across a day boundary,
+  something raw local date/time alone can't do. When the event's timezone is unknown (the API
+  didn't report one), sessions fall back to `startsAt: null` and sort by their raw local date and
+  time instead; the response then carries a `warnings` entry explaining that ordering across kinds
+  is unreliable in that case.
 - `favorite_sessions` -- up to fifty ids, chunked and paced, with per-session outcomes and resolved
   conflict titles. A response carrying a refusal is never reported as a plain success.
 - `unfavorite_session`.

@@ -5,7 +5,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ApiClient } from "../../src/api/client.js";
-import type { BulkResult, Schedule, Session } from "../../src/api/types.js";
+import type { BulkResult, PersonalTime, Schedule, Session } from "../../src/api/types.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { CURRENT_SCHEMA_VERSION, writeCatalog, type CatalogMeta } from "../../src/catalog/store.js";
 import { DEFAULT_EVENT_ID } from "../../src/catalog/sync.js";
@@ -40,12 +40,12 @@ function seedFixtureCatalog(storeRoot: string): void {
   );
 }
 
-function seedCatalog(storeRoot: string, sessions: Session[]): void {
+function seedCatalog(storeRoot: string, sessions: Session[], metaOverrides: Partial<CatalogMeta> = {}): void {
   writeCatalog(
     {
       raw: sessions,
       index: sessions.map(buildIndexRecord),
-      meta: sampleMeta({ totalCount: sessions.length, count: sessions.length }),
+      meta: sampleMeta({ totalCount: sessions.length, count: sessions.length, ...metaOverrides }),
     },
     { storeRoot },
   );
@@ -513,6 +513,142 @@ describe("get_schedule tool", () => {
     expect(result.isError).toBe(true);
     expect(textOf(result)).toContain("reinvent-scout auth login");
     expect(textOf(result)).toMatch(/the skill can run it for you/i);
+  });
+
+  it("computes startsAt from the event's real IANA timezone and sorts a personal-time block correctly against a session across a UTC day boundary", async () => {
+    // The reviewer's discriminating case: a session at 20:00 Pacific local time on Dec 1 (which
+    // is 04:00 UTC on Dec 2) versus a personal-time block at 2026-12-02T03:00:00 UTC (19:00
+    // Pacific on Dec 1, an hour before the session). The personal-time block must sort FIRST.
+    // Comparing the raw UTC *date* portion of the personal-time string ("2026-12-02") against the
+    // session's raw local date ("2026-12-01") would put it AFTER the session instead -- the bug
+    // this test exists to catch.
+    const eveningSession = {
+      sessionId: "evening-session",
+      abbreviation: "EVE1",
+      title: "Evening session",
+      sessionTime: { date: "2026-12-01", time: "20:00", length: "60" },
+    };
+    seedCatalog(home.path, [eveningSession], { timezone: "America/Los_Angeles" });
+    const personalTime: PersonalTime = {
+      personalTimeId: "pt-dinner",
+      startDateTime: "2026-12-02T03:00:00",
+      endDateTime: "2026-12-02T04:00:00",
+      title: "Dinner",
+      description: "Team dinner",
+    };
+    const client = await connectedClient(home.path, {
+      getSchedule: async () => ({
+        reserved: [],
+        favorites: [eveningSession.sessionId],
+        personalTime: [personalTime],
+      }),
+    });
+
+    const result = await client.callTool({ name: "get_schedule", arguments: {} });
+
+    expect(result.isError).not.toBe(true);
+    const parsed = JSON.parse(textOf(result)) as {
+      entries: Array<{ kind: string; sessionId?: string; personalTimeId?: string; startsAt: string | null; endsAt?: string | null }>;
+    };
+    expect(parsed.entries.map((e) => e.kind)).toEqual(["personalTime", "favorite"]);
+    expect(parsed.entries[0]!.personalTimeId).toBe("pt-dinner");
+    expect(parsed.entries[0]!.startsAt).toBe("2026-12-02T03:00:00Z");
+    expect(parsed.entries[0]!.endsAt).toBe("2026-12-02T04:00:00Z");
+    expect(parsed.entries[1]!.sessionId).toBe(eveningSession.sessionId);
+    expect(parsed.entries[1]!.startsAt).toBe("2026-12-02T04:00:00Z");
+    // 60-minute session starting at startsAt.
+    expect(parsed.entries[1]!.endsAt).toBe("2026-12-02T05:00:00Z");
+    expect(parsed.entries[1]!.startsAt! > parsed.entries[0]!.startsAt!).toBe(true);
+  });
+
+  it("gives sessions a null startsAt and a warnings entry when the event's timezone is unknown, without falling back to a host or hardcoded zone", async () => {
+    const sessions = [
+      {
+        sessionId: "no-tz-a",
+        abbreviation: "NTZ1",
+        title: "No timezone A",
+        sessionTime: { date: "2026-12-01", time: "09:00", length: "30" },
+      },
+      {
+        sessionId: "no-tz-b",
+        abbreviation: "NTZ2",
+        title: "No timezone B",
+        sessionTime: { date: "2026-12-01", time: "10:00", length: "30" },
+      },
+    ];
+    // timezone: null is sampleMeta's own default (an event whose GetEvent response omitted it) --
+    // stated explicitly here anyway so this test doesn't depend on that default silently.
+    seedCatalog(home.path, sessions, { timezone: null });
+    const client = await connectedClient(home.path, {
+      getSchedule: async () => ({
+        reserved: [],
+        favorites: sessions.map((s) => s.sessionId),
+        personalTime: [],
+      }),
+    });
+
+    const result = await client.callTool({ name: "get_schedule", arguments: {} });
+
+    expect(result.isError).not.toBe(true);
+    const parsed = JSON.parse(textOf(result)) as {
+      entries: Array<{ sessionId: string; startsAt: string | null; endsAt?: string | null }>;
+      warnings?: string[];
+    };
+    expect(parsed.entries.every((e) => e.startsAt === null)).toBe(true);
+    expect(parsed.entries.every((e) => e.endsAt === null)).toBe(true);
+    // Sessions still sort correctly relative to EACH OTHER via the raw local date/time fallback.
+    expect(parsed.entries.map((e) => e.sessionId)).toEqual(["no-tz-a", "no-tz-b"]);
+    expect(parsed.warnings).toBeDefined();
+    expect(parsed.warnings!.some((w) => /timezone/i.test(w) && /unreliable/i.test(w))).toBe(true);
+  });
+
+  it("does not include a warnings entry when the event timezone is known", async () => {
+    seedCatalog(home.path, [], { timezone: "America/Los_Angeles" });
+    const client = await connectedClient(home.path, {
+      getSchedule: async () => ({ reserved: [], favorites: [], personalTime: [] }),
+    });
+
+    const result = await client.callTool({ name: "get_schedule", arguments: {} });
+
+    const parsed = JSON.parse(textOf(result)) as { warnings?: string[] };
+    expect(parsed.warnings).toBeUndefined();
+  });
+
+  it("stays consistent and complete across pages when the API reorders favorites between calls, using the startsAt-based sort key when the event timezone is known", async () => {
+    // The same reordering-determinism scenario as the existing null-timezone test above, but with
+    // a real event timezone so every session's tie is on `startsAt` (all six share one local
+    // date+time, so once converted they share one identical startsAt too) rather than on the raw
+    // sortDate/sortTime fallback -- proving the kind+tiebreaker levels still work underneath the
+    // new primary sort key, not just underneath the old one.
+    const sessions = Array.from({ length: 6 }, (_, i) => ({
+      sessionId: `tz-tied-${i}`,
+      abbreviation: `TZT${i}`,
+      title: `Timezone tied-time session ${i}`,
+      sessionTime: { date: "2026-12-01", time: "09:00", length: "30" },
+    }));
+    seedCatalog(home.path, sessions, { timezone: "America/Los_Angeles" });
+    let call = 0;
+    const client = await connectedClient(home.path, {
+      getSchedule: async () => {
+        call++;
+        const ids = sessions.map((s) => s.sessionId);
+        return { reserved: [], favorites: call === 1 ? ids : [...ids].reverse(), personalTime: [] };
+      },
+    });
+
+    async function page(limit: number, offset: number): Promise<string[]> {
+      const result = await client.callTool({ name: "get_schedule", arguments: { limit, offset } });
+      const parsed = JSON.parse(textOf(result)) as { entries: Array<{ sessionId: string }> };
+      return parsed.entries.map((e) => e.sessionId);
+    }
+
+    const firstPage = await page(3, 0);
+    const secondPage = await page(3, 3);
+
+    expect(call).toBe(2);
+    const combined = [...firstPage, ...secondPage];
+    expect(new Set(combined).size).toBe(6);
+    expect(combined.sort()).toEqual(sessions.map((s) => s.sessionId).sort());
   });
 });
 
