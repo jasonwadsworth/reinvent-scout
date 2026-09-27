@@ -7,11 +7,15 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ApiClient, ListAllSessionsOptions, ListAllSessionsResult } from "../../src/api/client.js";
 import type { Session } from "../../src/api/types.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
+import { catalogServiceNames } from "../../src/catalog/query.js";
+import { buildServiceAliasIndex } from "../../src/catalog/service-aliases.js";
 import { CURRENT_SCHEMA_VERSION, writeCatalog, type CatalogMeta } from "../../src/catalog/store.js";
 import { DEFAULT_EVENT_ID } from "../../src/catalog/sync.js";
 import { NotRegisteredError } from "../../src/core/errors.js";
+import { matchSessions } from "../../src/match/match.js";
 import { createMcpServer } from "../../src/mcp/server.js";
 import type { McpToolDeps } from "../../src/mcp/tools.js";
+import { resolveProfile } from "../../src/profile/profile.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -305,8 +309,11 @@ describe("match_sessions tool", () => {
 
     const parsed = JSON.parse(textOf(result)) as { candidates: Array<Record<string, unknown>> };
     expect(parsed.candidates.length).toBeGreaterThan(0);
+    // `type` is deliberately kept (a caller needs to tell a Workshop from a Chalk talk); it's the
+    // response-level truncation in buildMatchResponse, not the candidate shape, that now carries
+    // the size guarantee -- see the size test below.
     expect(Object.keys(parsed.candidates[0]!).sort()).toEqual(
-      ["code", "levelBand", "offerings", "reasons", "score", "sessionId", "title"].sort(),
+      ["code", "levelBand", "offerings", "reasons", "score", "sessionId", "title", "type"].sort(),
     );
   });
 
@@ -379,10 +386,12 @@ describe("match_sessions tool", () => {
       candidates: unknown[];
       truncated: boolean;
       returned: number;
+      omitted: number;
       hint?: string;
     };
     expect(parsed.truncated).toBe(false);
     expect(parsed.returned).toBe(parsed.candidates.length);
+    expect(parsed.omitted).toBe(0);
     expect(parsed.hint).toBeUndefined();
   });
 
@@ -407,6 +416,7 @@ describe("match_sessions tool", () => {
       truncated: boolean;
       returned: number;
       requested: number;
+      omitted: number;
       hint: string;
     };
     expect(parsed.truncated).toBe(true);
@@ -414,6 +424,10 @@ describe("match_sessions tool", () => {
     // Fewer than requested -- the scenario is deliberately built so 50 genuinely would not fit.
     expect(parsed.returned).toBeLessThan(50);
     expect(parsed.candidates).toHaveLength(parsed.returned);
+    // omitted counts only what the budget actually dropped from matchSessions' own ranked set --
+    // not requested-minus-returned, which would also (wrongly) count a catalog simply not having
+    // `requested` matches at all as an "omission."
+    expect(parsed.omitted).toBeGreaterThan(0);
     expect(typeof parsed.hint).toBe("string");
     expect(parsed.hint.length).toBeGreaterThan(0);
     // Every included candidate is whole -- reasons and offerings are never partially serialized
@@ -422,5 +436,69 @@ describe("match_sessions tool", () => {
       expect(Array.isArray(candidate.reasons)).toBe(true);
       expect((candidate.reasons as unknown[]).length).toBeGreaterThan(0);
     }
+  });
+
+  it("truncates at the default limit too, driven by profile richness rather than the limit requested", async () => {
+    // Reviewer's follow-up measurement, against the real catalog: an eight-service profile --
+    // not exotic, an ordinary serverless app names Lambda, DynamoDB, S3, SQS, EventBridge, API
+    // Gateway, Step Functions and CloudWatch without trying -- already breaches 30 KB at the
+    // *default* limit of 25, because each matched service adds its own reason to every candidate.
+    // No candidate-count limit fixes that; only a response-level budget does. Reproduced here with
+    // a synthetic eight-service profile against forty candidate sessions (more than the default
+    // limit, so there's a real ranked set to truncate from), no `limit` argument given at all.
+    const services = LONG_SERVICE_NAMES.slice(0, 8);
+    const sessions = Array.from({ length: 40 }, (_, i) => ({
+      sessionId: `rich-${i}`,
+      abbreviation: `RCH${String(i).padStart(3, "0")}`,
+      title: `Synthetic session ${i}`,
+      services,
+    }));
+    seedCatalog(home.path, sessions);
+    const client = await connectedClient({ resolveStoreRoot: () => home.path });
+
+    const result = await client.callTool({
+      name: "match_sessions",
+      arguments: {
+        profile: {
+          schemaVersion: 1,
+          repos: [{ root: ".", languages: [] }],
+          services: services.map((name, i) => ({ name, evidence: [{ repo: ".", file: `f${i}.ts` }] })),
+          patterns: [],
+        },
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(result), "utf8")).toBeLessThan(30 * 1024);
+    const parsed = JSON.parse(textOf(result)) as { truncated: boolean; requested: number; returned: number };
+    expect(parsed.requested).toBe(25); // the default -- never explicitly asked for more
+    expect(parsed.truncated).toBe(true);
+    expect(parsed.returned).toBeLessThan(25);
+  });
+
+  it("returns a truncated response's candidates as exactly the ranked prefix an untruncated run would produce", async () => {
+    // Guards against a truncation that reorders or re-ranks rather than simply stopping early --
+    // computed by calling the core matchSessions directly (bypassing the MCP layer's own
+    // truncation entirely) with the same profile and options, so this compares against the real,
+    // independently-computed ranking, not a copy of the tool's own logic.
+    seedCatalog(home.path, longReasonsSessions(60));
+    const client = await connectedClient({ resolveStoreRoot: () => home.path });
+
+    const result = await client.callTool({
+      name: "match_sessions",
+      arguments: { profile: longReasonsProfile(), limit: 50 },
+    });
+    const parsed = JSON.parse(textOf(result)) as { candidates: Array<{ code: string }>; returned: number };
+    expect(parsed.returned).toBeGreaterThan(0);
+    expect(parsed.returned).toBeLessThan(50); // confirms this scenario actually truncates
+
+    const serviceNames = catalogServiceNames({ storeRoot: home.path });
+    const serviceAliasIndex = buildServiceAliasIndex(serviceNames);
+    const resolved = resolveProfile(longReasonsProfile(), serviceAliasIndex);
+    const fullRanking = matchSessions(resolved, { storeRoot: home.path }, { limit: 50 });
+
+    expect(parsed.candidates.map((c) => c.code)).toEqual(
+      fullRanking.slice(0, parsed.returned).map((c) => c.code),
+    );
   });
 });

@@ -214,24 +214,25 @@ function registerValidateProfileTool(server: McpServer, deps: McpToolDeps): void
 }
 
 /** Mirrors the CLI's own `match` default/cap (30/100) at a smaller size deliberately -- an agent
- * asking for candidates should get a genuinely useful set without approaching the 30 KB response
- * budget every tool response is held to (see tests/mcp/tools-catalog.test.ts's size assertion).
+ * asking for candidates should get a genuinely useful set, and every response (at any limit, for
+ * any profile) is held to a real 30 KB budget by `buildMatchResponse` below, not by these numbers
+ * alone.
  *
- * Measured against the real 2,043-session catalog (not the 61-session fixture, which cannot
- * produce a response big enough to expose any of this) with a realistic five-service profile
- * (Lambda, DynamoDB, Step Functions, S3, Bedrock -- an ordinary serverless-AI stack, not a
- * contrived worst case): the CLI's own full `toPublicIndexRecord` shape at the default limit of
- * 25 measured ~40 KB, already well over budget. A first trim (`toLeanCandidate` below, dropping
- * fields `offerings` already duplicates -- `abbreviation`/`level`/`venue`/`room`/`startDate`/
- * `startTime` -- plus every taxonomy array except `services`, and `speakerCount`/`isReservable`/
- * `seatAvailability`) got the *content text* down to ~28 KB, but the full `CallToolResult`
- * envelope (what the size budget actually means, and what the size test measures) was still
- * ~31 KB -- over budget by a small but real margin, not a rounding error. Dropping `type` and
- * `services` too brought the real envelope to ~28.5 KB, with real headroom rather than sitting on
- * the line. `services` is redundant with `reasons` (which already names every matched service by
- * name); `type` is a genuine, if smaller, loss -- a caller can no longer tell a Workshop from a
- * Chalk talk without a further lookup -- flagged for the team to weigh in on rather than silently
- * dropped, since it's a real usability tradeoff, not just an implementation detail. */
+ * History, since the final design only makes sense in light of what didn't work first (measured
+ * against the real 2,043-session catalog throughout -- the 61-session fixture cannot produce a
+ * response big enough to expose any of this): shape-trimming alone (dropping fields `offerings`
+ * already duplicates, then `type` and `services` too) got a five-service profile's default-limit
+ * response under budget, but the reviewer's follow-up measurement, varying the *profile* rather
+ * than the limit, found an eight-service profile -- not an exotic one, an ordinary serverless app
+ * easily names Lambda, DynamoDB, S3, SQS, EventBridge, API Gateway, Step Functions and CloudWatch
+ * -- already breaches 30 KB at the *default* limit of 25, because each matched service adds its
+ * own "service" reason to every candidate. No shape trim and no limit number can fix that: size
+ * scales with the profile's richness as much as the candidate count, so the guarantee has to be
+ * enforced on the actual serialized response, not assumed from a specific limit or a specific
+ * profile. `buildMatchResponse` does that -- see its own comment -- which is also what let `type`
+ * come back: a caller that cannot tell a Workshop from a Chalk talk is missing something real for
+ * a tool whose whole job is helping choose sessions, and truncation now pays for that in one fewer
+ * candidate when space is actually tight, rather than the shape never carrying it at all. */
 const DEFAULT_MATCH_SESSIONS_LIMIT = 25;
 const MAX_MATCH_SESSIONS_LIMIT = 50;
 
@@ -249,14 +250,23 @@ const MatchSessionsInputSchema = z.strictObject({
  * `toPublicIndexRecord` -- reasonable for a human terminal, too heavy for metered agent context
  * held to a real 30 KB response budget; see the size note above `DEFAULT_MATCH_SESSIONS_LIMIT`).
  * Keeps only what a caller needs to identify, explain and schedule a candidate: `code`/`sessionId`
- * to reference it (e.g. for `favorite_sessions`), `title`/`levelBand` to describe it, `score`/
- * `reasons` for why it matched, and `offerings` for when and where. */
+ * to reference it (e.g. for `favorite_sessions`), `title`/`type`/`levelBand` to describe it,
+ * `score`/`reasons` for why it matched, and `offerings` for when and where.
+ *
+ * `type` was dropped in an earlier revision to fit the size budget by shape-trimming alone, then
+ * restored once the budget was enforced on the response instead (see `buildMatchResponse`): a
+ * caller that cannot tell a Workshop from a Chalk talk is missing something real for a tool whose
+ * whole job is helping choose sessions, and the response-level truncation now pays for it in one
+ * fewer candidate when space is actually tight, rather than never having it at all. `services` is
+ * not restored alongside it -- it stays redundant with what `reasons` already names explicitly,
+ * unlike `type`, which `reasons` says nothing about at all under the `all` lens. */
 function toLeanCandidate(candidate: ReturnType<typeof matchSessions>[number]): Record<string, unknown> {
   const record = toPublicIndexRecord(candidate.record);
   return {
     code: candidate.code,
     sessionId: record.sessionId,
     title: record.title,
+    type: record.type,
     levelBand: record.levelBand,
     score: candidate.score,
     reasons: candidate.reasons,
@@ -288,49 +298,61 @@ interface MatchSessionsResponse {
   truncated: boolean;
   returned: number;
   requested: number;
+  /** How many of `matchSessions`' own ranked candidates (already capped at `requested`, so this
+   * is never inflated by asking for more than the catalog actually has) were left out purely for
+   * size -- `0` whenever `truncated` is `false`. Deliberately not `requested - returned`: when the
+   * catalog simply has fewer matches than `requested`, that gap is not an omission, and reporting
+   * it as one would tell a caller candidates were dropped for size when none were. */
+  omitted: number;
   hint?: string;
+}
+
+/** Builds one candidate-count's worth of response. Kept as the one place that decides the shape
+ * for a given `candidates`/`truncated` pair, so both call sites below (the initial
+ * everything-fits attempt, and every trial inside the truncation loop) measure the exact same
+ * shape the caller will actually receive -- never an approximation of it. */
+function buildResponse(
+  candidates: Record<string, unknown>[],
+  requested: number,
+  totalMatched: number,
+  truncated: boolean,
+): MatchSessionsResponse {
+  return {
+    candidates,
+    truncated,
+    returned: candidates.length,
+    requested,
+    omitted: totalMatched - candidates.length,
+    ...(truncated ? { hint: TRUNCATION_HINT } : {}),
+  };
 }
 
 function buildMatchResponse(
   leanCandidates: Record<string, unknown>[],
   requested: number,
 ): MatchSessionsResponse {
-  const everything: MatchSessionsResponse = {
-    candidates: leanCandidates,
-    truncated: false,
-    returned: leanCandidates.length,
-    requested,
-  };
+  const totalMatched = leanCandidates.length;
+  const everything = buildResponse(leanCandidates, requested, totalMatched, false);
   if (envelopeBytes(everything) <= RESPONSE_BYTE_BUDGET) {
     return everything;
   }
 
-  // Not everything fits -- greedily include candidates in ranked order, each checked as a whole
-  // object against the budget (using the same truncated:true/hint shape the final response will
-  // have, so the check is honest about the overhead that shape itself costs), stopping before the
-  // first one that would push the response over.
+  // Not everything fits -- greedily include candidates in ranked order (the same order
+  // matchSessions already ranked them in; never reordered or re-scored here), each checked as a
+  // whole prospective response against the budget (using the same truncated:true/hint shape the
+  // final response will have, so the check is honest about the overhead that shape itself costs),
+  // stopping before the first one that would push the response over. A candidate is either whole
+  // or left out entirely -- never partially serialized to make room.
   const included: Record<string, unknown>[] = [];
   for (const candidate of leanCandidates) {
-    const trial: MatchSessionsResponse = {
-      candidates: [...included, candidate],
-      truncated: true,
-      returned: included.length + 1,
-      requested,
-      hint: TRUNCATION_HINT,
-    };
+    const trial = buildResponse([...included, candidate], requested, totalMatched, true);
     if (envelopeBytes(trial) > RESPONSE_BYTE_BUDGET) {
       break;
     }
     included.push(candidate);
   }
 
-  return {
-    candidates: included,
-    truncated: true,
-    returned: included.length,
-    requested,
-    hint: TRUNCATION_HINT,
-  };
+  return buildResponse(included, requested, totalMatched, true);
 }
 
 function registerMatchSessionsTool(server: McpServer, deps: McpToolDeps): void {
