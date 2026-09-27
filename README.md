@@ -119,6 +119,15 @@ abbreviation -- the abbreviation is what `catalog search` prints, and matching i
 case-insensitive, so you can paste exactly what search showed you. (Real session ids are opaque,
 e.g. `1780441461150001GGoc`; the abbreviation is what you'll actually have on hand.)
 
+Some talks repeat on a later day under a suffixed abbreviation (`ARC325-R`, `ARC325-R1`). `catalog
+show` also accepts the **bare base code** with the suffix removed (`ARC325`) and resolves it to the
+earliest sitting -- this matters because `match`'s own output prints a candidate's base code, not
+any one sitting's abbreviation, so you need to be able to paste that back in directly. Either way
+you look a repeated talk up -- by its base code or by one specific sitting's own abbreviation -- the
+result's `relatedAbbreviations` field (and, in the human-readable form, an "Also offered as: ..."
+line) names every other sitting of the same talk, so you can find the one that fits your schedule.
+A session with no repeats always reports an empty `relatedAbbreviations`.
+
 ## Validate and save a repo profile
 
 Phase 2 doesn't profile a repository itself -- an agent (the phase 3 skill) reads the repo and

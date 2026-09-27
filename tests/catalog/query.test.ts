@@ -340,6 +340,27 @@ describe("resolveSessionRecord", () => {
     expect(result.status === "found" && result.relatedAbbreviations).toEqual(["API303-R1"]);
   });
 
+  it("lists the other sitting's abbreviation even when the token matches one sitting's own abbreviation exactly", () => {
+    // Task 0 fix: a lookup for "API303-R" (a real abbreviation, not the bare base code) took the
+    // exact-abbreviation branch and returned immediately with relatedAbbreviations: [], hiding that
+    // API303-R1 is the same talk's other sitting -- even though the base-code lookup for "API303"
+    // above already proves the two are linked. Both directions must report the other.
+    writeCatalog(
+      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
+      { storeRoot: home.path },
+    );
+
+    const first = resolveSessionRecord({ storeRoot: home.path }, "API303-R");
+    expect(first.status).toBe("found");
+    expect(first.status === "found" && first.record.abbreviation).toBe("API303-R");
+    expect(first.status === "found" && first.relatedAbbreviations).toEqual(["API303-R1"]);
+
+    const second = resolveSessionRecord({ storeRoot: home.path }, "API303-R1");
+    expect(second.status).toBe("found");
+    expect(second.status === "found" && second.record.abbreviation).toBe("API303-R1");
+    expect(second.status === "found" && second.relatedAbbreviations).toEqual(["API303-R"]);
+  });
+
   it("resolves a base code case-insensitively", () => {
     writeCatalog(
       { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },

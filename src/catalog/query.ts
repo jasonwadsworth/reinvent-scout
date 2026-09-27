@@ -264,7 +264,21 @@ export function resolveSessionRecord(deps: CatalogStoreDeps, token: string): Ses
     (record) => record.abbreviation !== null && record.abbreviation.toLowerCase() === normalizedToken,
   );
   if (byAbbreviation.length === 1) {
-    return { status: "found", record: byAbbreviation[0]!, relatedAbbreviations: [] };
+    const found = byAbbreviation[0]!;
+    // The token matched one sitting's own abbreviation exactly (e.g. "API303-R"), not the bare
+    // base code -- but that sitting can still belong to a repeat group (its sibling would be
+    // "API303-R1"). Report every *other* sitting sharing the same base code here too, the same
+    // way the base-code fallback below does, so which lookup form the caller used doesn't change
+    // whether the group's other sittings are surfaced.
+    const code = baseSessionCode(found).toLowerCase();
+    const siblings = index
+      .filter((record) => record.sessionId !== found.sessionId && baseSessionCode(record).toLowerCase() === code)
+      .sort(compareByStartDateTime);
+    return {
+      status: "found",
+      record: found,
+      relatedAbbreviations: siblings.map((record) => record.abbreviation).filter((a) => a !== null),
+    };
   }
   if (byAbbreviation.length > 1) {
     return { status: "ambiguous", candidates: byAbbreviation };
