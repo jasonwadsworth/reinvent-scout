@@ -249,6 +249,53 @@ describe("schedule favorite", () => {
     process.exitCode = 0;
     expect(h.printed.join("\n")).toMatch(/100/);
   });
+
+  it("refuses an empty id list before touching the store root or making an API call", async () => {
+    // Reviewer's finding: an empty id list (a profile that matched nothing, or an extraction that
+    // yielded nothing, piped through `schedule favorite -`) previously fell through to the auth
+    // check first, reporting "Not signed in" -- true, but not the actual problem, and costly for a
+    // signed-in caller: favoriteSessions([]) still issues a real GetSchedule call and spends a
+    // pacer slot to accomplish nothing. This must be caught before the store root -- and so
+    // before any API client -- is even built.
+    let resolveStoreRootCalled = false;
+    let associateFavoritesCalled = false;
+    let getScheduleCalled = false;
+    const printed: string[] = [];
+    const program = new Command().exitOverride();
+    registerScheduleCommands(program, {
+      resolveStoreRoot: () => {
+        resolveStoreRootCalled = true;
+        return home.path;
+      },
+      buildApiClient: () =>
+        fakeApiClient({
+          associateFavorites: async (_eventId, sessionIds) => {
+            associateFavoritesCalled = true;
+            return { successful: sessionIds, failed: [] };
+          },
+          getSchedule: async () => {
+            getScheduleCalled = true;
+            return { reserved: [], favorites: [], personalTime: [] };
+          },
+        }),
+      print: (message: string) => {
+        printed.push(message);
+      },
+    });
+
+    await withPipedStdin("", async () => {
+      await program.parseAsync(["node", "reinvent-scout", "schedule", "favorite", "-"]);
+    });
+
+    expect(resolveStoreRootCalled).toBe(false);
+    expect(associateFavoritesCalled).toBe(false);
+    expect(getScheduleCalled).toBe(false);
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
+    const output = printed.join("\n");
+    expect(output).toMatch(/session ids?/i);
+    expect(output).not.toMatch(/signed in/i);
+  });
 });
 
 describe("schedule unfavorite", () => {

@@ -71,7 +71,20 @@ async function resolveIds(ids: string[]): Promise<string[]> {
   return ids;
 }
 
-function assertWithinFavoriteLimit(ids: readonly string[]): void {
+/** Validates the resolved id count against both bounds before the store root or an API client is
+ * touched at all -- an empty list (a profile that matched nothing, or an extraction that yielded
+ * nothing, piped through `schedule favorite -`) must be caught here, not left to fall through to
+ * the auth check first. Without this, a signed-in caller with zero ids would still pay for a real
+ * `GetSchedule` round trip and a pacer slot (see `favoriteSessions`'s own re-read) only to be told
+ * "vacuous success," and a caller with no stored session at all would see "Not signed in" -- true,
+ * but not the actual problem, since there's nothing to favorite regardless of sign-in state. */
+function assertValidIdCount(ids: readonly string[]): void {
+  if (ids.length === 0) {
+    throw new ValidationError(
+      "No session ids given; nothing to favorite. Pass one or more session ids, or pipe them in " +
+        'with a single "-".',
+    );
+  }
   if (ids.length > MAX_FAVORITE_IDS) {
     throw new ValidationError(
       `Refusing to favorite ${ids.length} sessions in one invocation; the limit is ${MAX_FAVORITE_IDS}.`,
@@ -241,12 +254,12 @@ export function registerScheduleCommands(program: Command, deps: ScheduleCommand
     .option("--event <id>", "the event to favorite sessions for", DEFAULT_EVENT_ID)
     .option("--json", "print machine-readable JSON instead of a human-readable summary")
     .action(async (ids: string[], options: FavoriteCommandOptions) => {
-      const storeRoot = resolveStoreRoot();
-      const apiClient = buildApiClient(storeRoot);
-
       try {
         const resolvedIds = await resolveIds(ids);
-        assertWithinFavoriteLimit(resolvedIds);
+        assertValidIdCount(resolvedIds);
+
+        const storeRoot = resolveStoreRoot();
+        const apiClient = buildApiClient(storeRoot);
 
         const result = await favoriteSessions(resolvedIds, {
           apiClient,
