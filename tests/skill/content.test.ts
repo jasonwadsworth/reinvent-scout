@@ -76,19 +76,50 @@ function backtickIdentifiers(text: string): string[] {
   return spans.filter((span) => /^status$|^[a-z]+(?:_[a-z]+)+$/.test(span));
 }
 
-/** Every backtick-quoted `reinvent-scout <path>` mention, from fence-stripped text -- `<path>` is
- * the leading run of one or two lowercase, space-separated words after the "reinvent-scout "
- * prefix (a leaf command is never more than two words in this CLI), so trailing content inside the
- * same span (an argument placeholder, a flag) doesn't prevent extracting the command path itself.
+/** Language tags treated as a shell example -- content an agent would actually copy and run,
+ * unlike a ```json response example. An untagged fence ("```\n...\n```") counts too, since a
+ * plain command example is often left untagged. */
+const SHELL_FENCE_LANGS = new Set(["", "sh", "bash", "shell", "console"]);
+
+/**
+ * Every `reinvent-scout <path>` mention across a document -- both backtick-quoted inline spans
+ * (from fence-stripped text, for the same desync reason `backtickIdentifiers` strips fences) and
+ * lines inside a fenced shell-like code block (scanned from the *unstripped* text, since fence-
+ * stripping would erase exactly the blocks this half exists to catch). `<path>` is the leading run
+ * of one or two lowercase, space-separated words after the "reinvent-scout " prefix (a leaf command
+ * is never more than two words in this CLI) -- an optional leading shell prompt ("$ ") and trailing
+ * content in the same span or line (an argument placeholder, a flag) don't prevent extraction.
+ *
+ * Reviewer's finding: a command written inside a ```sh block is exactly what an agent copies and
+ * runs, so a misnamed command hiding there has to be caught the same way an inline backtick mention
+ * already is -- fence-stripping alone (needed for the tool-name/backtick-pairing scan) would
+ * otherwise erase it from the corpus entirely, at exactly the spot a real reader acts on it.
  */
-function backtickCliPaths(text: string): string[] {
-  const spans = [...stripFences(text).matchAll(/`reinvent-scout ([^`]*)`/g)].map(
+function cliCommandMentions(text: string): string[] {
+  const paths: string[] = [];
+
+  const inlineSpans = [...stripFences(text).matchAll(/`reinvent-scout ([^`]*)`/g)].map(
     (match) => match[1]!,
   );
-  return spans.map((remainder) => {
+  for (const remainder of inlineSpans) {
     const pathMatch = /^[a-z]+(?: [a-z]+)?/.exec(remainder);
-    return `reinvent-scout ${pathMatch ? pathMatch[0] : remainder.trim()}`;
-  });
+    paths.push(`reinvent-scout ${pathMatch ? pathMatch[0] : remainder.trim()}`);
+  }
+
+  for (const fence of text.matchAll(/```([a-zA-Z]*)\n([\s\S]*?)```/g)) {
+    const lang = fence[1]!.toLowerCase();
+    if (!SHELL_FENCE_LANGS.has(lang)) {
+      continue;
+    }
+    for (const line of fence[2]!.split("\n")) {
+      const lineMatch = /^[\s$]*reinvent-scout\s+([a-z]+(?: [a-z]+)?)/.exec(line);
+      if (lineMatch) {
+        paths.push(`reinvent-scout ${lineMatch[1]!}`);
+      }
+    }
+  }
+
+  return paths;
 }
 
 /**
@@ -242,7 +273,7 @@ describe("skill files CLI command names", () => {
     expect(leafPaths.length).toBeGreaterThan(0);
     const registered = new Set(leafPaths.map((path) => `reinvent-scout ${path}`));
 
-    const extracted = new Set(backtickCliPaths(allSkillText));
+    const extracted = new Set(cliCommandMentions(allSkillText));
     expect(extracted.size).toBeGreaterThan(0);
 
     for (const path of extracted) {
@@ -256,12 +287,39 @@ describe("skill files CLI command names", () => {
     expect(leafPaths.length).toBeGreaterThan(0);
     const registered = leafPaths.map((path) => `reinvent-scout ${path}`);
 
-    const extracted = new Set(backtickCliPaths(allSkillText));
+    const extracted = new Set(cliCommandMentions(allSkillText));
     expect(extracted.size).toBeGreaterThan(0);
 
     for (const path of registered) {
       expect(extracted.has(path)).toBe(true);
     }
+  });
+
+  it("extracts a command written inside a fenced sh/bash/console/untagged block, not just an inline backtick span", () => {
+    // Reviewer's finding: fence-stripping (needed so the backtick-pairing scan isn't desynced by a
+    // ```json block's own triple backticks) also erases a command that's an example of something
+    // to *run*, not to read -- exactly what an agent would copy out of a fenced shell block. This
+    // locks in that such a block is scanned on its own terms, from the unstripped text.
+    const sample =
+      "```sh\nreinvent-scout auth login\n```\n\n" +
+      "```bash\nreinvent-scout catalog sync --reindex\n```\n\n" +
+      "```console\n$ reinvent-scout schedule show\n```\n\n" +
+      "```\nreinvent-scout mcp\n```\n";
+
+    expect(new Set(cliCommandMentions(sample))).toEqual(
+      new Set([
+        "reinvent-scout auth login",
+        "reinvent-scout catalog sync",
+        "reinvent-scout schedule show",
+        "reinvent-scout mcp",
+      ]),
+    );
+  });
+
+  it("does not extract a command mentioned only inside a non-shell fence, such as a json example", () => {
+    const sample = '```json\n{ "next": "reinvent-scout catalog refresh" }\n```\n';
+
+    expect(cliCommandMentions(sample)).toEqual([]);
   });
 });
 
