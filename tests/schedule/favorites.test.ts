@@ -58,15 +58,19 @@ function emptySchedule(): Schedule {
  * Captures every call to `process.stdout.write` for the duration of `fn` and restores the real
  * one afterward, returning the raw arguments of each intercepted call.
  *
- * Deliberately a direct property reassignment, not `vi.spyOn(process.stdout, "write")`: measured
- * directly against this Vitest/Node combination, `vi.spyOn` on `process.stdout.write` silently
- * fails to intercept anything at all -- the real write still reaches the terminal, and the
- * resulting spy's own call count stays at zero, so `expect(spy).not.toHaveBeenCalled()` passes
- * unconditionally regardless of what the code under test does. That is exactly the shape of a
- * negative test that proves nothing: it would stay green even with a `console.log` reinstated.
- * `write` is inherited from a prototype (`Object.getOwnPropertyDescriptor(process.stdout,
- * "write")` is `undefined`), and plain assignment -- which shadows it with a real own property --
- * measured reliably intercepting real writes here where `vi.spyOn` did not.
+ * A plain property reassignment works fine here (an earlier version of this comment wrongly
+ * blamed `vi.spyOn` itself -- the actual bug was asserting `toHaveBeenCalled()` *after*
+ * `mockRestore()`, which clears the spy's own recorded calls along with restoring the original
+ * implementation; asserted before restoring, `vi.spyOn` intercepts a direct
+ * `process.stdout.write` call correctly). What neither `vi.spyOn` nor this reassignment can see is
+ * `console.log`/`console.error`: Node's `Console` captures its own bound reference to the stream's
+ * write method at construction time, so replacing `process.stdout.write` afterward -- by spy or by
+ * assignment -- intercepts nothing routed through `console.*`. That gap doesn't apply to this
+ * module: `eslint.config.js` sets `no-console: "error"` for `src/**` (only `src/cli/**` and tests
+ * are exempt), so a `console.log` in `src/schedule/favorites.ts` fails `npm run lint` outright,
+ * regardless of what any runtime capture would or wouldn't see. See
+ * `gotcha_vitest_spyon_process_stdout_write.md` for where this gap *is* live (the MCP server's
+ * CLI entry point, which is lint-exempt) and the subprocess-based test it needs instead.
  */
 async function captureStdout(fn: () => Promise<void>): Promise<unknown[][]> {
   const calls: unknown[][] = [];
@@ -254,6 +258,11 @@ describe("favoriteSessions", () => {
     expect(result.successful).toEqual([ids[10]]);
     expect(result.failed).toHaveLength(10);
     expect(result.failed.every((failure) => failure.code === "requestFailed")).toBe(true);
+    // A bare "requestFailed" code with nothing else tells a user precisely nothing about why --
+    // the underlying error's own message (never a token; the API client's own error taxonomy
+    // already guarantees that) must ride along so "something failed" becomes "the server
+    // exploded" or "you're not registered for this event."
+    expect(result.failed.every((failure) => failure.reason === "The server exploded.")).toBe(true);
     expect(result.failed.map((failure) => failure.sessionId).sort()).toEqual(ids.slice(0, 10).sort());
   });
 

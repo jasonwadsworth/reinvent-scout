@@ -89,6 +89,16 @@ export interface FavoriteFailure {
   code: BulkFailureCode;
   /** Present only for a `scheduleConflict` refusal. */
   conflictsWith?: ResolvedConflict[];
+  /** Present only for `REQUEST_FAILED_CODE` -- the underlying error's own message (never a
+   * token: the API client's own error taxonomy already guarantees its error messages never
+   * include one, see api/client.ts's `mapErrorResponse`). A bare "requestFailed" code alone tells
+   * a caller nothing about what actually happened; this is what turns "something failed" into
+   * "the server exploded" or "you're not registered for this event." */
+  reason?: string;
+}
+
+function describeError(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 export interface FavoriteSessionsResult {
@@ -187,11 +197,13 @@ export async function favoriteSessions(
             : {}),
         });
       }
-    } catch {
+    } catch (err) {
       // Scoped to this chunk's ids alone -- an independent request failing must not lose every
-      // other chunk's result.
+      // other chunk's result. The underlying error's message rides along as `reason`: a bare
+      // "requestFailed" code with nothing else would tell a caller precisely nothing about why.
+      const reason = describeError(err);
       for (const sessionId of idsChunk) {
-        failed.push({ sessionId, code: REQUEST_FAILED_CODE });
+        failed.push({ sessionId, code: REQUEST_FAILED_CODE, reason });
       }
     }
   }
