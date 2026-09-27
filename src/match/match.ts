@@ -231,10 +231,13 @@ function roundCandidate(candidate: MatchCandidate): MatchCandidate {
  * level, never assumed to satisfy it) and format preference (an additional `"format"` reason,
  * appended on top of `scoreSession`'s own reasons) before sorting.
  *
- * A session with nothing to say for it (zero score -- no service, topic, area-of-interest, text,
- * or lens bonus at all) is excluded entirely rather than returned at the bottom with a `0`; this
- * is what makes a profile with no signals at all return an empty list instead of every session in
- * the catalog in an arbitrary order.
+ * A session with nothing to say for it -- no service, topic, area-of-interest, or text signal at
+ * all from `scoreSession` -- is excluded entirely, before the lens's format bonus is even
+ * considered, rather than returned at the bottom with a `0`. The format bonus is a tiebreak among
+ * sessions that already share a real signal with the profile, never a standalone reason to include
+ * one that shares nothing with it -- gating on it too would let a session earn a place purely by
+ * being the lens's favored type. This is also what makes a profile with no signals at all return an
+ * empty list instead of every session in the catalog in an arbitrary order.
  *
  * Every repeat sitting of the same talk (see `baseSessionCode`) is collapsed into one
  * `MatchCandidate` before ranking, so `options.limit` counts distinct talks, not raw sittings, and
@@ -280,6 +283,16 @@ export function matchSessions(
     }
 
     const base = scoreSession(record, query, corpusStats);
+    // Gated on the scorer's own score, before the lens's format bonus is even considered -- a
+    // format preference is a tiebreak among sessions that already share a real signal with the
+    // profile (a service, a topic, an area of interest, or free-text overlap), never a standalone
+    // reason to include a session that shares nothing with it at all. Gating on the *combined*
+    // score instead (the bug this replaced) let being a Breakout session or Chalk talk alone earn
+    // a place in the results, and outrank a session with a real but modest text match.
+    if (base.score <= 0) {
+      continue;
+    }
+
     const reasons = [...base.reasons];
     let score = base.score;
 
@@ -292,10 +305,6 @@ export function matchSessions(
         evidence: record.type!,
       });
       score += formatBonus;
-    }
-
-    if (score <= 0) {
-      continue;
     }
 
     scoredRecords.push({ record, score, reasons });

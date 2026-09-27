@@ -168,6 +168,77 @@ describe("matchSessions", () => {
     expect(breakoutResult!.reasons.some((r) => r.kind === "format")).toBe(true);
   });
 
+  it("excludes a lens-favored session under the explain lens when it shares nothing else with the profile", () => {
+    // A level-200 Breakout session that matches nothing in the profile at all -- no service,
+    // topic, area of interest, or text overlap. The format bonus is a tiebreak among real matches,
+    // not a standalone signal; this session must never become a candidate purely by being the
+    // lens's favored type.
+    const unrelatedBreakout: Session = {
+      sessionId: "unrelated",
+      abbreviation: "BRK200",
+      title: "Cost optimization for finance teams",
+      type: "Breakout session",
+      level: "200 - Intermediate",
+    };
+    writeCatalog(
+      {
+        raw: [unrelatedBreakout],
+        index: [unrelatedBreakout].map(buildIndexRecord),
+        meta: sampleMeta({ totalCount: 1, count: 1 }),
+      },
+      { storeRoot: home.path },
+    );
+
+    const profile = resolvedProfile({
+      services: [
+        { name: "lambda", evidence: [{ repo: ".", file: "x" }], catalogName: "AWS Lambda" },
+      ],
+    });
+
+    const results = matchSessions(profile, { storeRoot: home.path }, { lens: "explain" });
+
+    expect(results).toEqual([]);
+  });
+
+  it("ranks a genuine text match above an unrelated lens-favored session, which is excluded entirely", () => {
+    // Reproduces the reviewer's exact finding: an unrelated Breakout session must not outrank --
+    // or even outlast the zero-score gate ahead of -- a Workshop that actually matches the
+    // profile's own pattern text, even though Workshop earns no format bonus under this lens at
+    // all and the Breakout would otherwise get one.
+    const unrelatedBreakout: Session = {
+      sessionId: "unrelated",
+      abbreviation: "BRK200",
+      title: "Cost optimization for finance teams",
+      type: "Breakout session",
+      level: "200 - Intermediate",
+    };
+    const matchingWorkshop: Session = {
+      sessionId: "matching",
+      abbreviation: "WRK200",
+      title: "Build a Kubernetes operator",
+      type: "Workshop",
+      level: "200 - Intermediate",
+    };
+    writeCatalog(
+      {
+        raw: [unrelatedBreakout, matchingWorkshop],
+        index: [unrelatedBreakout, matchingWorkshop].map(buildIndexRecord),
+        meta: sampleMeta({ totalCount: 2, count: 2 }),
+      },
+      { storeRoot: home.path },
+    );
+
+    const profile = resolvedProfile({
+      patterns: [
+        { name: "kubernetes operator", evidence: [{ repo: ".", file: "x" }] },
+      ],
+    });
+
+    const results = matchSessions(profile, { storeRoot: home.path }, { lens: "explain" });
+
+    expect(results.map((r) => r.record.abbreviation)).toEqual(["WRK200"]);
+  });
+
   it("returns deeper sessions when the explain lens is not applied", () => {
     writeCatalog(
       { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
