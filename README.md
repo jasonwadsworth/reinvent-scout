@@ -290,6 +290,20 @@ reinvent-scout schedule unfavorite SESSION-ID
 Removes one session from your favorites. Removing a session that was never favorited (or already
 removed) is reported plainly, not as an error -- there's nothing left to do either way.
 
+## Run the MCP server
+
+```
+reinvent-scout mcp
+```
+
+Runs a local [MCP](https://modelcontextprotocol.io) server over stdio, so an agent (Claude Code,
+or anything else that speaks MCP) can call `reinvent-scout` directly instead of shelling out to the
+CLI. It never writes anything but protocol traffic to its stdout; every diagnostic goes to stderr.
+Only the `status` tool exists so far -- it reports whether a session is signed in and the local
+catalog's state. Later tasks in this phase add the rest (catalog sync, profile validation,
+matching, and schedule read/write) and a full setup guide, including a `claude mcp add` /
+`.mcp.json` snippet and the agent skill that drives it.
+
 ## Where your data lives
 
 Everything is stored under `~/.reinvent-scout/` (override with the `REINVENT_SCOUT_HOME`
