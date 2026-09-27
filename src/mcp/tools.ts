@@ -19,6 +19,8 @@ import {
 import { matchSessions } from "../match/match.js";
 import type { Lens } from "../match/lens.js";
 import { resolveProfile } from "../profile/profile.js";
+import { favoriteSessions, unfavoriteSession } from "../schedule/favorites.js";
+import { getSchedule } from "../schedule/schedule.js";
 
 function defaultBuildApiClient(storeRoot: string): ApiClient {
   return createApiClient({ getAccessToken: createTokenProviderAdapter({ storeRoot }) });
@@ -384,13 +386,122 @@ function registerMatchSessionsTool(server: McpServer, deps: McpToolDeps): void {
   );
 }
 
-/** Registers every implemented tool. Tasks 5 and 6 brought the set to `status`, `catalog_sync`,
- * `validate_profile`, `match_sessions`, `get_schedule`, `favorite_sessions` and
- * `unfavorite_session` -- the seven the skill (task 7) is written against. Task 6 adds the last
- * three. */
+const GetScheduleInputSchema = z.strictObject({
+  event: z.string().min(1).optional(),
+});
+
+function registerGetScheduleTool(server: McpServer, deps: McpToolDeps): void {
+  const buildApiClient = deps.buildApiClient ?? defaultBuildApiClient;
+
+  server.registerTool(
+    "get_schedule",
+    {
+      description:
+        "Read the attendee's schedule (reserved sessions, favorites, personal time), resolved " +
+        "against the local catalog into title, day, time, venue and room where possible.",
+      inputSchema: GetScheduleInputSchema,
+    },
+    async ({ event }) => {
+      const storeRoot = deps.resolveStoreRoot();
+      const apiClient = buildApiClient(storeRoot);
+      try {
+        const result = await getSchedule({
+          apiClient,
+          storeRoot,
+          ...(event === undefined ? {} : { eventId: event }),
+        });
+        return textResult(result);
+      } catch (err) {
+        return toToolError(err);
+      }
+    },
+  );
+}
+
+/** Up to fifty session ids per call -- the brief's own bound, matching the CLI's `schedule
+ * favorite` in spirit though not in exact number (that command allows up to 100 from a single
+ * invocation, since a human can pipe a whole day's worth of `match` output through it; an agent
+ * calling this tool is expected to have already narrowed to a shortlist via `match_sessions`,
+ * whose own cap is 50). `.min(1)` is what makes an empty list a schema-level rejection -- the SDK
+ * turns that into `isError` before the handler (and so `favoriteSessions`, and so any network
+ * call) ever runs. */
+const FavoriteSessionsInputSchema = z.strictObject({
+  sessionIds: z.array(z.string().min(1)).min(1).max(50),
+  event: z.string().min(1).optional(),
+});
+
+function registerFavoriteSessionsTool(server: McpServer, deps: McpToolDeps): void {
+  const buildApiClient = deps.buildApiClient ?? defaultBuildApiClient;
+
+  server.registerTool(
+    "favorite_sessions",
+    {
+      description:
+        "Favorite up to fifty sessions by session id, chunked and paced automatically. Reports " +
+        "every outcome -- successes, already-favorited ids (not a failure), and refusals with " +
+        "resolved conflict titles where applicable -- plus a post-write verification against the " +
+        "real schedule. A 200 response carrying a refusal is never reported as a plain success.",
+      inputSchema: FavoriteSessionsInputSchema,
+    },
+    async ({ sessionIds, event }) => {
+      const storeRoot = deps.resolveStoreRoot();
+      const apiClient = buildApiClient(storeRoot);
+      try {
+        const result = await favoriteSessions(sessionIds, {
+          apiClient,
+          storeRoot,
+          ...(event === undefined ? {} : { eventId: event }),
+        });
+        return textResult(result);
+      } catch (err) {
+        return toToolError(err);
+      }
+    },
+  );
+}
+
+const UnfavoriteSessionInputSchema = z.strictObject({
+  sessionId: z.string().min(1),
+  event: z.string().min(1).optional(),
+});
+
+function registerUnfavoriteSessionTool(server: McpServer, deps: McpToolDeps): void {
+  const buildApiClient = deps.buildApiClient ?? defaultBuildApiClient;
+
+  server.registerTool(
+    "unfavorite_session",
+    {
+      description:
+        "Remove one session from favorites. Removing a session that was never favorited (or " +
+        "already removed) is reported as outcome: \"notFavorited\", not an error -- there's " +
+        "nothing left to do either way.",
+      inputSchema: UnfavoriteSessionInputSchema,
+    },
+    async ({ sessionId, event }) => {
+      const storeRoot = deps.resolveStoreRoot();
+      const apiClient = buildApiClient(storeRoot);
+      try {
+        const outcome = await unfavoriteSession(sessionId, {
+          apiClient,
+          ...(event === undefined ? {} : { eventId: event }),
+        });
+        return textResult({ outcome });
+      } catch (err) {
+        return toToolError(err);
+      }
+    },
+  );
+}
+
+/** Registers every implemented tool: `status`, `catalog_sync`, `validate_profile`,
+ * `match_sessions`, `get_schedule`, `favorite_sessions` and `unfavorite_session` -- the seven the
+ * skill (task 7) is written against. */
 export function registerTools(server: McpServer, deps: McpToolDeps): void {
   registerStatusTool(server, deps);
   registerCatalogSyncTool(server, deps);
   registerValidateProfileTool(server, deps);
   registerMatchSessionsTool(server, deps);
+  registerGetScheduleTool(server, deps);
+  registerFavoriteSessionsTool(server, deps);
+  registerUnfavoriteSessionTool(server, deps);
 }

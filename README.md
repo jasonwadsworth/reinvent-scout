@@ -299,10 +299,17 @@ reinvent-scout mcp
 Runs a local [MCP](https://modelcontextprotocol.io) server over stdio, so an agent (Claude Code,
 or anything else that speaks MCP) can call `reinvent-scout` directly instead of shelling out to the
 CLI. It never writes anything but protocol traffic to its stdout; every diagnostic goes to stderr.
-Only the `status` tool exists so far -- it reports whether a session is signed in and the local
-catalog's state. Later tasks in this phase add the rest (catalog sync, profile validation,
-matching, and schedule read/write) and a full setup guide, including a `claude mcp add` /
-`.mcp.json` snippet and the agent skill that drives it.
+
+Seven tools are registered: `status` (signed-in state and local catalog state -- call this first),
+`catalog_sync` (returns counts only, never session data), `validate_profile` (resolves an
+agent-authored profile's service names against the catalog), `match_sessions` (ranks the catalog
+against a resolved profile; every response, at any limit or profile richness, is held to a 30 KB
+budget -- a response that would exceed it is truncated in ranked order, never mid-candidate, with
+`truncated`/`returned`/`requested`/`omitted` and a `hint` reporting what was cut), `get_schedule`,
+`favorite_sessions` (up to fifty ids, chunked and paced, with per-session outcomes and resolved
+conflict titles -- a response carrying a refusal is never reported as a plain success), and
+`unfavorite_session`. A full setup guide (a `claude mcp add` / `.mcp.json` snippet and the agent
+skill that drives these tools) lands with the skill itself, later in this phase.
 
 ## Where your data lives
 

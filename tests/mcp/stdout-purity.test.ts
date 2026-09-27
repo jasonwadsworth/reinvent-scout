@@ -110,6 +110,22 @@ async function driveOneToolCall(server: SpawnedServer): Promise<Record<string, u
   return server.waitForId(2);
 }
 
+/** Also drives `get_schedule` (id 3) -- task 6's tools are a separate code path (a different
+ * module, `src/schedule/schedule.ts`, and the real `ApiClient`/token provider construction the
+ * `status` tool never reaches) that the lint rule alone doesn't prove is clean; with no session
+ * stored, the token provider throws `AuthRequiredError` before any real network call, so this
+ * stays fast and hermetic while still exercising the schedule tool's own handler and error path. */
+async function driveScheduleToolCall(server: SpawnedServer): Promise<Record<string, unknown>> {
+  await driveOneToolCall(server);
+  server.send({
+    jsonrpc: "2.0",
+    id: 3,
+    method: "tools/call",
+    params: { name: "get_schedule", arguments: {} },
+  });
+  return server.waitForId(3);
+}
+
 describe("MCP server stdout purity (real subprocess)", () => {
   let home: TempHome;
 
@@ -140,6 +156,26 @@ describe("MCP server stdout purity (real subprocess)", () => {
       // to the tool call we drove is among the captured lines, not just that every line is clean.
       expect((toolResponse as { id?: unknown }).id).toBe(2);
       expect(server.lines.some((line) => line.parsed?.id === 2)).toBe(true);
+    } finally {
+      server.stop();
+    }
+  }, 15_000);
+
+  it("stays pure across a schedule tool call too, not just status", async () => {
+    // Reviewer's ask: the lint override covers src/mcp/**, but the subprocess purity guard is
+    // what actually catches a stray write, and it needs to run against task 6's own code path
+    // (src/schedule/**, and the real ApiClient construction status never reaches), not just the
+    // one tool task 4 originally wrote this test against.
+    const server = spawnServer({ ...process.env, REINVENT_SCOUT_HOME: home.path });
+    try {
+      const scheduleResponse = await driveScheduleToolCall(server);
+
+      for (const line of server.lines) {
+        expect(line.parsed, `line did not parse as JSON: ${line.raw}`).not.toBeNull();
+        expect(line.parsed!.jsonrpc, `line missing jsonrpc field: ${line.raw}`).toBe("2.0");
+      }
+      expect((scheduleResponse as { id?: unknown }).id).toBe(3);
+      expect(server.lines.some((line) => line.parsed?.id === 3)).toBe(true);
     } finally {
       server.stop();
     }

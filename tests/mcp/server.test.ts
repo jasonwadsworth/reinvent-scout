@@ -53,21 +53,27 @@ describe("createMcpServer", () => {
     home.cleanup();
   });
 
-  it("lists the tools implemented so far, by exact name", async () => {
+  it("lists exactly the seven expected tools, by name", async () => {
     const client = await connectedClient({ resolveStoreRoot: () => home.path });
 
     const tools = await client.listTools();
 
-    // Task 6 adds the last three (get_schedule, favorite_sessions, unfavorite_session), bringing
-    // this to the full seven the skill (task 7) is written against -- that final assertion will
-    // land in task 6's own commit. Asserted by exact name set here too, not just count: a length
-    // check alone would pass even if the wrong tool were registered under the right count.
-    expect(tools.tools.map((t) => t.name)).toEqual([
-      "status",
-      "catalog_sync",
-      "validate_profile",
-      "match_sessions",
-    ]);
+    // Asserted as a sorted set, not order or count: a swap (e.g. the plan's superseded
+    // `profile_repo` for `validate_profile`) leaves the count at seven, so a length-only
+    // assertion would pass even with the wrong tool registered. See also
+    // tests/mcp/tools-schedule.test.ts's own copy of this check, driven through real per-tool
+    // fakes rather than this file's minimal server-behavior harness.
+    expect(tools.tools.map((t) => t.name).sort()).toEqual(
+      [
+        "status",
+        "catalog_sync",
+        "validate_profile",
+        "match_sessions",
+        "get_schedule",
+        "favorite_sessions",
+        "unfavorite_session",
+      ].sort(),
+    );
   });
 
   it("returns the status tool result as compact json text content, under 30 KB", async () => {
