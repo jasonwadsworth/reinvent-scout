@@ -115,16 +115,6 @@ function formatHumanSummary(result: SyncResult): string {
         "were stored. Some sessions may be missing from the local catalog.",
     );
   }
-  if (result.timezoneUnavailable) {
-    // Surfaced the same way as the two warnings above: in the result, never on stdout from
-    // syncCatalog itself, and printed here as a warning rather than failing the command -- the
-    // catalog itself synced successfully, the event's timezone just could not be fetched this
-    // time (get_schedule falls back to sorting by raw local date/time when it's unknown).
-    lines.push(
-      `Warning: could not fetch the event's timezone (${result.timezoneError}). Session start ` +
-        "times will sort by local date and time only until the next successful sync.",
-    );
-  }
   return lines.join("\n");
 }
 

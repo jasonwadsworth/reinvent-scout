@@ -175,15 +175,7 @@ describe("catalog_sync tool", () => {
     // summary) that doesn't happen to match that one session. SyncResult's own six fields, no
     // more, is what actually proves nothing session-shaped rode along.
     expect(Object.keys(parsed).sort()).toEqual(
-      [
-        "count",
-        "countMismatch",
-        "eventId",
-        "reindexed",
-        "timezoneUnavailable",
-        "totalCount",
-        "totalCountMissing",
-      ].sort(),
+      ["count", "countMismatch", "eventId", "reindexed", "totalCount", "totalCountMissing"].sort(),
     );
     // Belt-and-braces on the literal content too, since a key-set check alone wouldn't catch a
     // session's title stuffed into an existing string field.
