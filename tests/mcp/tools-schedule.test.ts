@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -219,21 +219,17 @@ describe("get_schedule tool", () => {
     expect(third.total).toBe(5);
   });
 
-  it("keeps the response under thirty kilobytes at a hundred favorites, shortening the page and advancing nextOffset to match", async () => {
-    // Reviewer's finding: get_schedule had no budget at all and measured ~30.8 KB at a hundred
-    // favorites against the real catalog -- not a stress case, since favorite_sessions accepts
-    // fifty per call (two ordinary calls reach it). Reproduced with realistic-length synthetic
-    // entries (long title, real-length venue/room strings) rather than tiny ids, since short
-    // synthetic entries could not expose this any more than the small fixture could.
+  it("caps the limit at seventy-five even when a larger one is requested", async () => {
+    // Lead's revised cap: adding `kind` and the pagination metadata to each entry means a full
+    // page of 100 at realistic entry lengths already exceeds the budget before anything unusually
+    // long is involved, so 75 is chosen to make a full page the normal case. Moderate-length
+    // entries here (not the stress-test lengths the byte-budget test below uses) isolate the cap
+    // itself: this must return exactly 75, not fewer for a byte reason.
     const sessions = Array.from({ length: 100 }, (_, i) => ({
-      sessionId: `sched-${i}`,
-      abbreviation: `SCH${String(i).padStart(3, "0")}`,
-      title:
-        `A deliberately long and realistic-sounding synthetic session title for schedule ` +
-        `pagination size testing, entry number ${i}`,
-      venue: "MGM Grand",
-      room: "Level 3 | Chairman's 363 | Content Hub | White Theater",
-      sessionTime: { date: "2026-12-01", time: `${String(9 + (i % 8)).padStart(2, "0")}:00`, length: "60" },
+      sessionId: `cap-${i}`,
+      abbreviation: `CAP${String(i).padStart(3, "0")}`,
+      title: `Cap session ${i}`,
+      sessionTime: { date: "2026-12-01", time: `${String(9 + (i % 8)).padStart(2, "0")}:00`, length: "30" },
     }));
     seedCatalog(home.path, sessions);
     const client = await connectedClient(home.path, {
@@ -244,26 +240,79 @@ describe("get_schedule tool", () => {
       }),
     });
 
-    const result = await client.callTool({ name: "get_schedule", arguments: { limit: 100 } });
+    const result = await client.callTool({ name: "get_schedule", arguments: { limit: 1000 } });
+
+    const parsed = JSON.parse(textOf(result)) as { returned: number; entries: unknown[] };
+    expect(parsed.returned).toBe(75);
+    expect(parsed.entries).toHaveLength(75);
+  });
+
+  it("keeps the response under thirty kilobytes even within a single page at the cap, shortening it and advancing nextOffset to the first cut entry", async () => {
+    // Reviewer's finding: get_schedule had no budget at all and measured ~30.8 KB at a hundred
+    // favorites against the real catalog. With the cap now at 75, a full page of *realistic*-
+    // length entries fits (measured ~27.8 KB) -- so this scenario deliberately uses longer,
+    // openly-unrealistic entries (labelled as such, not passed off as real re:Invent content) to
+    // force the byte-budget path specifically, distinct from the cap test above: a full page of
+    // 75 must still be shortened on its own.
+    const sessions = Array.from({ length: 75 }, (_, i) => ({
+      sessionId: `long-sched-${i}`,
+      abbreviation: `LSC${String(i).padStart(3, "0")}`,
+      title:
+        `A deliberately extremely long and unrealistically verbose synthetic session title ` +
+        `constructed specifically to inflate response size well beyond what a real re:Invent ` +
+        `session title would ever be, for schedule pagination byte-budget shortening test ` +
+        `purposes, entry number ${i}`,
+      venue: "MGM Grand Convention Center Extended Wing",
+      room: "Level 3 | Chairman's Ballroom 363 | Content Hub Annex | White Theater Overflow Area",
+      // Strictly increasing minute-of-day, one per entry (not cycling like other tests' `% 8`
+      // patterns) -- this test relies on `sessions` being in exact sorted order by construction to
+      // predict which entry `nextOffset` should point at next.
+      sessionTime: {
+        date: "2026-12-01",
+        time: `${String(8 + Math.floor(i / 60)).padStart(2, "0")}:${String(i % 60).padStart(2, "0")}`,
+        length: "10",
+      },
+    }));
+    seedCatalog(home.path, sessions);
+    const client = await connectedClient(home.path, {
+      getSchedule: async () => ({
+        reserved: [],
+        favorites: sessions.map((s) => s.sessionId),
+        personalTime: [],
+      }),
+    });
+
+    const result = await client.callTool({ name: "get_schedule", arguments: { limit: 75 } });
 
     expect(result.isError).not.toBe(true);
     expect(Buffer.byteLength(JSON.stringify(result), "utf8")).toBeLessThan(30 * 1024);
     const parsed = JSON.parse(textOf(result)) as {
-      entries: unknown[];
+      entries: Array<{ sessionId: string }>;
       total: number;
       returned: number;
       offset: number;
       nextOffset?: number;
     };
-    expect(parsed.total).toBe(100);
-    // Fewer than the requested 100 -- the scenario is built so a full page of 100 genuinely does
-    // not fit, exercising the shortening path rather than assuming it works.
-    expect(parsed.returned).toBeLessThan(100);
+    expect(parsed.total).toBe(75);
+    // Fewer than the requested (and available) 75 -- the scenario is built so a full page
+    // genuinely does not fit, exercising the shortening path rather than assuming it works.
+    expect(parsed.returned).toBeLessThan(75);
     expect(parsed.entries).toHaveLength(parsed.returned);
     // nextOffset must reflect what was actually returned (so the next call resumes exactly where
     // this one stopped), not the full requested limit -- the bug a naive "advance by limit
     // regardless of what fit" implementation would produce.
     expect(parsed.nextOffset).toBe(parsed.offset + parsed.returned);
+
+    // The decisive check: nextOffset genuinely points at the first entry that was cut, not just
+    // an arithmetically-plausible number. Following it up (offset: nextOffset) must yield exactly
+    // the entry immediately after the last one already returned, sessions being chronologically
+    // ordered by construction.
+    const continued = await client.callTool({
+      name: "get_schedule",
+      arguments: { limit: 1, offset: parsed.nextOffset },
+    });
+    const continuedParsed = JSON.parse(textOf(continued)) as { entries: Array<{ sessionId: string }> };
+    expect(continuedParsed.entries[0]!.sessionId).toBe(sessions[parsed.returned]!.sessionId);
   });
 
   it("returns entries in stable sorted order across pages", async () => {
@@ -296,6 +345,141 @@ describe("get_schedule tool", () => {
     expect([...firstPage, ...secondPage]).toEqual(
       sessions.map((s) => s.sessionId), // sessions is already in chronological order by construction
     );
+  });
+
+  it("sorts entries with a real date but a null time after entries with a known time, unresolved entries last of all", async () => {
+    // Reviewer's finding: "unscheduled last" covers two different cases a naive comparator
+    // conflates -- an unresolved entry (no time fields at all) and a resolved entry whose own
+    // startTime happens to be null (the index record's field is nullable independently of
+    // startDate). A fixture mixing all three is what exposes a `a ?? ""` or bare `<` bug; a
+    // fixture where every session has a real time (as every earlier test in this file uses)
+    // cannot.
+    const withTime = {
+      sessionId: "with-time",
+      abbreviation: "WT1",
+      title: "Has a real time",
+      sessionTime: { date: "2026-12-01", time: "09:00", length: "30" },
+    };
+    const dateOnly = {
+      sessionId: "date-only",
+      abbreviation: "DO1",
+      title: "Has a date but no time",
+      // No `sessionTime` at all still leaves startDate/startTime both null via buildIndexRecord --
+      // resolved-with-a-date-but-null-time specifically requires touching the record after the
+      // fact, since the real API never actually reports one without the other in practice.
+    };
+    seedCatalog(home.path, [withTime, dateOnly]);
+    // Force the "resolved, date present, time null" case the API doesn't naturally produce, by
+    // patching the already-written index directly -- this is the one state a fixture alone can't
+    // reach, and it's exactly the state the reviewer's finding is about.
+    const indexPath = join(home.path, "catalog", "index.json");
+    const index = JSON.parse(readFileSync(indexPath, "utf8")) as Array<{ sessionId: string; startDate: string | null; startTime: string | null }>;
+    const dateOnlyRecord = index.find((r) => r.sessionId === dateOnly.sessionId)!;
+    dateOnlyRecord.startDate = "2026-12-01";
+    dateOnlyRecord.startTime = null;
+    writeFileSync(indexPath, JSON.stringify(index), "utf8");
+
+    const unresolvedId = "not-in-any-catalog";
+    const client = await connectedClient(home.path, {
+      getSchedule: async () => ({
+        reserved: [],
+        favorites: [unresolvedId, withTime.sessionId, dateOnly.sessionId],
+        personalTime: [],
+      }),
+    });
+
+    const result = await client.callTool({ name: "get_schedule", arguments: {} });
+    const parsed = JSON.parse(textOf(result)) as { entries: Array<{ sessionId: string }> };
+
+    expect(parsed.entries.map((e) => e.sessionId)).toEqual([
+      withTime.sessionId,
+      dateOnly.sessionId,
+      unresolvedId,
+    ]);
+  });
+
+  it("stays consistent and complete across pages even when the API reorders favorites between calls", async () => {
+    // Reviewer's finding: get_schedule re-reads the schedule from the API on every call, and
+    // Array.prototype.sort is stable, so entries tied at date+time would otherwise keep whatever
+    // order the API happened to return them in on that particular call -- if that order changes
+    // between two calls of a multi-page walk, pages can overlap or skip an entry. All six sessions
+    // here share the exact same date and time, so without the kind+tiebreaker levels of the
+    // comparator, every one of them would be a tie.
+    const sessions = Array.from({ length: 6 }, (_, i) => ({
+      sessionId: `tied-${i}`,
+      abbreviation: `TIE${i}`,
+      title: `Tied-time session ${i}`,
+      sessionTime: { date: "2026-12-01", time: "09:00", length: "30" },
+    }));
+    seedCatalog(home.path, sessions);
+    let call = 0;
+    const client = await connectedClient(home.path, {
+      getSchedule: async () => {
+        call++;
+        const ids = sessions.map((s) => s.sessionId);
+        // Second call (the second page's own re-read) sees a different API order than the first.
+        return { reserved: [], favorites: call === 1 ? ids : [...ids].reverse(), personalTime: [] };
+      },
+    });
+
+    async function page(limit: number, offset: number): Promise<string[]> {
+      const result = await client.callTool({ name: "get_schedule", arguments: { limit, offset } });
+      const parsed = JSON.parse(textOf(result)) as { entries: Array<{ sessionId: string }> };
+      return parsed.entries.map((e) => e.sessionId);
+    }
+
+    const firstPage = await page(3, 0);
+    const secondPage = await page(3, 3);
+
+    expect(call).toBe(2); // confirms the API really was re-read with a different order the second time
+    const combined = [...firstPage, ...secondPage];
+    // Complete (every session appears) and disjoint (no session appears twice) regardless of the
+    // API's own reordering -- the tiebreaker gives every entry a fixed position independent of
+    // input order.
+    expect(new Set(combined).size).toBe(6);
+    expect(combined.sort()).toEqual(sessions.map((s) => s.sessionId).sort());
+  });
+
+  it("walks every page at four hundred favorites and reaches everything exactly once, in order, every page under budget", async () => {
+    const sessions = Array.from({ length: 400 }, (_, i) => ({
+      sessionId: `walk-${String(i).padStart(3, "0")}`,
+      abbreviation: `WLK${String(i).padStart(3, "0")}`,
+      title: `Walk session ${i}`,
+      sessionTime: {
+        date: `2026-12-${String(1 + (i % 5)).padStart(2, "0")}`,
+        time: `${String(8 + (i % 10)).padStart(2, "0")}:00`,
+        length: "30",
+      },
+    }));
+    seedCatalog(home.path, sessions);
+    const client = await connectedClient(home.path, {
+      getSchedule: async () => ({
+        reserved: [],
+        favorites: sessions.map((s) => s.sessionId),
+        personalTime: [],
+      }),
+    });
+
+    const collected: string[] = [];
+    let offset: number | undefined = 0;
+    let pages = 0;
+    while (offset !== undefined) {
+      const result = await client.callTool({ name: "get_schedule", arguments: { offset } });
+      expect(Buffer.byteLength(JSON.stringify(result), "utf8")).toBeLessThan(30 * 1024);
+      const parsed = JSON.parse(textOf(result)) as {
+        entries: Array<{ sessionId: string }>;
+        nextOffset?: number;
+      };
+      collected.push(...parsed.entries.map((e) => e.sessionId));
+      offset = parsed.nextOffset;
+      pages++;
+      expect(pages).toBeLessThan(20); // sanity bound against an infinite loop if nextOffset ever misbehaves
+    }
+
+    expect(pages).toBeGreaterThan(1); // confirms this genuinely walked more than one page
+    // Complete and in the same chronological order the sessions were constructed in -- no entry
+    // missing, none repeated, none out of place.
+    expect(collected).toEqual([...sessions].sort((a, b) => a.sessionTime.date.localeCompare(b.sessionTime.date) || a.sessionTime.time.localeCompare(b.sessionTime.time) || a.sessionId.localeCompare(b.sessionId)).map((s) => s.sessionId));
   });
 
   it("returns isError with the not-registered explanation on a 403", async () => {

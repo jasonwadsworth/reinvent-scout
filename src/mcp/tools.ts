@@ -395,16 +395,22 @@ function registerMatchSessionsTool(server: McpServer, deps: McpToolDeps): void {
  * `match_sessions`' ranked candidates, an attendee's own schedule has no "least relevant" entry to
  * drop silently -- an agent that never sees a real commitment could tell the user the wrong plan
  * -- so nothing may become permanently unreachable: `limit`/`offset` page through every entry
- * (default 50, cap 100, silently clamped like `match_sessions`' own `limit` rather than rejected),
- * and the response is *also* enforced at the byte budget the same way `match_sessions` is, so a
- * page of unusually long entries still can't exceed it -- when it would, the page itself is
- * shortened and `nextOffset` reflects what was actually returned, not the full requested window,
- * so the next call picks up from exactly where this one left off rather than skipping entries.
- * The CLI's `schedule show` is deliberately left unpaginated -- human terminal output, not agent
- * context, has no such budget.
+ * (default 50, cap 75 -- the reviewer's own measurement: adding `kind` and the pagination
+ * metadata to each entry means a full page of 100 already exceeds the budget before accounting
+ * for anything unusually long, so 75 is chosen to make a full page the *normal* case and
+ * budget-shortening the exception rather than something every request at the cap hits -- silently
+ * clamped like `match_sessions`' own `limit` rather than rejected), and the response is *also*
+ * enforced at the byte budget the same way `match_sessions` is, so a page of unusually long
+ * entries still can't exceed it -- when it would, the page itself is shortened and `nextOffset`
+ * reflects what was actually returned (`offset + returned`), present exactly when
+ * `offset + returned < total` and never derived from `returned < limit` (which the reviewer
+ * pointed out is `true` on every page at the cap, not just the last one) -- so the next call
+ * picks up from exactly where this one left off rather than skipping entries. The CLI's `schedule
+ * show` is deliberately left unpaginated -- human terminal output, not agent context, has no such
+ * budget.
  */
 const DEFAULT_GET_SCHEDULE_LIMIT = 50;
-const MAX_GET_SCHEDULE_LIMIT = 100;
+const MAX_GET_SCHEDULE_LIMIT = 75;
 
 const GetScheduleInputSchema = z.strictObject({
   event: z.string().min(1).optional(),
@@ -417,10 +423,20 @@ const GetScheduleInputSchema = z.strictObject({
 type ScheduleEntryKind = "reserved" | "favorite" | "personalTime";
 
 interface MergedScheduleEntry {
+  kind: ScheduleEntryKind;
   /** `null` for an unscheduled or unresolved entry, which sorts last -- personal time is never in
    * this state, since `startDateTime` is a required field on it. */
   sortDate: string | null;
+  /** `null` both for an unresolved entry (no time fields at all) and a resolved one whose own
+   * `startTime` is itself `null` (the index record's field is nullable independently of
+   * `startDate` -- see index-record.ts) -- both mean "no known time", not "sorts before every
+   * known time", which is what a bare `a ?? ""` or a naive `<` comparison against `null` would
+   * silently produce instead (see `compareNullableLast`). */
   sortTime: string | null;
+  /** `sessionId` for a reserved/favorite entry, `personalTimeId` for personal time -- always
+   * present and, within one call's own merged list, unique, which is what makes the final sort
+   * level below a genuine total order rather than a partial one. */
+  tiebreaker: string;
   data: Record<string, unknown>;
 }
 
@@ -429,8 +445,10 @@ function toMergedSessionEntries(
   kind: "reserved" | "favorite",
 ): MergedScheduleEntry[] {
   return sessions.map((session) => ({
+    kind,
     sortDate: session.resolved ? session.startDate : null,
     sortTime: session.resolved ? session.startTime : null,
+    tiebreaker: session.sessionId,
     data: { kind, ...session },
   }));
 }
@@ -442,28 +460,62 @@ function toMergedPersonalTimeEntries(personalTime: PersonalTime[]): MergedSchedu
     // codebase avoid ever assuming a timezone the API doesn't actually provide.
     const [date, time] = entry.startDateTime.split("T");
     return {
+      kind: "personalTime" satisfies ScheduleEntryKind,
       sortDate: date ?? null,
       sortTime: time ?? null,
+      tiebreaker: entry.personalTimeId,
       data: { kind: "personalTime" satisfies ScheduleEntryKind, ...entry },
     };
   });
 }
 
-/** Ascending by date then time; an entry with no date at all (unscheduled or unresolved) sorts
- * last -- the same "nothing to place it relative to a scheduled one" rule `catalog/query.ts`'s
- * `compareByStartDateTime` and `match/match.ts`'s `compareOfferings` already use, applied here to
- * a merged list spanning three different source shapes instead of one. */
-function compareMergedEntries(a: MergedScheduleEntry, b: MergedScheduleEntry): number {
-  if (a.sortDate !== b.sortDate) {
-    if (a.sortDate === null) {
-      return 1;
-    }
-    if (b.sortDate === null) {
-      return -1;
-    }
-    return a.sortDate.localeCompare(b.sortDate);
+/** Any real string sorts before `null` at this level -- used for both the date and time
+ * comparisons below, since an entry with no known date (unresolved, or the API never scheduled
+ * it) or a resolved entry with a date but a genuinely unknown time must both fall after anything
+ * with a known value at that level, not before it. Reviewer's specific finding: `a ?? ""` (which
+ * the first version of this comparator used for the time level) or a bare `<` on a possibly-null
+ * value both get this backwards or return `false` in both directions, leaving those entries in
+ * whatever order the input happened to have instead of genuinely last. */
+function compareNullableLast(a: string | null, b: string | null): number {
+  if (a === b) {
+    return 0;
   }
-  return (a.sortTime ?? "").localeCompare(b.sortTime ?? "");
+  if (a === null) {
+    return 1;
+  }
+  if (b === null) {
+    return -1;
+  }
+  return a.localeCompare(b);
+}
+
+/**
+ * A genuine total order -- date, then time (both via `compareNullableLast`, so "no known date"
+ * and "a date but no known time" both sort last at their own level rather than being confused
+ * with each other), then `kind`, then `tiebreaker` -- so two entries are never merely "tied" the
+ * way a comparator stopping at date+time would leave them. That matters specifically because
+ * `get_schedule` re-reads the schedule from the API on every call: `Array.prototype.sort` is
+ * stable, so same-time entries would otherwise keep whatever order the API happened to return
+ * them in on that particular call, and paging (which spans multiple independent calls) would see
+ * pages that overlap or skip an entry entirely if that order ever changed between calls. With a
+ * full total order, the merged list's order depends only on the data, never on input order or
+ * call-to-call API variation -- reviewer's finding, verified by a test where the fake API
+ * deliberately reorders `favorites` between two calls and paging still produces the complete,
+ * non-overlapping, correctly-ordered result regardless.
+ */
+function compareMergedEntries(a: MergedScheduleEntry, b: MergedScheduleEntry): number {
+  const byDate = compareNullableLast(a.sortDate, b.sortDate);
+  if (byDate !== 0) {
+    return byDate;
+  }
+  const byTime = compareNullableLast(a.sortTime, b.sortTime);
+  if (byTime !== 0) {
+    return byTime;
+  }
+  if (a.kind !== b.kind) {
+    return a.kind.localeCompare(b.kind);
+  }
+  return a.tiebreaker.localeCompare(b.tiebreaker);
 }
 
 interface GetScheduleResponse {

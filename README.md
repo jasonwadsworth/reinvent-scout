@@ -311,7 +311,7 @@ catalog and the attendee's own data stay local; only a bounded summary ever reac
   mid-candidate, with `truncated`/`returned`/`requested`/`omitted` and a `hint` reporting what was
   cut.
 - `get_schedule` -- reserved sessions, favorites and personal time, merged into one list sorted by
-  start date and time and paginated with `limit`/`offset` (default 50, cap 100) plus
+  start date and time and paginated with `limit`/`offset` (default 50, cap 75) plus
   `total`/`totals`/`returned`/`nextOffset` -- unlike `match_sessions`, nothing here is ever dropped
   permanently: a page too large for the budget is shortened and `nextOffset` reflects exactly what
   was returned, so paging through it always reaches everything.
