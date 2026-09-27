@@ -66,6 +66,16 @@ export interface Schedule {
   personalTime: PersonalTime[];
 }
 
+/** Mirrors only the fields this client reads from the OpenAPI `Event` schema, not the full
+ * response shape. `timezone` is NOT in the schema's `required` list -- a conforming response can
+ * omit it -- so callers must treat it as genuinely absent rather than a bug when it's missing. */
+export interface Event {
+  eventId: string;
+  /** IANA timezone the event is scheduled in, e.g. "America/Sao_Paulo". Absent when the event
+   * doesn't supply one; never assume the host machine's timezone or a hardcoded offset instead. */
+  timezone?: string;
+}
+
 export interface ListSessionsResponseContent {
   /** This page of sessions, ordered by `sessionId`. Empty when the event has no sessions. */
   items: Session[];

@@ -60,6 +60,33 @@ describe("createApiClient", () => {
     expect(headers.get("Accept")).toBe("application/json");
   });
 
+  it("fetches the event and returns it unwrapped from the envelope", async () => {
+    const fake = createFakeFetch([
+      { status: 200, json: { event: { eventId: EVENT_ID, timezone: "America/Los_Angeles" } } },
+    ]);
+    const auth = fakeAuth(["token-abc"]);
+
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: auth.getAccessToken });
+    const event = await client.getEvent(EVENT_ID);
+
+    expect(fake.calls).toHaveLength(1);
+    expect(fake.calls[0]!.url).toContain(`/v1/events/${EVENT_ID}`);
+    expect(fake.calls[0]!.url).not.toContain("/schedule");
+    expect(fake.calls[0]!.url).not.toContain("/sessions");
+    expect(event).toEqual({ eventId: EVENT_ID, timezone: "America/Los_Angeles" });
+  });
+
+  it("returns the event with timezone left genuinely absent when the API response omits it, never synthesizing one", async () => {
+    const fake = createFakeFetch([{ status: 200, json: { event: { eventId: EVENT_ID } } }]);
+    const auth = fakeAuth(["token-abc"]);
+
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: auth.getAccessToken });
+    const event = await client.getEvent(EVENT_ID);
+
+    expect(Object.hasOwn(event, "timezone")).toBe(false);
+    expect(event.timezone).toBeUndefined();
+  });
+
   it("maps 401 to AuthRequiredError telling the user to run auth login", async () => {
     const fake = createFakeFetch([{ status: 401, json: { message: "Unauthorized" } }]);
     const auth = fakeAuth(["token-1", "token-2"]);

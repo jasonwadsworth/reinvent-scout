@@ -27,6 +27,7 @@ function sampleMeta(overrides: Partial<CatalogMeta> = {}): CatalogMeta {
     totalCount: fixture.length,
     count: fixture.length,
     includedAbstracts: true,
+    timezone: null,
     ...overrides,
   };
 }
@@ -51,6 +52,9 @@ function fakeApiClient(overrides: ApiClientOverrides = {}): ApiClient {
       favorites: [],
       personalTime: [],
     })),
+    getEvent: async () => {
+      throw new Error("not implemented in this fake");
+    },
     listSessions: async () => {
       throw new Error("not implemented in this fake");
     },

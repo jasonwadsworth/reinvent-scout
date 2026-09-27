@@ -26,6 +26,7 @@ function seedCatalog(storeRoot: string): void {
         totalCount: fixture.length,
         count: fixture.length,
         includedAbstracts: true,
+        timezone: null,
       },
     },
     { storeRoot },

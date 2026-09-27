@@ -35,8 +35,19 @@ const FILE_MODE = 0o600;
  * behind a word long enough to survive the short-token filter on its own -- "don't" left "don",
  * measured at document frequency 68 in the real catalog, an idf nearly identical to "dynamodb"'s --
  * so a stale index built before this version still carries those fragments as real-looking terms
- * for `match` to cite as evidence. */
-export const CURRENT_SCHEMA_VERSION = 4;
+ * for `match` to cite as evidence.
+ *
+ * Bumped 4 -> 5: `CatalogMeta` gained `timezone`, the event's IANA timezone (or `null` when the
+ * API response omits it), fetched from `GetEvent` and stored at sync time. `get_schedule` needs
+ * it to convert each session's local wall-clock start time into a real UTC instant (`startsAt`)
+ * so sessions and personal-time blocks -- which are already UTC -- sort correctly against each
+ * other across a day boundary; without it there is no way to tell a resolved session's local time
+ * apart from one synced before this field existed, and both would otherwise read as
+ * `timezone: undefined`, which `tools.ts` cannot distinguish from "the API told us the event has
+ * no timezone" (`null`). Forcing a re-sync keeps that distinction meaningful: a catalog synced
+ * before this version has literally never asked the API for the timezone, so it must not be
+ * treated the same as one that asked and got told there isn't one. */
+export const CURRENT_SCHEMA_VERSION = 5;
 
 const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 
@@ -51,6 +62,11 @@ export interface CatalogMeta {
    * partial pull. */
   count: number;
   includedAbstracts: boolean;
+  /** The event's IANA timezone (e.g. `"America/Los_Angeles"`), fetched from `GetEvent` at sync
+   * time. `null` when the API response omitted it -- the field is not required by the API, and
+   * callers must not fall back to the host machine's timezone or a hardcoded offset when it is
+   * absent. */
+  timezone: string | null;
 }
 
 export interface CatalogStoreDeps {

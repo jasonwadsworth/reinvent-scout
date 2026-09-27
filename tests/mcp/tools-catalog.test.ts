@@ -31,6 +31,7 @@ function sampleMeta(overrides: Partial<CatalogMeta> = {}): CatalogMeta {
     totalCount: fixture.length,
     count: fixture.length,
     includedAbstracts: true,
+    timezone: null,
     ...overrides,
   };
 }
@@ -108,7 +109,9 @@ function longReasonsProfile(): unknown {
   };
 }
 
-/** A minimal ApiClient stand-in -- catalog_sync only ever calls listAllSessions. */
+/** A minimal ApiClient stand-in -- catalog_sync calls listAllSessions and getEvent (through the
+ * real syncCatalog, not a fake), so getEvent must return a value rather than throw like the truly
+ * unused methods below. No timezone: these tests don't exercise timezone handling. */
 function fakeApiClient(
   listAllSessions: (eventId: string, options?: ListAllSessionsOptions) => Promise<ListAllSessionsResult>,
 ): ApiClient {
@@ -116,6 +119,7 @@ function fakeApiClient(
     getSchedule: async () => {
       throw new Error("not implemented in this fake");
     },
+    getEvent: async (eventId) => ({ eventId }),
     listSessions: async () => {
       throw new Error("not implemented in this fake");
     },

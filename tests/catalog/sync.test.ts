@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ApiClient, ListAllSessionsOptions, ListAllSessionsResult } from "../../src/api/client.js";
-import type { Session } from "../../src/api/types.js";
+import type { Event, Session } from "../../src/api/types.js";
 import { NotRegisteredError, ServiceError } from "../../src/core/errors.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import {
@@ -22,15 +22,20 @@ const fixture: Session[] = JSON.parse(
   readFileSync(join(here, "..", "fixtures", "catalog-sample.json"), "utf8"),
 );
 
-/** A minimal ApiClient stand-in -- sync.ts only ever calls listAllSessions, so the other two
- * methods just throw if a test somehow reaches them, making a mistaken call obvious. */
+/** A minimal ApiClient stand-in -- sync.ts only ever calls listAllSessions and getEvent, so the
+ * other three methods just throw if a test somehow reaches them, making a mistaken call obvious.
+ * `getEventImpl` defaults to an event with no timezone at all -- a neutral stand-in most tests in
+ * this file don't care about -- rather than a real IANA zone, so a test that never overrides it
+ * can't accidentally pass because of a value it never asked for. */
 function fakeApiClient(
   listAllSessions: (eventId: string, options?: ListAllSessionsOptions) => Promise<ListAllSessionsResult>,
+  getEventImpl: (eventId: string) => Promise<Event> = async (eventId) => ({ eventId }),
 ): ApiClient {
   return {
     getSchedule: async () => {
       throw new Error("fakeApiClient: getSchedule is not implemented, sync.ts should never call it");
     },
+    getEvent: getEventImpl,
     listSessions: async () => {
       throw new Error("fakeApiClient: listSessions is not implemented, sync.ts should never call it");
     },
@@ -52,6 +57,7 @@ function sampleMeta(overrides: Partial<CatalogMeta> = {}): CatalogMeta {
     totalCount: fixture.length,
     count: fixture.length,
     includedAbstracts: true,
+    timezone: null,
     ...overrides,
   };
 }
@@ -77,6 +83,66 @@ describe("syncCatalog", () => {
     expect(readMeta({ storeRoot: home.path })).toEqual(
       sampleMeta({ syncedAt: readMeta({ storeRoot: home.path })!.syncedAt }),
     );
+  });
+
+  it("stores the event's IANA timezone from getEvent in meta", async () => {
+    const client = fakeApiClient(
+      async () => ({ sessions: fixture, totalCount: fixture.length }),
+      async (eventId) => ({ eventId, timezone: "America/Los_Angeles" }),
+    );
+
+    await syncCatalog({ apiClient: client, storeRoot: home.path });
+
+    expect(readMeta({ storeRoot: home.path })?.timezone).toBe("America/Los_Angeles");
+  });
+
+  it("stores a null timezone, never a host or hardcoded fallback, when getEvent's response omits it", async () => {
+    const client = fakeApiClient(
+      async () => ({ sessions: fixture, totalCount: fixture.length }),
+      async (eventId) => ({ eventId }),
+    );
+
+    await syncCatalog({ apiClient: client, storeRoot: home.path });
+
+    expect(readMeta({ storeRoot: home.path })?.timezone).toBeNull();
+  });
+
+  it("passes the same event id to getEvent as to listAllSessions", async () => {
+    let seenGetEventId: string | undefined;
+    const client = fakeApiClient(
+      async () => ({ sessions: [], totalCount: 0 }),
+      async (eventId) => {
+        seenGetEventId = eventId;
+        return { eventId };
+      },
+    );
+
+    await syncCatalog({ apiClient: client, storeRoot: home.path, eventId: "reinvent2027-summit" });
+
+    expect(seenGetEventId).toBe("reinvent2027-summit");
+  });
+
+  it("preserves the previously-stored timezone across a reindex, since a reindex never contacts the API", async () => {
+    writeCatalog(
+      {
+        raw: fixture,
+        index: [],
+        meta: sampleMeta({ schemaVersion: CURRENT_SCHEMA_VERSION - 1, timezone: "America/Los_Angeles" }),
+      },
+      { storeRoot: home.path },
+    );
+    const client = fakeApiClient(
+      async () => {
+        throw new Error("fakeApiClient: listAllSessions must not be called on a reindex");
+      },
+      async () => {
+        throw new Error("fakeApiClient: getEvent must not be called on a reindex");
+      },
+    );
+
+    await syncCatalog({ apiClient: client, storeRoot: home.path, reindex: true });
+
+    expect(readMeta({ storeRoot: home.path })?.timezone).toBe("America/Los_Angeles");
   });
 
   it("records the totalCount the API reported alongside the count it stored", async () => {

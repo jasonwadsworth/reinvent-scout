@@ -28,6 +28,7 @@ function sampleMeta(overrides: Partial<CatalogMeta> = {}): CatalogMeta {
     totalCount: fixture.length,
     count: fixture.length,
     includedAbstracts: true,
+    timezone: null,
     ...overrides,
   };
 }
@@ -61,6 +62,11 @@ function fakeApiClient(overrides: ApiClientOverrides = {}): ApiClient {
     getSchedule:
       overrides.getSchedule ??
       (async (): Promise<Schedule> => ({ reserved: [], favorites: [], personalTime: [] })),
+    // get_schedule reads the event timezone from catalog meta.json (seeded per test via
+    // seedFixtureCatalog), never by calling the API directly -- so this is never reached.
+    getEvent: async () => {
+      throw new Error("not implemented in this fake");
+    },
     listSessions: async () => {
       throw new Error("not implemented in this fake");
     },

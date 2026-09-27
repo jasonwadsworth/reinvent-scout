@@ -31,6 +31,7 @@ function sampleMeta(overrides: Partial<CatalogMeta> = {}): CatalogMeta {
     totalCount: fixture.length,
     count: fixture.length,
     includedAbstracts: true,
+    timezone: null,
     ...overrides,
   };
 }
@@ -39,6 +40,9 @@ function sampleMeta(overrides: Partial<CatalogMeta> = {}): CatalogMeta {
 function fakeApiClient(getScheduleImpl: (eventId: string) => Promise<Schedule>): ApiClient {
   return {
     getSchedule: getScheduleImpl,
+    getEvent: async () => {
+      throw new Error("fakeApiClient: getEvent is not implemented, schedule.ts should never call it");
+    },
     listSessions: async () => {
       throw new Error("fakeApiClient: listSessions is not implemented, schedule.ts should never call it");
     },

@@ -8,7 +8,7 @@ import {
   ThrottledError,
   ValidationError,
 } from "../core/errors.js";
-import type { BulkResult, ListSessionsResponseContent, Schedule, Session } from "./types.js";
+import type { BulkResult, Event, ListSessionsResponseContent, Schedule, Session } from "./types.js";
 
 export type { GetAccessTokenOptions };
 
@@ -47,6 +47,12 @@ export interface ListAllSessionsOptions {
 
 export interface ApiClient {
   getSchedule(eventId: string): Promise<Schedule>;
+  /** Fetches the event itself (name, dates, timezone, ...), not its sessions. The endpoint does
+   * not require attendee sign-in per its OpenAPI description, unlike `getSchedule`, but this
+   * client sends the bearer token unconditionally like every other call -- `catalog sync`, the
+   * only caller today, already requires a signed-in session for `listAllSessions`, so there is no
+   * scenario where this call runs without one anyway. */
+  getEvent(eventId: string): Promise<Event>;
   /** Fetches a single page of the event's session catalog. */
   listSessions(eventId: string, options?: ListSessionsOptions): Promise<ListSessionsResponseContent>;
   /** Walks every page of the event's session catalog and returns the full list. */
@@ -69,6 +75,10 @@ export interface ListAllSessionsResult {
 
 interface GetScheduleResponseContent {
   schedule: Schedule;
+}
+
+interface GetEventResponseContent {
+  event: Event;
 }
 
 interface AssociateFavoritesResponseContent {
@@ -227,6 +237,15 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
         deps,
       );
       return body.schedule;
+    },
+
+    async getEvent(eventId: string): Promise<Event> {
+      const body = await requestJson<GetEventResponseContent>(
+        "GET",
+        `/v1/events/${encodeURIComponent(eventId)}`,
+        deps,
+      );
+      return body.event;
     },
 
     listSessions,

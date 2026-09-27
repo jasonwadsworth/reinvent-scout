@@ -105,6 +105,10 @@ function tryReindexFromStoredRaw(deps: SyncCatalogDeps): SyncResult | null {
     totalCount,
     count: storedRaw.length,
     includedAbstracts: storedMeta?.includedAbstracts ?? (deps.includeAbstracts ?? true),
+    // A reindex never contacts the API, so the timezone can only come from whatever the previous
+    // sync already stored -- `null` when there was none, same as `timezone` being absent from a
+    // pre-schema-5 meta (readMeta casts blindly; `?? null` treats both the same way).
+    timezone: storedMeta?.timezone ?? null,
   };
 
   writeCatalog({ raw: storedRaw, index, meta }, deps);
@@ -143,9 +147,14 @@ export async function syncCatalog(deps: SyncCatalogDeps): Promise<SyncResult> {
     // instead is strictly more useful to the user than refusing.
   }
 
-  const { sessions, totalCount: reportedTotalCount } = await deps.apiClient.listAllSessions(eventId, {
-    includeAbstracts,
-  });
+  // Both calls are independent reads of the same event, so they run concurrently; either
+  // rejecting propagates unchanged (same as a listAllSessions-only failure did before this event
+  // fetch existed) and writeCatalog below is never reached, leaving the previous catalog
+  // untouched -- consistent with the rest of this function never starting a write on bad input.
+  const [{ sessions, totalCount: reportedTotalCount }, event] = await Promise.all([
+    deps.apiClient.listAllSessions(eventId, { includeAbstracts }),
+    deps.apiClient.getEvent(eventId),
+  ]);
   const index = sessions.map(buildIndexRecord);
   const { totalCount, totalCountMissing } = resolveTotalCount(reportedTotalCount, sessions.length);
   const meta: CatalogMeta = {
@@ -155,6 +164,12 @@ export async function syncCatalog(deps: SyncCatalogDeps): Promise<SyncResult> {
     totalCount,
     count: sessions.length,
     includedAbstracts: includeAbstracts,
+    // `event.timezone` is `undefined` when the API response omits it (not required by the
+    // schema); normalized to `null` here since `undefined` is not valid JSON -- JSON.stringify
+    // would silently drop the key, and a caller reading it back could not tell "the field is
+    // absent because this meta predates the timezone feature" from "the event genuinely has
+    // none". Never falls back to the host machine's timezone or a hardcoded zone.
+    timezone: event.timezone ?? null,
   };
 
   writeCatalog({ raw: sessions, index, meta }, deps);

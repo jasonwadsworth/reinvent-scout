@@ -26,6 +26,7 @@ function sampleMeta(overrides: Partial<CatalogMeta> = {}): CatalogMeta {
     totalCount: 0,
     count: 0,
     includedAbstracts: true,
+    timezone: null,
     ...overrides,
   };
 }

@@ -26,6 +26,10 @@ function fakeApiClient(
     getSchedule: async () => {
       throw new Error("not implemented in this fake");
     },
+    // syncCatalog (the real one, not a fake -- see the comment above) calls this for real on
+    // every full sync, so unlike the other unused methods it must return a value rather than
+    // throw. No timezone: these tests only prove the command's own wiring, not timezone handling.
+    getEvent: async (eventId) => ({ eventId }),
     listSessions: async () => {
       throw new Error("not implemented in this fake");
     },
@@ -238,6 +242,7 @@ describe("catalog search command", () => {
           totalCount: fixture.length,
           count: fixture.length,
           includedAbstracts: true,
+          timezone: null,
         },
       },
       { storeRoot: home.path },
@@ -375,6 +380,7 @@ describe("catalog show command", () => {
           totalCount: fixture.length,
           count: fixture.length,
           includedAbstracts: true,
+          timezone: null,
         },
       },
       { storeRoot: home.path },
@@ -504,6 +510,7 @@ describe("catalog show command", () => {
             totalCount: 2,
             count: 2,
             includedAbstracts: true,
+            timezone: null,
           },
         },
         { storeRoot: ambiguousHome.path },
@@ -541,6 +548,7 @@ describe("catalog search and show against an unusable index", () => {
           totalCount: fixture.length,
           count: fixture.length,
           includedAbstracts: true,
+          timezone: null,
         },
       },
       { storeRoot: home.path },

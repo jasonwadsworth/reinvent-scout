@@ -5,6 +5,7 @@ import {
   CURRENT_SCHEMA_VERSION,
   getCatalogState,
   readIndex,
+  readMeta,
   readRaw,
   writeCatalog,
   type CatalogMeta,
@@ -49,6 +50,7 @@ function sampleMeta(overrides: Partial<CatalogMeta> = {}): CatalogMeta {
     totalCount: 1,
     count: 1,
     includedAbstracts: true,
+    timezone: "America/Los_Angeles",
     ...overrides,
   };
 }
@@ -82,6 +84,24 @@ describe("catalog store", () => {
     writeCatalog({ raw: SAMPLE_RAW, index: SAMPLE_INDEX, meta: sampleMeta() }, { storeRoot: home.path });
 
     expect(readRaw({ storeRoot: home.path })).toEqual(SAMPLE_RAW);
+  });
+
+  it("round-trips the event timezone", () => {
+    writeCatalog(
+      { raw: SAMPLE_RAW, index: SAMPLE_INDEX, meta: sampleMeta({ timezone: "America/Los_Angeles" }) },
+      { storeRoot: home.path },
+    );
+
+    expect(readMeta({ storeRoot: home.path })?.timezone).toBe("America/Los_Angeles");
+  });
+
+  it("round-trips a null event timezone, for an event whose API response omits it", () => {
+    writeCatalog(
+      { raw: SAMPLE_RAW, index: SAMPLE_INDEX, meta: sampleMeta({ timezone: null }) },
+      { storeRoot: home.path },
+    );
+
+    expect(readMeta({ storeRoot: home.path })?.timezone).toBeNull();
   });
 
   it("reports the catalog as missing when nothing has been synced", () => {
