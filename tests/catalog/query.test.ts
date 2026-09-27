@@ -306,6 +306,7 @@ describe("resolveSessionRecord", () => {
     expect(result).toEqual({
       status: "found",
       record: expect.objectContaining({ abbreviation: "ANT301" }),
+      relatedAbbreviations: [],
     });
   });
 
@@ -319,6 +320,90 @@ describe("resolveSessionRecord", () => {
 
     expect(result.status).toBe("found");
     expect(result.status === "found" && result.record.sessionId).toBe("1780441461150001GGoc");
+    expect(result.status === "found" && result.relatedAbbreviations).toEqual([]);
+  });
+
+  it("resolves a base code (a repeat suffix stripped) to its earliest offering, listing the other sittings' abbreviations", () => {
+    // API303-R and API303-R1 (see tests/fixtures/README.md) are the real catalog's own repeat
+    // pair; the fixture has no bare "API303" abbreviation at all, so this can only resolve through
+    // base-code matching, not a direct abbreviation lookup.
+    writeCatalog(
+      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
+      { storeRoot: home.path },
+    );
+
+    const result = resolveSessionRecord({ storeRoot: home.path }, "API303");
+
+    expect(result.status).toBe("found");
+    // API303-R sits 2026-11-30, API303-R1 sits 2026-12-02 -- the earlier one is the "found" record.
+    expect(result.status === "found" && result.record.abbreviation).toBe("API303-R");
+    expect(result.status === "found" && result.relatedAbbreviations).toEqual(["API303-R1"]);
+  });
+
+  it("resolves a base code case-insensitively", () => {
+    writeCatalog(
+      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
+      { storeRoot: home.path },
+    );
+
+    const result = resolveSessionRecord({ storeRoot: home.path }, "api303");
+
+    expect(result.status).toBe("found");
+    expect(result.status === "found" && result.record.abbreviation).toBe("API303-R");
+  });
+
+  it("does not merge a sponsored '-S' session into a same-named base code's lookup", () => {
+    // The same trap match.ts's own grouping guards against: "-S" marks a sponsored session, not a
+    // repeat, so a lookup for "AIM214" must resolve to the real AIM214 session, never treat
+    // "AIM214-S" as one of its sittings.
+    const base: Session = {
+      sessionId: "aim214",
+      abbreviation: "AIM214",
+      title: "The age of vertical models: training to deployment on SageMaker AI",
+    };
+    const sponsored: Session = {
+      sessionId: "aim214-s",
+      abbreviation: "AIM214-S",
+      title: "Ring's Security Evolution: From Doorbell to Enterprise Platform (sponsored by Ring LLC)",
+    };
+    writeCatalog(
+      {
+        raw: [base, sponsored],
+        index: [base, sponsored].map(buildIndexRecord),
+        meta: sampleMeta({ totalCount: 2, count: 2 }),
+      },
+      { storeRoot: home.path },
+    );
+
+    const result = resolveSessionRecord({ storeRoot: home.path }, "AIM214");
+
+    expect(result.status).toBe("found");
+    expect(result.status === "found" && result.record.abbreviation).toBe("AIM214");
+    expect(result.status === "found" && result.relatedAbbreviations).toEqual([]);
+  });
+
+  it("never resolves a base-code lookup through a sponsored '-S' session, even with no bare abbreviation to shadow it", () => {
+    // Sharper than the pair above, which resolves through the direct-abbreviation path before the
+    // base-code fallback is ever consulted at all: with *only* the sponsored session present, a
+    // lookup for "AIM214" must fall through to not-found, not treat AIM214-S's own suffix as a
+    // repeat marker and resolve to it anyway.
+    const sponsored: Session = {
+      sessionId: "aim214-s",
+      abbreviation: "AIM214-S",
+      title: "Ring's Security Evolution: From Doorbell to Enterprise Platform (sponsored by Ring LLC)",
+    };
+    writeCatalog(
+      {
+        raw: [sponsored],
+        index: [sponsored].map(buildIndexRecord),
+        meta: sampleMeta({ totalCount: 1, count: 1 }),
+      },
+      { storeRoot: home.path },
+    );
+
+    const result = resolveSessionRecord({ storeRoot: home.path }, "AIM214");
+
+    expect(result).toEqual({ status: "not-found" });
   });
 
   it("reports not-found for a token that matches neither an id nor an abbreviation", () => {

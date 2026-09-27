@@ -188,28 +188,75 @@ export function queryCatalog(
 }
 
 export type SessionLookupResult =
-  | { status: "found"; record: IndexRecord }
+  | { status: "found"; record: IndexRecord; relatedAbbreviations: string[] }
   | { status: "not-found" }
   | { status: "ambiguous"; candidates: IndexRecord[] };
 
 /**
- * Resolves `catalog show`'s argument against the local index: first as an exact `sessionId`,
- * then -- case-insensitively -- as an `abbreviation`. `catalog search` prints only the
+ * The real catalog's own repeat-sitting suffix: `-R` optionally followed by digits --
+ * `ARC325-R`, `ARC325-R1`, `ARC325-R2` are the same talk sat on different days. Deliberately
+ * narrow, matching only `R`: a broader `-[A-Z]\d*$` would also match `-S`, the catalog's unrelated
+ * marker for a sponsored session, and the real catalog has at least one base code where that
+ * collision is not hypothetical -- `AIM214` (a SageMaker session) and `AIM214-S` (an unrelated
+ * sponsored talk) share a base string but are two different sessions. Exported so `match.ts`
+ * groups repeat sittings by the exact same rule this module resolves `catalog show <base code>`
+ * with, rather than each maintaining its own copy that could drift apart.
+ */
+export const REPEAT_SUFFIX_PATTERN = /-R\d*$/;
+
+/** The group identity a repeat session shares with its siblings: its `abbreviation` with any
+ * repeat suffix removed, or its `sessionId` when it has no abbreviation at all (which can't
+ * collide with a real abbreviation-derived code, and can't itself be shared by two different
+ * sessions, so it's always a safe, unique fallback group of one). */
+export function baseSessionCode(record: IndexRecord): string {
+  if (record.abbreviation === null) {
+    return record.sessionId;
+  }
+  return record.abbreviation.replace(REPEAT_SUFFIX_PATTERN, "");
+}
+
+/** Ascending by start date then start time; a record with no `startDate` at all (unscheduled)
+ * sorts last, since there's nothing yet to place it relative to a scheduled one. */
+function compareByStartDateTime(a: IndexRecord, b: IndexRecord): number {
+  if (a.startDate !== b.startDate) {
+    if (a.startDate === null) {
+      return 1;
+    }
+    if (b.startDate === null) {
+      return -1;
+    }
+    return a.startDate.localeCompare(b.startDate);
+  }
+  return (a.startTime ?? "").localeCompare(b.startTime ?? "");
+}
+
+/**
+ * Resolves `catalog show`'s argument against the local index: first as an exact `sessionId`, then
+ * -- case-insensitively -- as an `abbreviation`, then -- also case-insensitively -- as a *base*
+ * code with any repeat suffix stripped (see `baseSessionCode`). `catalog search` prints only the
  * abbreviation (real session ids are opaque, e.g. `1780441461150001GGoc`), so the abbreviation is
  * the only thing a user actually has to paste back in; resolving only by id would make the
- * documented search-then-show flow unusable for every session in the catalog.
+ * documented search-then-show flow unusable for every session in the catalog. The base-code
+ * fallback matters because `match`'s own grouped output prints a candidate's `code`, not any one
+ * sitting's abbreviation (see `match.ts`), and that code often isn't a real abbreviation on its
+ * own -- `catalog show` needs to resolve exactly what `match` just printed.
+ *
+ * When several sittings share a base code, the *earliest* by start date and time is the `record`
+ * returned, and every other sitting's abbreviation is listed in `relatedAbbreviations` -- this is
+ * not reported `"ambiguous"`, since a repeat group sharing a base code is expected, not a data
+ * integrity concern the way two unrelated sessions sharing a real abbreviation would be.
  *
  * Abbreviations are confirmed unique across the real 2,043-session catalog, but nothing in the
  * API guarantees that stays true (a future event, or a bug upstream, could repeat one), so a
- * token that matches more than one record is reported `"ambiguous"` with every candidate rather
- * than silently resolving to the first match.
+ * token that matches more than one record *by abbreviation* is reported `"ambiguous"` with every
+ * candidate rather than silently resolving to the first match.
  */
 export function resolveSessionRecord(deps: CatalogStoreDeps, token: string): SessionLookupResult {
   const index = requireCurrentIndex(deps);
 
   const bySessionId = index.find((record) => record.sessionId === token);
   if (bySessionId !== undefined) {
-    return { status: "found", record: bySessionId };
+    return { status: "found", record: bySessionId, relatedAbbreviations: [] };
   }
 
   const normalizedToken = token.toLowerCase();
@@ -217,10 +264,22 @@ export function resolveSessionRecord(deps: CatalogStoreDeps, token: string): Ses
     (record) => record.abbreviation !== null && record.abbreviation.toLowerCase() === normalizedToken,
   );
   if (byAbbreviation.length === 1) {
-    return { status: "found", record: byAbbreviation[0]! };
+    return { status: "found", record: byAbbreviation[0]!, relatedAbbreviations: [] };
   }
   if (byAbbreviation.length > 1) {
     return { status: "ambiguous", candidates: byAbbreviation };
+  }
+
+  const byBaseCode = index
+    .filter((record) => baseSessionCode(record).toLowerCase() === normalizedToken)
+    .sort(compareByStartDateTime);
+  if (byBaseCode.length > 0) {
+    const [earliest, ...rest] = byBaseCode;
+    return {
+      status: "found",
+      record: earliest!,
+      relatedAbbreviations: rest.map((record) => record.abbreviation).filter((a) => a !== null),
+    };
   }
 
   return { status: "not-found" };

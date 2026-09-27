@@ -272,14 +272,26 @@ export function registerCatalogCommands(program: Command, deps: CatalogCommandDe
           return;
         }
 
-        const { record } = result;
+        const { record, relatedAbbreviations } = result;
         const rawSession = (readRaw({ storeRoot }) ?? []).find((s) => s.sessionId === record.sessionId);
-        const output = { ...toPublicIndexRecord(record), abstract: rawSession?.abstract ?? null };
+        const output = {
+          ...toPublicIndexRecord(record),
+          abstract: rawSession?.abstract ?? null,
+          relatedAbbreviations,
+        };
 
         if (options.json) {
           print(JSON.stringify(output));
         } else {
-          print(`${output.abbreviation ?? output.sessionId}: ${output.title}\n${output.abstract ?? ""}`);
+          const lines = [`${output.abbreviation ?? output.sessionId}: ${output.title}`];
+          if (relatedAbbreviations.length > 0) {
+            // `catalog show <base code>` resolves to the earliest of several repeat sittings (see
+            // query.ts's resolveSessionRecord) -- naming the others is what lets a reader actually
+            // find them, rather than silently picking one sitting and hiding that more exist.
+            lines.push(`Also offered as: ${relatedAbbreviations.join(", ")}`);
+          }
+          lines.push(output.abstract ?? "");
+          print(lines.join("\n"));
         }
       } catch (err) {
         if (err instanceof CatalogMissingError || err instanceof CatalogUnusableError) {

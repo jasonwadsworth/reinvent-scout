@@ -1,5 +1,5 @@
 import type { CatalogStoreDeps } from "../catalog/store.js";
-import { requireCurrentIndex } from "../catalog/query.js";
+import { baseSessionCode, requireCurrentIndex } from "../catalog/query.js";
 import type { IndexRecord } from "../catalog/index-record.js";
 import type { Venue } from "../catalog/venue.js";
 import type { ResolvedProfile } from "../profile/profile.js";
@@ -129,28 +129,6 @@ interface ScoredRecord {
   record: IndexRecord;
   score: number;
   reasons: Reason[];
-}
-
-/**
- * The real catalog's own repeat-sitting suffix: `-R` optionally followed by digits --
- * `ARC325-R`, `ARC325-R1`, `ARC325-R2` are the same talk sat on different days. Deliberately
- * narrow, matching only `R`: a broader `-[A-Z]\d*$` would also match `-S`, the catalog's unrelated
- * marker for a sponsored session, and the real catalog has at least one base code where that
- * collision is not hypothetical -- `AIM214` (a SageMaker session) and `AIM214-S` (an unrelated
- * sponsored talk) share a base string but are two different sessions. Merging them would attach
- * one session's sittings to the other's title in output an agent reads as fact.
- */
-const REPEAT_SUFFIX_PATTERN = /-R\d*$/;
-
-/** The group identity a repeat session shares with its siblings: its `abbreviation` with any
- * repeat suffix removed, or its `sessionId` when it has no abbreviation at all (which can't
- * collide with a real abbreviation-derived code, and can't itself be shared by two different
- * sessions, so it's always a safe, unique fallback group of one). */
-function baseSessionCode(record: IndexRecord): string {
-  if (record.abbreviation === null) {
-    return record.sessionId;
-  }
-  return record.abbreviation.replace(REPEAT_SUFFIX_PATTERN, "");
 }
 
 /** The real catalog marks *some* (not all) repeat sittings' titles with a trailing " [REPEAT]" --
