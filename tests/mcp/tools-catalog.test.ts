@@ -372,6 +372,35 @@ describe("match_sessions tool", () => {
     expect(textOf(result)).toMatch(/catalog_sync/);
   });
 
+  it("distinguishes an unusable (outdated-schema) catalog from a missing one, through a real tool call", async () => {
+    // toToolError's CatalogMissingError/CatalogUnusableError branches were unit-testable in
+    // isolation, but a mapper being correct and a tool handler actually routing an error through
+    // it are different properties -- reviewer's ask. A schema-version mismatch is the same
+    // established trigger tests/catalog/query.test.ts's own CatalogUnusableError coverage uses.
+    writeCatalog(
+      {
+        raw: fixture,
+        index: fixture.map(buildIndexRecord),
+        meta: sampleMeta({ schemaVersion: CURRENT_SCHEMA_VERSION - 1 }),
+      },
+      { storeRoot: home.path },
+    );
+    const client = await connectedClient({ resolveStoreRoot: () => home.path });
+
+    const result = await client.callTool({
+      name: "match_sessions",
+      arguments: { profile: lambdaProfile() },
+    });
+
+    expect(result.isError).toBe(true);
+    // "local rebuild" (CatalogUnusableError's own annotation) is the distinguishing phrase from
+    // "catalog_sync and a signed-in session" (CatalogMissingError's), so this also pins that the
+    // two error types stay textually distinguishable through the real tool call, not just in the
+    // mapper's own source.
+    expect(textOf(result)).toMatch(/local rebuild/i);
+    expect(textOf(result)).not.toMatch(/signed-in session/i);
+  });
+
   it("keeps the response under thirty kilobytes and reports untruncated when everything fits", async () => {
     seedFixtureCatalog(home.path);
     const client = await connectedClient({ resolveStoreRoot: () => home.path });
