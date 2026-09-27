@@ -264,13 +264,84 @@ function toLeanCandidate(candidate: ReturnType<typeof matchSessions>[number]): R
   };
 }
 
+/**
+ * Lead decision, following the size finding above: the 30 KB response budget is a hard guarantee
+ * at every limit, including the cap -- a profile naming many services (each producing its own
+ * "service" reason) can make even a modest candidate count exceed it, not just a large `limit`.
+ * Enforced mechanically here rather than by trimming `toLeanCandidate`'s shape further, so
+ * `reasons` and `offerings` -- the actual explainability -- stay intact on every candidate that
+ * *is* included; a candidate is either whole or left out entirely, never partially serialized to
+ * make room.
+ */
+const RESPONSE_BYTE_BUDGET = 30 * 1024;
+const TRUNCATION_HINT = "Ask again with a smaller limit or a narrower lens to see the rest.";
+
+/** Mirrors `textResult`'s own envelope shape exactly, so the byte count measured here is the same
+ * one a caller (and tests/mcp/tools-catalog.test.ts's size assertions) actually measures on the
+ * real `CallToolResult` -- not just the inner JSON text, which undercounts the protocol wrapper. */
+function envelopeBytes(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(textResult(value)), "utf8");
+}
+
+interface MatchSessionsResponse {
+  candidates: Record<string, unknown>[];
+  truncated: boolean;
+  returned: number;
+  requested: number;
+  hint?: string;
+}
+
+function buildMatchResponse(
+  leanCandidates: Record<string, unknown>[],
+  requested: number,
+): MatchSessionsResponse {
+  const everything: MatchSessionsResponse = {
+    candidates: leanCandidates,
+    truncated: false,
+    returned: leanCandidates.length,
+    requested,
+  };
+  if (envelopeBytes(everything) <= RESPONSE_BYTE_BUDGET) {
+    return everything;
+  }
+
+  // Not everything fits -- greedily include candidates in ranked order, each checked as a whole
+  // object against the budget (using the same truncated:true/hint shape the final response will
+  // have, so the check is honest about the overhead that shape itself costs), stopping before the
+  // first one that would push the response over.
+  const included: Record<string, unknown>[] = [];
+  for (const candidate of leanCandidates) {
+    const trial: MatchSessionsResponse = {
+      candidates: [...included, candidate],
+      truncated: true,
+      returned: included.length + 1,
+      requested,
+      hint: TRUNCATION_HINT,
+    };
+    if (envelopeBytes(trial) > RESPONSE_BYTE_BUDGET) {
+      break;
+    }
+    included.push(candidate);
+  }
+
+  return {
+    candidates: included,
+    truncated: true,
+    returned: included.length,
+    requested,
+    hint: TRUNCATION_HINT,
+  };
+}
+
 function registerMatchSessionsTool(server: McpServer, deps: McpToolDeps): void {
   server.registerTool(
     "match_sessions",
     {
       description:
         "Rank the local catalog against a resolved tech profile and return the top candidates, " +
-        "each with its score, reasons and every scheduled offering. Never includes abstracts.",
+        "each with its score, reasons and every scheduled offering. Never includes abstracts. " +
+        "A response that would exceed the size budget is truncated (see the truncated/returned/" +
+        "requested/hint fields) rather than ever partially serializing a candidate.",
       inputSchema: MatchSessionsInputSchema,
     },
     async ({ profile, lens, limit }) => {
@@ -282,7 +353,8 @@ function registerMatchSessionsTool(server: McpServer, deps: McpToolDeps): void {
           ...(lens === undefined ? {} : { lens: lens as Lens }),
           limit: cappedLimit,
         });
-        return textResult(candidates.map(toLeanCandidate));
+        const response = buildMatchResponse(candidates.map(toLeanCandidate), cappedLimit);
+        return textResult(response);
       } catch (err) {
         return toToolError(err);
       }

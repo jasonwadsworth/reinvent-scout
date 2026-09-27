@@ -70,6 +70,40 @@ function lambdaProfile(): unknown {
   };
 }
 
+/** A pool of service names long enough, and numerous enough per session, to make every
+ * candidate's own `reasons` array (one "service" reason per matched service -- see
+ * match/score.ts) genuinely large -- deliberately synthetic, not because any real catalog session
+ * looks like this, but because the 61-session fixture (and even a session with a realistic
+ * handful of services) cannot produce a response anywhere near the 30 KB budget on its own; the
+ * lead's truncation decision needs a scenario that actually crosses it to test at all. */
+const LONG_SERVICE_NAMES = Array.from(
+  { length: 20 },
+  (_, i) => `Example Synthetic Cloud Service Number ${String(i).padStart(2, "0")} For Response Size Testing`,
+);
+
+function longReasonsSessions(n: number): Session[] {
+  return Array.from({ length: n }, (_, i) => ({
+    sessionId: `long-${i}`,
+    abbreviation: `LNG${String(i).padStart(3, "0")}`,
+    title:
+      `A deliberately verbose synthetic session title used only to inflate response size for ` +
+      `the truncation test, entry number ${i}`,
+    services: LONG_SERVICE_NAMES,
+  }));
+}
+
+function longReasonsProfile(): unknown {
+  return {
+    schemaVersion: 1,
+    repos: [{ root: ".", languages: [] }],
+    services: LONG_SERVICE_NAMES.map((name, i) => ({
+      name,
+      evidence: [{ repo: ".", file: `service-${i}.ts` }],
+    })),
+    patterns: [],
+  };
+}
+
 /** A minimal ApiClient stand-in -- catalog_sync only ever calls listAllSessions. */
 function fakeApiClient(
   listAllSessions: (eventId: string, options?: ListAllSessionsOptions) => Promise<ListAllSessionsResult>,
@@ -246,17 +280,15 @@ describe("match_sessions tool", () => {
     });
 
     expect(result.isError).not.toBe(true);
-    const candidates = JSON.parse(textOf(result)) as Array<{
-      code: string;
-      title: string;
-      score: number;
-      reasons: unknown[];
-      offerings: unknown[];
-    }>;
-    expect(candidates.length).toBeGreaterThan(0);
-    expect(candidates[0]!.score).toBeGreaterThan(0);
-    expect(candidates[0]!.reasons.length).toBeGreaterThan(0);
-    expect(candidates[0]!.offerings.length).toBeGreaterThan(0);
+    const parsed = JSON.parse(textOf(result)) as {
+      candidates: Array<{ code: string; title: string; score: number; reasons: unknown[]; offerings: unknown[] }>;
+      truncated: boolean;
+    };
+    expect(parsed.candidates.length).toBeGreaterThan(0);
+    expect(parsed.candidates[0]!.score).toBeGreaterThan(0);
+    expect(parsed.candidates[0]!.reasons.length).toBeGreaterThan(0);
+    expect(parsed.candidates[0]!.offerings.length).toBeGreaterThan(0);
+    expect(parsed.truncated).toBe(false);
   });
 
   it("uses a lean candidate shape, dropping fields offerings already carries", async () => {
@@ -271,9 +303,9 @@ describe("match_sessions tool", () => {
       arguments: { profile: lambdaProfile() },
     });
 
-    const candidates = JSON.parse(textOf(result)) as Array<Record<string, unknown>>;
-    expect(candidates.length).toBeGreaterThan(0);
-    expect(Object.keys(candidates[0]!).sort()).toEqual(
+    const parsed = JSON.parse(textOf(result)) as { candidates: Array<Record<string, unknown>> };
+    expect(parsed.candidates.length).toBeGreaterThan(0);
+    expect(Object.keys(parsed.candidates[0]!).sort()).toEqual(
       ["code", "levelBand", "offerings", "reasons", "score", "sessionId", "title"].sort(),
     );
   });
@@ -287,8 +319,9 @@ describe("match_sessions tool", () => {
       arguments: { profile: lambdaProfile() },
     });
 
-    const candidates = JSON.parse(textOf(result)) as unknown[];
-    expect(candidates).toHaveLength(25);
+    const parsed = JSON.parse(textOf(result)) as { candidates: unknown[]; requested: number };
+    expect(parsed.candidates).toHaveLength(25);
+    expect(parsed.requested).toBe(25);
   });
 
   it("caps match_sessions at fifty even when a larger limit is requested", async () => {
@@ -300,8 +333,9 @@ describe("match_sessions tool", () => {
       arguments: { profile: lambdaProfile(), limit: 1000 },
     });
 
-    const candidates = JSON.parse(textOf(result)) as unknown[];
-    expect(candidates).toHaveLength(50);
+    const parsed = JSON.parse(textOf(result)) as { candidates: unknown[]; requested: number };
+    expect(parsed.candidates).toHaveLength(50);
+    expect(parsed.requested).toBe(50);
   });
 
   it("never includes abstracts in match_sessions output", async () => {
@@ -331,7 +365,7 @@ describe("match_sessions tool", () => {
     expect(textOf(result)).toMatch(/catalog_sync/);
   });
 
-  it("keeps every tool response under thirty kilobytes for the fixture catalog", async () => {
+  it("keeps the response under thirty kilobytes and reports untruncated when everything fits", async () => {
     seedFixtureCatalog(home.path);
     const client = await connectedClient({ resolveStoreRoot: () => home.path });
 
@@ -341,5 +375,52 @@ describe("match_sessions tool", () => {
     });
 
     expect(Buffer.byteLength(JSON.stringify(result), "utf8")).toBeLessThan(30 * 1024);
+    const parsed = JSON.parse(textOf(result)) as {
+      candidates: unknown[];
+      truncated: boolean;
+      returned: number;
+      hint?: string;
+    };
+    expect(parsed.truncated).toBe(false);
+    expect(parsed.returned).toBe(parsed.candidates.length);
+    expect(parsed.hint).toBeUndefined();
+  });
+
+  it("truncates and says so, staying under the size budget, when candidates would otherwise exceed it", async () => {
+    // Lead's decision: the 30 KB budget is a hard guarantee at every limit, including the cap --
+    // enforced mechanically at serialization time rather than by trimming the candidate shape
+    // further, so reasons and offerings (the actual explainability) stay intact per candidate.
+    seedCatalog(home.path, longReasonsSessions(60));
+    const client = await connectedClient({ resolveStoreRoot: () => home.path });
+
+    const result = await client.callTool({
+      name: "match_sessions",
+      arguments: { profile: longReasonsProfile(), limit: 50 },
+    });
+
+    expect(result.isError).not.toBe(true);
+    const envelopeBytes = Buffer.byteLength(JSON.stringify(result), "utf8");
+    expect(envelopeBytes).toBeLessThan(30 * 1024);
+
+    const parsed = JSON.parse(textOf(result)) as {
+      candidates: Array<Record<string, unknown>>;
+      truncated: boolean;
+      returned: number;
+      requested: number;
+      hint: string;
+    };
+    expect(parsed.truncated).toBe(true);
+    expect(parsed.requested).toBe(50);
+    // Fewer than requested -- the scenario is deliberately built so 50 genuinely would not fit.
+    expect(parsed.returned).toBeLessThan(50);
+    expect(parsed.candidates).toHaveLength(parsed.returned);
+    expect(typeof parsed.hint).toBe("string");
+    expect(parsed.hint.length).toBeGreaterThan(0);
+    // Every included candidate is whole -- reasons and offerings are never partially serialized
+    // to make room; a candidate is either fully in or fully left out.
+    for (const candidate of parsed.candidates) {
+      expect(Array.isArray(candidate.reasons)).toBe(true);
+      expect((candidate.reasons as unknown[]).length).toBeGreaterThan(0);
+    }
   });
 });
