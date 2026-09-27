@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -238,6 +238,94 @@ describe("syncCatalog", () => {
     // from the previous sync, since a reindex never talks to the API.
     expect(meta?.totalCount).toBe(fixture.length);
     expect(meta?.syncedAt).toBe(1_700_000_000_000);
+  });
+
+  it("reindex fetches the event (no session pull) when the stored meta has no timezone key at all, and stores the real value", async () => {
+    // A genuinely pre-schema-5 meta.json has no `timezone` key on disk at all -- writeCatalog's
+    // own CatalogMeta type can't produce that, so it's written directly, then the key deleted.
+    // This is the ordinary upgrade path the reviewer flagged: `status` reports schema-version
+    // staleness for exactly this catalog, and --reindex is the documented remedy for it.
+    writeCatalog(
+      { raw: fixture, index: [], meta: sampleMeta({ schemaVersion: CURRENT_SCHEMA_VERSION - 1 }) },
+      { storeRoot: home.path },
+    );
+    const metaPath = join(home.path, "catalog", "meta.json");
+    const preBumpMeta = JSON.parse(readFileSync(metaPath, "utf8")) as Record<string, unknown>;
+    delete preBumpMeta.timezone;
+    writeFileSync(metaPath, JSON.stringify(preBumpMeta), "utf8");
+
+    let listAllSessionsCalls = 0;
+    let getEventCalls = 0;
+    const client = fakeApiClient(
+      async () => {
+        listAllSessionsCalls++;
+        return { sessions: [], totalCount: 0 };
+      },
+      async (eventId) => {
+        getEventCalls++;
+        return { eventId, timezone: "America/Los_Angeles" };
+      },
+    );
+
+    const result = await syncCatalog({ apiClient: client, storeRoot: home.path, reindex: true });
+
+    expect(listAllSessionsCalls).toBe(0);
+    expect(getEventCalls).toBe(1);
+    expect(result.reindexed).toBe(true);
+    const meta = readMeta({ storeRoot: home.path });
+    expect(meta?.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(meta?.timezone).toBe("America/Los_Angeles");
+  });
+
+  it("reindex never calls getEvent when the stored meta already has a timezone key, even when its value is null", async () => {
+    writeCatalog(
+      {
+        raw: fixture,
+        index: [],
+        meta: sampleMeta({ schemaVersion: CURRENT_SCHEMA_VERSION - 1, timezone: null }),
+      },
+      { storeRoot: home.path },
+    );
+
+    let getEventCalls = 0;
+    const client = fakeApiClient(
+      async () => ({ sessions: [], totalCount: 0 }),
+      async (eventId) => {
+        getEventCalls++;
+        return { eventId, timezone: "America/Los_Angeles" };
+      },
+    );
+
+    const result = await syncCatalog({ apiClient: client, storeRoot: home.path, reindex: true });
+
+    expect(getEventCalls).toBe(0);
+    expect(result.reindexed).toBe(true);
+    expect(readMeta({ storeRoot: home.path })?.timezone).toBeNull();
+  });
+
+  it("aborts a reindex when getEvent fails for a pre-timezone catalog, leaving meta byte-identical", async () => {
+    writeCatalog(
+      { raw: fixture, index: [], meta: sampleMeta({ schemaVersion: CURRENT_SCHEMA_VERSION - 1 }) },
+      { storeRoot: home.path },
+    );
+    const metaPath = join(home.path, "catalog", "meta.json");
+    const preBumpMeta = JSON.parse(readFileSync(metaPath, "utf8")) as Record<string, unknown>;
+    delete preBumpMeta.timezone;
+    const preBumpMetaJson = JSON.stringify(preBumpMeta);
+    writeFileSync(metaPath, preBumpMetaJson, "utf8");
+
+    const client = fakeApiClient(
+      async () => ({ sessions: [], totalCount: 0 }),
+      async () => {
+        throw new ServiceError("simulated GetEvent 500");
+      },
+    );
+
+    await expect(
+      syncCatalog({ apiClient: client, storeRoot: home.path, reindex: true }),
+    ).rejects.toBeInstanceOf(ServiceError);
+
+    expect(readFileSync(metaPath, "utf8")).toBe(preBumpMetaJson);
   });
 
   it("falls back to a full sync when --reindex is given but nothing has ever been synced", async () => {

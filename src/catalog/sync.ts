@@ -4,6 +4,7 @@ import {
   CURRENT_SCHEMA_VERSION,
   readMeta,
   readRaw,
+  readTimezoneAvailability,
   writeCatalog,
   type CatalogMeta,
   type CatalogStoreDeps,
@@ -87,28 +88,43 @@ function toSyncResult(meta: CatalogMeta, reindexed: boolean, totalCountMissing: 
 }
 
 /** Rebuilds the index from whatever raw sessions are already on disk, preserving every other
- * fact in the previous meta (nothing here talks to the API, so nothing else changed). Returns
- * null when there is no raw data to reindex from. */
-function tryReindexFromStoredRaw(deps: SyncCatalogDeps): SyncResult | null {
+ * fact in the previous meta -- except the timezone when the stored meta predates schema 5
+ * entirely (no `timezone` key on disk at all, distinguished via `readTimezoneAvailability`'s
+ * presence check, not `storedMeta?.timezone ?? null`, which cannot tell that state apart from an
+ * explicit `null`). That case fetches the event for real (a cheap, unauthenticated-shaped call,
+ * no session pull) so a reindex genuinely satisfies schema 5 instead of silently stamping a
+ * *present* `null` that would erase the very distinction the presence check exists to preserve --
+ * `catalog sync --reindex` is the documented upgrade path for exactly this catalog (a stale
+ * schema version), so it must actually populate the field, not merely claim to. When the key is
+ * already present (whether `null` or a real value), `getEvent` is never called -- that value is
+ * already authoritative, and a reindex's whole point is not contacting the API. A `getEvent`
+ * failure aborts the reindex with the stored catalog completely untouched, same as any other
+ * aborted sync. Returns `null` when there is no raw data to reindex from. */
+async function tryReindexFromStoredRaw(deps: SyncCatalogDeps): Promise<SyncResult | null> {
   const storedRaw = readRaw(deps);
   if (storedRaw === null) {
     return null;
   }
 
   const storedMeta = readMeta(deps);
+  const eventId = storedMeta?.eventId ?? deps.eventId ?? DEFAULT_EVENT_ID;
+  const timezoneAvailability = readTimezoneAvailability(deps);
+  const timezone =
+    timezoneAvailability?.status === "unavailable" &&
+    timezoneAvailability.reason === "syncedBeforeTimezoneSupport"
+      ? (await deps.apiClient.getEvent(eventId)).timezone ?? null
+      : (storedMeta?.timezone ?? null);
+
   const index = storedRaw.map(buildIndexRecord);
   const { totalCount, totalCountMissing } = resolveTotalCount(storedMeta?.totalCount, storedRaw.length);
   const meta: CatalogMeta = {
     schemaVersion: CURRENT_SCHEMA_VERSION,
-    eventId: storedMeta?.eventId ?? deps.eventId ?? DEFAULT_EVENT_ID,
+    eventId,
     syncedAt: storedMeta?.syncedAt ?? (deps.now ?? Date.now)(),
     totalCount,
     count: storedRaw.length,
     includedAbstracts: storedMeta?.includedAbstracts ?? (deps.includeAbstracts ?? true),
-    // A reindex never contacts the API, so the timezone can only come from whatever the previous
-    // sync already stored -- `null` when there was none, same as `timezone` being absent from a
-    // pre-schema-5 meta (readMeta casts blindly; `?? null` treats both the same way).
-    timezone: storedMeta?.timezone ?? null,
+    timezone,
   };
 
   writeCatalog({ raw: storedRaw, index, meta }, deps);
@@ -137,7 +153,7 @@ export async function syncCatalog(deps: SyncCatalogDeps): Promise<SyncResult> {
   const now = deps.now ?? Date.now;
 
   if (deps.reindex) {
-    const reindexResult = tryReindexFromStoredRaw({ ...deps, eventId, includeAbstracts });
+    const reindexResult = await tryReindexFromStoredRaw({ ...deps, eventId, includeAbstracts });
     if (reindexResult !== null) {
       return reindexResult;
     }
