@@ -184,16 +184,46 @@ export type TimezoneAvailability =
        * `catalog_sync` will very likely resolve it. Callers must give these two different advice;
        * conflating them tells a user "nothing can be done" in a case a sync would fix. */
       reason: "omittedByApi" | "syncedBeforeTimezoneSupport";
+    }
+  | {
+      /** The stored `timezone` is present and non-null, but isn't a string `Intl.DateTimeFormat`
+       * accepts as a timezone -- the wrong JSON type, or a string that just isn't a recognized
+       * IANA identifier. `sync.ts` stores whatever `GetEvent` returns verbatim, with no
+       * validation on write (so `meta.json` stays a faithful record of the API's actual
+       * response), so this can genuinely happen if the API ever reports something Node's bundled
+       * ICU data doesn't recognize. `value` is the raw stored value, for a caller to report back
+       * (a caller must never hand it to `Intl` or any date/time API directly -- that's exactly
+       * what already broke before this state existed). */
+      status: "unrecognized";
+      value: unknown;
     };
+
+/** Whether `Intl.DateTimeFormat` accepts `value` as a `timeZone` -- the only reliable way to
+ * validate an IANA identifier without hand-maintaining the tz database. Never throws itself:
+ * `Intl.DateTimeFormat` throws `RangeError` for a value it can't resolve to a known zone, which
+ * this reports as `false` rather than letting propagate. */
+function isRecognizedTimeZone(value: unknown): value is string {
+  try {
+    new Intl.DateTimeFormat(undefined, { timeZone: value as string });
+    return typeof value === "string" && value.trim() !== "";
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Reads the event's timezone availability, distinguishing an explicit `null` (the API's response
- * omitted `timezone`) from a catalog synced before this field existed at all. `readMeta`'s cast is
- * not runtime-validated, so a pre-schema-5 `meta.json` -- which genuinely has no `timezone` key on
- * disk, despite `CatalogMeta`'s type promising `string | null` -- reads back as `undefined` there,
- * indistinguishable from an explicit `null` under `??`. This reads the raw stored object and
- * checks the key's presence with `Object.hasOwn` instead of branching on falsiness, which is the
- * only way to tell the two apart. Returns `null` when nothing has been synced (same as `readMeta`).
+ * omitted `timezone`) from a catalog synced before this field existed at all, and from a stored
+ * value that isn't actually usable as a timezone. `readMeta`'s cast is not runtime-validated, so a
+ * pre-schema-5 `meta.json` -- which genuinely has no `timezone` key on disk, despite
+ * `CatalogMeta`'s type promising `string | null` -- reads back as `undefined` there,
+ * indistinguishable from an explicit `null` under `??`, and any other stored JSON value reads back
+ * exactly as stored, despite the type promising only `string | null`. This reads the raw stored
+ * object and checks the key's presence with `Object.hasOwn` instead of branching on falsiness (the
+ * only way to tell a missing key apart from an explicit `null`), and validates a present value
+ * against `Intl` before ever calling it `known` (the only way to keep a caller from handing an
+ * unusable value straight to a date/time API and failing the whole tool over it). Returns `null`
+ * when nothing has been synced (same as `readMeta`).
  */
 export function readTimezoneAvailability(deps: CatalogStoreDeps): TimezoneAvailability | null {
   const raw = readJsonFileOrNull<Record<string, unknown>>(metaPath(deps.storeRoot));
@@ -207,7 +237,10 @@ export function readTimezoneAvailability(deps: CatalogStoreDeps): TimezoneAvaila
   if (timezone === null) {
     return { status: "unavailable", reason: "omittedByApi" };
   }
-  return { status: "known", timezone: timezone as string };
+  if (!isRecognizedTimeZone(timezone)) {
+    return { status: "unrecognized", value: timezone };
+  }
+  return { status: "known", timezone };
 }
 
 export type CatalogState =

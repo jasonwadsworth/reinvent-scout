@@ -670,6 +670,57 @@ describe("get_schedule tool", () => {
     expect(explicitNullWarnings[0]).not.toBe(preBumpWarnings[0]);
   });
 
+  it.each([
+    ["a string Intl does not recognize as an IANA zone", "Not/AZone"],
+    ["a number", 42],
+    ["an object", {}],
+    ["an empty string", ""],
+  ])(
+    "degrades to a null startsAt and an unrecognized-timezone warning, never isError, when the stored timezone is %s",
+    async (_label, badValue) => {
+      // sync.ts stores whatever GetEvent returns verbatim, with no validation on write, so a bad
+      // value reaching meta.json is a real possibility this reader must survive rather than crash
+      // on -- Intl.DateTimeFormat throws for every one of these, which must never propagate as an
+      // isError result: a signed-in attendee's own schedule is still worth returning.
+      const sessions = [
+        {
+          sessionId: "bad-tz-session",
+          abbreviation: "BTZ1",
+          title: "Bad timezone session",
+          sessionTime: { date: "2026-12-01", time: "09:00", length: "30" },
+        },
+      ];
+      seedCatalog(home.path, sessions, { timezone: "America/Los_Angeles" });
+      const metaPath = join(home.path, "catalog", "meta.json");
+      const meta = JSON.parse(readFileSync(metaPath, "utf8")) as Record<string, unknown>;
+      meta.timezone = badValue;
+      writeFileSync(metaPath, JSON.stringify(meta), "utf8");
+
+      const client = await connectedClient(home.path, {
+        getSchedule: async () => ({
+          reserved: [],
+          favorites: [sessions[0]!.sessionId],
+          personalTime: [],
+        }),
+      });
+
+      const result = await client.callTool({ name: "get_schedule", arguments: {} });
+
+      expect(result.isError).not.toBe(true);
+      const parsed = JSON.parse(textOf(result)) as {
+        entries: Array<{ startsAt: string | null; endsAt?: string | null }>;
+        warnings?: string[];
+      };
+      expect(parsed.entries[0]!.startsAt).toBeNull();
+      expect(parsed.entries[0]!.endsAt).toBeNull();
+      expect(parsed.warnings).toBeDefined();
+      expect(parsed.warnings!.some((w) => /not a recognized IANA timezone/i.test(w))).toBe(true);
+      // Names the stored (bad) value, and the remedy is "sync again", never the unfixable wording
+      // used for an explicit API-reported omission.
+      expect(parsed.warnings!.join(" ")).toContain("catalog_sync");
+    },
+  );
+
   it("does not include a warnings entry when the event timezone is known", async () => {
     seedCatalog(home.path, [], { timezone: "America/Los_Angeles" });
     const client = await connectedClient(home.path, {

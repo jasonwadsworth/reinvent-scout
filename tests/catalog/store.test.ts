@@ -152,6 +152,44 @@ describe("catalog store", () => {
     it("returns null when nothing has been synced", () => {
       expect(readTimezoneAvailability({ storeRoot: home.path })).toBeNull();
     });
+
+    /** Writes a meta.json with an arbitrary raw `timezone` value, bypassing CatalogMeta's own
+     * type entirely -- the value is external (whatever GetEvent returned, stored verbatim, per
+     * the lead's decision that the sync path never validates), so this simulates it reaching disk
+     * unvalidated, exactly as sync.ts's own `event.timezone ?? null` write path would let through. */
+    function writeMetaWithRawTimezone(storeRoot: string, timezone: unknown): void {
+      writeCatalog(
+        { raw: SAMPLE_RAW, index: SAMPLE_INDEX, meta: sampleMeta({ timezone: "America/Los_Angeles" }) },
+        { storeRoot },
+      );
+      const metaPath = join(storeRoot, "catalog", "meta.json");
+      const meta = JSON.parse(readFileSync(metaPath, "utf8")) as Record<string, unknown>;
+      meta.timezone = timezone;
+      writeFileSync(metaPath, JSON.stringify(meta), "utf8");
+    }
+
+    it.each([
+      ["a string Intl does not recognize as an IANA zone", "Not/AZone"],
+      ["a number", 42],
+      ["an object", {}],
+      ["an empty string", ""],
+    ])("reports unrecognized, carrying the raw value, for %s", (_label, badValue) => {
+      writeMetaWithRawTimezone(home.path, badValue);
+
+      expect(readTimezoneAvailability({ storeRoot: home.path })).toEqual({
+        status: "unrecognized",
+        value: badValue,
+      });
+    });
+
+    it("still reports known for a valid but less common IANA zone, not just the common fixture value", () => {
+      writeMetaWithRawTimezone(home.path, "Pacific/Kiritimati");
+
+      expect(readTimezoneAvailability({ storeRoot: home.path })).toEqual({
+        status: "known",
+        timezone: "Pacific/Kiritimati",
+      });
+    });
   });
 
   it("reports the catalog as missing when nothing has been synced", () => {

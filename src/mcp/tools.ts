@@ -653,6 +653,20 @@ function timezoneWarnings(availability: TimezoneAvailability | null): string[] {
   if (availability === null || availability.status === "known") {
     return [];
   }
+  if (availability.status === "unrecognized") {
+    // sync.ts stores whatever GetEvent returns verbatim, with no validation on write, so this can
+    // genuinely happen if the API ever reports something Node's bundled ICU data doesn't
+    // recognize. Names the actual stored value (JSON.stringify handles every JSON-safe type, not
+    // just strings -- the value reaching here can be any of them) and, unlike an explicit
+    // omission, this IS potentially fixable: the API's own answer may simply have been wrong at
+    // sync time and could be corrected by the time of the next sync.
+    return [
+      `The stored event timezone (${JSON.stringify(availability.value)}) is not a recognized ` +
+        "IANA timezone, so session start times could not be converted to a common startsAt -- " +
+        "session and personal-time ordering across kinds is unreliable. Run `catalog_sync` (or " +
+        "`reinvent-scout catalog sync`) again; the API's own answer may have changed.",
+    ];
+  }
   if (availability.reason === "syncedBeforeTimezoneSupport") {
     return [
       "This catalog was synced before timezone support was added, so session start times " +
