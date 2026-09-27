@@ -39,6 +39,17 @@ function seedFixtureCatalog(storeRoot: string): void {
   );
 }
 
+function seedCatalog(storeRoot: string, sessions: Session[]): void {
+  writeCatalog(
+    {
+      raw: sessions,
+      index: sessions.map(buildIndexRecord),
+      meta: sampleMeta({ totalCount: sessions.length, count: sessions.length }),
+    },
+    { storeRoot },
+  );
+}
+
 interface ApiClientOverrides {
   getSchedule?: ApiClient["getSchedule"];
   associateFavorites?: ApiClient["associateFavorites"];
@@ -132,7 +143,7 @@ describe("get_schedule tool", () => {
     home.cleanup();
   });
 
-  it("returns the resolved schedule from get_schedule", async () => {
+  it("returns the resolved schedule from get_schedule, merged and tagged by kind", async () => {
     seedFixtureCatalog(home.path);
     const client = await connectedClient(home.path, {
       getSchedule: async () => ({ reserved: [ANT301.sessionId], favorites: [], personalTime: [] }),
@@ -142,11 +153,149 @@ describe("get_schedule tool", () => {
 
     expect(result.isError).not.toBe(true);
     const parsed = JSON.parse(textOf(result)) as {
-      reserved: Array<{ sessionId: string; resolved: boolean; title?: string }>;
+      entries: Array<{ kind: string; sessionId: string; resolved: boolean; title?: string }>;
+      total: number;
+      totals: { reserved: number; favorites: number; personalTime: number };
+      returned: number;
+      offset: number;
+      nextOffset?: number;
     };
-    expect(parsed.reserved).toHaveLength(1);
-    expect(parsed.reserved[0]!.resolved).toBe(true);
-    expect(parsed.reserved[0]!.title).toBe(ANT301.title);
+    expect(parsed.entries).toHaveLength(1);
+    expect(parsed.entries[0]!.kind).toBe("reserved");
+    expect(parsed.entries[0]!.resolved).toBe(true);
+    expect(parsed.entries[0]!.title).toBe(ANT301.title);
+    expect(parsed.total).toBe(1);
+    expect(parsed.totals).toEqual({ reserved: 1, favorites: 0, personalTime: 0 });
+    expect(parsed.returned).toBe(1);
+    expect(parsed.offset).toBe(0);
+    expect(parsed.nextOffset).toBeUndefined();
+  });
+
+  it("paginates with limit and offset, reporting nextOffset only when more entries remain", async () => {
+    // Five sessions with distinct, known start times so the boundary math (and later, the
+    // ordering test) has an unambiguous expected sequence to check against.
+    const sessions = Array.from({ length: 5 }, (_, i) => ({
+      sessionId: `page-${i}`,
+      abbreviation: `PG${i}`,
+      title: `Pagination session ${i}`,
+      sessionTime: { date: "2026-12-01", time: `${String(9 + i).padStart(2, "0")}:00`, length: "30" },
+    }));
+    seedCatalog(home.path, sessions);
+    const client = await connectedClient(home.path, {
+      getSchedule: async () => ({
+        reserved: [],
+        favorites: sessions.map((s) => s.sessionId),
+        personalTime: [],
+      }),
+    });
+
+    async function page(limit: number, offset: number) {
+      const result = await client.callTool({ name: "get_schedule", arguments: { limit, offset } });
+      return JSON.parse(textOf(result)) as {
+        entries: Array<{ sessionId: string }>;
+        returned: number;
+        offset: number;
+        nextOffset?: number;
+        total: number;
+      };
+    }
+
+    const first = await page(2, 0);
+    expect(first.entries.map((e) => e.sessionId)).toEqual(["page-0", "page-1"]);
+    expect(first.returned).toBe(2);
+    expect(first.nextOffset).toBe(2);
+
+    const second = await page(2, 2);
+    expect(second.entries.map((e) => e.sessionId)).toEqual(["page-2", "page-3"]);
+    expect(second.nextOffset).toBe(4);
+
+    // The boundary: exactly one entry left, so this is the last page -- nextOffset must be
+    // absent, not present-and-equal-to-total, since "absent" is the documented end-of-pages
+    // signal a caller loops on.
+    const third = await page(2, 4);
+    expect(third.entries.map((e) => e.sessionId)).toEqual(["page-4"]);
+    expect(third.returned).toBe(1);
+    expect(third.nextOffset).toBeUndefined();
+    expect(third.total).toBe(5);
+  });
+
+  it("keeps the response under thirty kilobytes at a hundred favorites, shortening the page and advancing nextOffset to match", async () => {
+    // Reviewer's finding: get_schedule had no budget at all and measured ~30.8 KB at a hundred
+    // favorites against the real catalog -- not a stress case, since favorite_sessions accepts
+    // fifty per call (two ordinary calls reach it). Reproduced with realistic-length synthetic
+    // entries (long title, real-length venue/room strings) rather than tiny ids, since short
+    // synthetic entries could not expose this any more than the small fixture could.
+    const sessions = Array.from({ length: 100 }, (_, i) => ({
+      sessionId: `sched-${i}`,
+      abbreviation: `SCH${String(i).padStart(3, "0")}`,
+      title:
+        `A deliberately long and realistic-sounding synthetic session title for schedule ` +
+        `pagination size testing, entry number ${i}`,
+      venue: "MGM Grand",
+      room: "Level 3 | Chairman's 363 | Content Hub | White Theater",
+      sessionTime: { date: "2026-12-01", time: `${String(9 + (i % 8)).padStart(2, "0")}:00`, length: "60" },
+    }));
+    seedCatalog(home.path, sessions);
+    const client = await connectedClient(home.path, {
+      getSchedule: async () => ({
+        reserved: [],
+        favorites: sessions.map((s) => s.sessionId),
+        personalTime: [],
+      }),
+    });
+
+    const result = await client.callTool({ name: "get_schedule", arguments: { limit: 100 } });
+
+    expect(result.isError).not.toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(result), "utf8")).toBeLessThan(30 * 1024);
+    const parsed = JSON.parse(textOf(result)) as {
+      entries: unknown[];
+      total: number;
+      returned: number;
+      offset: number;
+      nextOffset?: number;
+    };
+    expect(parsed.total).toBe(100);
+    // Fewer than the requested 100 -- the scenario is built so a full page of 100 genuinely does
+    // not fit, exercising the shortening path rather than assuming it works.
+    expect(parsed.returned).toBeLessThan(100);
+    expect(parsed.entries).toHaveLength(parsed.returned);
+    // nextOffset must reflect what was actually returned (so the next call resumes exactly where
+    // this one stopped), not the full requested limit -- the bug a naive "advance by limit
+    // regardless of what fit" implementation would produce.
+    expect(parsed.nextOffset).toBe(parsed.offset + parsed.returned);
+  });
+
+  it("returns entries in stable sorted order across pages", async () => {
+    const sessions = Array.from({ length: 6 }, (_, i) => ({
+      sessionId: `order-${i}`,
+      abbreviation: `ORD${i}`,
+      title: `Ordering session ${i}`,
+      sessionTime: { date: "2026-12-01", time: `${String(9 + i).padStart(2, "0")}:00`, length: "30" },
+    }));
+    seedCatalog(home.path, sessions);
+    const client = await connectedClient(home.path, {
+      getSchedule: async () => ({
+        reserved: [],
+        // Shuffled input order -- the tool must sort by start time regardless of the order the
+        // API happened to list favorites in.
+        favorites: [sessions[3]!.sessionId, sessions[0]!.sessionId, sessions[5]!.sessionId, sessions[1]!.sessionId, sessions[4]!.sessionId, sessions[2]!.sessionId],
+        personalTime: [],
+      }),
+    });
+
+    async function page(limit: number, offset: number): Promise<string[]> {
+      const result = await client.callTool({ name: "get_schedule", arguments: { limit, offset } });
+      const parsed = JSON.parse(textOf(result)) as { entries: Array<{ sessionId: string }> };
+      return parsed.entries.map((e) => e.sessionId);
+    }
+
+    const firstPage = await page(3, 0);
+    const secondPage = await page(3, 3);
+
+    expect([...firstPage, ...secondPage]).toEqual(
+      sessions.map((s) => s.sessionId), // sessions is already in chronological order by construction
+    );
   });
 
   it("returns isError with the not-registered explanation on a 403", async () => {

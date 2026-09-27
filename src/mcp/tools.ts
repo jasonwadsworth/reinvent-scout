@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { createApiClient, type ApiClient } from "../api/client.js";
+import type { PersonalTime } from "../api/types.js";
 import { createTokenProviderAdapter } from "../auth/provider-adapter.js";
 import { readTokenStore } from "../auth/token-store.js";
 import { toPublicIndexRecord } from "../catalog/index-record.js";
@@ -20,7 +21,7 @@ import { matchSessions } from "../match/match.js";
 import type { Lens } from "../match/lens.js";
 import { resolveProfile } from "../profile/profile.js";
 import { favoriteSessions, unfavoriteSession } from "../schedule/favorites.js";
-import { getSchedule } from "../schedule/schedule.js";
+import { getSchedule, type ScheduleSession } from "../schedule/schedule.js";
 
 function defaultBuildApiClient(storeRoot: string): ApiClient {
   return createApiClient({ getAccessToken: createTokenProviderAdapter({ storeRoot }) });
@@ -386,9 +387,142 @@ function registerMatchSessionsTool(server: McpServer, deps: McpToolDeps): void {
   );
 }
 
+/**
+ * Lead decision, following the reviewer's finding: `get_schedule` had no size budget at all, and
+ * measured over 30 KB at a hundred favorites against the real catalog -- not a stress case, since
+ * `favorite_sessions` accepts fifty per call (two ordinary calls reach it) and attendees also
+ * favorite sessions through the re:Invent web UI, outside this tool's control entirely. Unlike
+ * `match_sessions`' ranked candidates, an attendee's own schedule has no "least relevant" entry to
+ * drop silently -- an agent that never sees a real commitment could tell the user the wrong plan
+ * -- so nothing may become permanently unreachable: `limit`/`offset` page through every entry
+ * (default 50, cap 100, silently clamped like `match_sessions`' own `limit` rather than rejected),
+ * and the response is *also* enforced at the byte budget the same way `match_sessions` is, so a
+ * page of unusually long entries still can't exceed it -- when it would, the page itself is
+ * shortened and `nextOffset` reflects what was actually returned, not the full requested window,
+ * so the next call picks up from exactly where this one left off rather than skipping entries.
+ * The CLI's `schedule show` is deliberately left unpaginated -- human terminal output, not agent
+ * context, has no such budget.
+ */
+const DEFAULT_GET_SCHEDULE_LIMIT = 50;
+const MAX_GET_SCHEDULE_LIMIT = 100;
+
 const GetScheduleInputSchema = z.strictObject({
   event: z.string().min(1).optional(),
+  /** Silently capped at `MAX_GET_SCHEDULE_LIMIT`, never rejected -- see `MatchSessionsInputSchema`'s
+   * own `limit` for the same reasoning. */
+  limit: z.number().int().positive().optional(),
+  offset: z.number().int().nonnegative().optional(),
 });
+
+type ScheduleEntryKind = "reserved" | "favorite" | "personalTime";
+
+interface MergedScheduleEntry {
+  /** `null` for an unscheduled or unresolved entry, which sorts last -- personal time is never in
+   * this state, since `startDateTime` is a required field on it. */
+  sortDate: string | null;
+  sortTime: string | null;
+  data: Record<string, unknown>;
+}
+
+function toMergedSessionEntries(
+  sessions: ScheduleSession[],
+  kind: "reserved" | "favorite",
+): MergedScheduleEntry[] {
+  return sessions.map((session) => ({
+    sortDate: session.resolved ? session.startDate : null,
+    sortTime: session.resolved ? session.startTime : null,
+    data: { kind, ...session },
+  }));
+}
+
+function toMergedPersonalTimeEntries(personalTime: PersonalTime[]): MergedScheduleEntry[] {
+  return personalTime.map((entry) => {
+    // "YYYY-MM-DDTHH:MM:SS" -- splitting on the literal separator this field's own format
+    // guarantees, not parsing it as a Date, matches how index-record.ts and the rest of this
+    // codebase avoid ever assuming a timezone the API doesn't actually provide.
+    const [date, time] = entry.startDateTime.split("T");
+    return {
+      sortDate: date ?? null,
+      sortTime: time ?? null,
+      data: { kind: "personalTime" satisfies ScheduleEntryKind, ...entry },
+    };
+  });
+}
+
+/** Ascending by date then time; an entry with no date at all (unscheduled or unresolved) sorts
+ * last -- the same "nothing to place it relative to a scheduled one" rule `catalog/query.ts`'s
+ * `compareByStartDateTime` and `match/match.ts`'s `compareOfferings` already use, applied here to
+ * a merged list spanning three different source shapes instead of one. */
+function compareMergedEntries(a: MergedScheduleEntry, b: MergedScheduleEntry): number {
+  if (a.sortDate !== b.sortDate) {
+    if (a.sortDate === null) {
+      return 1;
+    }
+    if (b.sortDate === null) {
+      return -1;
+    }
+    return a.sortDate.localeCompare(b.sortDate);
+  }
+  return (a.sortTime ?? "").localeCompare(b.sortTime ?? "");
+}
+
+interface GetScheduleResponse {
+  entries: Record<string, unknown>[];
+  total: number;
+  totals: { reserved: number; favorites: number; personalTime: number };
+  returned: number;
+  offset: number;
+  nextOffset?: number;
+  warning?: string;
+}
+
+function buildScheduleResponseBody(
+  entries: Record<string, unknown>[],
+  offset: number,
+  total: number,
+  totals: GetScheduleResponse["totals"],
+  warning: string | null,
+): GetScheduleResponse {
+  const nextOffset = offset + entries.length;
+  return {
+    entries,
+    total,
+    totals,
+    returned: entries.length,
+    offset,
+    ...(nextOffset < total ? { nextOffset } : {}),
+    ...(warning === null ? {} : { warning }),
+  };
+}
+
+/** Enforces the byte budget on top of the already-windowed page: a page fitting the requested
+ * `limit` can still exceed the budget if its entries are unusually long (long titles, rooms,
+ * personal-time descriptions), so this checks the whole prospective response, in order, exactly
+ * like `buildMatchResponse` does for candidates -- an entry is either whole or left out, never
+ * partially serialized. Shortening here (rather than at the `.slice()` call site) is what keeps
+ * `nextOffset` honest: it always reflects what was actually returned. */
+function buildScheduleResponse(
+  windowed: Record<string, unknown>[],
+  offset: number,
+  total: number,
+  totals: GetScheduleResponse["totals"],
+  warning: string | null,
+): GetScheduleResponse {
+  const everything = buildScheduleResponseBody(windowed, offset, total, totals, warning);
+  if (envelopeBytes(everything) <= RESPONSE_BYTE_BUDGET) {
+    return everything;
+  }
+
+  const included: Record<string, unknown>[] = [];
+  for (const entry of windowed) {
+    const trial = buildScheduleResponseBody([...included, entry], offset, total, totals, warning);
+    if (envelopeBytes(trial) > RESPONSE_BYTE_BUDGET) {
+      break;
+    }
+    included.push(entry);
+  }
+  return buildScheduleResponseBody(included, offset, total, totals, warning);
+}
 
 function registerGetScheduleTool(server: McpServer, deps: McpToolDeps): void {
   const buildApiClient = deps.buildApiClient ?? defaultBuildApiClient;
@@ -397,20 +531,43 @@ function registerGetScheduleTool(server: McpServer, deps: McpToolDeps): void {
     "get_schedule",
     {
       description:
-        "Read the attendee's schedule (reserved sessions, favorites, personal time), resolved " +
-        "against the local catalog into title, day, time, venue and room where possible.",
+        "Read the attendee's schedule -- reserved sessions, favorites and personal time, merged " +
+        "into one list sorted by start date and time (unscheduled last) and paginated with " +
+        "limit/offset (default 50, cap 100) so a large schedule never exceeds the response size " +
+        "budget. Page through with the returned nextOffset until it's absent.",
       inputSchema: GetScheduleInputSchema,
     },
-    async ({ event }) => {
+    async ({ event, limit, offset }) => {
       const storeRoot = deps.resolveStoreRoot();
       const apiClient = buildApiClient(storeRoot);
       try {
-        const result = await getSchedule({
+        const schedule = await getSchedule({
           apiClient,
           storeRoot,
           ...(event === undefined ? {} : { eventId: event }),
         });
-        return textResult(result);
+
+        const merged = [
+          ...toMergedSessionEntries(schedule.reserved, "reserved"),
+          ...toMergedSessionEntries(schedule.favorites, "favorite"),
+          ...toMergedPersonalTimeEntries(schedule.personalTime),
+        ].sort(compareMergedEntries);
+
+        const totals: GetScheduleResponse["totals"] = {
+          reserved: schedule.reserved.length,
+          favorites: schedule.favorites.length,
+          personalTime: schedule.personalTime.length,
+        };
+        const total = merged.length;
+
+        const resolvedOffset = offset ?? 0;
+        const resolvedLimit = Math.min(limit ?? DEFAULT_GET_SCHEDULE_LIMIT, MAX_GET_SCHEDULE_LIMIT);
+        const windowed = merged
+          .slice(resolvedOffset, resolvedOffset + resolvedLimit)
+          .map((entry) => entry.data);
+
+        const response = buildScheduleResponse(windowed, resolvedOffset, total, totals, schedule.warning);
+        return textResult(response);
       } catch (err) {
         return toToolError(err);
       }
