@@ -77,8 +77,11 @@ const KEY_NORMALIZATION_OVERRIDES: ReadonlyMap<string, string> = new Map([
  * `resolveServiceName` in `profile.ts` handles the remaining `<service>_<resource>` split by
  * longest-prefix match against the catalog once this prefix is gone, rather than this function
  * trying to guess where a resource-type suffix begins.
+ *
+ * Module-private: nothing outside this file needs the list itself, only `stripKnownAffix`'s
+ * behavior.
  */
-export const AFFIXES_TO_STRIP: readonly string[] = [
+const AFFIXES_TO_STRIP: readonly string[] = [
   "@aws-sdk/client-",
   "aws-sdk-",
   "aws-cdk-lib/aws-",

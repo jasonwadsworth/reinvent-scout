@@ -1,4 +1,4 @@
-import { SERVICE_KEY_OVERRIDES } from "../profile/service-keys.js";
+import { SERVICE_KEY_OVERRIDES } from "./service-keys.js";
 
 /** Matches a name ending in a single trailing parenthetical, e.g. `"Amazon Elastic Container
  * Service (Amazon ECS)"` -> base `"Amazon Elastic Container Service"`, parenthetical `"Amazon
@@ -88,7 +88,7 @@ function candidateNamesFor(canonicalName: string): string[] {
  * Builds a lookup from a detector-facing service key (however it's spelled) to the catalog's own
  * display name, derived from the actual set of service names the synced catalog carries -- not a
  * hard-coded list, so a renamed or newly introduced AWS service is picked up on the next sync
- * with no code change here. The small committed override table in `src/profile/service-keys.ts`
+ * with no code change here. The small committed override table in `src/catalog/service-keys.ts`
  * fills in the handful of keys the derivation genuinely cannot reach (an abbreviation with no
  * textual relationship to the display name, like `sfn`); an override is only applied when its
  * target canonical name actually exists in `catalogServiceNames`, so it can never claim a service

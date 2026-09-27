@@ -3,7 +3,7 @@ import { buildServiceAliasIndex, type ServiceAliasIndex } from "../../src/catalo
 import { parseProfile, resolveProfile } from "../../src/profile/profile.js";
 
 /** A synthetic but realistically-named catalog -- confirmed elsewhere in this codebase (see
- * catalog/service-aliases.test.ts and profile/service-keys.test.ts) that these exact spellings
+ * catalog/service-aliases.test.ts and catalog/service-keys.test.ts) that these exact spellings
  * derive and override correctly against the real 170-name catalog. */
 const CATALOG_SERVICE_NAMES = [
   "Amazon DynamoDB",

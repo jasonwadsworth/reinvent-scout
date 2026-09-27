@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeServiceKey } from "../../src/profile/service-keys.js";
+import { normalizeServiceKey } from "../../src/catalog/service-keys.js";
 
 describe("normalizeServiceKey", () => {
   it("lowercases and strips punctuation", () => {

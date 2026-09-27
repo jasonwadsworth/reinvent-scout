@@ -275,6 +275,21 @@ describe("match command", () => {
     ).toBe(false);
   });
 
+  it("prefixes each schema error with its field path, mirroring profile validate's own fix", async () => {
+    seedFixtureCatalog(home.path);
+    writeFileSync(profileFilePath, JSON.stringify({ schemaVersion: 1 }), "utf8");
+    const h = harness(home.path);
+
+    await h.run(["match", "--profile", profileFilePath]);
+
+    const output = h.printed.join("\n");
+    expect(output).toContain("repos:");
+    expect(output).toContain("services:");
+    expect(output).toContain("patterns:");
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
+  });
+
   it("tells the user to run catalog sync when no catalog is present", async () => {
     const h = harness(home.path);
 

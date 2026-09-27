@@ -132,6 +132,22 @@ describe("profile validate command", () => {
     process.exitCode = 0;
   });
 
+  it("validate prefixes each schema error with its field path, so three different missing fields don't print as three identical lines", async () => {
+    const missingEverything = { schemaVersion: 1 };
+    const path = join(home.path, "missing.json");
+    writeFileSync(path, JSON.stringify(missingEverything), "utf8");
+    const h = harness(home.path);
+
+    await h.run(["profile", "validate", path]);
+
+    const output = h.printed.join("\n");
+    expect(output).toContain("repos:");
+    expect(output).toContain("services:");
+    expect(output).toContain("patterns:");
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
+  });
+
   it("validate reports a clear error, not a stack trace, for a file that isn't valid JSON", async () => {
     const path = join(home.path, "broken.json");
     writeFileSync(path, "{ not valid json", "utf8");

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { ServiceAliasIndex } from "../catalog/service-aliases.js";
-import { normalizeServiceKey, stripKnownAffix } from "./service-keys.js";
+import { normalizeServiceKey, stripKnownAffix } from "../catalog/service-keys.js";
 
 /** The only schema version this build understands. Bumped whenever the shape changes
  * incompatibly; an agent (or a hand-written profile) targeting an older or newer version is

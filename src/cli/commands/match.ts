@@ -15,6 +15,7 @@ import type { Lens } from "../../match/lens.js";
 import { matchSessions, type MatchCandidate } from "../../match/match.js";
 import { resolveProfile } from "../../profile/profile.js";
 import { readProfileFile } from "../../profile/store.js";
+import { formatZodError } from "../zod-errors.js";
 
 export interface MatchCommandDeps {
   /** Defaults to the real store root (`ensureStoreRoot`). Inject a fixed path in tests so
@@ -36,13 +37,6 @@ const DEFAULT_MATCH_LIMIT = 30;
 const MAX_MATCH_LIMIT = 100;
 const NO_CANDIDATES_MESSAGE = "No matching sessions found.";
 const KNOWN_LENSES: readonly Lens[] = ["explain", "all"];
-
-/** Every issue's own message, one per line -- mirrors `profile.ts`'s `formatZodError` so an
- * invalid profile passed to `match` surfaces the exact same, entry-naming errors `profile
- * validate` would have shown for the same file. */
-function formatZodError(err: z.ZodError): string {
-  return err.issues.map((issue) => issue.message).join("\n");
-}
 
 function parseMatchLimit(raw: string): number {
   const limit = Number(raw);

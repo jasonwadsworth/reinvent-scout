@@ -192,7 +192,7 @@ notes, interests, and intents). Each candidate carries a `score` and a list of `
 (or an agent) can see exactly why a session was suggested, not just that it was:
 
 ```
-API318 -- Deep dive into event-driven architectures with Lambda and Step Functions [Breakout session] (score: 100)
+API318 -- Deep dive into event-driven architectures with Lambda and Step Functions -- [Breakout session] -- (score: 100)
   - Uses AWS Lambda, which this session covers.
   - Uses AWS Step Functions, which this session covers.
 ```
@@ -203,7 +203,7 @@ asking for thirty candidates gets thirty genuinely different talks rather than t
 occupying several slots. Every sitting still shows up, under `offerings`:
 
 ```
-ARC325 -- Serverless at 1M RPS: Lambda, DynamoDB & SQS Scaling Lessons [Breakout session] (score: 127.37)
+ARC325 -- Serverless at 1M RPS: Lambda, DynamoDB & SQS Scaling Lessons -- [Breakout session] -- (score: 127.37)
   - Uses AWS Lambda, which this session covers.
   - Uses Amazon DynamoDB, which this session covers.
   Offerings:

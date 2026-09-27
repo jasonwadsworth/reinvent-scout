@@ -11,6 +11,7 @@ import {
 import { ensureStoreRoot } from "../../core/paths.js";
 import { parseProfile, resolveProfile, type ResolvedProfile } from "../../profile/profile.js";
 import { readProfileFile, saveProfileFile } from "../../profile/store.js";
+import { formatZodError } from "../zod-errors.js";
 
 export interface ProfileCommandDeps {
   /** Defaults to the real store root (`ensureStoreRoot`). Inject a fixed path in tests so
@@ -27,14 +28,6 @@ interface ValidateCommandOptions {
 
 interface SaveCommandOptions {
   from: string;
-}
-
-/** Every issue's own message, one per line -- this is what makes the schema's `superRefine`
- * messages (e.g. `Service "dynamodb" has no evidence`) actually reach the user, rather than a
- * flattened generic "invalid profile" that would throw away the one thing the schema was
- * designed to say. */
-function formatZodError(err: z.ZodError): string {
-  return err.issues.map((issue) => issue.message).join("\n");
 }
 
 function formatHumanSummary(resolved: ResolvedProfile): string {

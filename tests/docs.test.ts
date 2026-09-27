@@ -85,3 +85,23 @@ describe("README example profile", () => {
     expect(resolved.unresolvedServices).toEqual([]);
   });
 });
+
+describe("README match output examples", () => {
+  it("uses the exact ' -- ' separators the real formatter produces", () => {
+    // pr-reviewer finding: the README's own match examples were missing two of formatCandidateLine's
+    // three " -- " separators (code -- title -- [type] -- (score: N)) -- a reader who copies the
+    // shape rather than the literal text would build a parser for output the CLI doesn't actually
+    // produce. Cheap enough to check directly: every line ending in "(score: N)" must have the type
+    // bracket and the score both joined by " -- ", not simply appended.
+    const readme = readFileSync(readmePath, "utf8");
+    const scoreLines = readme.split("\n").filter((line) => /\(score: [\d.]+\)$/.test(line));
+
+    // A sanity check on the test itself: if the README's match examples are ever reworded away
+    // from a "(score: N)"-ending line, this must fail loudly rather than pass with nothing to check.
+    expect(scoreLines.length).toBeGreaterThan(0);
+
+    for (const line of scoreLines) {
+      expect(line).toMatch(/^\S.* -- .* -- \[.+\] -- \(score: [\d.]+\)$/);
+    }
+  });
+});
