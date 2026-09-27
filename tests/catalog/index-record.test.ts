@@ -98,14 +98,19 @@ describe("buildIndexRecord", () => {
     expect(Object.hasOwn(counts, "constructor")).toBe(true);
   });
 
-  it("strips a possessive 's before tokenizing, so \"agent's\" becomes \"agent\" alone, not a stray \"s\" fragment", () => {
+  it("tokenizes a possessive like \"agent's\" to \"agent\" alone, not a stray \"s\" fragment -- a regression guard on the short-token filter, not a dedicated possessive step", () => {
+    // The apostrophe isn't a word character, so word-splitting alone already breaks "agent's" into
+    // "agent" and "s"; the short-token filter (MIN_TERM_LENGTH, see there) is what drops that
+    // orphaned one-character "s". There is no separate possessive-stripping mechanism -- an earlier
+    // version had one, but sabotage testing proved it fully redundant with this filter, so it was
+    // removed as dead code.
     const counts = tokenize("the agent's plan");
 
     expect(counts.agent).toBe(1);
     expect(Object.hasOwn(counts, "s")).toBe(false);
   });
 
-  it("also strips a curly-quote possessive suffix", () => {
+  it("handles a curly-quote possessive the same way, via the same short-token filter", () => {
     const counts = tokenize("the agent’s plan");
 
     expect(counts.agent).toBe(1);

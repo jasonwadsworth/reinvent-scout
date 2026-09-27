@@ -15,15 +15,19 @@ const STOPWORDS: ReadonlySet<string> = new Set([
 
 export type TermFrequencies = Record<string, number>;
 
-/** Strips a trailing possessive `'s` or `'s` (curly quote) before word-splitting -- without this,
- * "agent's" splits into "agent" and a bare "s" fragment, since the apostrophe itself isn't a word
- * character and stops the match right before the "s". The suffix is removed, not just ignored, so
- * no stray one-letter term is produced at all. */
-const POSSESSIVE_SUFFIX_PATTERN = /['’]s\b/gi;
-
 /** A token shorter than this is dropped unless it's a real acronym (see `isAllCapsAcronym`) --
  * below this length, a plain word carries too little signal on its own ("no", "for" -- already a
- * stopword, "aim") and is far more likely to be a fragment or filler than a meaningful term. */
+ * stopword, "aim") and is far more likely to be a fragment or filler than a meaningful term.
+ *
+ * This is also what handles a possessive like "agent's": the apostrophe isn't a word character, so
+ * word-splitting alone already turns it into "agent" and a bare "s" fragment with nothing extra
+ * needed -- and that orphaned "s" is always exactly one character, so this filter drops it
+ * unconditionally regardless of the base word. An earlier version also stripped `'s`/`'s` from the
+ * text before splitting, as a second, explicit mechanism for the same fragment; sabotage testing
+ * showed the two were fully redundant (disabling either alone, with the other still active, left
+ * every test green), so the dedicated stripping step was removed as dead code. This comment is the
+ * load-bearing part now: if `MIN_TERM_LENGTH` is ever lowered below 2, the possessive fragment
+ * problem comes back, silently, with no dedicated mechanism left to catch it. */
 const MIN_TERM_LENGTH = 3;
 
 /** True when `word`, exactly as it appeared in the original (not lowercased) text, is written
@@ -38,9 +42,9 @@ function isAllCapsAcronym(word: string): boolean {
 }
 
 /** Exported so `catalog/query.ts` tokenizes a search query with the exact same rules used to
- * build the index it searches -- a query term that doesn't survive the same possessive-stripping,
- * lowercasing, word-splitting, short-fragment filtering and stopword removal as the indexed text
- * would never be able to match it. */
+ * build the index it searches -- a query term that doesn't survive the same lowercasing,
+ * word-splitting, short-fragment filtering and stopword removal as the indexed text would never be
+ * able to match it. */
 export function tokenize(text: string): TermFrequencies {
   // A plain object literal inherits Object.prototype, so a tokenized word that collides with one
   // of its members (`constructor`, `hasOwnProperty`, `toString`, ...) reads back a function
@@ -48,10 +52,9 @@ export function tokenize(text: string): TermFrequencies {
   // Object.create(null) has no prototype at all, so every lookup below reflects only what this
   // function itself has written.
   const counts: TermFrequencies = Object.create(null) as TermFrequencies;
-  const withoutPossessives = text.replace(POSSESSIVE_SUFFIX_PATTERN, "");
   // Matched against the original casing (not yet lowercased) so isAllCapsAcronym can tell a real
   // acronym from an ordinary short word that only happens to share its letters.
-  const words = withoutPossessives.match(/[A-Za-z0-9]+/g) ?? [];
+  const words = text.match(/[A-Za-z0-9]+/g) ?? [];
   for (const word of words) {
     const lower = word.toLowerCase();
     if (STOPWORDS.has(lower)) {
