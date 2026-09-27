@@ -541,6 +541,121 @@ describe("matchSessions", () => {
 
     expect(maxAmazonOnlyScore).toBeLessThan(minStructuredScore);
   });
+
+  it("deduplicates a service named under multiple spellings, yielding exactly one service reason", () => {
+    // The documented use case, not an abuse: an agent that finds DynamoDB in package.json and
+    // again in a source file naturally writes two entries with different evidence. All three
+    // entries here resolve to the same catalog name via different spellings, matching the
+    // README's own example ("dynamodb", "Amazon DynamoDB", "@aws-sdk/client-dynamodb").
+    writeCatalog(
+      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
+      { storeRoot: home.path },
+    );
+
+    const profile = resolvedProfile({
+      services: [
+        { name: "dynamodb", evidence: [{ repo: ".", file: "a" }], catalogName: "Amazon DynamoDB" },
+        {
+          name: "Amazon DynamoDB",
+          evidence: [{ repo: ".", file: "b" }],
+          catalogName: "Amazon DynamoDB",
+        },
+        {
+          name: "@aws-sdk/client-dynamodb",
+          evidence: [{ repo: ".", file: "c" }],
+          catalogName: "Amazon DynamoDB",
+        },
+      ],
+    });
+
+    const results = matchSessions(profile, { storeRoot: home.path });
+
+    const dat414 = results.find((r) => r.code === "DAT414");
+    expect(dat414).toBeDefined();
+    const serviceReasons = dat414!.reasons.filter((r) => r.kind === "service");
+    expect(serviceReasons).toHaveLength(1);
+  });
+
+  it("keeps the exact-match service reason at its single weight regardless of how many spellings named it", () => {
+    // Not an exact-total-score equality claim: textParts is deliberately left un-deduplicated (see
+    // buildMatchQuery's own doc comment) since three distinct spellings really do carry slightly
+    // different free text ("Amazon DynamoDB" contributes "amazon" too, "@aws-sdk/client-dynamodb"
+    // contributes "aws"/"sdk"/"client"), and BM25 saturation absorbs that without eliminating it.
+    // What must never happen is the specific bug the reviewer found: the 50-point *service* reason
+    // scaling with the spelling count (157.33 for three spellings of a session that scores 57.33
+    // for one). A small, saturation-explained difference in the *text* contribution is fine; a
+    // near-tripled total is not.
+    writeCatalog(
+      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
+      { storeRoot: home.path },
+    );
+
+    const singleSpelling = resolvedProfile({
+      services: [
+        { name: "dynamodb", evidence: [{ repo: ".", file: "a" }], catalogName: "Amazon DynamoDB" },
+      ],
+    });
+    const tripleSpelling = resolvedProfile({
+      services: [
+        { name: "dynamodb", evidence: [{ repo: ".", file: "a" }], catalogName: "Amazon DynamoDB" },
+        {
+          name: "Amazon DynamoDB",
+          evidence: [{ repo: ".", file: "b" }],
+          catalogName: "Amazon DynamoDB",
+        },
+        {
+          name: "@aws-sdk/client-dynamodb",
+          evidence: [{ repo: ".", file: "c" }],
+          catalogName: "Amazon DynamoDB",
+        },
+      ],
+    });
+
+    const singleResults = matchSessions(singleSpelling, { storeRoot: home.path });
+    const tripleResults = matchSessions(tripleSpelling, { storeRoot: home.path });
+
+    const singleDat414 = singleResults.find((r) => r.code === "DAT414");
+    const tripleDat414 = tripleResults.find((r) => r.code === "DAT414");
+    expect(singleDat414).toBeDefined();
+    expect(tripleDat414).toBeDefined();
+
+    const singleServiceReason = singleDat414!.reasons.find((r) => r.kind === "service");
+    const tripleServiceReason = tripleDat414!.reasons.find((r) => r.kind === "service");
+    expect(tripleServiceReason?.weight).toBe(singleServiceReason?.weight);
+
+    // The whole point: nowhere near the ~150 a per-spelling multiplication would produce.
+    expect(tripleDat414!.score).toBeLessThan(singleDat414!.score * 1.5);
+  });
+
+  it("deduplicates a pattern named under different casing, yielding exactly one topic reason", () => {
+    const session: Session = {
+      sessionId: "s1",
+      abbreviation: "SVS100",
+      title: "Serverless deep dive",
+      topics: ["Serverless"],
+    };
+    writeCatalog(
+      {
+        raw: [session],
+        index: [session].map(buildIndexRecord),
+        meta: sampleMeta({ totalCount: 1, count: 1 }),
+      },
+      { storeRoot: home.path },
+    );
+
+    const profile = resolvedProfile({
+      patterns: [
+        { name: "serverless", evidence: [{ repo: ".", file: "a" }] },
+        { name: "Serverless", evidence: [{ repo: ".", file: "b" }] },
+      ],
+    });
+
+    const results = matchSessions(profile, { storeRoot: home.path });
+
+    expect(results).toHaveLength(1);
+    const topicReasons = results[0]!.reasons.filter((r) => r.kind === "topic");
+    expect(topicReasons).toHaveLength(1);
+  });
 });
 
 describe("matchSessions grouping repeat sessions by base code", () => {

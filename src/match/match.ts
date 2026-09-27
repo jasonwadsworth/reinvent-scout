@@ -45,28 +45,51 @@ export interface MatchCandidate {
   offerings: MatchOffering[];
 }
 
+/** Appends `value` to `list` only the first time its case-insensitive form is seen -- used for
+ * `topics`/`areasOfInterest` below, which `scoreSession` already compares case-insensitively
+ * against a session's own fields. Keeps the first spelling encountered, since there's no reason to
+ * prefer a later one. */
+function pushDeduped(list: string[], seen: Set<string>, value: string): void {
+  const key = value.toLowerCase();
+  if (!seen.has(key)) {
+    seen.add(key);
+    list.push(value);
+  }
+}
+
 /**
  * Builds the scorer's query from a resolved, agent-authored profile:
  *
- * - `services`: every service that resolved to a catalog display name (an unresolved one has
- *   nothing to exact-match against a session's own `services`, so it's simply absent here --
- *   it still contributes through `text` below via its own `name`).
- * - `topics`: each pattern's `name` -- a pattern like "serverless" or "event-driven" is the
- *   closest agent-authored equivalent to one of the catalog's own topic labels.
- * - `areasOfInterest`: the profile's own `interests`, unchanged.
+ * - `services`: every *distinct* catalog display name a service resolved to (an unresolved one has
+ *   nothing to exact-match against a session's own `services`, so it's simply absent here -- it
+ *   still contributes through `text` below via its own `name`). Deduplicated: resolution is
+ *   many-to-one by design (a short key, a display name, and an SDK package name can all resolve to
+ *   the same service), and the README's own documented use case -- an agent citing the same
+ *   service found in two different files under two different spellings -- would otherwise emit the
+ *   same 50-point exact-match reason once per spelling, multiplying the strongest signal this
+ *   scorer has by however many ways the profile happened to name it.
+ * - `topics`: each *distinct* pattern `name`, deduplicated case-insensitively (`scoreSession`
+ *   already compares topics case-insensitively, so "serverless" and "Serverless" are the same
+ *   topic to it and must not each produce their own reason) -- a pattern like "serverless" or
+ *   "event-driven" is the closest agent-authored equivalent to one of the catalog's own topic
+ *   labels.
+ * - `areasOfInterest`: the profile's own `interests`, deduplicated the same case-insensitive way.
  * - `text`: every piece of free-text prose the profile carries -- each service's own `name` (not
- *   just the ones that resolved) and `usage`, each pattern's `name` and `note`, `interests`, and
- *   every intent's `text` -- joined into one string for BM25-lite scoring. A service's own `name`
- *   is included here even when it also produced an exact match above, since a text match on the
- *   same term costs nothing extra to compute and helps sessions that mention the service without
- *   it being in their formal `services` list.
+ *   just the ones that resolved, and not deduplicated: term-frequency saturation already caps how
+ *   much repeating the same word can matter) and `usage`, each pattern's `name` and `note`,
+ *   `interests`, and every intent's `text` -- joined into one string for BM25-lite scoring. A
+ *   service's own `name` is included here even when it also produced an exact match above, since a
+ *   text match on the same term costs nothing extra to compute and helps sessions that mention the
+ *   service without it being in their formal `services` list.
  */
 function buildMatchQuery(profile: ResolvedProfile): MatchQuery {
+  const seenServices = new Set<string>();
   const services: string[] = [];
   const textParts: string[] = [];
 
   for (const service of profile.services) {
-    if (service.catalogName !== null) {
+    if (service.catalogName !== null && !seenServices.has(service.catalogName)) {
+      seenServices.add(service.catalogName);
       services.push(service.catalogName);
     }
     textParts.push(service.name);
@@ -75,17 +98,22 @@ function buildMatchQuery(profile: ResolvedProfile): MatchQuery {
     }
   }
 
+  const seenTopics = new Set<string>();
   const topics: string[] = [];
   for (const pattern of profile.patterns) {
-    topics.push(pattern.name);
+    pushDeduped(topics, seenTopics, pattern.name);
     textParts.push(pattern.name);
     if (pattern.note !== undefined) {
       textParts.push(pattern.note);
     }
   }
 
-  const areasOfInterest = [...(profile.interests ?? [])];
-  textParts.push(...areasOfInterest);
+  const seenInterests = new Set<string>();
+  const areasOfInterest: string[] = [];
+  for (const interest of profile.interests ?? []) {
+    pushDeduped(areasOfInterest, seenInterests, interest);
+  }
+  textParts.push(...(profile.interests ?? []));
 
   for (const intent of profile.intents ?? []) {
     textParts.push(intent.text);
