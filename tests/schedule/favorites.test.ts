@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { ApiClient } from "../../src/api/client.js";
+import { createApiClient, type ApiClient } from "../../src/api/client.js";
 import type { BulkResult, Schedule, Session } from "../../src/api/types.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import {
@@ -13,6 +13,7 @@ import {
 import { DEFAULT_EVENT_ID } from "../../src/catalog/sync.js";
 import { NotFoundError, ServiceError } from "../../src/core/errors.js";
 import { favoriteSessions, unfavoriteSession } from "../../src/schedule/favorites.js";
+import { createFakeFetch } from "../helpers/fake-fetch.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -356,6 +357,32 @@ describe("favoriteSessions", () => {
     expect(result.mismatch).toEqual([]);
   });
 
+  it("treats alreadyFavorited from a retried AssociateFavorites as a non-failure, not a mismatch", async () => {
+    // The mirror image of the DisassociateFavorite retry case: uses the REAL api client so the
+    // client's own 503 retry actually runs. The first POST favorites "a" server-side but its
+    // response is lost as a 503; the client retries the identical request, and the server reports
+    // the retried attempt's session as alreadyFavorited rather than a repeat success -- already
+    // treated as a non-failure, so a retried write that genuinely succeeded degrades correctly
+    // instead of surfacing as a reported failure or a verification mismatch.
+    const fake = createFakeFetch([
+      { status: 503, json: { message: "Unavailable" } },
+      { status: 200, json: { result: { successful: [], failed: [{ sessionId: "a", code: "alreadyFavorited" }] } } },
+      { status: 200, json: { schedule: { reserved: [], favorites: ["a"], personalTime: [] } } },
+    ]);
+    const apiClient = createApiClient({
+      fetchFn: fake.fetch,
+      getAccessToken: async () => "token",
+      sleep: fakeSleep().sleep,
+    });
+
+    const result = await favoriteSessions(["a"], { apiClient, storeRoot: home.path });
+
+    expect(result.alreadyFavorited).toEqual(["a"]);
+    expect(result.failed).toEqual([]);
+    expect(result.mismatch).toEqual([]);
+    expect(fake.calls).toHaveLength(3);
+  });
+
   it("never writes to stdout, even while pacing, reporting a per-session failure, and recovering from a chunk that fails outright", async () => {
     // The MCP server can only write protocol traffic to stdout -- a stray write here would
     // corrupt that stream exactly the way task 1's schedule read had to stay silent. Wrapping
@@ -432,5 +459,29 @@ describe("unfavoriteSession", () => {
     };
 
     await expect(unfavoriteSession("s1", { apiClient })).rejects.toBeInstanceOf(ServiceError);
+  });
+
+  it("treats a 404 from a retried DisassociateFavorite as notFavorited, not an error", async () => {
+    // Uses the REAL api client (createApiClient), not a hand-rolled stand-in, so the client's own
+    // 503 retry is what actually runs: the first DELETE removes the favorite server-side but its
+    // response is lost as a 503, the client retries the identical request, and the retried DELETE
+    // hits an already-removed favorite -- reported as a 404, indistinguishable here from "was
+    // never favorited." Both mean the same thing to the caller (not favorited now), so this must
+    // resolve to "notFavorited", never throw NotFoundError, even though the id genuinely was
+    // favorited at the moment the caller asked to remove it.
+    const fake = createFakeFetch([
+      { status: 503, json: { message: "Unavailable" } },
+      { status: 404, json: { message: "No favorite with that session id." } },
+    ]);
+    const apiClient = createApiClient({
+      fetchFn: fake.fetch,
+      getAccessToken: async () => "token",
+      sleep: fakeSleep().sleep,
+    });
+
+    const outcome = await unfavoriteSession("s1", { apiClient });
+
+    expect(outcome).toBe("notFavorited");
+    expect(fake.calls).toHaveLength(2);
   });
 });

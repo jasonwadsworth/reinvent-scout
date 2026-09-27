@@ -167,6 +167,15 @@ export async function favoriteSessions(
       successful.push(...result.successful);
       for (const failure of result.failed) {
         if (failure.code === "alreadyFavorited") {
+          // Load-bearing for correctness under retry, not just a UX nicety: the API client
+          // retries a chunk's whole request on 429/503 (see api/client.ts), so a request that
+          // actually succeeded server-side on its first attempt can still come back here on a
+          // retried attempt -- and the server reports that as `alreadyFavorited`, not a repeat
+          // `successful`. Since this is already treated as a non-failure, a retried write
+          // degrades correctly (the session ends up favorited either way). Reclassifying
+          // `alreadyFavorited` as a failure later would silently turn every retried
+          // AssociateFavorites call that happened to actually succeed on its first attempt into a
+          // reported error.
           alreadyFavorited.push(failure.sessionId);
           continue;
         }
@@ -218,6 +227,14 @@ export type UnfavoriteOutcome = "removed" | "notFavorited";
  * them either -- both come back as `"notFavorited"` rather than throwing, since it's the
  * documented, expected shape of "there's nothing to remove," not a real error. Any other error
  * propagates unchanged.
+ *
+ * This is also what makes a retried `DisassociateFavorite` degrade correctly, not just a bare
+ * 404: the API client retries the whole request on 429/503 (see `api/client.ts`), so a DELETE
+ * that actually removed the favorite on its first attempt can still come back here as a 404 on
+ * the retried attempt -- indistinguishable from "was never favorited" at this layer. Both mean
+ * the same thing to the caller (the session is not favorited now, which is what was asked for),
+ * so treating every 404 as `"notFavorited"` is correct even when the id genuinely was favorited
+ * at the moment the caller asked to remove it.
  */
 export async function unfavoriteSession(
   sessionId: string,
