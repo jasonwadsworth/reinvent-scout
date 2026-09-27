@@ -401,10 +401,13 @@ function registerMatchSessionsTool(server: McpServer, deps: McpToolDeps): void {
  * `match_sessions`' ranked candidates, an attendee's own schedule has no "least relevant" entry to
  * drop silently -- an agent that never sees a real commitment could tell the user the wrong plan
  * -- so nothing may become permanently unreachable: `limit`/`offset` page through every entry
- * (default 50, cap 75 -- the reviewer's own measurement: adding `kind` and the pagination
+ * (default 50, cap 60 -- the reviewer's own measurement: adding `kind` and the pagination
  * metadata to each entry means a full page of 100 already exceeds the budget before accounting
- * for anything unusually long, so 75 is chosen to make a full page the *normal* case and
- * budget-shortening the exception rather than something every request at the cap hits -- silently
+ * for anything unusually long, so the cap must leave real headroom, not just clear the budget on
+ * paper. 75 turned out not to: `startsAt`/`endsAt` add roughly 58 bytes per entry, leaving only
+ * ~330 bytes of headroom at a full page of 75 realistic-length entries, and a second page (offset
+ * 75) was already measured being budget-shortened to 74 -- the shortening path was silently the
+ * common case, not the exception it's meant to be. 60 restores real headroom -- silently
  * clamped like `match_sessions`' own `limit` rather than rejected), and the response is *also*
  * enforced at the byte budget the same way `match_sessions` is, so a page of unusually long
  * entries still can't exceed it -- when it would, the page itself is shortened and `nextOffset`
@@ -416,7 +419,7 @@ function registerMatchSessionsTool(server: McpServer, deps: McpToolDeps): void {
  * budget.
  */
 const DEFAULT_GET_SCHEDULE_LIMIT = 50;
-const MAX_GET_SCHEDULE_LIMIT = 75;
+const MAX_GET_SCHEDULE_LIMIT = 60;
 
 const GetScheduleInputSchema = z.strictObject({
   event: z.string().min(1).optional(),
@@ -696,7 +699,7 @@ function registerGetScheduleTool(server: McpServer, deps: McpToolDeps): void {
       description:
         "Read the attendee's schedule -- reserved sessions, favorites and personal time, merged " +
         "into one list sorted by start time (unscheduled last) and paginated with limit/offset " +
-        "(default 50, cap 75) so a large schedule never exceeds the response size budget. Each " +
+        "(default 50, cap 60) so a large schedule never exceeds the response size budget. Each " +
         "entry carries a common startsAt/endsAt (a real UTC instant) alongside its raw kind-" +
         "specific fields; startsAt is null when the event's timezone is unknown or the session " +
         "itself isn't fully scheduled -- see warnings when that happens. Page through with the " +

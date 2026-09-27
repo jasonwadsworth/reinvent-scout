@@ -225,12 +225,16 @@ describe("get_schedule tool", () => {
     expect(third.total).toBe(5);
   });
 
-  it("caps the limit at seventy-five even when a larger one is requested", async () => {
+  it("caps the limit at sixty even when a larger one is requested", async () => {
     // Lead's revised cap: adding `kind` and the pagination metadata to each entry means a full
     // page of 100 at realistic entry lengths already exceeds the budget before anything unusually
-    // long is involved, so 75 is chosen to make a full page the normal case. Moderate-length
-    // entries here (not the stress-test lengths the byte-budget test below uses) isolate the cap
-    // itself: this must return exactly 75, not fewer for a byte reason.
+    // long is involved. 75 turned out not to leave enough headroom once startsAt/endsAt were added
+    // (~58 bytes per entry): a full page of 75 realistic-length entries had only ~330 bytes of
+    // margin, and a second page was already measured being budget-shortened to 74 -- the
+    // shortening path was silently the common case. 60 restores real headroom, so this is chosen
+    // to make a full page the normal case. Moderate-length entries here (not the stress-test
+    // lengths the byte-budget test below uses) isolate the cap itself: this must return exactly
+    // 60, not fewer for a byte reason.
     const sessions = Array.from({ length: 100 }, (_, i) => ({
       sessionId: `cap-${i}`,
       abbreviation: `CAP${String(i).padStart(3, "0")}`,
@@ -249,18 +253,19 @@ describe("get_schedule tool", () => {
     const result = await client.callTool({ name: "get_schedule", arguments: { limit: 1000 } });
 
     const parsed = JSON.parse(textOf(result)) as { returned: number; entries: unknown[] };
-    expect(parsed.returned).toBe(75);
-    expect(parsed.entries).toHaveLength(75);
+    expect(parsed.returned).toBe(60);
+    expect(parsed.entries).toHaveLength(60);
   });
 
   it("keeps the response under thirty kilobytes even within a single page at the cap, shortening it and advancing nextOffset to the first cut entry", async () => {
     // Reviewer's finding: get_schedule had no budget at all and measured ~30.8 KB at a hundred
-    // favorites against the real catalog. With the cap now at 75, a full page of *realistic*-
-    // length entries fits (measured ~27.8 KB) -- so this scenario deliberately uses longer,
-    // openly-unrealistic entries (labelled as such, not passed off as real re:Invent content) to
-    // force the byte-budget path specifically, distinct from the cap test above: a full page of
-    // 75 must still be shortened on its own.
-    const sessions = Array.from({ length: 75 }, (_, i) => ({
+    // favorites against the real catalog. With the cap now at 60 (down from an initial 75, which
+    // left only ~330 bytes of headroom at a full page of realistic-length entries once
+    // startsAt/endsAt were added), a full page of *realistic*-length entries fits with real margin
+    // -- so this scenario deliberately uses longer, openly-unrealistic entries (labelled as such,
+    // not passed off as real re:Invent content) to force the byte-budget path specifically,
+    // distinct from the cap test above: a full page of 60 must still be shortened on its own.
+    const sessions = Array.from({ length: 60 }, (_, i) => ({
       sessionId: `long-sched-${i}`,
       abbreviation: `LSC${String(i).padStart(3, "0")}`,
       title:
@@ -288,7 +293,7 @@ describe("get_schedule tool", () => {
       }),
     });
 
-    const result = await client.callTool({ name: "get_schedule", arguments: { limit: 75 } });
+    const result = await client.callTool({ name: "get_schedule", arguments: { limit: 60 } });
 
     expect(result.isError).not.toBe(true);
     expect(Buffer.byteLength(JSON.stringify(result), "utf8")).toBeLessThan(30 * 1024);
@@ -299,10 +304,10 @@ describe("get_schedule tool", () => {
       offset: number;
       nextOffset?: number;
     };
-    expect(parsed.total).toBe(75);
-    // Fewer than the requested (and available) 75 -- the scenario is built so a full page
+    expect(parsed.total).toBe(60);
+    // Fewer than the requested (and available) 60 -- the scenario is built so a full page
     // genuinely does not fit, exercising the shortening path rather than assuming it works.
-    expect(parsed.returned).toBeLessThan(75);
+    expect(parsed.returned).toBeLessThan(60);
     expect(parsed.entries).toHaveLength(parsed.returned);
     // nextOffset must reflect what was actually returned (so the next call resumes exactly where
     // this one stopped), not the full requested limit -- the bug a naive "advance by limit
