@@ -21,8 +21,15 @@ const FILE_MODE = 0o600;
  * read-side fix (`query.ts`'s `Object.hasOwn` guard) handles a poisoned map safely, but a stale
  * index still round-trips whatever bad value was written for that term the last time it synced;
  * this bump forces every existing index to rebuild from raw data with the fixed tokenizer rather
- * than carrying that forward indefinitely. */
-export const CURRENT_SCHEMA_VERSION = 2;
+ * than carrying that forward indefinitely.
+ *
+ * Bumped 2 -> 3: `index-record.ts`'s `tokenize` changed what it puts in `titleTerms`/`bodyTerms` --
+ * it now strips a trailing possessive `'s`/`'s` before splitting into words (so "agent's" no
+ * longer also produces a stray one-letter "s" term) and drops any resulting token shorter than
+ * three characters unless the source text wrote it as an all-caps acronym ("S3", "ML"). A stale
+ * index built before this version still carries the old fragment terms; this bump forces a
+ * rebuild so `match`'s text-overlap reasons stop citing them as evidence. */
+export const CURRENT_SCHEMA_VERSION = 3;
 
 const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 

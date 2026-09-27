@@ -15,9 +15,32 @@ const STOPWORDS: ReadonlySet<string> = new Set([
 
 export type TermFrequencies = Record<string, number>;
 
+/** Strips a trailing possessive `'s` or `'s` (curly quote) before word-splitting -- without this,
+ * "agent's" splits into "agent" and a bare "s" fragment, since the apostrophe itself isn't a word
+ * character and stops the match right before the "s". The suffix is removed, not just ignored, so
+ * no stray one-letter term is produced at all. */
+const POSSESSIVE_SUFFIX_PATTERN = /['’]s\b/gi;
+
+/** A token shorter than this is dropped unless it's a real acronym (see `isAllCapsAcronym`) --
+ * below this length, a plain word carries too little signal on its own ("no", "for" -- already a
+ * stopword, "aim") and is far more likely to be a fragment or filler than a meaningful term. */
+const MIN_TERM_LENGTH = 3;
+
+/** True when `word`, exactly as it appeared in the original (not lowercased) text, is written
+ * entirely in capitals and is at least two characters -- "S3", "ML", "AI". This is the one
+ * exception to `MIN_TERM_LENGTH`: real acronyms are often shorter than three characters and carry
+ * plenty of signal (a service name, a discipline), but only when the source text itself marks them
+ * as an acronym by capitalizing them -- a lowercase "ai" or "ml" in ordinary prose is far more
+ * likely filler than a deliberate short technical term, and a bare short number like "60" has no
+ * letters to capitalize at all, so it can never qualify. */
+function isAllCapsAcronym(word: string): boolean {
+  return word.length >= 2 && word === word.toUpperCase() && /[A-Z]/.test(word);
+}
+
 /** Exported so `catalog/query.ts` tokenizes a search query with the exact same rules used to
- * build the index it searches -- a query term that doesn't survive the same lowercasing,
- * word-splitting and stopword removal as the indexed text would never be able to match it. */
+ * build the index it searches -- a query term that doesn't survive the same possessive-stripping,
+ * lowercasing, word-splitting, short-fragment filtering and stopword removal as the indexed text
+ * would never be able to match it. */
 export function tokenize(text: string): TermFrequencies {
   // A plain object literal inherits Object.prototype, so a tokenized word that collides with one
   // of its members (`constructor`, `hasOwnProperty`, `toString`, ...) reads back a function
@@ -25,12 +48,19 @@ export function tokenize(text: string): TermFrequencies {
   // Object.create(null) has no prototype at all, so every lookup below reflects only what this
   // function itself has written.
   const counts: TermFrequencies = Object.create(null) as TermFrequencies;
-  const words = text.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+  const withoutPossessives = text.replace(POSSESSIVE_SUFFIX_PATTERN, "");
+  // Matched against the original casing (not yet lowercased) so isAllCapsAcronym can tell a real
+  // acronym from an ordinary short word that only happens to share its letters.
+  const words = withoutPossessives.match(/[A-Za-z0-9]+/g) ?? [];
   for (const word of words) {
-    if (STOPWORDS.has(word)) {
+    const lower = word.toLowerCase();
+    if (STOPWORDS.has(lower)) {
       continue;
     }
-    counts[word] = (counts[word] ?? 0) + 1;
+    if (lower.length < MIN_TERM_LENGTH && !isAllCapsAcronym(word)) {
+      continue;
+    }
+    counts[lower] = (counts[lower] ?? 0) + 1;
   }
   return counts;
 }

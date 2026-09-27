@@ -98,6 +98,39 @@ describe("buildIndexRecord", () => {
     expect(Object.hasOwn(counts, "constructor")).toBe(true);
   });
 
+  it("strips a possessive 's before tokenizing, so \"agent's\" becomes \"agent\" alone, not a stray \"s\" fragment", () => {
+    const counts = tokenize("the agent's plan");
+
+    expect(counts.agent).toBe(1);
+    expect(Object.hasOwn(counts, "s")).toBe(false);
+  });
+
+  it("also strips a curly-quote possessive suffix", () => {
+    const counts = tokenize("the agent’s plan");
+
+    expect(counts.agent).toBe(1);
+    expect(Object.hasOwn(counts, "s")).toBe(false);
+  });
+
+  it("drops a short, non-acronym fragment like \"no\"", () => {
+    const counts = tokenize("no thanks for the fish");
+
+    expect(Object.hasOwn(counts, "no")).toBe(false);
+  });
+
+  it("keeps an all-caps acronym as short as two characters, such as S3 or ML", () => {
+    const counts = tokenize("Learn about Amazon S3 and ML pipelines");
+
+    expect(counts.s3).toBe(1);
+    expect(counts.ml).toBe(1);
+  });
+
+  it("drops a short token that shares an acronym's letters but was never written in caps", () => {
+    const counts = tokenize("some ml pipelines are simple");
+
+    expect(Object.hasOwn(counts, "ml")).toBe(false);
+  });
+
   it("does not report Object.prototype members as present when the text never contains them", () => {
     const counts = tokenize("hello world");
 

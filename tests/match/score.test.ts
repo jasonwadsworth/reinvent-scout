@@ -336,3 +336,37 @@ describe("scoreSession with corpus statistics (inverse document frequency)", () 
     expect(JSON.stringify(result1)).toBe(JSON.stringify(result2));
   });
 });
+
+describe("scoreSession's text reason lists matched terms by weighted contribution", () => {
+  it("lists a rare matched term before a near-universal one, not in query order", () => {
+    // Real, measured document frequencies in the 61-session fixture: "amazon" appears in 45 of 61
+    // sessions (near-universal, near-zero idf weight), "dynamodb" in exactly 1 (the largest idf
+    // weight this corpus has). The query text below names "amazon" first, so listing matched terms
+    // in query order (the pre-fix behavior) would put "amazon" first in the detail string despite
+    // contributing almost nothing to the score -- the whole complaint this fix addresses.
+    const realCorpusStats = buildCorpusStats(fixture.map(buildIndexRecord));
+    const session = record({ sessionId: "s1", title: "Unrelated filler", abstract: "amazon dynamodb" });
+    const q = query({ text: "amazon dynamodb" });
+
+    const result = scoreSession(session, q, realCorpusStats);
+
+    const textReason = result.reasons.find((r) => r.kind === "text");
+    expect(textReason?.evidence).toBe("dynamodb, amazon");
+    expect(textReason?.detail).toBe("Text overlap on: dynamodb, amazon.");
+  });
+
+  it("caps the listed matched terms at eight without changing the score, which still reflects every match", () => {
+    const terms = Array.from({ length: 10 }, (_, i) => `uniqueterm${i}`);
+    const session = record({ sessionId: "s1", title: "Unrelated filler", abstract: terms.join(" ") });
+    const q = query({ text: terms.join(" ") });
+
+    const result = scoreSession(session, q);
+
+    const textReason = result.reasons.find((r) => r.kind === "text");
+    expect(textReason?.evidence.split(", ")).toHaveLength(8);
+    // Every one of the 10 terms is body-only with a single occurrence, so each contributes the
+    // same BODY_TERM_WEIGHT * saturate(1) = 1 * 0.4 -- the cap must not shrink the score to match
+    // only the eight listed terms.
+    expect(result.score).toBeCloseTo(10 * 0.4, 10);
+  });
+});

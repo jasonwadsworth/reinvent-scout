@@ -136,6 +136,10 @@ function saturate(termFrequency: number): number {
   return termFrequency / (termFrequency + TERM_SATURATION_K);
 }
 
+/** The most matched terms a "text" reason lists as evidence -- a session matching a dozen query
+ * terms is still one reason, not a dozen; readability caps how much is worth showing. */
+const MAX_LISTED_TERMS = 8;
+
 interface TextMatchResult {
   score: number;
   matchedTerms: string[];
@@ -153,32 +157,47 @@ function scoreText(
 
   let titleScore = 0;
   let rawBodyScore = 0;
-  const matchedTerms: string[] = [];
+  const contributions: { term: string; weight: number }[] = [];
 
   for (const term of queryTerms) {
     let matched = false;
+    let contribution = 0;
     const weight = idfWeight(term, corpusStats);
 
     const titleTf = getOwnTermCount(record.titleTerms, term);
     if (titleTf !== undefined) {
-      titleScore += TITLE_TERM_WEIGHT * saturate(titleTf) * weight;
+      const titleContribution = TITLE_TERM_WEIGHT * saturate(titleTf) * weight;
+      titleScore += titleContribution;
+      contribution += titleContribution;
       matched = true;
     }
 
     const bodyTf = getOwnTermCount(record.bodyTerms, term);
     if (bodyTf !== undefined) {
-      rawBodyScore += BODY_TERM_WEIGHT * saturate(bodyTf) * weight;
+      const bodyContribution = BODY_TERM_WEIGHT * saturate(bodyTf) * weight;
+      rawBodyScore += bodyContribution;
+      contribution += bodyContribution;
       matched = true;
     }
 
     if (matched) {
-      matchedTerms.push(term);
+      contributions.push({ term, weight: contribution });
     }
   }
 
-  if (matchedTerms.length === 0) {
+  if (contributions.length === 0) {
     return null;
   }
+
+  // Listed strongest-first so the reason reads as an explanation of the score, not a restatement
+  // of whatever order the query happened to name terms in -- a near-universal word with almost no
+  // idf weight (see `idfWeight`) would otherwise lead the list despite explaining almost none of
+  // it. Capped at `MAX_LISTED_TERMS` for readability; the cap only trims what's *listed* here, not
+  // `score` above, which always reflects every matched term regardless of how many are shown.
+  const matchedTerms = contributions
+    .sort((a, b) => b.weight - a.weight)
+    .slice(0, MAX_LISTED_TERMS)
+    .map((c) => c.term);
 
   return { score: titleScore + rawBodyScore, matchedTerms };
 }
