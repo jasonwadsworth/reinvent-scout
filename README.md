@@ -246,6 +246,50 @@ A profile with nothing in common with any session in the catalog returns an empt
 session at a score of zero -- an empty result is a real, distinguishable outcome from "everything
 matched equally."
 
+## Read your schedule and manage favorites
+
+```
+reinvent-scout schedule show
+```
+
+Reads your schedule from the API -- reserved sessions, favorites, and personal time blocks -- and
+resolves each session id against the local catalog into its title, day, time, venue and room,
+grouped by day. An id the local catalog has no record for (most often because it was favorited
+before the last `catalog sync`) still shows up, as a bare id with a note, rather than silently
+vanishing from your own schedule. `--event <id>` reads a different event; `--json` prints
+machine-readable output, including each entry's `resolved: true|false` status.
+
+```
+reinvent-scout schedule favorite ANT301-SESSION-ID ARC325-SESSION-ID
+```
+
+Favorites one or more sessions by their real session id -- the `sessionId` field `catalog search`,
+`catalog show` and `match` all print, not the human-readable abbreviation or `match`'s own grouped
+`code`. Requests are chunked at ten ids per call (the API's own limit) and paced to stay within the
+write quota, and every outcome is reported: which ids succeeded, which were already favorited
+(not treated as a failure), and which were refused and why -- including, for a scheduling
+conflict, the conflicting sessions' titles. After writing, it reads your schedule back once and
+warns if anything the API reported as favorited doesn't actually show up, so a response you can't
+fully trust never gets reported as a clean success. The command exits non-zero if any session was
+refused.
+
+A single `-` in place of session ids reads them from stdin instead, one per line -- the point of
+this is piping `match`'s own output straight in:
+
+```
+reinvent-scout match --profile my-profile.json --json | jq -r '.[].sessionId' | reinvent-scout schedule favorite -
+```
+
+`--event <id>` targets a different event; `--json` prints the full machine-readable result. At most
+100 ids are accepted in one invocation.
+
+```
+reinvent-scout schedule unfavorite SESSION-ID
+```
+
+Removes one session from your favorites. Removing a session that was never favorited (or already
+removed) is reported plainly, not as an error -- there's nothing left to do either way.
+
 ## Where your data lives
 
 Everything is stored under `~/.reinvent-scout/` (override with the `REINVENT_SCOUT_HOME`

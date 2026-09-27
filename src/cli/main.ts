@@ -4,6 +4,7 @@ import { registerAuthCommands } from "./commands/auth.js";
 import { registerCatalogCommands } from "./commands/catalog.js";
 import { registerMatchCommands } from "./commands/match.js";
 import { registerProfileCommands } from "./commands/profile.js";
+import { registerScheduleCommands } from "./commands/schedule.js";
 import { isMainModule } from "./entry.js";
 import { readPackageVersion } from "./version.js";
 
@@ -27,6 +28,7 @@ export function buildProgram(): Command {
   registerCatalogCommands(program);
   registerProfileCommands(program);
   registerMatchCommands(program);
+  registerScheduleCommands(program);
 
   return program;
 }
