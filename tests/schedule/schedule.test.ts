@@ -137,6 +137,39 @@ describe("getSchedule", () => {
     expect(result.favorites[1]).toEqual({ sessionId: goneSessionId, resolved: false });
   });
 
+  it("resolves a favorited session with no scheduled time as resolved with a null date and time, not unresolved", async () => {
+    // ANT407 has neither `room` nor `sessionTime` in the fixture (47 real sessions are like this,
+    // per tests/fixtures/README.md) -- it IS in the local index, just not yet scheduled, which is
+    // a different state from "the index has no record for this id at all" and callers act on the
+    // two differently (a resolved-but-unscheduled session still has a title to show).
+    const ant407 = fixture.find((session) => session.abbreviation === "ANT407")!;
+    const ant407Record = buildIndexRecord(ant407);
+    writeCatalog(
+      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
+      { storeRoot: home.path },
+    );
+    const apiClient = fakeApiClient(async () => ({
+      reserved: [],
+      favorites: [ant407.sessionId],
+      personalTime: [],
+    }));
+
+    const result = await getSchedule({ apiClient, storeRoot: home.path });
+
+    expect(result.favorites).toEqual([
+      {
+        sessionId: ant407.sessionId,
+        resolved: true,
+        title: ant407Record.title,
+        abbreviation: "ANT407",
+        startDate: null,
+        startTime: null,
+        venue: null,
+        room: null,
+      },
+    ]);
+  });
+
   it("returns empty lists without error for an attendee with an empty schedule", async () => {
     writeCatalog(
       { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
