@@ -137,6 +137,21 @@ describe("MCP server stdout purity (real subprocess)", () => {
     home.cleanup();
   });
 
+  /** No captured frame's own text content may read as commander/MCP's own "I could not find this"
+   * response -- a tool-not-found error is itself a perfectly well-formed JSON-RPC frame (valid
+   * JSON, `jsonrpc: "2.0"`, a matching `id`), so checking only frame shape would pass identically
+   * whether the tool under test exists or was renamed out from under the test. Reviewer's finding
+   * against this file's first version: the schedule half asserted exactly that shape and stayed
+   * green with `get_schedule` entirely unregistered, proving nothing about task 6's own code path.
+   * Applied to every captured line, protecting `status` from the same latent hole too. */
+  function assertNoToolNotFoundFrame(lines: JsonRpcLine[]): void {
+    for (const line of lines) {
+      expect(line.raw, `frame reads as a tool-not-found error: ${line.raw}`).not.toMatch(
+        /Tool \w+ not found/,
+      );
+    }
+  }
+
   it("writes only newline-delimited JSON-RPC to stdout across a real initialize and tool call", async () => {
     const server = spawnServer({ ...process.env, REINVENT_SCOUT_HOME: home.path });
     try {
@@ -150,6 +165,7 @@ describe("MCP server stdout purity (real subprocess)", () => {
         expect(line.parsed, `line did not parse as JSON: ${line.raw}`).not.toBeNull();
         expect(line.parsed!.jsonrpc, `line missing jsonrpc field: ${line.raw}`).toBe("2.0");
       }
+      assertNoToolNotFoundFrame(server.lines);
 
       // A purity test that only checked the shape of whatever the server happened to print could
       // pass against a server that emits nothing but an error frame -- assert the actual response
@@ -174,8 +190,20 @@ describe("MCP server stdout purity (real subprocess)", () => {
         expect(line.parsed, `line did not parse as JSON: ${line.raw}`).not.toBeNull();
         expect(line.parsed!.jsonrpc, `line missing jsonrpc field: ${line.raw}`).toBe("2.0");
       }
+      assertNoToolNotFoundFrame(server.lines);
       expect((scheduleResponse as { id?: unknown }).id).toBe(3);
       expect(server.lines.some((line) => line.parsed?.id === 3)).toBe(true);
+
+      // The decisive assertion, per the reviewer's finding: a well-formed JSON-RPC frame alone
+      // (even the general "no tool-not-found" guard above) does not prove get_schedule's own
+      // handler actually ran -- only its real, amendment-3-specific wording does. With no session
+      // stored, the token provider throws AuthRequiredError before any network call, so this text
+      // is exactly what the real handler (and nothing else) produces.
+      const scheduleContent = (scheduleResponse as { result?: { content?: Array<{ text?: string }> } })
+        .result?.content?.[0]?.text;
+      expect(scheduleContent).toContain(
+        "No signed-in session found. Run `reinvent-scout auth login` (the skill can run it for you)",
+      );
     } finally {
       server.stop();
     }
