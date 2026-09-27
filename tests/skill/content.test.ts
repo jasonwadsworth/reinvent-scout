@@ -23,15 +23,32 @@ const taxonomyMd = readSkillFile("reference", "taxonomy.md");
 const workflowMd = readSkillFile("reference", "workflow.md");
 const profilingMd = readSkillFile("reference", "profiling.md");
 
-const fixture: Session[] = JSON.parse(
-  readFileSync(join(here, "..", "fixtures", "catalog-sample.json"), "utf8"),
-);
+/** Every skill file's raw text, concatenated -- the corpus a real reader (agent or human) actually
+ * sees across the whole skill, not just one file. Reviewer's finding: checking only one dedicated
+ * section (e.g. SKILL.md's own "## MCP tools used" list) lets a tool get renamed or removed
+ * everywhere *else* in the doc -- the actual flow prose an agent follows -- while that one list
+ * stays correct and the anti-drift check stays green. */
+const allSkillText = [skillMd, profilingMd, taxonomyMd, workflowMd].join("\n");
+
+/**
+ * Strips fenced ``` code blocks before any single-backtick scan runs. Load-bearing, not cosmetic:
+ * a fenced block's own opening/closing ``` markers are three literal backtick characters each, and
+ * a naive `` /`([^`]+)`/g `` scan over raw text pairs backticks left-to-right with no awareness of
+ * fences -- three backticks in a row parse as one zero-width empty match plus one unpaired
+ * backtick, which desyncs the pairing for every real inline `code span` later in the same
+ * document until a later fence happens to resync it. Confirmed directly: scanning this file's own
+ * unfenced text finds `aws_dynamodb_table`/`aws_elasticache_serverless_cache`/`node_modules` (real
+ * inline spans in reference/profiling.md, after several ```json blocks) only once fences are
+ * stripped first -- without this, those three spans are silently swallowed by the desync and the
+ * test below would never see them at all.
+ */
+function stripFences(text: string): string {
+  return text.replace(/```[\s\S]*?```/g, "");
+}
 
 /**
  * Extracts the body of one `## Heading` section (up to, but not including, the next `## ` heading
- * or end of file). Used so extraction never accidentally picks up a backtick-quoted term from
- * unrelated prose elsewhere in the document -- only the one dedicated, exhaustive list section for
- * each category is ever parsed.
+ * or end of file).
  */
 function extractSection(markdown: string, heading: string): string {
   const lines = markdown.split("\n");
@@ -44,14 +61,34 @@ function extractSection(markdown: string, heading: string): string {
   return (endIndex === -1 ? rest : rest.slice(0, endIndex)).join("\n");
 }
 
-/** Bullet items of the form `- \`content\`` -- one per line, backtick-quoted. */
-function backtickBullets(section: string): string[] {
-  return [...section.matchAll(/^- `([^`]+)`$/gm)].map((match) => match[1]!);
-}
-
 /** Bullet items of the form `- content` -- one per line, plain text. */
 function plainBullets(section: string): string[] {
   return [...section.matchAll(/^- (.+)$/gm)].map((match) => match[1]!.trim());
+}
+
+/** Every backtick-quoted span, from fence-stripped text, matching either the bare tool name
+ * `status` or a full snake_case identifier (`catalog_sync`, `aws_dynamodb_table`) -- deliberately
+ * broader than "just the registered tools", so a stray or hallucinated identifier of the same
+ * shape is caught by the allow-list check at the call site, not silently excluded by the
+ * extraction itself. */
+function backtickIdentifiers(text: string): string[] {
+  const spans = [...stripFences(text).matchAll(/`([^`]+)`/g)].map((match) => match[1]!);
+  return spans.filter((span) => /^status$|^[a-z]+(?:_[a-z]+)+$/.test(span));
+}
+
+/** Every backtick-quoted `reinvent-scout <path>` mention, from fence-stripped text -- `<path>` is
+ * the leading run of one or two lowercase, space-separated words after the "reinvent-scout "
+ * prefix (a leaf command is never more than two words in this CLI), so trailing content inside the
+ * same span (an argument placeholder, a flag) doesn't prevent extracting the command path itself.
+ */
+function backtickCliPaths(text: string): string[] {
+  const spans = [...stripFences(text).matchAll(/`reinvent-scout ([^`]*)`/g)].map(
+    (match) => match[1]!,
+  );
+  return spans.map((remainder) => {
+    const pathMatch = /^[a-z]+(?: [a-z]+)?/.exec(remainder);
+    return `reinvent-scout ${pathMatch ? pathMatch[0] : remainder.trim()}`;
+  });
 }
 
 /**
@@ -77,7 +114,29 @@ function collectLeafCommandPaths(command: Command, prefix: string[] = []): strin
   return paths;
 }
 
-function uniqueFixtureValues(field: "topics" | "roles"): string[] {
+const fixture: Session[] = JSON.parse(
+  readFileSync(join(here, "..", "fixtures", "catalog-sample.json"), "utf8"),
+);
+
+interface CatalogVocabulary {
+  sessionTypes: string[];
+  levels: string[];
+  topics: string[];
+  roles: string[];
+  areasOfInterest: string[];
+  features: string[];
+}
+
+/** Distinct values per taxonomy field, extracted once from a real, full catalog pull -- see the
+ * fixture file's own header comment for provenance. Unlike tests/fixtures/catalog-sample.json (61
+ * sessions, used everywhere else in this suite), this exists specifically so
+ * reference/taxonomy.md's vocabulary lists can be checked against the real catalog's full
+ * vocabulary rather than a small sample that happens to be missing most of it. */
+const vocabulary: CatalogVocabulary = JSON.parse(
+  readFileSync(join(here, "..", "fixtures", "catalog-vocabulary.json"), "utf8"),
+);
+
+function uniqueFixtureValues(field: "topics" | "roles" | "areasOfInterest" | "features"): string[] {
   const values = new Set<string>();
   for (const session of fixture) {
     for (const value of session[field] ?? []) {
@@ -103,8 +162,22 @@ describe("SKILL.md length", () => {
   });
 });
 
-describe("SKILL.md tool names", () => {
-  it("names only tools the mcp server actually registers, and names every one of them", async () => {
+describe("skill files tool names", () => {
+  /** A tool name the skill is allowed to mention without it being registered -- documented,
+   * deliberate absences, not drift. Asserted below to genuinely be unregistered, so this allow-list
+   * itself can't quietly go stale if the tool is ever actually added. */
+  const documentedAbsentTools = new Set(["profile_repo"]);
+  /** Backtick-quoted identifiers that happen to share the tool-name shape (lowercase, underscore-
+   * joined) but are not tool names at all -- real examples used elsewhere in the reference docs
+   * (a dependency directory, a Terraform resource-type name). Asserted below to genuinely be
+   * unregistered too, for the same reason. */
+  const documentedNonToolIdentifiers = new Set([
+    "node_modules",
+    "aws_dynamodb_table",
+    "aws_elasticache_serverless_cache",
+  ]);
+
+  it("names only tools the mcp server actually registers or explicitly documents as absent, anywhere in the skill's files", async () => {
     const home: TempHome = createTempHome();
     try {
       const server = createMcpServer({ resolveStoreRoot: () => home.path });
@@ -114,18 +187,47 @@ describe("SKILL.md tool names", () => {
       const { tools } = await client.listTools();
       const registered = new Set(tools.map((tool) => tool.name));
 
-      // A sanity check on the test itself: if the server ever registered nothing, both directions
-      // below would pass vacuously.
+      // A sanity check on the test itself: if the server ever registered nothing, the forward
+      // direction below would pass vacuously.
       expect(registered.size).toBeGreaterThan(0);
 
-      const named = new Set(backtickBullets(extractSection(skillMd, "## MCP tools used")));
-      expect(named.size).toBeGreaterThan(0);
-
-      for (const name of named) {
-        expect(registered.has(name)).toBe(true);
+      for (const name of documentedAbsentTools) {
+        expect(registered.has(name)).toBe(false);
       }
+      for (const name of documentedNonToolIdentifiers) {
+        expect(registered.has(name)).toBe(false);
+      }
+
+      const extracted = new Set(backtickIdentifiers(allSkillText));
+      // A sanity check on the test itself: if every skill file were ever emptied of these
+      // identifiers, this would pass vacuously with nothing left to check.
+      expect(extracted.size).toBeGreaterThan(0);
+
+      const allowed = new Set([...registered, ...documentedAbsentTools, ...documentedNonToolIdentifiers]);
+      for (const name of extracted) {
+        expect(allowed.has(name)).toBe(true);
+      }
+    } finally {
+      home.cleanup();
+    }
+  });
+
+  it("names every registered tool in the flow an agent actually follows, not just in a reference list", async () => {
+    const home: TempHome = createTempHome();
+    try {
+      const server = createMcpServer({ resolveStoreRoot: () => home.path });
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      const client = new Client({ name: "test-client", version: "0.0.1" });
+      await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+      const { tools } = await client.listTools();
+      const registered = new Set(tools.map((tool) => tool.name));
+      expect(registered.size).toBeGreaterThan(0);
+
+      const namedInFlow = new Set(backtickIdentifiers(extractSection(skillMd, "## The flow")));
+      expect(namedInFlow.size).toBeGreaterThan(0);
+
       for (const name of registered) {
-        expect(named.has(name)).toBe(true);
+        expect(namedInFlow.has(name)).toBe(true);
       }
     } finally {
       home.cleanup();
@@ -133,26 +235,32 @@ describe("SKILL.md tool names", () => {
   });
 });
 
-describe("SKILL.md and reference/workflow.md CLI command names", () => {
-  it("names only commands the cli actually registers, and names every one of them", () => {
+describe("skill files CLI command names", () => {
+  it("names only commands the cli actually registers, anywhere in the skill's files", () => {
     const program = buildProgram();
     const leafPaths = collectLeafCommandPaths(program);
-
-    // A sanity check on the test itself: if buildProgram ever registered nothing, both directions
-    // below would pass vacuously.
     expect(leafPaths.length).toBeGreaterThan(0);
-
     const registered = new Set(leafPaths.map((path) => `reinvent-scout ${path}`));
-    const named = new Set(
-      backtickBullets(extractSection(workflowMd, "## CLI command reference")),
-    );
-    expect(named.size).toBeGreaterThan(0);
 
-    for (const name of named) {
-      expect(registered.has(name)).toBe(true);
+    const extracted = new Set(backtickCliPaths(allSkillText));
+    expect(extracted.size).toBeGreaterThan(0);
+
+    for (const path of extracted) {
+      expect(registered.has(path)).toBe(true);
     }
-    for (const name of registered) {
-      expect(named.has(name)).toBe(true);
+  });
+
+  it("names every registered command somewhere in the skill's files", () => {
+    const program = buildProgram();
+    const leafPaths = collectLeafCommandPaths(program);
+    expect(leafPaths.length).toBeGreaterThan(0);
+    const registered = leafPaths.map((path) => `reinvent-scout ${path}`);
+
+    const extracted = new Set(backtickCliPaths(allSkillText));
+    expect(extracted.size).toBeGreaterThan(0);
+
+    for (const path of registered) {
+      expect(extracted.has(path)).toBe(true);
     }
   });
 });
@@ -172,33 +280,53 @@ describe("SKILL.md reference file coverage", () => {
 });
 
 describe("reference/taxonomy.md vocabulary", () => {
-  it("lists exactly the topics the fixture catalog actually uses", () => {
-    const fixtureTopics = new Set(uniqueFixtureValues("topics"));
-    expect(fixtureTopics.size).toBeGreaterThan(0);
+  const cases: Array<{ label: string; heading: string; field: keyof CatalogVocabulary }> = [
+    { label: "session types", heading: "## Session types", field: "sessionTypes" },
+    { label: "levels", heading: "## Levels", field: "levels" },
+    { label: "topics", heading: "## Topics", field: "topics" },
+    { label: "roles", heading: "## Roles", field: "roles" },
+    { label: "areas of interest", heading: "## Areas of interest", field: "areasOfInterest" },
+    { label: "features", heading: "## Features", field: "features" },
+  ];
 
-    const listedTopics = new Set(plainBullets(extractSection(taxonomyMd, "## Topics")));
-    expect(listedTopics.size).toBeGreaterThan(0);
+  it.each(cases)(
+    "lists exactly the real catalog's $label, matching tests/fixtures/catalog-vocabulary.json",
+    ({ heading, field }) => {
+      const expected = new Set(vocabulary[field]);
+      expect(expected.size).toBeGreaterThan(0);
 
-    for (const topic of listedTopics) {
-      expect(fixtureTopics.has(topic)).toBe(true);
-    }
-    for (const topic of fixtureTopics) {
-      expect(listedTopics.has(topic)).toBe(true);
-    }
-  });
+      const listed = new Set(plainBullets(extractSection(taxonomyMd, heading)));
+      expect(listed.size).toBeGreaterThan(0);
 
-  it("lists exactly the roles the fixture catalog actually uses", () => {
-    const fixtureRoles = new Set(uniqueFixtureValues("roles"));
-    expect(fixtureRoles.size).toBeGreaterThan(0);
+      for (const value of listed) {
+        expect(expected.has(value)).toBe(true);
+      }
+      for (const value of expected) {
+        expect(listed.has(value)).toBe(true);
+      }
+    },
+  );
 
-    const listedRoles = new Set(plainBullets(extractSection(taxonomyMd, "## Roles")));
-    expect(listedRoles.size).toBeGreaterThan(0);
+  it("has the 61-session test fixture's own topics, roles, areas of interest and features as a subset of the real vocabulary", () => {
+    const subsetChecks: Array<{ label: string; fixtureValues: string[]; field: keyof CatalogVocabulary }> = [
+      { label: "topics", fixtureValues: uniqueFixtureValues("topics"), field: "topics" },
+      { label: "roles", fixtureValues: uniqueFixtureValues("roles"), field: "roles" },
+      {
+        label: "areasOfInterest",
+        fixtureValues: uniqueFixtureValues("areasOfInterest"),
+        field: "areasOfInterest",
+      },
+      { label: "features", fixtureValues: uniqueFixtureValues("features"), field: "features" },
+    ];
 
-    for (const role of listedRoles) {
-      expect(fixtureRoles.has(role)).toBe(true);
-    }
-    for (const role of fixtureRoles) {
-      expect(listedRoles.has(role)).toBe(true);
+    for (const { label, fixtureValues, field } of subsetChecks) {
+      // A sanity check on the test itself: if the 61-session fixture ever carried none of this
+      // field, the subset assertion below would pass vacuously.
+      expect(fixtureValues.length, `${label} fixture values`).toBeGreaterThan(0);
+      const realValues = new Set(vocabulary[field]);
+      for (const value of fixtureValues) {
+        expect(realValues.has(value), `${label}: ${value}`).toBe(true);
+      }
     }
   });
 });

@@ -1,10 +1,13 @@
 # Catalog taxonomy
 
 The re:Invent session catalog tags each session with a handful of controlled vocabularies. This is
-what they look like today and how the profile's own vocabulary lines up with them. Topic and role
-matching in `match_sessions` is case-insensitive, so exact casing here is a convenience, not a
-requirement -- but matching the real spelling makes a profile's `interests` and `patterns.name`
-entries more likely to line up with a session's own tags at all.
+what they look like today and how the profile's own vocabulary lines up with them. Every list below
+is checked against `tests/fixtures/catalog-vocabulary.json` (distinct values extracted from a real,
+full catalog pull, not the smaller 61-session fixture the rest of the test suite runs against) and
+must be kept complete -- see that file's own note on provenance. Topic and role matching in
+`match_sessions` is case-insensitive, so exact casing here is a convenience, not a requirement --
+but matching the real spelling makes a profile's `interests` and `patterns.name` entries more
+likely to line up with a session's own tags at all.
 
 ## Session types
 
@@ -52,10 +55,15 @@ Broad subject areas. This is the field a `patterns` entry's `name` most naturall
 - Compute
 - Containers
 - Databases
+- Developer Tools
 - Hybrid Cloud & Multicloud
+- Industry Solutions
+- Migration & Modernization
 - Networking & Content Delivery
+- Open Source
 - Security & Identity
 - Serverless
+- Storage
 
 ## Roles
 
@@ -69,33 +77,71 @@ The audience a session is aimed at:
 - Data Scientist
 - DevOps Engineer
 - Developer / Engineer
+- Entrepreneur (Founder/Co-Founder)
+- IT Administrator
 - IT Executive
 - IT Professional / Technical Manager
+- Sales / Marketing
 - Solution / Systems Architect
+- Student
+- System Administrator
+- Tech Explorer
+- Venture Capitalist
 
 ## Areas of interest
 
 A finer-grained tag than topic, closest to what a profile's own `interests` field should draw from:
 
 - Agentic AI
+- Application Security
 - Automation
+- Blockchain
+- Business Intelligence
 - Cost Optimization
+- Cryptography and Post-Quantum
+- Culture of Security
+- Customer Enablement
+- Data Protection
 - DevOps
+- DevSecOps
 - Digital Sovereignty
 - Disaster Response & Recovery
+- Edge Computing
 - Event-Driven Architecture
+- Front-End Web & Mobile
 - Generative AI
 - Global Infrastructure
 - Governance, Risk & Compliance
+- Identity & Access Management
+- Inclusion
 - Innovation & Transformation
+- Internet of Things
+- Kubernetes
+- Lambda-Based Applications
+- Learning from Amazon
 - Machine Learning
 - Management & Governance
+- Microsoft & .NET
 - Monitoring & Observability
+- Network & Infrastructure Security
+- Open Data
+- Oracle
+- Privacy
+- Quantum Technologies
 - Resilience
 - Responsible AI
+- Robotics
+- SAP
+- SaaS
+- Sustainability
+- Tech for Impact
+- Threat Detection & Incident Response
 - Threat Intelligence
 - Training & Certification
+- VMware
 - Well-Architected Framework
+- Workforce Development
+- Zero Trust
 
 ## Features
 
@@ -103,6 +149,7 @@ Format tags, mostly informational rather than something a profile matches agains
 
 - AWS Partners
 - Community-led
+- Customer story
 - Discussion
 - Hands-on
 - Lecture-style
@@ -112,7 +159,6 @@ Format tags, mostly informational rather than something a profile matches agains
 The catalog's own `services` field always carries the full display name ("Amazon DynamoDB", "AWS
 Step Functions") -- see `reference/profiling.md`'s "Naming services" section for how to write a
 service name in a profile and what spellings the CLI resolves automatically. In short: prefer the
-display name; a short key, an SDK package name (`@aws-sdk/client-dynamodb`, `boto3.client("s3")`),
-or a Terraform resource name (`aws_dynamodb_table`) all resolve too, and a name that doesn't
-resolve against the currently-synced catalog is reported in `unresolvedServices` rather than
-dropped or rejected.
+display name; a short key (`s3`), an SDK package name (`@aws-sdk/client-dynamodb`), or a Terraform
+resource name (`aws_dynamodb_table`) all resolve too, and a name that doesn't resolve against the
+currently-synced catalog is reported in `unresolvedServices` rather than dropped or rejected.

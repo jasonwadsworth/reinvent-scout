@@ -57,8 +57,10 @@ each `isError` message means and how to react to it.
 ## Presenting reasons and evidence
 
 A candidate's `reasons` field is the whole point of matching from a profile instead of a keyword
-search -- always show it, not just the score. When a reason names a service, and the user's profile
-cited real evidence for that service, it's fine to mention the file the evidence came from
+search -- always show it, not just the score. Each reason's own `evidence` field (see
+`reference/workflow.md`) is the matched catalog value (a service or topic name, or matched query
+terms), not a file -- for the file citation, go back to the *profile you wrote* and find the
+evidence entry you cited for that same service, then mention it
 ("relevant because your API cites `@aws-sdk/client-dynamodb` in `src/handlers/create-order.ts`") --
 that traceability is exactly what agent-authored, evidence-backed profiles buy over a black-box
 score.

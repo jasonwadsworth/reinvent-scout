@@ -98,8 +98,10 @@ Architected review or a migration-path lens to the user.
       "title": "Graviton. Serverless. Apache Iceberg. Your guide to a modern data warehouse strategy",
       "type": "Breakout session",
       "levelBand": 300,
-      "score": 62,
-      "reasons": [ { "kind": "service", "detail": "Amazon Redshift" } ],
+      "score": 50,
+      "reasons": [
+        { "kind": "service", "detail": "Uses Amazon Redshift, which this session covers.", "weight": 50, "evidence": "Amazon Redshift" }
+      ],
       "offerings": [
         { "sessionId": "1780441461150001GGoc", "abbreviation": "ANT301", "startDate": "2026-11-30", "startTime": "10:30", "venue": "MGM Grand", "room": "Level 3 | Chairman's 363 | Content Hub | White Theater" }
       ]
@@ -127,6 +129,14 @@ otherwise exceed the size budget:
 sitting of the same talk. `offerings` lists every scheduled sitting (a repeat conference talk given
 twice has two), each with its own date, time, venue and room; use the `sessionId` from the specific
 offering you mean when calling `favorite_sessions`, not `code`.
+
+Each `reasons` entry is `{ "kind": ..., "detail": string, "weight": number, "evidence": string }`.
+`kind` is one of `service`, `topic`, `areaOfInterest`, `text`, `level`, or `format`. `weight` is
+that reason's own contribution to `score` (every reason's `weight` sums to `score` exactly).
+`evidence` is the specific catalog value that matched -- a service name, a topic, or the matched
+query terms -- not a file path; when presenting a service reason to the user, the file citation
+comes from the *profile's own* evidence for that service (see `reference/profiling.md`), not from
+this field.
 
 ## 6. Present candidates
 
