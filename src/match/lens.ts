@@ -17,21 +17,28 @@ export interface LensProfile {
   /** An additional flat score bonus for a session of this exact type (e.g. re:Invent's own
    * lecture-style "Breakout session" and "Chalk talk" formats are favored under the Explain
    * lens over a hands-on Workshop or Lab, which assume more context than "explain a concept"
-   * calls for). Absent from the map means no bonus, not a penalty. */
-  typeWeights: Readonly<Record<string, number>>;
+   * calls for). Absent from the map means no bonus, not a penalty.
+   *
+   * `Map`-backed, not a plain object literal: `record.type` comes straight from the catalog API,
+   * so a session typed `"constructor"`, `"toString"` or `"valueOf"` would otherwise read the
+   * inherited `Object.prototype` member instead of `undefined` from a bracket lookup, pass the
+   * "is this a real bonus" check, and corrupt that session's `score` -- the same prototype-key
+   * hazard this codebase has already fixed at `tokenize`'s term-frequency maps and both service-key
+   * override tables. */
+  typeWeights: ReadonlyMap<string, number>;
 }
 
 const EXPLAIN_LENS_PROFILE: LensProfile = {
   levelBands: [100, 200],
-  typeWeights: {
-    "Breakout session": 5,
-    "Chalk talk": 5,
-  },
+  typeWeights: new Map([
+    ["Breakout session", 5],
+    ["Chalk talk", 5],
+  ]),
 };
 
 const ALL_LENS_PROFILE: LensProfile = {
   levelBands: null,
-  typeWeights: {},
+  typeWeights: new Map(),
 };
 
 export function getLensProfile(lens: Lens): LensProfile {

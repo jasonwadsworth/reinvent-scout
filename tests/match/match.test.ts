@@ -673,6 +673,43 @@ describe("matchSessions", () => {
 
     expect(results.some((r) => r.code === "INV501")).toBe(true);
   });
+
+  it("scores a session typed 'constructor' as a real number, not a corrupted NaN, under a lens that grants a format bonus", () => {
+    // record.type comes straight from the catalog API. If the lens's type-weight lookup were a
+    // plain object, ["constructor"] would resolve to the inherited Object.prototype.constructor
+    // function instead of undefined -- passing the "!== undefined" guard, getting pushed as a
+    // reason's weight, and corrupting `score` (string concatenation, then NaN once the output
+    // boundary's rounding step multiplies that string by 100) for every session of this type.
+    const session: Session = {
+      sessionId: "s1",
+      abbreviation: "CON100",
+      title: "Something matching the profile",
+      type: "constructor",
+      level: "200 - Intermediate",
+      services: ["AWS Lambda"],
+    };
+    writeCatalog(
+      {
+        raw: [session],
+        index: [session].map(buildIndexRecord),
+        meta: sampleMeta({ totalCount: 1, count: 1 }),
+      },
+      { storeRoot: home.path },
+    );
+
+    const profile = resolvedProfile({
+      services: [
+        { name: "lambda", evidence: [{ repo: ".", file: "x" }], catalogName: "AWS Lambda" },
+      ],
+    });
+
+    const results = matchSessions(profile, { storeRoot: home.path }, { lens: "explain" });
+
+    expect(results).toHaveLength(1);
+    expect(typeof results[0]!.score).toBe("number");
+    expect(Number.isNaN(results[0]!.score)).toBe(false);
+    expect(results[0]!.reasons.some((r) => r.kind === "format")).toBe(false);
+  });
 });
 
 describe("matchSessions grouping repeat sessions by base code", () => {

@@ -324,7 +324,7 @@ export function matchSessions(
     const reasons = [...base.reasons];
     let score = base.score;
 
-    const formatBonus = record.type !== null ? lensProfile.typeWeights[record.type] : undefined;
+    const formatBonus = record.type !== null ? lensProfile.typeWeights.get(record.type) : undefined;
     if (formatBonus !== undefined) {
       reasons.push({
         kind: "format",
