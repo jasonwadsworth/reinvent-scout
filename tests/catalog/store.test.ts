@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -7,6 +7,7 @@ import {
   readIndex,
   readMeta,
   readRaw,
+  readTimezoneAvailability,
   writeCatalog,
   type CatalogMeta,
 } from "../../src/catalog/store.js";
@@ -102,6 +103,55 @@ describe("catalog store", () => {
     );
 
     expect(readMeta({ storeRoot: home.path })?.timezone).toBeNull();
+  });
+
+  describe("readTimezoneAvailability", () => {
+    it("reports a known timezone", () => {
+      writeCatalog(
+        { raw: SAMPLE_RAW, index: SAMPLE_INDEX, meta: sampleMeta({ timezone: "America/Los_Angeles" }) },
+        { storeRoot: home.path },
+      );
+
+      expect(readTimezoneAvailability({ storeRoot: home.path })).toEqual({
+        status: "known",
+        timezone: "America/Los_Angeles",
+      });
+    });
+
+    it("reports omittedByApi when meta explicitly stores a null timezone", () => {
+      writeCatalog(
+        { raw: SAMPLE_RAW, index: SAMPLE_INDEX, meta: sampleMeta({ timezone: null }) },
+        { storeRoot: home.path },
+      );
+
+      expect(readTimezoneAvailability({ storeRoot: home.path })).toEqual({
+        status: "unavailable",
+        reason: "omittedByApi",
+      });
+    });
+
+    it("reports syncedBeforeTimezoneSupport when the stored meta has no timezone key at all, distinct from an explicit null", () => {
+      // A pre-schema-5 meta.json, written directly (writeCatalog can't produce this shape, since
+      // CatalogMeta's own type requires the field -- this is exactly what readMeta's cast lets
+      // through unvalidated in practice, from a catalog synced before this field existed).
+      writeCatalog(
+        { raw: SAMPLE_RAW, index: SAMPLE_INDEX, meta: sampleMeta({ timezone: null }) },
+        { storeRoot: home.path },
+      );
+      const metaPath = join(home.path, "catalog", "meta.json");
+      const withoutTimezoneKey = JSON.parse(readFileSync(metaPath, "utf8")) as Record<string, unknown>;
+      delete withoutTimezoneKey.timezone;
+      writeFileSync(metaPath, JSON.stringify(withoutTimezoneKey));
+
+      expect(readTimezoneAvailability({ storeRoot: home.path })).toEqual({
+        status: "unavailable",
+        reason: "syncedBeforeTimezoneSupport",
+      });
+    });
+
+    it("returns null when nothing has been synced", () => {
+      expect(readTimezoneAvailability({ storeRoot: home.path })).toBeNull();
+    });
   });
 
   it("reports the catalog as missing when nothing has been synced", () => {

@@ -174,6 +174,42 @@ export function readMeta(deps: CatalogStoreDeps): CatalogMeta | null {
   return readJsonFileOrNull<CatalogMeta>(metaPath(deps.storeRoot));
 }
 
+export type TimezoneAvailability =
+  | { status: "known"; timezone: string }
+  | {
+      status: "unavailable";
+      /** `omittedByApi`: `GetEvent`'s response genuinely didn't report one -- syncing again
+       * cannot fix this. `syncedBeforeTimezoneSupport`: this catalog was synced before the
+       * `timezone` field existed at all, so the API was never even asked -- one more
+       * `catalog_sync` will very likely resolve it. Callers must give these two different advice;
+       * conflating them tells a user "nothing can be done" in a case a sync would fix. */
+      reason: "omittedByApi" | "syncedBeforeTimezoneSupport";
+    };
+
+/**
+ * Reads the event's timezone availability, distinguishing an explicit `null` (the API's response
+ * omitted `timezone`) from a catalog synced before this field existed at all. `readMeta`'s cast is
+ * not runtime-validated, so a pre-schema-5 `meta.json` -- which genuinely has no `timezone` key on
+ * disk, despite `CatalogMeta`'s type promising `string | null` -- reads back as `undefined` there,
+ * indistinguishable from an explicit `null` under `??`. This reads the raw stored object and
+ * checks the key's presence with `Object.hasOwn` instead of branching on falsiness, which is the
+ * only way to tell the two apart. Returns `null` when nothing has been synced (same as `readMeta`).
+ */
+export function readTimezoneAvailability(deps: CatalogStoreDeps): TimezoneAvailability | null {
+  const raw = readJsonFileOrNull<Record<string, unknown>>(metaPath(deps.storeRoot));
+  if (raw === null) {
+    return null;
+  }
+  if (!Object.hasOwn(raw, "timezone")) {
+    return { status: "unavailable", reason: "syncedBeforeTimezoneSupport" };
+  }
+  const timezone = raw.timezone;
+  if (timezone === null) {
+    return { status: "unavailable", reason: "omittedByApi" };
+  }
+  return { status: "known", timezone: timezone as string };
+}
+
 export type CatalogState =
   | { status: "missing" }
   | { status: "stale"; reason: "schema-version" | "age"; meta: CatalogMeta }

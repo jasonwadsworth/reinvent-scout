@@ -561,7 +561,7 @@ describe("get_schedule tool", () => {
     expect(parsed.entries[1]!.startsAt! > parsed.entries[0]!.startsAt!).toBe(true);
   });
 
-  it("gives sessions a null startsAt and a warnings entry when the event's timezone is unknown, without falling back to a host or hardcoded zone", async () => {
+  it("gives sessions a null startsAt and a warnings entry when the event's timezone is unknown (an explicit null, the API omitted it), without falling back to a host or hardcoded zone", async () => {
     const sessions = [
       {
         sessionId: "no-tz-a",
@@ -600,6 +600,74 @@ describe("get_schedule tool", () => {
     expect(parsed.entries.map((e) => e.sessionId)).toEqual(["no-tz-a", "no-tz-b"]);
     expect(parsed.warnings).toBeDefined();
     expect(parsed.warnings!.some((w) => /timezone/i.test(w) && /unreliable/i.test(w))).toBe(true);
+    // This is the genuinely-unfixable case: the message must not name catalog_sync as a remedy,
+    // since running it again cannot change what the API itself reported.
+    expect(parsed.warnings!.join(" ")).not.toContain("catalog_sync");
+  });
+
+  it("gives a distinctly-worded, catalog_sync-naming warning when the stored catalog predates timezone support entirely (no timezone key at all), never conflating it with an explicit null", async () => {
+    // Reviewer's finding: a v4 meta.json (synced before the schema-5 bump) has no `timezone` key
+    // on disk at all, which `readMeta`'s unvalidated cast reads back as `undefined` -- easy to
+    // silently treat the same as an explicit `null` (the API genuinely reporting none). The two
+    // need opposite remedies: this one is fixed by one more catalog_sync; an explicit null is not
+    // fixable by syncing again. Written directly, since writeCatalog's own CatalogMeta type can't
+    // produce a meta object missing a required field.
+    const sessions = [
+      {
+        sessionId: "pre-bump-a",
+        abbreviation: "PB1",
+        title: "Pre-bump session",
+        sessionTime: { date: "2026-12-01", time: "09:00", length: "30" },
+      },
+    ];
+    seedCatalog(home.path, sessions, { timezone: null });
+    const metaPath = join(home.path, "catalog", "meta.json");
+    const preBumpMeta = JSON.parse(readFileSync(metaPath, "utf8")) as Record<string, unknown>;
+    delete preBumpMeta.timezone;
+    writeFileSync(metaPath, JSON.stringify(preBumpMeta), "utf8");
+
+    const client = await connectedClient(home.path, {
+      getSchedule: async () => ({ reserved: [], favorites: [sessions[0]!.sessionId], personalTime: [] }),
+    });
+
+    const result = await client.callTool({ name: "get_schedule", arguments: {} });
+
+    expect(result.isError).not.toBe(true);
+    const parsed = JSON.parse(textOf(result)) as {
+      entries: Array<{ startsAt: string | null }>;
+      warnings?: string[];
+    };
+    expect(parsed.entries[0]!.startsAt).toBeNull();
+    expect(parsed.warnings).toBeDefined();
+    expect(parsed.warnings!.join(" ")).toContain("catalog_sync");
+  });
+
+  it("gives the pre-bump and explicit-null warnings genuinely different text, not one generic message for both", async () => {
+    async function warningsFor(prepare: (storeRoot: string) => void): Promise<string[]> {
+      prepare(home.path);
+      const client = await connectedClient(home.path, {
+        getSchedule: async () => ({ reserved: [], favorites: [], personalTime: [] }),
+      });
+      const result = await client.callTool({ name: "get_schedule", arguments: {} });
+      const parsed = JSON.parse(textOf(result)) as { warnings?: string[] };
+      return parsed.warnings ?? [];
+    }
+
+    const explicitNullWarnings = await warningsFor((storeRoot) => seedCatalog(storeRoot, [], { timezone: null }));
+
+    home.cleanup();
+    home = createTempHome();
+    const preBumpWarnings = await warningsFor((storeRoot) => {
+      seedCatalog(storeRoot, [], { timezone: null });
+      const metaPath = join(storeRoot, "catalog", "meta.json");
+      const meta = JSON.parse(readFileSync(metaPath, "utf8")) as Record<string, unknown>;
+      delete meta.timezone;
+      writeFileSync(metaPath, JSON.stringify(meta), "utf8");
+    });
+
+    expect(explicitNullWarnings).toHaveLength(1);
+    expect(preBumpWarnings).toHaveLength(1);
+    expect(explicitNullWarnings[0]).not.toBe(preBumpWarnings[0]);
   });
 
   it("does not include a warnings entry when the event timezone is known", async () => {

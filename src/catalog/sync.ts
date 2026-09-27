@@ -147,14 +147,19 @@ export async function syncCatalog(deps: SyncCatalogDeps): Promise<SyncResult> {
     // instead is strictly more useful to the user than refusing.
   }
 
-  // Both calls are independent reads of the same event, so they run concurrently; either
-  // rejecting propagates unchanged (same as a listAllSessions-only failure did before this event
-  // fetch existed) and writeCatalog below is never reached, leaving the previous catalog
-  // untouched -- consistent with the rest of this function never starting a write on bad input.
-  const [{ sessions, totalCount: reportedTotalCount }, event] = await Promise.all([
-    deps.apiClient.listAllSessions(eventId, { includeAbstracts }),
-    deps.apiClient.getEvent(eventId),
-  ]);
+  // getEvent runs BEFORE the (potentially many-page, rate-limited) listAllSessions pull, not
+  // concurrently with it: it's a cheap, unauthenticated-shaped call, so failing fast on it never
+  // wastes a completed paced pull of the whole catalog the way running both concurrently would.
+  // Its rejection propagates unchanged, same as a listAllSessions failure always has, and
+  // listAllSessions is never even called in that case -- writeCatalog below is never reached
+  // either way, leaving the previous catalog untouched, consistent with the rest of this function
+  // never starting a write on bad input. A null timezone must mean exactly one thing (the API's
+  // response omitted it), so a failed lookup aborts rather than degrading to null: storing
+  // timezone: null on a failed lookup would make it indistinguishable from that genuine case.
+  const event = await deps.apiClient.getEvent(eventId);
+  const { sessions, totalCount: reportedTotalCount } = await deps.apiClient.listAllSessions(eventId, {
+    includeAbstracts,
+  });
   const index = sessions.map(buildIndexRecord);
   const { totalCount, totalCountMissing } = resolveTotalCount(reportedTotalCount, sessions.length);
   const meta: CatalogMeta = {

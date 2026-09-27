@@ -7,7 +7,12 @@ import { readTokenStore } from "../auth/token-store.js";
 import { toPublicIndexRecord } from "../catalog/index-record.js";
 import { catalogServiceNames } from "../catalog/query.js";
 import { buildServiceAliasIndex } from "../catalog/service-aliases.js";
-import { getCatalogState, readMeta, type CatalogState } from "../catalog/store.js";
+import {
+  getCatalogState,
+  readTimezoneAvailability,
+  type CatalogState,
+  type TimezoneAvailability,
+} from "../catalog/store.js";
 import { syncCatalog } from "../catalog/sync.js";
 import { formatZodError } from "../cli/zod-errors.js";
 import {
@@ -636,6 +641,34 @@ function buildScheduleResponse(
   return buildScheduleResponseBody(included, offset, total, totals, warning, warnings);
 }
 
+/** The `startsAt`/`endsAt`-relevant `warnings` entries for the event's timezone availability --
+ * `[]` when it's known, or when nothing has ever been synced at all (`schedule.warning` already
+ * covers that case with its own remedy). The two `"unavailable"` reasons need genuinely different
+ * advice, not one generic message for both: a pre-bump catalog (no `timezone` key at all, since
+ * it predates the schema-5 field -- `GetEvent` was never even called) is fixed by one more
+ * `catalog_sync`, while an explicit `null` (`GetEvent`'s response genuinely omitted it) cannot be
+ * fixed by syncing again at all -- telling an agent the unfixable story in both cases would make
+ * it tell the user nothing can be done when a sync would actually solve it. */
+function timezoneWarnings(availability: TimezoneAvailability | null): string[] {
+  if (availability === null || availability.status === "known") {
+    return [];
+  }
+  if (availability.reason === "syncedBeforeTimezoneSupport") {
+    return [
+      "This catalog was synced before timezone support was added, so session start times " +
+        "could not be converted to a common startsAt -- session and personal-time ordering " +
+        "across kinds is unreliable. Run `catalog_sync` (or `reinvent-scout catalog sync`) to " +
+        "fetch the event's timezone; it will very likely resolve this.",
+    ];
+  }
+  return [
+    "The event's timezone is unknown (GetEvent's response omitted it), so session start times " +
+      "could not be converted to a common startsAt -- session and personal-time ordering across " +
+      "kinds is unreliable. Sessions still sort correctly relative to each other by their local " +
+      "date and time.",
+  ];
+}
+
 function registerGetScheduleTool(server: McpServer, deps: McpToolDeps): void {
   const buildApiClient = deps.buildApiClient ?? defaultBuildApiClient;
 
@@ -662,12 +695,13 @@ function registerGetScheduleTool(server: McpServer, deps: McpToolDeps): void {
           ...(event === undefined ? {} : { eventId: event }),
         });
 
-        // `null` both when nothing has ever been synced (readMeta returns null) and when the
-        // event's own GetEvent response omitted a timezone -- callers can't tell those apart from
-        // this alone, but `schedule.warning` already covers the former, and `warnings` below
-        // covers the latter, so nothing here needs to distinguish them further. Never falls back
-        // to the host machine's timezone or a hardcoded zone in either case.
-        const eventTimezone = readMeta({ storeRoot })?.timezone ?? null;
+        // Distinguishes a catalog that genuinely has no known timezone (`GetEvent` omitted it)
+        // from one that simply predates timezone support entirely (no `timezone` key on disk at
+        // all) -- see `timezoneWarnings`. Never falls back to the host machine's timezone or a
+        // hardcoded zone in either case.
+        const timezoneAvailability = readTimezoneAvailability({ storeRoot });
+        const eventTimezone =
+          timezoneAvailability?.status === "known" ? timezoneAvailability.timezone : null;
 
         const merged = [
           ...toMergedSessionEntries(schedule.reserved, "reserved", eventTimezone),
@@ -688,15 +722,7 @@ function registerGetScheduleTool(server: McpServer, deps: McpToolDeps): void {
           .slice(resolvedOffset, resolvedOffset + resolvedLimit)
           .map((entry) => entry.data);
 
-        const warnings: string[] =
-          eventTimezone === null
-            ? [
-                "The event's timezone is unknown (GetEvent's response omitted it), so session " +
-                  "start times could not be converted to a common startsAt -- session and " +
-                  "personal-time ordering across kinds is unreliable. Sessions still sort " +
-                  "correctly relative to each other by their local date and time.",
-              ]
-            : [];
+        const warnings = timezoneWarnings(timezoneAvailability);
 
         const response = buildScheduleResponse(
           windowed,

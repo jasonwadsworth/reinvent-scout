@@ -278,6 +278,50 @@ describe("syncCatalog", () => {
     expect(readMeta({ storeRoot: home.path })).toEqual(previousMeta);
   });
 
+  it("fetches the event before pulling sessions, so a getEvent failure aborts the sync without a single listAllSessions call -- never wasting a completed paced pull", async () => {
+    // Reviewer's point: getEvent is a cheap, unauthenticated-shaped call, while listAllSessions is
+    // a paced, potentially multi-page pull of the whole catalog. Fetching the event first means a
+    // transient getEvent failure fails fast rather than discarding a completed session pull.
+    let listAllSessionsCalls = 0;
+    const client = fakeApiClient(
+      async () => {
+        listAllSessionsCalls++;
+        return { sessions: fixture, totalCount: fixture.length };
+      },
+      async () => {
+        throw new ServiceError("simulated GetEvent 500");
+      },
+    );
+
+    await expect(
+      syncCatalog({ apiClient: client, storeRoot: home.path }),
+    ).rejects.toBeInstanceOf(ServiceError);
+
+    expect(listAllSessionsCalls).toBe(0);
+    expect(readRaw({ storeRoot: home.path })).toBeNull();
+  });
+
+  it("leaves the previous catalog completely untouched when getEvent fails, same as any other aborted sync", async () => {
+    const previousIndex = fixture.map(buildIndexRecord);
+    const previousMeta = sampleMeta({ syncedAt: 1_600_000_000_000, timezone: "America/Los_Angeles" });
+    writeCatalog({ raw: fixture, index: previousIndex, meta: previousMeta }, { storeRoot: home.path });
+
+    const client = fakeApiClient(
+      async () => ({ sessions: fixture, totalCount: fixture.length }),
+      async () => {
+        throw new ServiceError("simulated GetEvent 500");
+      },
+    );
+
+    await expect(
+      syncCatalog({ apiClient: client, storeRoot: home.path }),
+    ).rejects.toBeInstanceOf(ServiceError);
+
+    expect(readRaw({ storeRoot: home.path })).toEqual(fixture);
+    expect(readIndex({ storeRoot: home.path })).toEqual(previousIndex);
+    expect(readMeta({ storeRoot: home.path })).toEqual(previousMeta);
+  });
+
   it("surfaces NotRegisteredError unchanged so the CLI can explain it", async () => {
     const client = fakeApiClient(async () => {
       throw new NotRegisteredError();
