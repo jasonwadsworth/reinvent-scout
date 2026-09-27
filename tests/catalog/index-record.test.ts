@@ -154,6 +154,69 @@ describe("buildIndexRecord", () => {
     expect(Object.hasOwn(counts, "ll")).toBe(false);
     expect(Object.hasOwn(counts, "s")).toBe(false);
     expect(Object.hasOwn(counts, "t")).toBe(false);
+    // "don't" without stripping the whole "n't" unit leaves "don" (3 characters -- long enough to
+    // survive the short-token filter on its own). Measured against the real 2,043-session catalog,
+    // "don" has document frequency 68, giving it an idf of 3.396 -- almost identical to
+    // "dynamodb"'s 3.411 -- so left unstripped it would score in a "text overlap" reason as though
+    // it were a precise, meaningful service term.
+    expect(Object.hasOwn(counts, "don")).toBe(false);
+  });
+
+  it("strips the whole n't contraction unit -- not just 't -- for every English negative contraction", () => {
+    // "don't" without stripping the "n" too would leave "don"; stripping just "'t" from
+    // "wouldn't" would leave "wouldn", not the real word "would". The suffix removed is "n't" as a
+    // unit, so the remainder is exactly the stem word ("would", "does", ...) or a fragment short
+    // enough for the length filter to drop on its own ("do", "wo", "ca") -- never the stem with a
+    // stray "n" still attached.
+    const wrongStems = [
+      "wouldn", "weren", "hasn", "wasn", "couldn", "haven",
+      "didn", "won", "aren", "shouldn", "doesn", "isn", "don",
+    ];
+    const text = wrongStems.map((stem) => `${stem}'t`).join(" ");
+
+    const counts = tokenize(text);
+
+    for (const wrongStem of wrongStems) {
+      expect(Object.hasOwn(counts, wrongStem)).toBe(false);
+    }
+  });
+
+  it("leaves the real word behind when a negative contraction's stem is one -- doesn't -> does, wouldn't -> would", () => {
+    const counts = tokenize("this session doesn't skip steps and wouldn't rush the agenda");
+
+    expect(counts.does).toBe(1);
+    expect(counts.would).toBe(1);
+    expect(Object.hasOwn(counts, "doesn")).toBe(false);
+    expect(Object.hasOwn(counts, "wouldn")).toBe(false);
+  });
+
+  it("preserves standalone \"can\", which the n't strip must not be confused for", () => {
+    // The reviewer's specific trap: "can" has real document frequency in the catalog and must
+    // survive on its own, even though "can't" (stem "ca", two characters) is stripped down to a
+    // droppable fragment by the exact same mechanism. A rule that stripped a trailing "n" instead
+    // of the whole "n't" unit, or that treated fragments as a stopword list, would risk this.
+    const counts = tokenize("we can do this, but we can't do that");
+
+    expect(counts.can).toBe(1);
+    expect(Object.hasOwn(counts, "ca")).toBe(false);
+  });
+
+  it("strips 'll, 're, 've, 'd and 'm suffixes, leaving a real word behind when there is one", () => {
+    const counts = tokenize("you'll see, they're here, we've done, I'd go, I'm here");
+
+    expect(Object.hasOwn(counts, "ll")).toBe(false);
+    expect(Object.hasOwn(counts, "re")).toBe(false);
+    expect(Object.hasOwn(counts, "ve")).toBe(false);
+    expect(counts.they).toBe(1);
+    expect(counts.see).toBe(1);
+    expect(counts.done).toBe(1);
+  });
+
+  it("also strips a curly-quote n't", () => {
+    const counts = tokenize("this session doesn’t skip steps");
+
+    expect(counts.does).toBe(1);
+    expect(Object.hasOwn(counts, "doesn")).toBe(false);
   });
 
   it("does not report Object.prototype members as present when the text never contains them", () => {

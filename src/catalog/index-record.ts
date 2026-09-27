@@ -25,10 +25,30 @@ export type TermFrequencies = Record<string, number>;
  * unconditionally regardless of the base word. An earlier version also stripped `'s`/`'s` from the
  * text before splitting, as a second, explicit mechanism for the same fragment; sabotage testing
  * showed the two were fully redundant (disabling either alone, with the other still active, left
- * every test green), so the dedicated stripping step was removed as dead code. This comment is the
- * load-bearing part now: if `MIN_TERM_LENGTH` is ever lowered below 2, the possessive fragment
- * problem comes back, silently, with no dedicated mechanism left to catch it. */
+ * every test green), so the dedicated stripping step was removed as dead code.
+ *
+ * This is the load-bearing warning: this filter is what keeps the possessive "s" fragment out, and
+ * lowering it below 2 (i.e. to 1 or less) lets that one-character fragment survive again, silently,
+ * with no dedicated mechanism left to catch it. It is *not* what protects `CONTRACTION_SUFFIX_PATTERN`
+ * below -- that mechanism strips its fragments (`ll`, `re`, `ve`, ...) from the text before this
+ * filter ever runs, so those don't depend on this threshold at all. */
 const MIN_TERM_LENGTH = 3;
+
+/**
+ * Common English contraction suffixes, stripped from the end of a word before it's split out --
+ * `n't`, `'ll`, `'re`, `'ve`, `'d`, `'m`, either apostrophe form. Measured against the real
+ * catalog: without this, the word-before-suffix left behind by an un-stripped `n't` is often long
+ * enough to survive `MIN_TERM_LENGTH` on its own -- "don't" leaves "don" (document frequency 68 in
+ * the real 2,043-session catalog, an idf of 3.396, nearly identical to "dynamodb"'s 3.411) --
+ * scoring in a "text overlap" reason as though it were a precise, meaningful term. The suffix
+ * removed is the whole unit (`n't`, not just `'t`), so what's left is either the real stem word
+ * ("doesn't" -> "does", "wouldn't" -> "would") or short enough for `MIN_TERM_LENGTH` to drop on its
+ * own ("don't" -> "do", "can't" -> "ca", "won't" -> "wo") -- never the stem with the contraction's
+ * own "n" still attached. Deliberately keyed on the suffix, not a stopword list of whole words:
+ * "can" on its own (with real document frequency in the catalog) must survive untouched, and a
+ * fragment-based stopword list would have no way to tell it apart from the "ca" that "can't" leaves
+ * behind once the "n't" is already gone. */
+const CONTRACTION_SUFFIX_PATTERN = /n['’]t\b|['’](?:ll|re|ve|d|m)\b/gi;
 
 /** True when `word`, exactly as it appeared in the original (not lowercased) text, is written
  * entirely in capitals and is at least two characters -- "S3", "ML", "AI". This is the one
@@ -42,9 +62,9 @@ function isAllCapsAcronym(word: string): boolean {
 }
 
 /** Exported so `catalog/query.ts` tokenizes a search query with the exact same rules used to
- * build the index it searches -- a query term that doesn't survive the same lowercasing,
- * word-splitting, short-fragment filtering and stopword removal as the indexed text would never be
- * able to match it. */
+ * build the index it searches -- a query term that doesn't survive the same contraction-stripping,
+ * lowercasing, word-splitting, short-fragment filtering and stopword removal as the indexed text
+ * would never be able to match it. */
 export function tokenize(text: string): TermFrequencies {
   // A plain object literal inherits Object.prototype, so a tokenized word that collides with one
   // of its members (`constructor`, `hasOwnProperty`, `toString`, ...) reads back a function
@@ -52,9 +72,10 @@ export function tokenize(text: string): TermFrequencies {
   // Object.create(null) has no prototype at all, so every lookup below reflects only what this
   // function itself has written.
   const counts: TermFrequencies = Object.create(null) as TermFrequencies;
+  const withoutContractions = text.replace(CONTRACTION_SUFFIX_PATTERN, "");
   // Matched against the original casing (not yet lowercased) so isAllCapsAcronym can tell a real
   // acronym from an ordinary short word that only happens to share its letters.
-  const words = text.match(/[A-Za-z0-9]+/g) ?? [];
+  const words = withoutContractions.match(/[A-Za-z0-9]+/g) ?? [];
   for (const word of words) {
     const lower = word.toLowerCase();
     if (STOPWORDS.has(lower)) {
