@@ -308,6 +308,7 @@ describe("resolveSessionRecord", () => {
       status: "found",
       record: expect.objectContaining({ abbreviation: "ANT301" }),
       relatedAbbreviations: [],
+      relatedRecords: [],
     });
   });
 
@@ -339,6 +340,14 @@ describe("resolveSessionRecord", () => {
     // API303-R sits 2026-11-30, API303-R1 sits 2026-12-02 -- the earlier one is the "found" record.
     expect(result.status === "found" && result.record.abbreviation).toBe("API303-R");
     expect(result.status === "found" && result.relatedAbbreviations).toEqual(["API303-R1"]);
+    // relatedRecords is the same sibling, as a full record rather than just its abbreviation --
+    // `catalog show`'s human output needs each sitting's own day/time/venue/room, not just its name.
+    expect(result.status === "found" && result.relatedRecords.map((r) => r.abbreviation)).toEqual([
+      "API303-R1",
+    ]);
+    expect(result.status === "found" && result.relatedRecords[0]!.sessionId).toBe(
+      "1780441491675002GHkV",
+    );
   });
 
   it("lists the other sitting's abbreviation even when the token matches one sitting's own abbreviation exactly", () => {

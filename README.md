@@ -130,25 +130,28 @@ narrowed with:
   `--include-abstracts` is also given, so a search never bloats past what you actually asked for.
 
 ```
-reinvent-scout catalog show ANT301
+reinvent-scout catalog show ARC325
 ```
 
-Prints the session's title, every other sitting of the same talk (see "Also offered as" below), and
-its abstract, by either its session id or its abbreviation -- the abbreviation is what `catalog
-search` prints, and matching it is case-insensitive, so you can paste exactly what search showed
-you. (Real session ids are opaque, e.g. `1780441461150001GGoc`; the abbreviation is what you'll
-actually have on hand.) The rest of the record -- type, level, venue, room, date, time, and the
-session id itself -- is only in the `--json` output; the human-readable form is deliberately just
-enough to read and decide, not the full record.
-
-Some talks repeat on a later day under a suffixed abbreviation (`ARC325-R`, `ARC325-R1`). `catalog
+Prints the session's title, one line per sitting in time order -- its abbreviation, its real
+session id, day, time, and venue/room -- and its abstract, by either a session id or an
+abbreviation, matched case-insensitively so you can paste exactly what `catalog search` showed you.
+Some talks repeat on a later day under a suffixed abbreviation (`ARC325-R`, `ARC325-R1`); `catalog
 show` also accepts the **bare base code** with the suffix removed (`ARC325`) and resolves it to the
-earliest sitting -- this matters because `match`'s own output prints a candidate's base code, not
-any one sitting's abbreviation, so you need to be able to paste that back in directly. Either way
-you look a repeated talk up -- by its base code or by one specific sitting's own abbreviation -- the
-result's `relatedAbbreviations` field (and, in the human-readable form, an "Also offered as: ..."
-line) names every other sitting of the same talk, so you can find the one that fits your schedule.
-A session with no repeats always reports an empty `relatedAbbreviations`.
+earliest sitting, with every other sitting folded into the same listing -- this matters because
+`match`'s own output prints a candidate's base code, not any one sitting's abbreviation, so you need
+to be able to paste that back in directly. This is real output, from the real catalog:
+
+```
+Serverless at 1M RPS: Lambda, DynamoDB & SQS Scaling Lessons
+  ARC325-R -- 1780442233390001cyew -- 2026-12-02 -- 13:30 -- Caesars Forum -- Level 1 | Alliance 314
+  ARC325-R1 -- 1790358237453001iwA0 -- 2026-12-03 -- 10:00 -- Caesars Palace -- Caesars Palace | Promenade Level | Trevi
+We push Lambda, DynamoDB, and SQS to one million requests per second and share what breaks. Learn partition-aware DynamoDB design for extreme write throughput, ...
+```
+
+A session with no repeats prints just its own single line. The rest of the record -- type, level,
+and the `relatedAbbreviations` field itself -- is only in the `--json` output; the human-readable
+form above is deliberately just the sittings and the abstract, not the full record.
 
 ## Validate and save a repo profile
 
@@ -282,11 +285,14 @@ machine-readable output, including each entry's `resolved: true|false` status.
 reinvent-scout schedule favorite <session-id> [<session-id> ...]
 ```
 
-Favorites one or more sessions by their real session id -- present in every command's `--json`
-output as the `sessionId` field, but deliberately *not* printed in any human-readable output
-(`catalog search`, `catalog show` and `match` all print the shorter abbreviation or grouped `code`
-instead, since that's what you'd actually read and remember). Pull the real id out with `--json` and
-`jq` when you need one to paste, for example to favorite one specific sitting you just looked up:
+Favorites one or more sessions by their real session id. It's present in every command's `--json`
+output as the `sessionId` field, and `catalog show`'s human-readable output (above) prints it
+directly on each sitting's own line too, so a person reading it can paste it straight in --
+`reinvent-scout catalog show ARC325` followed by `reinvent-scout schedule favorite
+1790358237453001iwA0` favorites the second sitting shown above. `catalog search` and `match` still
+print only the shorter abbreviation or grouped `code`, since those exist for browsing a list, not
+for pasting one id into `favorite`. When a script needs an id with no person reading the output,
+pull it out of `--json` with `jq` instead:
 
 ```
 reinvent-scout schedule favorite "$(reinvent-scout catalog show ARC325-R1 --json | jq -r .sessionId)"

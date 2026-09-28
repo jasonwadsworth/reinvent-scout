@@ -188,7 +188,16 @@ export function queryCatalog(
 }
 
 export type SessionLookupResult =
-  | { status: "found"; record: IndexRecord; relatedAbbreviations: string[] }
+  | {
+      status: "found";
+      record: IndexRecord;
+      relatedAbbreviations: string[];
+      /** The same sittings as `relatedAbbreviations`, as full records rather than just their
+       * abbreviations -- sorted by start date/time, never including `record` itself. Exists for a
+       * caller (the CLI's own human-readable `catalog show`) that needs each other sitting's own
+       * day, time, venue and room, not just its name. */
+      relatedRecords: IndexRecord[];
+    }
   | { status: "not-found" }
   | { status: "ambiguous"; candidates: IndexRecord[] };
 
@@ -216,8 +225,11 @@ export function baseSessionCode(record: IndexRecord): string {
 }
 
 /** Ascending by start date then start time; a record with no `startDate` at all (unscheduled)
- * sorts last, since there's nothing yet to place it relative to a scheduled one. */
-function compareByStartDateTime(a: IndexRecord, b: IndexRecord): number {
+ * sorts last, since there's nothing yet to place it relative to a scheduled one. Exported so the
+ * CLI's own `catalog show` can merge a resolved record back in with its `relatedRecords` into one
+ * time-ordered list of every sitting, using the exact same order this module already sorts
+ * siblings by. */
+export function compareByStartDateTime(a: IndexRecord, b: IndexRecord): number {
   if (a.startDate !== b.startDate) {
     if (a.startDate === null) {
       return 1;
@@ -256,7 +268,7 @@ export function resolveSessionRecord(deps: CatalogStoreDeps, token: string): Ses
 
   const bySessionId = index.find((record) => record.sessionId === token);
   if (bySessionId !== undefined) {
-    return { status: "found", record: bySessionId, relatedAbbreviations: [] };
+    return { status: "found", record: bySessionId, relatedAbbreviations: [], relatedRecords: [] };
   }
 
   const normalizedToken = token.toLowerCase();
@@ -278,6 +290,7 @@ export function resolveSessionRecord(deps: CatalogStoreDeps, token: string): Ses
       status: "found",
       record: found,
       relatedAbbreviations: siblings.map((record) => record.abbreviation).filter((a) => a !== null),
+      relatedRecords: siblings,
     };
   }
   if (byAbbreviation.length > 1) {
@@ -293,6 +306,7 @@ export function resolveSessionRecord(deps: CatalogStoreDeps, token: string): Ses
       status: "found",
       record: earliest!,
       relatedAbbreviations: rest.map((record) => record.abbreviation).filter((a) => a !== null),
+      relatedRecords: rest,
     };
   }
 

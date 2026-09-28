@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { registerCatalogCommands } from "../../src/cli/commands/catalog.js";
+import { registerScheduleCommands } from "../../src/cli/commands/schedule.js";
 import type { ApiClient, ListAllSessionsOptions, ListAllSessionsResult } from "../../src/api/client.js";
 import type { Session } from "../../src/api/types.js";
 import { AuthRequiredError, NotRegisteredError } from "../../src/core/errors.js";
@@ -419,22 +420,98 @@ describe("catalog show command", () => {
     expect(result.relatedAbbreviations).toEqual(["API303-R1"]);
   });
 
-  it("prints the other sittings' abbreviations in the human-readable output for a base code", async () => {
+  it("prints one line per sitting, in time order, each naming its abbreviation, session id, day, time and venue/room", async () => {
+    // Lead's decision: a session id is otherwise never in any human-readable output at all (only
+    // --json carries it), which left a reader with nothing real to paste into `schedule favorite`.
+    // API303-R sits 2026-11-30 14:30, API303-R1 sits 2026-12-02 10:30 (see
+    // tests/fixtures/README.md) -- the earlier one must print first regardless of which token
+    // resolved the lookup.
     const h = localHarness(home.path);
 
     await h.run(["catalog", "show", "API303"]);
 
     const text = h.printed.join("\n");
-    expect(text).toContain("API303-R");
-    expect(text).toContain("Also offered as: API303-R1");
+    const firstIndex = text.indexOf("API303-R --");
+    const secondIndex = text.indexOf("API303-R1 --");
+    expect(firstIndex).toBeGreaterThanOrEqual(0);
+    expect(secondIndex).toBeGreaterThan(firstIndex);
+    expect(text).toContain("API303-R -- 1780441491675001GHkU -- 2026-11-30 -- 14:30 -- Caesars Forum");
+    expect(text).toContain(
+      "API303-R1 -- 1780441491675002GHkV -- 2026-12-02 -- 10:30 -- Caesars Forum",
+    );
+    // No more special-cased "Also offered as" line -- the per-sitting list replaces it entirely.
+    expect(text).not.toContain("Also offered as");
   });
 
-  it("does not print an 'also offered as' line for a session with no repeats", async () => {
+  it("keeps sittings in time order even when the token names the later sitting's own abbreviation directly", async () => {
+    // The trap a naive `[record, ...relatedRecords]` (no re-sort) falls into: looking up "API303"
+    // (the base code) happens to resolve `record` to the *earliest* sitting already, by
+    // construction, so that case alone can't tell a real re-sort apart from one that was silently
+    // dropped -- confirmed directly: removing the `.sort(compareByStartDateTime)` call left the
+    // "API303" test above still green. Looking up "API303-R1" (the *later* sitting's own
+    // abbreviation) directly makes `record` the later one and `relatedRecords` the earlier one, so
+    // only a real re-sort puts API303-R back in front.
+    const h = localHarness(home.path);
+
+    await h.run(["catalog", "show", "API303-R1"]);
+
+    const text = h.printed.join("\n");
+    const firstIndex = text.indexOf("API303-R --");
+    const secondIndex = text.indexOf("API303-R1 --");
+    expect(firstIndex).toBeGreaterThanOrEqual(0);
+    expect(secondIndex).toBeGreaterThan(firstIndex);
+  });
+
+  it("still prints its one sitting's own detail line for a session with no repeats", async () => {
     const h = localHarness(home.path);
 
     await h.run(["catalog", "show", "ANT301"]);
 
-    expect(h.printed.join("\n")).not.toContain("Also offered as");
+    const text = h.printed.join("\n");
+    expect(text).toContain("ANT301 -- 1780441461150001GGoc -- 2026-11-30 -- 10:30 -- MGM Grand");
+    expect(text).not.toContain("Also offered as");
+  });
+
+  it("prints a session id in human-readable output that schedule favorite accepts", async () => {
+    // Lead's own regression test: the whole point of listing each sitting's session id is that a
+    // reader now has something real to paste. Parses the id out of catalog show's own printed text
+    // (not --json -- the human path is what's being proven here) and feeds it straight into
+    // `schedule favorite` against a fake API, asserting the fake actually received it.
+    const catalogShow = localHarness(home.path);
+    await catalogShow.run(["catalog", "show", "ANT301"]);
+    const line = catalogShow.printed.join("\n").split("\n").find((l) => l.includes(" -- "))!;
+    const sessionId = line.trim().split(" -- ")[1]!;
+    expect(sessionId).toBe("1780441461150001GGoc");
+
+    const associateFavoritesCalls: string[][] = [];
+    const scheduleProgram = new Command().exitOverride();
+    registerScheduleCommands(scheduleProgram, {
+      resolveStoreRoot: () => home.path,
+      buildApiClient: () => ({
+        getSchedule: async () => ({ reserved: [], favorites: [sessionId], personalTime: [] }),
+        getEvent: async () => {
+          throw new Error("not implemented in this fake");
+        },
+        listSessions: async () => {
+          throw new Error("not implemented in this fake");
+        },
+        listAllSessions: async () => {
+          throw new Error("not implemented in this fake");
+        },
+        associateFavorites: async (_eventId: string, sessionIds: string[]) => {
+          associateFavoritesCalls.push(sessionIds);
+          return { successful: sessionIds, failed: [] };
+        },
+        disassociateFavorite: async () => {
+          throw new Error("not implemented in this fake");
+        },
+      }),
+      print: () => {},
+    });
+
+    await scheduleProgram.parseAsync(["node", "reinvent-scout", "schedule", "favorite", sessionId]);
+
+    expect(associateFavoritesCalls).toEqual([[sessionId]]);
   });
 
   it("reports a friendly message when the session id is not found", async () => {

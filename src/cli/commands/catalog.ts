@@ -1,8 +1,13 @@
 import type { Command } from "commander";
 import { createApiClient, type ApiClient } from "../../api/client.js";
 import { createTokenProviderAdapter } from "../../auth/provider-adapter.js";
-import { toPublicIndexRecord } from "../../catalog/index-record.js";
-import { queryCatalog, resolveSessionRecord, type CatalogQueryResult } from "../../catalog/query.js";
+import { toPublicIndexRecord, type IndexRecord } from "../../catalog/index-record.js";
+import {
+  compareByStartDateTime,
+  queryCatalog,
+  resolveSessionRecord,
+  type CatalogQueryResult,
+} from "../../catalog/query.js";
 import { readRaw } from "../../catalog/store.js";
 import { DEFAULT_EVENT_ID, syncCatalog, type SyncResult } from "../../catalog/sync.js";
 import { isKnownVenue } from "../../catalog/venue.js";
@@ -91,6 +96,26 @@ function formatSearchResultLine(result: CatalogQueryResult): string {
     parts.push(`[${record.type}]`);
   }
   return parts.join(" -- ");
+}
+
+/** One sitting's own line in `catalog show`'s human-readable output: abbreviation, session id, day,
+ * time, venue, room -- the one place a session id appears in any human-readable output at all
+ * (every other command prints the shorter abbreviation or `match`'s own grouped `code` instead).
+ * Unscheduled fields are simply omitted rather than printing a placeholder, matching
+ * `schedule.ts`'s own `formatSessionLine` and `match.ts`'s `formatOfferingLine` conventions. */
+function formatSittingLine(record: IndexRecord): string {
+  const parts = [record.abbreviation ?? "(no abbreviation)", record.sessionId];
+  parts.push(record.startDate ?? "unscheduled");
+  if (record.startTime !== null) {
+    parts.push(record.startTime);
+  }
+  if (record.venue !== null) {
+    parts.push(record.venue);
+  }
+  if (record.room !== null) {
+    parts.push(record.room);
+  }
+  return `  ${parts.join(" -- ")}`;
 }
 
 function formatHumanSummary(result: SyncResult): string {
@@ -272,7 +297,7 @@ export function registerCatalogCommands(program: Command, deps: CatalogCommandDe
           return;
         }
 
-        const { record, relatedAbbreviations } = result;
+        const { record, relatedAbbreviations, relatedRecords } = result;
         const rawSession = (readRaw({ storeRoot }) ?? []).find((s) => s.sessionId === record.sessionId);
         const output = {
           ...toPublicIndexRecord(record),
@@ -283,13 +308,13 @@ export function registerCatalogCommands(program: Command, deps: CatalogCommandDe
         if (options.json) {
           print(JSON.stringify(output));
         } else {
-          const lines = [`${output.abbreviation ?? output.sessionId}: ${output.title}`];
-          if (relatedAbbreviations.length > 0) {
-            // `catalog show <base code>` resolves to the earliest of several repeat sittings (see
-            // query.ts's resolveSessionRecord) -- naming the others is what lets a reader actually
-            // find them, rather than silently picking one sitting and hiding that more exist.
-            lines.push(`Also offered as: ${relatedAbbreviations.join(", ")}`);
-          }
+          // Every sitting of the talk -- the resolved one and every related one -- in time order,
+          // each its own full line (abbreviation, session id, day, time, venue, room). This is the
+          // one place a session id appears in human-readable output at all, replacing the old
+          // abbreviation-only "Also offered as" line: a reader following search -> show needs
+          // something real to paste into `schedule favorite`, not just the other sittings' names.
+          const sittings = [record, ...relatedRecords].sort(compareByStartDateTime);
+          const lines = [output.title, ...sittings.map(formatSittingLine)];
           lines.push(output.abstract ?? "");
           print(lines.join("\n"));
         }
