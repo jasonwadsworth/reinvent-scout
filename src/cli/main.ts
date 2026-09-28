@@ -3,7 +3,10 @@ import { Command, CommanderError } from "commander";
 import { registerAuthCommands } from "./commands/auth.js";
 import { registerCatalogCommands } from "./commands/catalog.js";
 import { registerMatchCommands } from "./commands/match.js";
+import { registerMcpCommand } from "./commands/mcp.js";
 import { registerProfileCommands } from "./commands/profile.js";
+import { registerScheduleCommands } from "./commands/schedule.js";
+import { registerSkillCommands } from "./commands/skill.js";
 import { isMainModule } from "./entry.js";
 import { readPackageVersion } from "./version.js";
 
@@ -27,6 +30,9 @@ export function buildProgram(): Command {
   registerCatalogCommands(program);
   registerProfileCommands(program);
   registerMatchCommands(program);
+  registerScheduleCommands(program);
+  registerMcpCommand(program);
+  registerSkillCommands(program);
 
   return program;
 }

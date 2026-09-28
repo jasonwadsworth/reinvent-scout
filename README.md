@@ -1,10 +1,19 @@
 # reinvent-scout
 
-Sign in with AWS Builder ID, sync the re:Invent session catalog to your machine, search it
-offline, validate an agent-authored profile of your repository against it, and rank the catalog
-against that profile with an explanation for every match. This is phase 1 and 2 of three: a CLI
-you can use standalone today, with the schedule, an MCP server, and an agent skill (phase 3)
-landing in later PRs on top of it.
+Sign in with AWS Builder ID once, sync the re:Invent session catalog to your machine, and let an
+agent (Claude Code, or anything else that speaks MCP) profile your repository, rank the catalog
+against it with a reason for every match, and manage your schedule -- all through a local MCP
+server and skill this CLI also installs. Everything that can be deterministic (auth, the catalog,
+scoring, schedule writes) lives in the CLI; the one genuinely judgment-heavy step -- reading a
+repository and deciding what it's built with -- is left to the agent, backed by file evidence it
+cites itself.
+
+This is phase 1 of the project: sign-in, the catalog, agent-authored profiles, matching, the
+schedule, the MCP server, and the skill that ties them together end to end. It does not yet cover
+session reservations (the write API for those opens closer to the event) or two lenses named in the
+design but not yet built: Fix (Well-Architected gaps) and Next-level (migration paths) -- only `all`
+and `explain` exist today, and the skill is told to say so plainly if asked for either of the
+others.
 
 ## What's here right now
 
@@ -17,15 +26,19 @@ landing in later PRs on top of it.
   service names against the catalog; save one under a name for later reuse.
 - `match` -- rank the local catalog against a profile, offline, with a plain-language reason for
   every candidate.
-
-The schedule, the MCP server and the agent skill are not in this part of the codebase yet -- they
-land in phase 3.
+- `schedule show` / `schedule favorite` / `schedule unfavorite` -- read your real schedule and
+  manage favorites, resolved against the local catalog.
+- `mcp` -- run all of the above as a local MCP server over stdio, for an agent to call directly.
+- `skill install` / `skill update` -- install the agent skill that drives the MCP tools (Claude
+  Code by default, `--dir` for any other agent), and update it later without losing a local edit.
 
 ## Requirements
 
 - Node.js `>=22.13.0`.
 - A terminal that can open a URL in your default browser (macOS, Linux, or Windows). If it can't,
   every command that would open one prints the URL too, so you can open it by hand.
+- An AWS Builder ID (free) to sign in with -- create one at the browser prompt during `auth login`
+  if you don't already have one.
 
 ## Install
 
@@ -48,6 +61,12 @@ Or put `reinvent-scout` on your `PATH`:
 npm link
 reinvent-scout --help
 ```
+
+Three runtime dependencies: `commander` (the CLI itself), `zod` (validating an agent-authored
+profile and an installed skill's manifest), and `@modelcontextprotocol/sdk` (the `mcp` command's
+stdio server) -- the last one alone brings roughly ninety transitive packages with it (measured
+directly: a bare `npm install @modelcontextprotocol/sdk` in an empty project pulls 91), by far the
+biggest share of what `npm install` downloads here.
 
 ## Sign in
 
@@ -111,20 +130,35 @@ narrowed with:
   `--include-abstracts` is also given, so a search never bloats past what you actually asked for.
 
 ```
-reinvent-scout catalog show ANT301
+reinvent-scout catalog show ARC325
 ```
 
-Shows one session's full local detail (including its abstract), by either its session id or its
-abbreviation -- the abbreviation is what `catalog search` prints, and matching it is
-case-insensitive, so you can paste exactly what search showed you. (Real session ids are opaque,
-e.g. `1780441461150001GGoc`; the abbreviation is what you'll actually have on hand.)
+Prints the session's title, one line per sitting in time order -- its abbreviation, its real
+session id, day, time, and venue/room -- and its abstract, by either a session id or an
+abbreviation, matched case-insensitively so you can paste exactly what `catalog search` showed you.
+Some talks repeat on a later day under a suffixed abbreviation (`ARC325-R`, `ARC325-R1`); `catalog
+show` also accepts the **bare base code** with the suffix removed (`ARC325`) and resolves it to the
+earliest sitting, with every other sitting folded into the same listing -- this matters because
+`match`'s own output prints a candidate's base code, not any one sitting's abbreviation, so you need
+to be able to paste that back in directly. This is real output, from the real catalog:
+
+```
+Serverless at 1M RPS: Lambda, DynamoDB & SQS Scaling Lessons
+  ARC325-R -- 1780442233390001cyew -- 2026-12-02 -- 13:30 -- Caesars Forum -- Level 1 | Alliance 314
+  ARC325-R1 -- 1790358237453001iwA0 -- 2026-12-03 -- 10:00 -- Caesars Palace -- Caesars Palace | Promenade Level | Trevi
+We push Lambda, DynamoDB, and SQS to one million requests per second and share what breaks. Learn partition-aware DynamoDB design for extreme write throughput, ...
+```
+
+A session with no repeats prints just its own single line. The rest of the record -- type, level,
+and the `relatedAbbreviations` field itself -- is only in the `--json` output; the human-readable
+form above is deliberately just the sittings and the abstract, not the full record.
 
 ## Validate and save a repo profile
 
-Phase 2 doesn't profile a repository itself -- an agent (the phase 3 skill) reads the repo and
-writes a **tech profile**: a small JSON document naming the services and architecture patterns it
-found, each backed by file evidence. This tool validates that document and resolves its service
-names against the catalog.
+This tool doesn't profile a repository itself -- an agent (via the skill installed below) reads the
+repo and writes a **tech profile**: a small JSON document naming the services and architecture
+patterns it found, each backed by file evidence. This tool validates that document and resolves its
+service names against the catalog.
 
 A profile looks like this:
 
@@ -188,33 +222,30 @@ reinvent-scout match --profile my-profile.json
 Ranks every session in the local catalog against a profile and prints the candidates that share
 at least one real signal with it -- an exact catalog service match, a topic or area-of-interest
 match, or free-text overlap with the profile's own prose (service usage notes, pattern names and
-notes, interests, and intents). Each candidate carries a `score` and a list of `reasons`, so you
-(or an agent) can see exactly why a session was suggested, not just that it was:
+notes, interests, and intents). Each candidate carries a `score` and a list of `reasons`, plus every
+scheduled `offerings` (day, time, venue, room), so you (or an agent) can see exactly why a session
+was suggested and when to actually attend it, not just that it was suggested -- this is real output,
+from the profile example above run against the real catalog:
 
 ```
-API318 -- Deep dive into event-driven architectures with Lambda and Step Functions -- [Breakout session] -- (score: 100)
-  - Uses AWS Lambda, which this session covers.
-  - Uses AWS Step Functions, which this session covers.
-```
-
-The real catalog repeats many talks on more than one day, under a suffixed abbreviation
-(`ARC325-R`, `ARC325-R1`). `match` groups those into a single candidate by its base `code`, so
-asking for thirty candidates gets thirty genuinely different talks rather than the same one
-occupying several slots. Every sitting still shows up, under `offerings`:
-
-```
-ARC325 -- Serverless at 1M RPS: Lambda, DynamoDB & SQS Scaling Lessons -- [Breakout session] -- (score: 127.37)
-  - Uses AWS Lambda, which this session covers.
+ARC325 -- Serverless at 1M RPS: Lambda, DynamoDB & SQS Scaling Lessons -- [Chalk talk] -- (score: 76.96)
   - Uses Amazon DynamoDB, which this session covers.
+  - Matches the topic "Serverless".
+  - Text overlap on: dynamodb, lambda, serverless.
   Offerings:
     2026-12-02 -- 13:30 -- Caesars Forum -- Level 1 | Alliance 314
     2026-12-03 -- 10:00 -- Caesars Palace -- Caesars Palace | Promenade Level | Trevi
 ```
 
-A candidate's own `score` and `reasons` come from its best-scoring sitting (never a sum across
-repeats -- they're the same talk, not independent signals), and `--limit` counts these grouped
-candidates, not raw sittings. `catalog search`, by contrast, is left ungrouped: it's a raw listing
-of the catalog, not a ranked set of choices to pick between.
+The real catalog repeats many talks on more than one day, under a suffixed abbreviation
+(`ARC325-R`, `ARC325-R1` above). `match` groups those into a single candidate by its base `code`
+(`ARC325`), so asking for thirty candidates gets thirty genuinely different talks rather than the
+same one occupying several slots -- both of `ARC325`'s real sittings show up under `offerings`
+above, a day apart and in different venues. A candidate's own `score` and `reasons` come from its
+best-scoring sitting (never a sum across repeats -- they're the same talk, not independent
+signals), and `--limit` counts these grouped candidates, not raw sittings. `catalog search`, by
+contrast, is left ungrouped: it's a raw listing of the catalog, not a ranked set of choices to pick
+between.
 
 `--profile` takes either a file path or a name previously saved with `profile save` -- whichever
 it is, it's resolved through the exact same validation and catalog-name resolution `profile
@@ -236,6 +267,209 @@ validate` uses. Options:
 A profile with nothing in common with any session in the catalog returns an empty list, not every
 session at a score of zero -- an empty result is a real, distinguishable outcome from "everything
 matched equally."
+
+## Read your schedule and manage favorites
+
+```
+reinvent-scout schedule show
+```
+
+Reads your schedule from the API -- reserved sessions, favorites, and personal time blocks -- and
+resolves each session id against the local catalog into its title, day, time, venue and room,
+grouped by day. An id the local catalog has no record for (most often because it was favorited
+before the last `catalog sync`) still shows up, as a bare id with a note, rather than silently
+vanishing from your own schedule. `--event <id>` reads a different event; `--json` prints
+machine-readable output, including each entry's `resolved: true|false` status.
+
+```
+reinvent-scout schedule favorite <session-id> [<session-id> ...]
+```
+
+Favorites one or more sessions by their real session id. It's present in every command's `--json`
+output as the `sessionId` field, and `catalog show`'s human-readable output (above) prints it
+directly on each sitting's own line too, so a person reading it can paste it straight in --
+`reinvent-scout catalog show ARC325` followed by `reinvent-scout schedule favorite
+1790358237453001iwA0` favorites the second sitting shown above. `catalog search` and `match` still
+print only the shorter abbreviation or grouped `code`, since those exist for browsing a list, not
+for pasting one id into `favorite`. When a script needs an id with no person reading the output,
+pull it out of `--json` with `jq` instead:
+
+```
+reinvent-scout schedule favorite "$(reinvent-scout catalog show ARC325-R1 --json | jq -r .sessionId)"
+```
+
+Requests are chunked at ten ids per call (the API's own limit) and paced to stay within the write
+quota, and every outcome is reported: which ids succeeded, which were already favorited (not
+treated as a failure), and which were refused and why -- including, for a scheduling conflict, the
+conflicting sessions' titles. After writing, it reads your schedule back once and warns if anything
+the API reported as favorited doesn't actually show up, so a response you can't fully trust never
+gets reported as a clean success. The command exits non-zero if any session was refused.
+
+A single `-` in place of session ids reads them from stdin instead, one per line -- the point of
+this is piping `match`'s own output straight in:
+
+```
+reinvent-scout match --profile my-profile.json --json | jq -r '.[].sessionId' | reinvent-scout schedule favorite -
+```
+
+`--event <id>` targets a different event; `--json` prints the full machine-readable result. At most
+100 ids are accepted in one invocation.
+
+```
+reinvent-scout schedule unfavorite SESSION-ID
+```
+
+Removes one session from your favorites. Removing a session that was never favorited (or already
+removed) is reported plainly, not as an error -- there's nothing left to do either way.
+
+## Run the MCP server
+
+```
+reinvent-scout mcp
+```
+
+Runs a local [MCP](https://modelcontextprotocol.io) server over stdio, so an agent (Claude Code,
+or anything else that speaks MCP) can call `reinvent-scout` directly instead of shelling out to the
+CLI. It never writes anything but protocol traffic to its stdout; every diagnostic goes to stderr.
+
+Seven tools are registered, and every one of them holds its response to a 30 KB budget -- the
+catalog and the attendee's own data stay local; only a bounded summary ever reaches agent context:
+
+- `status` -- signed-in state and local catalog state. Call this first.
+- `catalog_sync` -- returns counts only, never session data.
+- `validate_profile` -- resolves an agent-authored profile's service names against the catalog.
+- `match_sessions` -- ranks the catalog against a resolved profile. At any limit or profile
+  richness, a response that would exceed the budget is truncated in ranked order, never
+  mid-candidate, with `truncated`/`returned`/`requested`/`omitted` and a `hint` reporting what was
+  cut.
+- `get_schedule` -- reserved sessions, favorites and personal time, merged into one list and
+  paginated with `limit`/`offset` (default 50, cap 60) plus `total`/`totals`/`returned`/
+  `nextOffset` -- unlike `match_sessions`, nothing here is ever dropped permanently: a page too
+  large for the budget is shortened and `nextOffset` reflects exactly what was returned, so paging
+  through it always reaches everything. Every entry carries a common `startsAt`/`endsAt` (a real
+  UTC instant, via `catalog sync`'s own `GetEvent` call for the event's IANA timezone) alongside
+  its raw kind-specific fields, and the list is sorted by `startsAt` -- this is what lets a
+  personal-time block and a session sort correctly against each other across a day boundary,
+  something raw local date/time alone can't do. When the event's timezone is unknown (the API
+  didn't report one), sessions fall back to `startsAt: null` and sort by their raw local date and
+  time instead; the response then carries a `warnings` entry explaining that ordering across kinds
+  is unreliable in that case.
+- `favorite_sessions` -- up to fifty ids, chunked and paced, with per-session outcomes and resolved
+  conflict titles. A response carrying a refusal is never reported as a plain success.
+- `unfavorite_session`.
+
+### Connect it to Claude Code
+
+```
+claude mcp add --scope user reinvent-scout -- reinvent-scout mcp
+```
+
+Or, if you'd rather not put `reinvent-scout` on your `PATH`, point it at the built entry point
+directly (use an absolute path):
+
+```
+claude mcp add --scope user reinvent-scout -- node /absolute/path/to/re-invent-helper/dist/cli/main.js mcp
+```
+
+`--scope user` is what makes this available in every project, not just whichever directory you
+happen to run `claude mcp add` from -- `claude mcp add`'s own default scope (`local`) is scoped to
+the current project only, which would defeat the point for a tool meant to profile *any* repo you
+point an agent at. Either way adds an entry to your user-level MCP config. To check it into a
+project instead (so anyone who clones the project gets the same server configured), add it to a
+`.mcp.json` at the project root:
+
+```json
+{
+  "mcpServers": {
+    "reinvent-scout": {
+      "command": "reinvent-scout",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Any other MCP-speaking agent (Kiro, or anything else) configures a stdio server the same way --
+point it at `reinvent-scout mcp` (or the built `main.js mcp` path above), no extra flags or
+environment variables needed. It reads and writes the same `~/.reinvent-scout/` store the CLI
+itself uses, so signing in and syncing once from the CLI (or letting the skill run `auth login`
+itself) is enough for both.
+
+## Install the agent skill
+
+```
+reinvent-scout skill install
+```
+
+Installs the `reinvent-scout` skill -- `SKILL.md` and its `reference/` files -- into Claude Code's
+default skills directory (`~/.claude/skills`), so an agent knows how to profile a repository, call
+the MCP tools above, and present matched sessions with evidence. Use `--dir <path>` to install
+into another agent's skills directory instead (Claude Code's own path can't be assumed for every
+agent, so it's never guessed):
+
+```
+reinvent-scout skill install --dir /path/to/other/skills
+```
+
+Refuses rather than overwriting anything if a skill (or just a conflicting file) is already at the
+target -- `skill update` (below) owns every decision about touching an existing install.
+
+To pick up a newer version of the skill later, without losing a file you edited locally:
+
+```
+reinvent-scout skill update
+```
+
+Compares the new build's exact file set and content against what's installed -- if nothing
+changed, it reports up to date and touches nothing; a version bump alone with identical content is
+not treated as a reason to rewrite anything, and unchanged version numbers never mask a real content
+change either. Otherwise, every tracked file is checked against the hash recorded at install time:
+one that still matches is safely overwritten with the new content, one that's changed since (a
+local edit) refuses the *entire* update and names every file it found modified, so nothing is
+silently lost -- including a file the new version is about to start shipping for the first time
+under a name you already have on disk, untracked. Pass `--force` to overwrite local edits anyway,
+and `--dir` to match wherever `skill install` put it.
+
+`skill update` never performs a fresh install itself -- run `skill install` first if nothing is
+there yet, or if the target directory is empty. If the directory exists with content but was never
+tracked by this tool at all (hand-copied, or the manifest deleted), `update` refuses and tells you
+to either run it again with `--force` (which adopts the directory -- installs the skill's own files
+into it and starts tracking them, leaving anything else already there alone) or remove the directory
+and run `skill install` instead.
+
+## How it works
+
+**The catalog is synced locally and never passed through agent context, on purpose.** The full
+re:Invent catalog is over 2,000 sessions -- hundreds of thousands of tokens even without abstracts.
+Handing that to an agent on every turn (or even once, to "look something up") would burn a
+significant chunk of a conversation's context on data that's mostly irrelevant to any one question.
+`catalog sync` pulls it once into a local, indexed store; every MCP tool response is held to a
+30 KB budget (measured on the real wire format, not just the JSON text) and reports a bounded,
+already-ranked or already-paginated slice -- a few dozen candidates from `match_sessions`, one page
+of a schedule from `get_schedule` -- never the raw catalog itself. `catalog search`/`catalog show`
+exist specifically so a human (or an agent that wants one more specific lookup) can query it
+directly without that ever meaning "send the whole thing somewhere."
+
+**This CLI runs its own local MCP server instead of using the official `api.awsevents.com/mcp`
+server.** Two reasons, both load-bearing rather than incidental: first, the official server would
+mean signing in twice -- once for the CLI's own catalog sync and schedule writes, once more for
+whatever the official server's own auth flow requires -- when one PKCE sign-in, stored once and
+reused by both the CLI and this server, is strictly simpler and is exactly what `skill install` and
+the skill's own flow are built around. Second, and more fundamentally: a remote MCP server has no
+way to enforce the local-only, budgeted-response design above -- it would have to either pass the
+full catalog through agent context on a lookup, or build the same local-indexing story this CLI
+already has, at which point it isn't a "the API can do it for you" server anymore. Building a local
+server over the same 12-operation REST API everything else in this project already talks to keeps
+one code path responsible for both.
+
+**API surface used today:** `GetEvent` (the event's IANA timezone, for `get_schedule`'s common
+`startsAt`/`endsAt`), `ListSessions` (paginated to build the catalog), `GetSchedule`,
+`AssociateFavorites`, and `DisassociateFavorite`. Not yet used: `ListEvents` (the event id is a
+CLI/tool argument, defaulting to `reinvent2026`, rather than something this build discovers),
+`GetSession` (a single session lookup -- `catalog show` reads the local index instead), and the
+reservation and personal-time-management operations (`ReserveSessions`, `CancelReservation`,
+`Create`/`Update`/`DeletePersonalTime`) -- reservations open closer to the event and land in a
+later phase.
 
 ## Where your data lives
 

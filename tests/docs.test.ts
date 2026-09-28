@@ -105,3 +105,31 @@ describe("README match output examples", () => {
     }
   });
 });
+
+describe("README .mcp.json example", () => {
+  it("is valid JSON naming the real stdio command and the mcp subcommand", () => {
+    const readme = readFileSync(readmePath, "utf8");
+    const mcpConfigBlocks = [...readme.matchAll(/```json\n([\s\S]*?)```/g)]
+      .map((match) => JSON.parse(match[1]!) as unknown)
+      .filter(
+        (parsed): parsed is Record<string, unknown> =>
+          typeof parsed === "object" && parsed !== null && "mcpServers" in parsed,
+      );
+
+    // A sanity check on the test itself: if the .mcp.json example is ever reworded out of a
+    // ```json fence (or removed), this must fail loudly rather than pass vacuously.
+    expect(mcpConfigBlocks).toHaveLength(1);
+
+    const servers = mcpConfigBlocks[0]!.mcpServers as Record<string, { command: string; args: string[] }>;
+    expect(servers["reinvent-scout"]).toEqual({ command: "reinvent-scout", args: ["mcp"] });
+  });
+});
+
+describe("README rationale", () => {
+  it("explains why the catalog stays local and why the official awsevents MCP server isn't used", () => {
+    const readme = readFileSync(readmePath, "utf8");
+    expect(readme).toMatch(/never passed through agent context/i);
+    expect(readme).toMatch(/api\.awsevents\.com\/mcp/);
+    expect(readme).toMatch(/one PKCE sign-in/i);
+  });
+});

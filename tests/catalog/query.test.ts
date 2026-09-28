@@ -32,6 +32,7 @@ function sampleMeta(overrides: Partial<CatalogMeta> = {}): CatalogMeta {
     totalCount: fixture.length,
     count: fixture.length,
     includedAbstracts: true,
+    timezone: null,
     ...overrides,
   };
 }
@@ -307,6 +308,7 @@ describe("resolveSessionRecord", () => {
       status: "found",
       record: expect.objectContaining({ abbreviation: "ANT301" }),
       relatedAbbreviations: [],
+      relatedRecords: [],
     });
   });
 
@@ -338,6 +340,35 @@ describe("resolveSessionRecord", () => {
     // API303-R sits 2026-11-30, API303-R1 sits 2026-12-02 -- the earlier one is the "found" record.
     expect(result.status === "found" && result.record.abbreviation).toBe("API303-R");
     expect(result.status === "found" && result.relatedAbbreviations).toEqual(["API303-R1"]);
+    // relatedRecords is the same sibling, as a full record rather than just its abbreviation --
+    // `catalog show`'s human output needs each sitting's own day/time/venue/room, not just its name.
+    expect(result.status === "found" && result.relatedRecords.map((r) => r.abbreviation)).toEqual([
+      "API303-R1",
+    ]);
+    expect(result.status === "found" && result.relatedRecords[0]!.sessionId).toBe(
+      "1780441491675002GHkV",
+    );
+  });
+
+  it("lists the other sitting's abbreviation even when the token matches one sitting's own abbreviation exactly", () => {
+    // Task 0 fix: a lookup for "API303-R" (a real abbreviation, not the bare base code) took the
+    // exact-abbreviation branch and returned immediately with relatedAbbreviations: [], hiding that
+    // API303-R1 is the same talk's other sitting -- even though the base-code lookup for "API303"
+    // above already proves the two are linked. Both directions must report the other.
+    writeCatalog(
+      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
+      { storeRoot: home.path },
+    );
+
+    const first = resolveSessionRecord({ storeRoot: home.path }, "API303-R");
+    expect(first.status).toBe("found");
+    expect(first.status === "found" && first.record.abbreviation).toBe("API303-R");
+    expect(first.status === "found" && first.relatedAbbreviations).toEqual(["API303-R1"]);
+
+    const second = resolveSessionRecord({ storeRoot: home.path }, "API303-R1");
+    expect(second.status).toBe("found");
+    expect(second.status === "found" && second.record.abbreviation).toBe("API303-R1");
+    expect(second.status === "found" && second.relatedAbbreviations).toEqual(["API303-R"]);
   });
 
   it("resolves a base code case-insensitively", () => {

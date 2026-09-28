@@ -60,6 +60,33 @@ describe("createApiClient", () => {
     expect(headers.get("Accept")).toBe("application/json");
   });
 
+  it("fetches the event and returns it unwrapped from the envelope", async () => {
+    const fake = createFakeFetch([
+      { status: 200, json: { event: { eventId: EVENT_ID, timezone: "America/Los_Angeles" } } },
+    ]);
+    const auth = fakeAuth(["token-abc"]);
+
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: auth.getAccessToken });
+    const event = await client.getEvent(EVENT_ID);
+
+    expect(fake.calls).toHaveLength(1);
+    expect(fake.calls[0]!.url).toContain(`/v1/events/${EVENT_ID}`);
+    expect(fake.calls[0]!.url).not.toContain("/schedule");
+    expect(fake.calls[0]!.url).not.toContain("/sessions");
+    expect(event).toEqual({ eventId: EVENT_ID, timezone: "America/Los_Angeles" });
+  });
+
+  it("returns the event with timezone left genuinely absent when the API response omits it, never synthesizing one", async () => {
+    const fake = createFakeFetch([{ status: 200, json: { event: { eventId: EVENT_ID } } }]);
+    const auth = fakeAuth(["token-abc"]);
+
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: auth.getAccessToken });
+    const event = await client.getEvent(EVENT_ID);
+
+    expect(Object.hasOwn(event, "timezone")).toBe(false);
+    expect(event.timezone).toBeUndefined();
+  });
+
   it("maps 401 to AuthRequiredError telling the user to run auth login", async () => {
     const fake = createFakeFetch([{ status: 401, json: { message: "Unauthorized" } }]);
     const auth = fakeAuth(["token-1", "token-2"]);
@@ -273,6 +300,45 @@ describe("createApiClient", () => {
     const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: auth.getAccessToken });
 
     await expect(client.getSchedule(EVENT_ID)).rejects.toBeInstanceOf(OperationUnavailableError);
+  });
+
+  it("sends session ids as a JSON body when associating favorites, and returns the BulkResult unchanged", async () => {
+    const bulkResult = { successful: ["s1"], failed: [{ sessionId: "s2", code: "alreadyFavorited" }] };
+    const fake = createFakeFetch([{ status: 200, json: { result: bulkResult } }]);
+    const auth = fakeAuth(["token-abc"]);
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: auth.getAccessToken });
+
+    const result = await client.associateFavorites(EVENT_ID, ["s1", "s2"]);
+
+    expect(result).toEqual(bulkResult);
+    expect(fake.calls).toHaveLength(1);
+    expect(fake.calls[0]!.url).toContain(`/v1/events/${EVENT_ID}/favorites`);
+    expect(fake.calls[0]!.init?.method).toBe("POST");
+    expect(JSON.parse(fake.calls[0]!.init?.body as string)).toEqual({ sessionIds: ["s1", "s2"] });
+    const headers = new Headers(fake.calls[0]!.init?.headers);
+    expect(headers.get("Content-Type")).toBe("application/json");
+  });
+
+  it("resolves disassociateFavorite on a 204 with no body, without attempting to parse one", async () => {
+    // fake-fetch's 204 has neither `json` nor `text` set, so `.json()` on it throws exactly like
+    // a real empty-bodied 204 would -- proving requestJson doesn't call it for a 204.
+    const fake = createFakeFetch([{ status: 204 }]);
+    const auth = fakeAuth(["token-abc"]);
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: auth.getAccessToken });
+
+    await expect(client.disassociateFavorite(EVENT_ID, "s1")).resolves.toBeUndefined();
+
+    expect(fake.calls).toHaveLength(1);
+    expect(fake.calls[0]!.url).toContain(`/v1/events/${EVENT_ID}/favorites/s1`);
+    expect(fake.calls[0]!.init?.method).toBe("DELETE");
+  });
+
+  it("maps disassociateFavorite's 404 to NotFoundError", async () => {
+    const fake = createFakeFetch([{ status: 404, json: { message: "Not favorited." } }]);
+    const auth = fakeAuth(["token-abc"]);
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: auth.getAccessToken });
+
+    await expect(client.disassociateFavorite(EVENT_ID, "s1")).rejects.toBeInstanceOf(NotFoundError);
   });
 
   it("includes the server message in the error but never the bearer token", async () => {
