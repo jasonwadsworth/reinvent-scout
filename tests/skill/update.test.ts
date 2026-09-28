@@ -64,13 +64,14 @@ describe("updateSkill", () => {
     expect(existsSync(join(targetsDir, SKILL_NAME))).toBe(false);
   });
 
-  it("refuses when the target exists but has no install record, naming --force as the remedy", () => {
-    // Distinct from the "directory absent" case above: there's a real directory here, so the
-    // remedy is different (--force to adopt it, not `skill install`) -- reviewer's finding that an
-    // earlier version of this message routed both cases through install's own "already exists"
-    // wording, telling a user who just ran `update --force` to run `update --force`.
+  it("refuses when the target exists with content but no install record, naming --force as the remedy", () => {
+    // Distinct from the "directory absent" case above: there's real content here, so the remedy is
+    // different (--force to adopt it, not `skill install`) -- reviewer's finding that an earlier
+    // version of this message routed both cases through install's own "already exists" wording,
+    // telling a user who had just run `update --force` to run `update --force`.
     const installedPath = join(targetsDir, SKILL_NAME);
     mkdirSync(installedPath, { recursive: true });
+    writeFileSync(join(installedPath, "SKILL.md"), "HAND COPIED, no manifest\n");
 
     expect(() =>
       updateSkill({ sourceDir: sourceDirV1, targetsDir, packageVersion: "1.0.0" }),
@@ -82,12 +83,27 @@ describe("updateSkill", () => {
       message = (err as Error).message;
     }
     expect(message).toMatch(/--force/);
+    expect(readFileSync(join(installedPath, "SKILL.md"), "utf8")).toBe(
+      "HAND COPIED, no manifest\n",
+    );
+  });
+
+  it("refuses an empty target directory naming skill install, even under --force -- there's nothing for force to adopt", () => {
+    // Lead's decision: "nothing installed" (absent or empty) always means `skill install`, never
+    // `--force` -- force only ever adopts a directory that actually has content in it.
+    const installedPath = join(targetsDir, SKILL_NAME);
+    mkdirSync(installedPath, { recursive: true });
+
+    expect(() =>
+      updateSkill({ sourceDir: sourceDirV1, targetsDir, packageVersion: "1.0.0", force: true }),
+    ).toThrow(SkillNotInstalledError);
     expect(readdirSync(installedPath)).toHaveLength(0);
   });
 
-  it("adopts an untracked, empty target directory under --force, writing every shipped file and a fresh manifest", () => {
+  it("adopts an untracked target directory with content under --force, writing every shipped file and a fresh manifest", () => {
     const installedPath = join(targetsDir, SKILL_NAME);
     mkdirSync(installedPath, { recursive: true });
+    writeFileSync(join(installedPath, "SKILL.md"), "HAND COPIED, no manifest\n");
 
     const result = updateSkill({
       sourceDir: sourceDirV1,

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { z } from "zod";
 import { formatZodError } from "../cli/zod-errors.js";
@@ -30,34 +30,33 @@ export type UpdateSkillResult =
   | { status: "refused"; installedPath: string; modifiedFiles: string[] };
 
 /**
- * Thrown by `updateSkill` when the target directory doesn't exist at all -- there's nothing here
- * for `update` to update, and `update` never performs a fresh install itself (`skill install` owns
- * that, one command, one clear rule). Distinct from `SkillDirectoryUntrackedError` below: this is
- * specifically "there is no directory here," not "there's a directory, but no install record in
- * it" -- the two need different remedies (`skill install` outright, versus `--force` to adopt an
- * existing one), so conflating them into one message would send a user who just ran the suggested
- * remedy back to the same dead end (reviewer's finding on an earlier version of this message, which
- * routed both cases through install's own "already exists" wording).
+ * Thrown by `updateSkill` when there's genuinely nothing installed -- the target directory doesn't
+ * exist, or exists but is empty. Either way there's nothing here for `update` to update or to
+ * adopt, and `update` never performs a fresh install itself (`skill install` owns that, one
+ * command, one clear rule). Distinct from `SkillDirectoryUntrackedError` below, which covers a
+ * directory that exists *and has content* but no install manifest -- that case has something real
+ * for `--force` to adopt; this one doesn't, so `--force` never changes this outcome. Conflating the
+ * two into one message sent a user who had just run the suggested remedy back to the same dead end
+ * in an earlier version of this check (reviewer's finding).
  */
 export class SkillNotInstalledError extends Error {
   constructor(installedPath: string) {
     super(
-      `No skill is installed at ${installedPath} (the directory does not exist). Run ` +
-        "`reinvent-scout skill install` first.",
+      `No skill is installed at ${installedPath}. Run \`reinvent-scout skill install\` first.`,
     );
     this.name = "SkillNotInstalledError";
   }
 }
 
 /**
- * Thrown by `updateSkill` when the target directory exists but has no install manifest -- a hand-
- * copied skill directory, one the manifest was deleted from, or genuinely just an empty directory
- * someone created ahead of time. `update` has no baseline to compare against, so it refuses by
- * default rather than guessing what's safe to overwrite -- but unlike `SkillNotInstalledError`,
- * there's a real directory here for `update` itself to adopt: `--force` writes every file the
- * skill ships (guarded exactly like an ordinary write), records a fresh manifest, and never
- * touches anything already there that the skill doesn't ship. The message names `--force`
- * directly, since simply re-running `update` without it lands right back here.
+ * Thrown by `updateSkill` when the target directory exists *and has content* but no install
+ * manifest -- a hand-copied skill directory, or one the manifest was deleted from. `update` has no
+ * baseline to compare against, so it refuses by default rather than guessing what's safe to
+ * overwrite -- but unlike `SkillNotInstalledError`, there's a real directory here for `update`
+ * itself to adopt: `--force` writes every file the skill ships (guarded exactly like an ordinary
+ * write), records a fresh manifest, and never touches anything already there that the skill
+ * doesn't ship. The message names `--force` directly, since simply re-running `update` without it
+ * lands right back here.
  */
 export class SkillDirectoryUntrackedError extends Error {
   constructor(installedPath: string) {
@@ -191,13 +190,14 @@ function readAndValidateManifest(manifestPath: string, installedPath: string): I
 /**
  * Updates an already-installed skill in place, without clobbering a file the user edited locally.
  *
- * No manifest present at the target is one of two cases, each with its own remedy: the target
- * directory doesn't exist at all (`SkillNotInstalledError` -- run `skill install`), or it exists
- * but has no install record (`SkillDirectoryUntrackedError` unless `force`, which instead *adopts*
- * it -- writes every file the skill ships, guarded exactly like an ordinary write, records a fresh
- * manifest, and never touches anything already there the skill doesn't ship). `update` still never
- * performs an *unforced* fresh install of its own -- `skill install` owns that for a target that
- * doesn't exist yet.
+ * No manifest present at the target is one of two cases, each with its own remedy: genuinely
+ * nothing installed -- the target doesn't exist, or exists but is empty (`SkillNotInstalledError`,
+ * always -- run `skill install`; `force` changes nothing here, since there's no real content for
+ * it to adopt) -- or a directory that exists *with content* but no install record
+ * (`SkillDirectoryUntrackedError` unless `force`, which instead *adopts* it -- writes every file
+ * the skill ships, guarded exactly like an ordinary write, records a fresh manifest, and never
+ * touches anything already there the skill doesn't ship). `update` never performs an *unforced*
+ * fresh install of its own -- `skill install` owns that.
  *
  * "Up to date" is decided by content, never by the manifest's own `version` field alone: the new
  * source's exact file set and every file's hash must equal the manifest's for nothing to happen.
@@ -223,7 +223,9 @@ export function updateSkill(deps: UpdateSkillDeps = {}): UpdateSkillResult {
 
   const manifestPath = join(installedPath, MANIFEST_FILE_NAME);
   if (!existsSync(manifestPath)) {
-    if (!existsSync(installedPath)) {
+    if (!existsSync(installedPath) || readdirSync(installedPath).length === 0) {
+      // Genuinely nothing installed -- absent or empty. `force` doesn't change this: there's no
+      // real content here for it to adopt, so this is never bypassed.
       throw new SkillNotInstalledError(installedPath);
     }
     if (!force) {

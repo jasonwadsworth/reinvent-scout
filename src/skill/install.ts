@@ -67,7 +67,8 @@ export class SkillAlreadyInstalledError extends Error {
   constructor(installedPath: string) {
     super(
       `A skill (or a conflicting file) already exists at ${installedPath}. Run ` +
-        "`reinvent-scout skill update` instead (add --force to overwrite local edits).",
+        "`reinvent-scout skill update` instead, or `reinvent-scout skill update --force` to " +
+        "overwrite local edits.",
     );
     this.name = "SkillAlreadyInstalledError";
   }

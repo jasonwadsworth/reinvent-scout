@@ -139,7 +139,11 @@ describe("installSkill", () => {
     try {
       installSkill({ sourceDir, targetsDir });
     } catch (err) {
-      expect((err as Error).message).toMatch(/reinvent-scout skill update/);
+      const message = (err as Error).message;
+      expect(message).toMatch(/reinvent-scout skill update/);
+      // Reviewer's finding: an earlier wording said "add --force" without a command to add it to
+      // -- install itself has no --force flag. The full command must be spelled out.
+      expect(message).toContain("reinvent-scout skill update --force");
     }
 
     // Untouched: the locally-edited content is still there, not silently overwritten.
