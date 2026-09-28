@@ -6,8 +6,10 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { Command } from "commander";
 import { describe, expect, it } from "vitest";
 import type { Session } from "../../src/api/types.js";
+import { buildServiceAliasIndex } from "../../src/catalog/service-aliases.js";
 import { buildProgram } from "../../src/cli/main.js";
 import { createMcpServer } from "../../src/mcp/server.js";
+import { resolveProfile } from "../../src/profile/profile.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -400,5 +402,40 @@ describe("reference file existence", () => {
     expect(taxonomyMd.length).toBeGreaterThan(0);
     expect(workflowMd.length).toBeGreaterThan(0);
     expect(profilingMd.length).toBeGreaterThan(0);
+  });
+});
+
+describe("reference/profiling.md worked example", () => {
+  it("validates, every service resolves against the catalog, and every topic-spelled pattern is a real catalog topic", () => {
+    // Mirrors tests/docs.test.ts's own README-example check -- the same "the worked example must
+    // actually work, not just read plausibly" guard, applied to profiling.md's own example instead.
+    const profileBlocks = [...profilingMd.matchAll(/```json\n([\s\S]*?)```/g)]
+      .map((match) => JSON.parse(match[1]!) as unknown)
+      .filter(
+        (parsed): parsed is Record<string, unknown> =>
+          typeof parsed === "object" &&
+          parsed !== null &&
+          "schemaVersion" in parsed &&
+          "services" in parsed &&
+          "patterns" in parsed,
+      );
+
+    // A sanity check on the test itself: if profiling.md's full worked example is ever reworded
+    // out of a single ```json fence (or removed), this must fail loudly, not pass vacuously.
+    expect(profileBlocks).toHaveLength(1);
+
+    const serviceNames = [...new Set(fixture.flatMap((session) => session.services ?? []))];
+    const serviceAliasIndex = buildServiceAliasIndex(serviceNames);
+    const resolved = resolveProfile(profileBlocks[0], serviceAliasIndex);
+    expect(resolved.unresolvedServices).toEqual([]);
+
+    // "Security & Identity" is deliberately spelled to match a real catalog Topic exactly (see
+    // profiling.md's own "Naming patterns" rule) -- pin that it actually is one, against the same
+    // real-catalog vocabulary reference/taxonomy.md's own Topics list is checked against, not just
+    // the small 61-session fixture.
+    const patterns = (profileBlocks[0] as { patterns: Array<{ name: string }> }).patterns;
+    const topicSpelledPattern = patterns.find((p) => p.name === "Security & Identity");
+    expect(topicSpelledPattern).toBeDefined();
+    expect(vocabulary.topics).toContain("Security & Identity");
   });
 });

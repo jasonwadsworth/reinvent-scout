@@ -67,37 +67,53 @@ at all -- it looks verified when it isn't.
   specs (an `adr/` or `docs/decisions/` directory, `.kiro/specs`, an RFC) are prose for this
   purpose too, exactly like the README -- useful context, never a citation for a service or
   pattern. They can inform `intents` instead (see "Fold in issues and other context" below).
-- **Code nothing deploys.** A Lambda handler file, a client class, or a module that no stack,
-  template, or Terraform resource actually wires up is not evidence the repository uses that
-  service -- the same treatment as commented-out code, just at the file level instead of the line
-  level. If it's a real, notable piece of dead code, record it as its own `dead-code` pattern (see
-  "Naming patterns" below) rather than as a service.
+- **Code nothing reachable invokes.** A Lambda handler file, a client class, or a module that
+  nothing else actually calls into is not evidence the repository uses that service -- the same
+  treatment as commented-out code, just at the file level instead of the line level. "Reachable"
+  covers more than a stack construct wiring up a Lambda: a registered CLI command, a UI route, a
+  built-in app entry point, or a packaged script that itself runs something like `aws
+  cloudformation deploy` all count as real invocation, not just an infrastructure-as-code
+  construct. If it's a real, notable piece of code nothing reaches, record it as its own
+  `dead-code` pattern (see "Naming patterns" below) rather than as a service.
 
 ## Distinguish SDK generations
 
-For JavaScript/TypeScript repositories, `aws-sdk` (v2, a single monolithic package) and
-`@aws-sdk/client-*` (v3, one package per service) are different signals, not interchangeable
+This distinction is JavaScript/TypeScript-specific. `aws-sdk` (v2, a single monolithic package) and
+`@aws-sdk/client-*` (v3, one package per service) are different signals there, not interchangeable
 spellings of "uses the AWS SDK." Note which generation a repository is on when it's relevant --
 it can matter for how current the codebase is, which the Fix lens (a later phase) will use.
 
+Python has no equivalent split to track: `boto3` and the AWS CLI (invoked from a script) are
+equivalent evidence of using whatever service they call, with no generation distinction to note.
+
 ## What counts as a service
 
-A service is any AWS service, or AWS developer tool/framework, the code or infrastructure actually
-uses -- this includes CDK and Amplify client libraries, not just the services they provision or
-call. It does not include:
+A service is any AWS service, or AWS-published developer tool the code starts or installs (CDK,
+Amplify, Kiro), the code or infrastructure actually uses -- not just the services a tool like CDK
+or Amplify goes on to provision or call, but the tool itself. It does not include:
 
 - **Ubiquitous plumbing that's implied by everything else**, not a deliberate choice worth
   surfacing on its own: IAM (used by virtually every AWS repository to grant permissions),
-  CloudFormation when it's only there because CDK synthesizes to it, STS calls inside a deploy
-  script, and a default (AWS-managed) KMS key. Listing these as services would swamp a profile with
-  noise that's true of almost any AWS repository and therefore matches almost nothing distinctive
-  about *this* one. If IAM policies are unusually broad rather than scoped to what the code needs,
-  that's still worth recording -- as a `gap-broad-iam` pattern (see "Naming patterns" below), not a
-  service.
+  CloudFormation *specifically when it's only there because CDK synthesizes to it* -- a hand-
+  written CloudFormation or SAM template the repository deploys directly is a real, deliberate
+  choice and counts as a service, exactly like Terraform would -- STS calls inside a deploy script,
+  and the *default* AWS-managed KMS key. A dedicated (customer-managed) key the code actually uses
+  to sign or encrypt something is a real choice and counts; only the default key, present whether
+  or not anyone thought about it, doesn't. Listing the excluded items as services would swamp a
+  profile with noise that's true of almost any AWS repository and therefore matches almost nothing
+  distinctive about *this* one. If IAM policies are unusually broad rather than scoped to what the
+  code needs, that's still worth recording -- as a `gap-broad-iam` pattern (see "Naming patterns"
+  below), not a service.
 - **A feature of a service, cited as if it were a separate service.** DynamoDB Streams is DynamoDB,
   not a separate entry; CloudWatch Logs is CloudWatch, not a separate entry. Fold the feature into
   its parent service's own `usage` or evidence instead of listing it twice under two different
   names.
+
+A service used only optionally, or only in CI (a test suite that spins up a local DynamoDB, a
+deploy pipeline that calls a service the running application never does), still counts -- say so
+plainly in `usage` rather than dropping it or presenting it as core to the running application:
+`"Optional: enabled via a feature flag, off by default."` or `"CI only: used by the deploy
+pipeline, not by the running application."`
 
 ## Prefer the specific service over its parent
 
@@ -135,17 +151,28 @@ misattribute someone else's stack as this repository's own.
 
 ## Naming patterns
 
-A pattern's `name` is a short, kebab-case, architectural noun -- reused across repositories with
-the same shape, not a one-off phrase invented per repository (`"event driven"` and
-`"event-driven-architecture"` should both just be `event-driven`). A starting vocabulary, extend it
-when a repository's shape genuinely doesn't fit any of these:
+A pattern's `name` is usually a short, kebab-case, architectural noun -- reused across
+repositories with the same shape, not a one-off phrase invented per repository (`"event driven"`
+and `"event-driven-architecture"` should both just be `event-driven`). A starting vocabulary,
+extend it when a repository's shape genuinely doesn't fit any of these:
 
 `serverless`, `event-driven`, `containers`, `api`, `streaming`, `iac-cdk`, `iac-terraform`,
-`genai-single-call`, `agentic`, `multi-account`.
+`iac-cloudformation`, `genai-single-call`, `agentic`, `multi-account`.
 
-A gap (see "Say what's missing, too" below) is a pattern too, named with a `gap-` prefix so it's
-never confused with a positive, present-tense pattern: `gap-no-dlq`, `gap-no-alarms`,
-`gap-broad-iam`, `gap-no-tests`. Code that exists but nothing deploys is `dead-code` (no `gap-`
+The one exception: when a pattern genuinely corresponds to one of `reference/taxonomy.md`'s
+"Topics" (not just a loose thematic resemblance -- the pattern *is* that topic), name it with that
+topic's exact spelling instead of inventing a kebab-case version of it: `"Developer Tools"`,
+`"Security & Identity"`, not `developer-tools` or `security-identity`. This isn't cosmetic:
+`match_sessions` compares every pattern name against a session's own topics case-insensitively, but
+not hyphen- or punctuation-insensitively, so a kebab-cased rendering of a multi-word topic ("exact"
+here means spelling, not case) never actually matches the real topic and silently loses that
+reason. A single-word topic like "Serverless" still reads fine in ordinary kebab-case (`serverless`
+already matches it case-insensitively), which is why the general vocabulary above stays kebab-case
+by default -- this exception only bites for a multi-word topic.
+
+A gap (see "Say what's missing, too" below) is always kebab-case with a `gap-` prefix, never a
+topic spelling, so it's never confused with a positive, present-tense pattern: `gap-no-dlq`,
+`gap-no-alarms`, `gap-broad-iam`, `gap-no-tests`. Code nothing reaches is `dead-code` (no `gap-`
 prefix -- it isn't an absence, it's a presence that doesn't count).
 
 ## Say what's missing, too
@@ -174,8 +201,11 @@ and spell it exactly as the catalog does -- `"Event-Driven Architecture"`, `"Kub
 Optimization"`, not a paraphrase of any of them. This matters mechanically, not just stylistically:
 `match_sessions` only produces an `areaOfInterest` reason for an exact tag match; anything else in
 `interests` still counts toward the free-text score, but only an exact tag earns that specific,
-strongest reason. Keep an interest as free text only when nothing in the real list is actually a
-good fit -- don't force a weak match just to get the stronger reason type.
+strongest reason. "Exact" here means spelling and punctuation, not case -- the comparison itself is
+case-insensitive (`"kubernetes"` and `"Kubernetes"` match equally well), so there's no need to worry
+about matching the catalog's own capitalization exactly, only its wording. Keep an interest as free
+text only when nothing in the real list is actually a good fit -- don't force a weak match just to
+get the stronger reason type.
 
 ## Fold in issues and other context
 
@@ -187,24 +217,33 @@ problem or goal into `intents`:
 ```
 
 Use `"goal"` instead of `"issue"` for something you learned isn't tracked as an issue at all -- a
-stated roadmap item from the README, or something the user told you directly. `ref` is optional and
-is the right place for an issue URL or number; leave it off for a goal with no such reference. A
-design doc or spec (see "What doesn't count as evidence" above) can inform an `intent` the same
-way -- a documented future direction is a legitimate goal -- but never a service or pattern
-citation.
+stated roadmap item from the README, something the user told you directly, an RFC or spec
+describing something not yet built, or a gap the README states outright ("we don't have alarms on
+this yet"). `ref` is optional and is the right place for an issue URL or number; leave it off for a
+goal with no such reference. A design doc or spec (see "What doesn't count as evidence" above) can
+inform an `intent` the same way -- a documented future direction is a legitimate goal -- but never
+a service or pattern citation.
 
 ## The profile shape
 
 `validate_profile` and `match_sessions` both take this object as their `profile` argument
 (`schemaVersion` is currently always `1`; `services` and `patterns` are required arrays -- write
 them as `[]` when there's genuinely nothing to report, never omit them). `repos[].languages` is
-lowercase, as shown below (`"typescript"`, not `"TypeScript"`):
+lowercase, as shown below (`"typescript"`, not `"TypeScript"`) -- list every language with real
+code in the repository, not just the primary one: a TypeScript API with a deploy script in `bash`
+and a build step in plain `javascript` lists all three, not just `typescript`. `repos[].summary` is
+one or two sentences on what the repository *does* -- "Order-processing API on Lambda," not a
+restatement of the `services` list as prose.
 
 ```json
 {
   "schemaVersion": 1,
   "repos": [
-    { "root": "api", "languages": ["typescript"], "summary": "Order-processing API on Lambda." }
+    {
+      "root": "api",
+      "languages": ["typescript", "bash", "javascript"],
+      "summary": "Order-processing API on Lambda."
+    }
   ],
   "services": [
     {
@@ -221,6 +260,13 @@ lowercase, as shown below (`"typescript"`, not `"TypeScript"`):
       "note": "Order creation publishes to EventBridge.",
       "evidence": [
         { "repo": "api", "file": "infra/stack.ts", "line": 44, "snippet": "new events.EventBus(this, \"OrderEvents\")" }
+      ]
+    },
+    {
+      "name": "Security & Identity",
+      "note": "Every API Gateway route is fronted by a Lambda request authorizer that checks the caller's IAM-scoped role before the handler runs.",
+      "evidence": [
+        { "repo": "api", "file": "infra/stack.ts", "line": 20, "snippet": "new apigateway.RequestAuthorizer(this, \"OrderAuthorizer\")" }
       ]
     },
     {
@@ -244,6 +290,12 @@ event-driven architecture to cut coupling between services," the second from "we
 reduce our AWS bill." `"serverless"` is kept as free text because there's no "Serverless" entry in
 the Areas of interest list (it's a *topic*, not an area of interest) -- forcing it onto an unrelated
 tag would be a worse match than leaving it as text.
+
+`"Security & Identity"` is a pattern, not an interest, but follows the same "exact spelling" rule
+from "Naming patterns" above for the opposite reason `"serverless"` doesn't: it genuinely *is* one
+of `reference/taxonomy.md`'s "Topics", so it's spelled exactly as that topic is, capital letters
+and ampersand included, rather than invented as `security-identity` -- the kebab-case rendering
+would silently fail to match the real topic at all.
 
 For a multi-repository profile, add one entry per repository to `repos` and use its `root` as the
 `repo` value in every citation that belongs to it.
