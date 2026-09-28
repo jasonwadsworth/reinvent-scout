@@ -1,5 +1,6 @@
 import type { ApiClient } from "../api/client.js";
 import type { BulkFailureCode } from "../api/types.js";
+import { OAuthError } from "../auth/oauth.js";
 import type { IndexRecord } from "../catalog/index-record.js";
 import { readIndex, type CatalogStoreDeps } from "../catalog/store.js";
 import { DEFAULT_EVENT_ID } from "../catalog/sync.js";
@@ -272,8 +273,18 @@ export interface FavoriteSessionsDeps extends CatalogStoreDeps {
  *   every *remaining*, not-yet-attempted id is reported as `notAttempted` instead, and no further
  *   chunk is sent. The read-back below still runs, since whatever chunks *did* succeed before this
  *   one are still worth confirming.
+ * - `OAuthError` -- a token-provider failure that is *not* `invalid_grant` (a 5xx or network
+ *   trouble from the token endpoint itself, see `token-provider.ts`'s own `performRefresh`
+ *   comment): the stored refresh token isn't invalidated, so this is deliberately not treated as
+ *   a session-wide `AuthRequiredError`/`NotRegisteredError` (no `aborted`, nothing thrown even
+ *   when nothing has been written yet) -- but every later chunk calls the identical token
+ *   provider and is doomed the identical way until whatever's wrong with the token endpoint
+ *   clears, so this gets the same stop-early, mark-the-rest-`notAttempted` treatment as
+ *   `ThrottledError` above, just with the real error message as the reason instead of a fixed
+ *   string (there's no single well-known cause here).
  *
- * After every chunk has been attempted (or the loop stopped early on a `ThrottledError`), this
+ * After every chunk has been attempted (or the loop stopped early on a `ThrottledError` or
+ * `OAuthError`), this
  * re-reads `GetSchedule` exactly once (never per chunk, and never paced through the write window
  * above -- `GetSchedule` has its own, separate rate quota) and reports, in `verified.favorited`,
  * which of the *requested* ids are actually on the schedule now. `mismatch` names any id the API
@@ -390,6 +401,25 @@ export async function favoriteSessions(
         const notAttempted = chunks.slice(chunkIndex + 1).flat();
         for (const sessionId of notAttempted) {
           failed.push({ sessionId, code: NOT_ATTEMPTED_CODE, reason: NOT_ATTEMPTED_THROTTLED_REASON });
+        }
+        break;
+      }
+
+      if (err instanceof OAuthError) {
+        // pr-reviewer-3's finding: a non-invalid_grant token-provider failure (a 5xx or network
+        // trouble from the token endpoint itself) propagates out of performRefresh as-is -- see
+        // token-provider.ts's own comment -- since it doesn't invalidate the stored refresh token,
+        // so it's genuinely not a session-wide AuthRequiredError/NotRegisteredError and shouldn't
+        // abort the whole result. But it isn't scoped to just this chunk either: every later chunk
+        // calls the identical token provider and is doomed to fail the identical way until whatever
+        // is wrong with the token endpoint clears, so pacing through them one by one burns a real
+        // wait for nothing (reviewer3's own measurement: 40 ids took over a minute, every chunk
+        // after the first requestFailed). Same stop-early treatment as ThrottledError, but with the
+        // real error message as the reason -- unlike the throttled case there's no single
+        // well-known cause here, it could be anything from a 500 to a DNS failure.
+        const notAttempted = chunks.slice(chunkIndex + 1).flat();
+        for (const sessionId of notAttempted) {
+          failed.push({ sessionId, code: NOT_ATTEMPTED_CODE, reason });
         }
         break;
       }

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApiClient, type ApiClient } from "../../src/api/client.js";
 import type { BulkResult, Schedule, Session } from "../../src/api/types.js";
+import { OAuthError } from "../../src/auth/oauth.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import {
   CURRENT_SCHEMA_VERSION,
@@ -807,6 +808,52 @@ describe("favoriteSessions", () => {
     expect(notAttempted.map((f) => f.sessionId).sort()).toEqual(ids.slice(10).sort());
     expect(notAttempted.every((f) => f.reason !== undefined)).toBe(true);
     // The read-back still ran, even though the loop stopped early.
+    expect(result.verified).not.toBeNull();
+  });
+
+  it("stops sending further chunks when a token-provider failure surfaces mid-run (a 5xx from the token endpoint, not invalid_grant) -- marking the rest notAttempted, but without aborting the whole result the way AuthRequiredError does", async () => {
+    // pr-reviewer-3's finding: a non-invalid_grant token-provider failure (a 5xx or network
+    // trouble from the token endpoint itself) propagates out of `performRefresh` as-is -- see
+    // token-provider.ts's own comment -- since the stored refresh token is still good and a caller
+    // might succeed by simply retrying later. It surfaces here as a plain `OAuthError`, not
+    // `AuthRequiredError`/`NotRegisteredError` (those are reserved for `invalid_grant` and a 403,
+    // both session-wide problems this isn't). Every later chunk calls the identical token provider
+    // and is doomed to fail the identical way until whatever's wrong with the token endpoint
+    // clears -- pacing through them one by one wastes a real wait for nothing (reviewer3's own
+    // measurement: 40 ids took over a minute, every chunk after the first `requestFailed`).
+    const ids = Array.from({ length: 25 }, (_, i) => `s${i}`); // three chunks: 10, 10, 5
+    let callCount = 0;
+    const apiClient: Pick<ApiClient, "associateFavorites" | "getSchedule"> = {
+      associateFavorites: async (_eventId, sessionIds) => {
+        callCount++;
+        if (callCount === 1) {
+          throw new OAuthError("The token endpoint returned status 503.");
+        }
+        return { successful: sessionIds, failed: [] };
+      },
+      getSchedule: async () => emptySchedule(),
+    };
+
+    const result = await favoriteSessions(ids, {
+      apiClient,
+      storeRoot: home.path,
+      sleep: fakeSleep().sleep,
+      now: fixedClock(0),
+    });
+
+    // Only the first chunk was ever attempted -- chunks two and three never sent.
+    expect(callCount).toBe(1);
+    const requestFailed = result.failed.filter((f) => f.code === "requestFailed");
+    const notAttempted = result.failed.filter((f) => f.code === "notAttempted");
+    expect(requestFailed.map((f) => f.sessionId).sort()).toEqual(ids.slice(0, 10).sort());
+    expect(notAttempted.map((f) => f.sessionId).sort()).toEqual(ids.slice(10).sort());
+    // Unlike ThrottledError's fixed reason text, there's no single well-known cause here -- the
+    // real error message rides along, same as any other requestFailed reason.
+    expect(notAttempted.every((f) => f.reason === "The token endpoint returned status 503.")).toBe(
+      true,
+    );
+    // Not a session-wide auth problem: the result is not `aborted`, and the read-back still ran.
+    expect(result.aborted).toBeUndefined();
     expect(result.verified).not.toBeNull();
   });
 
