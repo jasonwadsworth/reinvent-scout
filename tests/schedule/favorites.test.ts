@@ -589,9 +589,51 @@ describe("favoriteSessions", () => {
     expect(callCount).toBe(1);
   });
 
-  it("aborts immediately when AuthRequiredError surfaces on a later chunk, not just the first", async () => {
-    // Lead's decision: "anywhere," not only the first chunk -- a token that was valid when the
-    // first chunk ran can still be revoked mid-operation.
+  it("returns a partial result with aborted set when AuthRequiredError surfaces after something was already written, instead of discarding it", async () => {
+    // reviewer2's own gap on the first version of this fix: throwing unconditionally on any chunk
+    // lost the 20 ids that had *already* succeeded server-side by the time chunk three's own
+    // AuthRequiredError surfaced (a refresh token expiring mid-run is a realistic way this
+    // happens) -- the MCP tool then reported isError "Not signed in" while the agent had no way to
+    // tell the user twenty sessions really were favorited. Lead's decision: throw only when
+    // nothing has been written yet; otherwise return everything gathered so far, mark every
+    // not-yet-attempted id `notAttempted`, skip the read-back (it would fail the same way), and
+    // report why through `aborted`.
+    let callCount = 0;
+    let getScheduleCalled = false;
+    const apiClient: Pick<ApiClient, "associateFavorites" | "getSchedule"> = {
+      associateFavorites: async (_eventId, sessionIds) => {
+        callCount++;
+        if (callCount <= 2) {
+          return { successful: sessionIds, failed: [] };
+        }
+        throw new AuthRequiredError();
+      },
+      getSchedule: async () => {
+        getScheduleCalled = true;
+        return emptySchedule();
+      },
+    };
+    const ids = Array.from({ length: 40 }, (_, i) => `s${i}`); // four chunks of ten
+
+    const result = await favoriteSessions(ids, {
+      apiClient,
+      storeRoot: home.path,
+      sleep: fakeSleep().sleep,
+      now: fixedClock(0),
+    });
+
+    expect(callCount).toBe(3); // chunks one and two succeeded; chunk three is where it stopped
+    expect(getScheduleCalled).toBe(false);
+    expect(result.successful.sort()).toEqual(ids.slice(0, 20).sort());
+    const requestFailed = result.failed.filter((f) => f.code === "requestFailed");
+    const notAttempted = result.failed.filter((f) => f.code === "notAttempted");
+    expect(requestFailed.map((f) => f.sessionId).sort()).toEqual(ids.slice(20, 30).sort());
+    expect(notAttempted.map((f) => f.sessionId).sort()).toEqual(ids.slice(30).sort());
+    expect(result.verified).toBeNull();
+    expect(result.aborted).toEqual({ reason: "authRequired", message: new AuthRequiredError().message });
+  });
+
+  it("does the same for NotRegisteredError surfacing after something was already written", async () => {
     let callCount = 0;
     const apiClient: Pick<ApiClient, "associateFavorites" | "getSchedule"> = {
       associateFavorites: async (_eventId, sessionIds) => {
@@ -599,17 +641,22 @@ describe("favoriteSessions", () => {
         if (callCount === 1) {
           return { successful: sessionIds, failed: [] };
         }
-        throw new AuthRequiredError();
+        throw new NotRegisteredError();
       },
       getSchedule: async () => emptySchedule(),
     };
     const ids = Array.from({ length: 21 }, (_, i) => `s${i}`); // three chunks
 
-    await expect(
-      favoriteSessions(ids, { apiClient, storeRoot: home.path, sleep: fakeSleep().sleep, now: fixedClock(0) }),
-    ).rejects.toBeInstanceOf(AuthRequiredError);
+    const result = await favoriteSessions(ids, {
+      apiClient,
+      storeRoot: home.path,
+      sleep: fakeSleep().sleep,
+      now: fixedClock(0),
+    });
 
     expect(callCount).toBe(2);
+    expect(result.successful).toEqual(ids.slice(0, 10));
+    expect(result.aborted).toEqual({ reason: "notRegistered", message: new NotRegisteredError().message });
   });
 
   it("returns the write results with verified null and a verificationError when the read-back itself fails", async () => {
@@ -635,10 +682,11 @@ describe("favoriteSessions", () => {
     expect(result.mismatch).toEqual([]);
   });
 
-  it("still aborts on AuthRequiredError/NotRegisteredError from the read-back itself, not just the write chunks", async () => {
-    // The read-back's own catch must special-case these the same way the write loop does -- a
-    // session-wide problem, not a read-back-specific one, so it's surfaced as-is rather than
-    // folded into a verificationError the way a ServiceError or network failure is.
+  it("returns a partial result with aborted, not a throw, when the read-back itself fails on auth after a real write", async () => {
+    // The read-back's own catch applies the same "throw only when nothing was written" rule as the
+    // write loop -- reaching the read-back at all means every chunk already ran, so in the
+    // ordinary case there is real, already-happened write data here worth keeping rather than
+    // discarding to an uncaught throw.
     const apiClient: Pick<ApiClient, "associateFavorites" | "getSchedule"> = {
       associateFavorites: async () => ({ successful: ["a"], failed: [] }),
       getSchedule: async () => {
@@ -646,9 +694,35 @@ describe("favoriteSessions", () => {
       },
     };
 
+    const result = await favoriteSessions(["a"], {
+      apiClient,
+      storeRoot: home.path,
+      sleep: fakeSleep().sleep,
+      now: fixedClock(0),
+    });
+
+    expect(result.successful).toEqual(["a"]);
+    expect(result.verified).toBeNull();
+    expect(result.aborted).toEqual({ reason: "notRegistered", message: new NotRegisteredError().message });
+  });
+
+  it("still throws from the read-back's own auth failure when nothing was actually written", async () => {
+    // Every chunk here only ever produces a per-session refusal (never a success), so by the time
+    // the read-back itself throws, nothing has genuinely been written -- the same "throw only when
+    // nothing was written" rule the write loop applies, not "reached the read-back" alone.
+    const apiClient: Pick<ApiClient, "associateFavorites" | "getSchedule"> = {
+      associateFavorites: async (_eventId, sessionIds) => ({
+        successful: [],
+        failed: sessionIds.map((sessionId) => ({ sessionId, code: "scheduleConflict" as const })),
+      }),
+      getSchedule: async () => {
+        throw new AuthRequiredError();
+      },
+    };
+
     await expect(
       favoriteSessions(["a"], { apiClient, storeRoot: home.path, sleep: fakeSleep().sleep, now: fixedClock(0) }),
-    ).rejects.toBeInstanceOf(NotRegisteredError);
+    ).rejects.toBeInstanceOf(AuthRequiredError);
   });
 
   it("stops sending further chunks once one exhausts its 429 retries, marking the rest notAttempted, but still reads the schedule back", async () => {

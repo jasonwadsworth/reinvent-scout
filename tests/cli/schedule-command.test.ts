@@ -10,7 +10,7 @@ import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { CURRENT_SCHEMA_VERSION, writeCatalog, type CatalogMeta } from "../../src/catalog/store.js";
 import { DEFAULT_EVENT_ID } from "../../src/catalog/sync.js";
 import { registerScheduleCommands } from "../../src/cli/commands/schedule.js";
-import { NotFoundError } from "../../src/core/errors.js";
+import { AuthRequiredError, NotFoundError } from "../../src/core/errors.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -269,6 +269,31 @@ describe("schedule favorite", () => {
     expect(output).toContain("a");
     expect(output).toContain("b");
     expect(output).toMatch(/scheduleConflict/);
+  });
+
+  it("prints the real successes plus the sign-in instruction, and exits non-zero, when auth is interrupted mid-run", async () => {
+    // Lead's decision on reviewer2's own finding: a session-wide auth failure that surfaces after
+    // an earlier chunk already wrote something must not make the CLI report nothing happened.
+    let callCount = 0;
+    const ids = Array.from({ length: 11 }, (_, i) => `s${i}`); // two chunks
+    const h = harness(home.path, {
+      associateFavorites: async (_eventId, sessionIds) => {
+        callCount++;
+        if (callCount === 1) {
+          return { successful: sessionIds, failed: [] };
+        }
+        throw new AuthRequiredError();
+      },
+    });
+
+    await h.run(["schedule", "favorite", ...ids]);
+
+    const output = h.printed.join("\n");
+    expect(output).toContain("Favorited: " + ids.slice(0, 10).join(", "));
+    expect(output).toContain("Stopped early:");
+    expect(output).toMatch(/auth login/);
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
   });
 
   it("exits non-zero when any session was refused, in a response that also has a real success", async () => {

@@ -858,7 +858,26 @@ describe("favorite_sessions tool", () => {
     expect(called).toBe(false);
   });
 
-  it("returns isError with the not-registered explanation on a 403", async () => {
+  it("returns isError with the not-registered explanation on a 403 when nothing was written yet", async () => {
+    const client = await connectedClient(home.path, {
+      associateFavorites: async () => {
+        throw new NotRegisteredError();
+      },
+    });
+
+    const result = await client.callTool({
+      name: "favorite_sessions",
+      arguments: { sessionIds: ["a"] },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toMatch(/will not help/i);
+  });
+
+  it("returns a normal (non-isError) result carrying aborted, not isError, when the 403 surfaces after something was already written", async () => {
+    // Lead's decision, on reviewer2's own finding: a 403/401 that lands after an earlier write
+    // already landed server-side must not make this look like a plain failure -- the agent still
+    // needs to relay the real successes, not just a sign-in instruction.
     const client = await connectedClient(home.path, {
       associateFavorites: async () => ({ successful: ["a"], failed: [] }),
       getSchedule: async () => {
@@ -871,8 +890,16 @@ describe("favorite_sessions tool", () => {
       arguments: { sessionIds: ["a"] },
     });
 
-    expect(result.isError).toBe(true);
-    expect(textOf(result)).toMatch(/will not help/i);
+    expect(result.isError).not.toBe(true);
+    const parsed = JSON.parse(textOf(result)) as {
+      successful: string[];
+      verified: unknown;
+      aborted?: { reason: string; message: string };
+    };
+    expect(parsed.successful).toEqual(["a"]);
+    expect(parsed.verified).toBeNull();
+    expect(parsed.aborted?.reason).toBe("notRegistered");
+    expect(parsed.aborted?.message).toMatch(/will not help/i);
   });
 });
 

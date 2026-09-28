@@ -240,7 +240,12 @@ function formatFavoriteResultHuman(result: FavoriteSessionsResult): string {
       lines.push(formatFailureLine(failure));
     }
   }
-  if (result.verified === null) {
+  if (result.aborted !== undefined) {
+    // Lead's decision: the successes and refusals above are still real (see them printed above
+    // this line already) -- this only explains why the run stopped early and the schedule was
+    // never re-read to confirm them.
+    lines.push(`Stopped early: ${result.aborted.message}`);
+  } else if (result.verified === null) {
     lines.push(
       `Warning: could not confirm these writes against the schedule (${result.verificationError}). ` +
         "The results above are still real -- only the confirmation step failed.",

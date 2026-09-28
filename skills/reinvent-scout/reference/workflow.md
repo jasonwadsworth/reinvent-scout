@@ -164,12 +164,31 @@ Arguments: `{ "sessionIds": string[] (1 to 50), "event"?: string }`.
 ```
 
 Chunking and pacing happen automatically -- call this once with the whole shortlist. A `failed`
-entry is a real refusal (a schedule conflict, the session no longer available, or the request
-itself failing) that must be reported to the user as a refusal, never silently dropped or reported
-as a success; `alreadyFavorited` is not a failure. `verified.favorited` is the ground truth after a
-re-read of the real schedule, done once at the end -- trust it over `successful`/`alreadyFavorited`
-alone. `mismatch` (normally empty) names an id the write claimed succeeded that the read-back
-doesn't confirm; mention it to the user if it's non-empty rather than reporting unqualified success.
+entry is a real refusal (a schedule conflict, the session no longer available, the request itself
+failing, or `"notAttempted"` -- never even sent, see `aborted` below) that must be reported to the
+user as a refusal, never silently dropped or reported as a success; `alreadyFavorited` is not a
+failure. `verified.favorited` is the ground truth after a re-read of the real schedule, done once at
+the end -- trust it over `successful`/`alreadyFavorited` alone. `mismatch` (normally empty) names an
+id the write claimed succeeded that the read-back doesn't confirm; mention it to the user if it's
+non-empty rather than reporting unqualified success.
+
+`verified` can be `null` instead of an object, in two different situations -- tell them apart by
+whether `aborted` is also present:
+
+- **`verificationError` set, `aborted` absent:** every chunk was attempted and the results above
+  (`successful`/`alreadyFavorited`/`failed`) are complete and real -- only the final re-read of the
+  schedule itself failed (a transient server error, most often). Tell the user what succeeded and
+  that it couldn't be double-checked against the schedule; do not imply anything failed to write.
+- **`aborted` set (`{ "reason": "authRequired" | "notRegistered", "message": string }`):** the run
+  stopped early because of a session-wide sign-in problem, *after* the ids in `successful`/
+  `alreadyFavorited`/`failed` had already been attempted -- everything already there really
+  happened; ids with `failed[].code === "notAttempted"` were never even sent, not refused. Relay
+  *both* halves to the user: the real partial results already gathered, and `aborted.message` itself
+  (it's already the right sign-in instruction) -- follow the same remedy as the "No signed-in
+  session" case under Error handling below, then retry only the ids that were `notAttempted` (or
+  `failed` with `"requestFailed"`), not the ones already `successful`. Never present an `aborted`
+  result as a plain failure: the agent still needs to tell the user which sessions really are
+  already favorited.
 
 ## 8. `unfavorite_session`
 

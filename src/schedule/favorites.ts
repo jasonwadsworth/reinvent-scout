@@ -32,7 +32,14 @@ const REQUEST_FAILED_CODE = "requestFailed";
  * decision is to stop there and report the truth ("never tried") rather than either attempting a
  * request certain to fail or silently dropping those ids from the result entirely. */
 const NOT_ATTEMPTED_CODE = "notAttempted";
-const NOT_ATTEMPTED_REASON = "The write rate limit was reached; retry the remaining sessions shortly.";
+const NOT_ATTEMPTED_THROTTLED_REASON =
+  "The write rate limit was reached; retry the remaining sessions shortly.";
+/** reviewer2's finding on the first version of the auth-abort fix: the message must not just
+ * repeat "not attempted" -- a caller reading one entry among many notAttempted ids needs to know
+ * this is because the whole session stopped (see `aborted`), not that this one id was somehow
+ * special. */
+const NOT_ATTEMPTED_AUTH_REASON =
+  "The session was interrupted before this could be attempted; see `aborted` for why, then retry after signing in again.";
 
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -175,6 +182,19 @@ export interface FavoriteSessionsResult {
    * hidden. Empty in the ordinary case, and always empty when `verified` is `null` (nothing was
    * read back to compare against). */
   mismatch: string[];
+  /** Present when `AuthRequiredError`/`NotRegisteredError` stopped the operation early *after* at
+   * least one earlier chunk had already written something -- `reason` is a coarse code a caller
+   * can branch on without string-matching `message`, which carries the error's own text (a real
+   * sign-in instruction, e.g. "Not signed in. Run `reinvent-scout auth login`."). Everything else
+   * on this result (`successful`, `alreadyFavorited`, `failed`) is still real: the writes already
+   * happened before the interruption. `verified` is always `null` when this is present -- the
+   * read-back is skipped entirely, since it would fail the identical way. reviewer2's finding: the
+   * first version of this fix rethrew unconditionally on any chunk, discarding writes that had
+   * already landed server-side (a refresh token expiring mid-run, most realistically) -- the exact
+   * class of bug the original read-back fix (see `verificationError`) closed, just one step
+   * earlier. When nothing was written yet, this function still throws instead (see below), since
+   * there's nothing real to report. */
+  aborted?: { reason: "authRequired" | "notRegistered"; message: string };
 }
 
 export interface FavoriteSessionsDeps extends CatalogStoreDeps {
@@ -206,14 +226,20 @@ export interface FavoriteSessionsDeps extends CatalogStoreDeps {
  * never loses every other chunk's result. Two errors are treated specially, since they are never
  * really about just one chunk:
  *
- * - `AuthRequiredError` or `NotRegisteredError`, from any chunk (not only the first): the whole
- *   session is affected, not this one request -- every later chunk would fail the identical way,
- *   burning a real pacer wait each time for no reason (reviewer's own measurement: 40 ids took
- *   20+ real seconds to report "not signed in," over four chunks that were each doomed from the
- *   start). This function stops immediately and rethrows the error as-is, with no further chunk
- *   attempted and no read-back -- the caller's own generic handling (the CLI and MCP tool both
- *   already know how to report "not signed in" or "not registered") is what should run, which
- *   swallowing it into an opaque per-session `requestFailed` would have hidden entirely.
+ * - `AuthRequiredError` or `NotRegisteredError`, from any chunk (not only the first) or from the
+ *   read-back: the whole session is affected, not this one request -- every later chunk would fail
+ *   the identical way, burning a real pacer wait each time for no reason (reviewer's own
+ *   measurement: 40 ids took 20+ real seconds to report "not signed in," over four chunks that
+ *   were each doomed from the start). This function stops immediately, with no further chunk
+ *   attempted and no read-back. If nothing has been written yet, it rethrows the error as-is -- the
+ *   caller's own generic handling (the CLI and MCP tool both already know how to report "not signed
+ *   in" or "not registered") is what should run, which swallowing it into an opaque per-session
+ *   `requestFailed` would have hidden entirely. If an earlier chunk *did* already write something,
+ *   throwing would discard it -- reviewer's own follow-up finding, the same "real writes silently
+ *   lost" shape as the read-back's own fix below, one step earlier -- so instead this returns the
+ *   real results gathered so far, marks every not-yet-attempted id `notAttempted`, and reports why
+ *   through `aborted` (`verified` is always `null` here; the read-back is skipped, since it would
+ *   fail the identical way).
  * - `ThrottledError` -- a chunk that exhausted the API client's own three 429 retries: the write
  *   quota is exhausted for the whole session at that point, not just this chunk, so immediately
  *   sending another would just be refused the same way. This chunk's own ids are still reported
@@ -248,6 +274,39 @@ export async function favoriteSessions(
   const alreadyFavorited: string[] = [];
   const failed: FavoriteFailure[] = [];
 
+  /** `true` once at least one chunk has produced a real, confirmed write -- the only thing that
+   * decides whether an `AuthRequiredError`/`NotRegisteredError` (from any chunk, or the read-back)
+   * aborts with a partial result or throws outright. Deliberately not "has any chunk been
+   * attempted": a chunk whose whole response was per-session refusals (`failed` only, zero
+   * `successful`/`alreadyFavorited`) has genuinely written nothing, so an auth failure right after
+   * it still has nothing real to report and should throw, the same as failing on the very first
+   * chunk. */
+  const hasWrittenAnything = (): boolean => successful.length > 0 || alreadyFavorited.length > 0;
+
+  /** reviewer2's finding on the first version of this fix: rethrowing unconditionally on any
+   * chunk's `AuthRequiredError`/`NotRegisteredError` discarded whatever had already been written
+   * server-side by an earlier chunk (a refresh token expiring mid-run, most realistically) -- the
+   * exact "real writes silently lost" class of bug the read-back's own `verificationError` handling
+   * already closed one step later. Lead's decision: throw only when nothing has been written yet;
+   * otherwise return everything gathered so far, with `aborted` naming why and `verified: null`
+   * since the read-back is skipped entirely (it would fail the identical way). */
+  function abortOrThrow(err: AuthRequiredError | NotRegisteredError): FavoriteSessionsResult {
+    if (!hasWrittenAnything()) {
+      throw err;
+    }
+    return {
+      successful,
+      alreadyFavorited,
+      failed,
+      verified: null,
+      mismatch: [],
+      aborted: {
+        reason: err instanceof AuthRequiredError ? "authRequired" : "notRegistered",
+        message: err.message,
+      },
+    };
+  }
+
   const chunks = chunk(sessionIds, MAX_FAVORITES_PER_REQUEST);
   for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
     const idsChunk = chunks[chunkIndex]!;
@@ -280,7 +339,17 @@ export async function favoriteSessions(
       }
     } catch (err) {
       if (err instanceof AuthRequiredError || err instanceof NotRegisteredError) {
-        throw err;
+        // This chunk's own ids: a real request really was attempted and really was refused, same
+        // as any other requestFailed. Everything strictly after it never got the chance.
+        const reason = describeError(err);
+        for (const sessionId of idsChunk) {
+          failed.push({ sessionId, code: REQUEST_FAILED_CODE, reason });
+        }
+        const notAttempted = chunks.slice(chunkIndex + 1).flat();
+        for (const sessionId of notAttempted) {
+          failed.push({ sessionId, code: NOT_ATTEMPTED_CODE, reason: NOT_ATTEMPTED_AUTH_REASON });
+        }
+        return abortOrThrow(err);
       }
 
       // Scoped to this chunk's ids alone -- an independent request failing must not lose every
@@ -294,7 +363,7 @@ export async function favoriteSessions(
       if (err instanceof ThrottledError) {
         const notAttempted = chunks.slice(chunkIndex + 1).flat();
         for (const sessionId of notAttempted) {
-          failed.push({ sessionId, code: NOT_ATTEMPTED_CODE, reason: NOT_ATTEMPTED_REASON });
+          failed.push({ sessionId, code: NOT_ATTEMPTED_CODE, reason: NOT_ATTEMPTED_THROTTLED_REASON });
         }
         break;
       }
@@ -319,11 +388,14 @@ export async function favoriteSessions(
     };
   } catch (err) {
     // AuthRequiredError/NotRegisteredError get the same treatment here as in the write loop above
-    // -- a session-wide problem, not something specific to the read-back, so it's surfaced as-is
-    // rather than folded into a verificationError. Every other read-back failure (network trouble,
-    // a 5xx) still returns the real write results gathered above instead of losing them.
+    // -- a session-wide problem, not something specific to the read-back, so it applies the same
+    // "throw only when nothing was written" rule rather than either always throwing (losing real
+    // writes) or always folding it into a verificationError (which implies the writes themselves
+    // are still trustworthy and merely unconfirmed, not that the session itself was interrupted).
+    // Every other read-back failure (network trouble, a 5xx) still returns the real write results
+    // gathered above instead of losing them.
     if (err instanceof AuthRequiredError || err instanceof NotRegisteredError) {
-      throw err;
+      return abortOrThrow(err);
     }
     return {
       successful,
