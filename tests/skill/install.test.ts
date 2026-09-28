@@ -1,4 +1,13 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   MANIFEST_FILE_NAME,
   SKILL_NAME,
+  SkillAlreadyInstalledError,
   installSkill,
   resolveDefaultSkillsDir,
   resolveWithinRoot,
@@ -112,6 +122,67 @@ describe("installSkill", () => {
     // real nested directory to actually distinguish the two implementations.
     const result = installSkill({ sourceDir, targetsDir });
     expect(result.fileCount).toBe(readdirSync(join(sourceDir, "reference")).length + 1);
+  });
+
+  it("refuses to install when a skill is already installed at the target, naming skill update, and leaves it untouched", () => {
+    // Reviewer's finding: a second `skill install` silently overwrote a locally-modified SKILL.md
+    // with exit 0 and no warning -- exactly what skill update's own modified-file protection
+    // exists to prevent, bypassed entirely by re-running install instead. The presence of the
+    // manifest is what marks "a previous install by this tool lives here" -- not mere
+    // non-emptiness, which would also make the symlink-escape scenario below untestable through
+    // this same function (see the next test): a target that's already flagged as installed would
+    // refuse before ever reaching the code path that scenario needs to exercise.
+    installSkill({ sourceDir, targetsDir });
+    writeFileSync(
+      join(targetsDir, SKILL_NAME, "SKILL.md"),
+      "the user's own locally-edited content\n",
+    );
+
+    expect(() => installSkill({ sourceDir, targetsDir })).toThrow(SkillAlreadyInstalledError);
+    try {
+      installSkill({ sourceDir, targetsDir });
+    } catch (err) {
+      expect((err as Error).message).toMatch(/reinvent-scout skill update/);
+    }
+
+    // Untouched: the locally-edited content is still there, not silently overwritten.
+    expect(readFileSync(join(targetsDir, SKILL_NAME, "SKILL.md"), "utf8")).toBe(
+      "the user's own locally-edited content\n",
+    );
+  });
+
+  it("installs cleanly into a target directory that exists but has no manifest (not a prior install by this tool)", () => {
+    const installedPath = join(targetsDir, SKILL_NAME);
+    mkdirSync(installedPath, { recursive: true });
+    writeFileSync(join(installedPath, "unrelated-file.txt"), "not ours\n");
+
+    const result = installSkill({ sourceDir, targetsDir });
+
+    expect(result.fileCount).toBe(4);
+    expect(readFileSync(join(installedPath, "SKILL.md"), "utf8")).toContain("Body.");
+  });
+
+  it("refuses when a destination directory is a symlink escaping the target root, and writes nothing outside it", () => {
+    // Reviewer's finding: the lexical resolveWithinRoot check can't see a symlink, since
+    // path.resolve never touches the filesystem -- a `reference` symlink pointing outside the
+    // target lets every reference/*.md file get written straight through it, outside the intended
+    // install directory entirely. No manifest exists yet in this scenario (nothing was installed
+    // here before), so the "already installed" refusal above doesn't fire first -- this reaches
+    // the real, vulnerable write loop.
+    const outsideDir = mkdtempSync(join(tmpdir(), "reinvent-scout-skill-outside-"));
+    try {
+      const installedPath = join(targetsDir, SKILL_NAME);
+      mkdirSync(installedPath, { recursive: true });
+      symlinkSync(outsideDir, join(installedPath, "reference"));
+
+      expect(() => installSkill({ sourceDir, targetsDir })).toThrow();
+
+      // The decisive check: nothing the skill ships (profiling.md, taxonomy.md, workflow.md) ever
+      // landed in the real directory the symlink points at.
+      expect(readdirSync(outsideDir)).toHaveLength(0);
+    } finally {
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
   });
 });
 

@@ -1,5 +1,10 @@
 import type { Command } from "commander";
-import { installSkill, type InstallSkillDeps, type InstallSkillResult } from "../../skill/install.js";
+import {
+  SkillAlreadyInstalledError,
+  installSkill,
+  type InstallSkillDeps,
+  type InstallSkillResult,
+} from "../../skill/install.js";
 import { updateSkill, type UpdateSkillDeps, type UpdateSkillResult } from "../../skill/update.js";
 
 export interface SkillCommandDeps {
@@ -44,8 +49,17 @@ export function registerSkillCommands(program: Command, deps: SkillCommandDeps =
     )
     .option("--dir <path>", "install into this skills directory instead of the Claude Code default")
     .action((options: InstallCommandOptions) => {
-      const result = install({ ...(options.dir === undefined ? {} : { targetsDir: options.dir }) });
-      print(`Installed ${result.fileCount} ${pluralize(result.fileCount, "file")} to ${result.installedPath}`);
+      try {
+        const result = install({ ...(options.dir === undefined ? {} : { targetsDir: options.dir }) });
+        print(`Installed ${result.fileCount} ${pluralize(result.fileCount, "file")} to ${result.installedPath}`);
+      } catch (err) {
+        if (err instanceof SkillAlreadyInstalledError) {
+          print(err.message);
+          process.exitCode = 1;
+          return;
+        }
+        throw err;
+      }
     });
 
   skill

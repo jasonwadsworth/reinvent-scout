@@ -5,6 +5,7 @@ import {
   DEFAULT_SKILL_SOURCE_DIR,
   MANIFEST_FILE_NAME,
   SKILL_NAME,
+  assertRealPathWithinRoot,
   installSkill,
   listFilesRecursive,
   resolveDefaultSkillsDir,
@@ -88,7 +89,9 @@ export function updateSkill(deps: UpdateSkillDeps = {}): UpdateSkillResult {
 
   for (const relPath of newFiles) {
     const destPath = resolveWithinRoot(installedPath, relPath);
-    mkdirSync(dirname(destPath), { recursive: true });
+    const destParent = dirname(destPath);
+    mkdirSync(destParent, { recursive: true });
+    assertRealPathWithinRoot(installedPath, destParent);
     const content = readFileSync(join(sourceDir, relPath));
     writeFileSync(destPath, content);
     newManifestFiles[relPath] = sha256Hex(content);

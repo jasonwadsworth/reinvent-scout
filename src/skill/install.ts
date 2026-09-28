@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir as osHomedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -51,6 +51,31 @@ export interface InstallSkillResult {
   fileCount: number;
 }
 
+/**
+ * Thrown by `installSkill` when the target already carries an install manifest -- a previous
+ * `installSkill` call already put a skill here, so a second one would silently overwrite whatever
+ * the first one wrote, including any file the user has since edited locally, with no warning.
+ * Reviewer's finding: re-running `skill install` (the obvious thing to try after upgrading) lost a
+ * locally-modified `SKILL.md` with exit 0. `skill update` owns every overwrite decision from here
+ * on -- its own modified-file protection is the only path that may touch an existing install.
+ *
+ * Keyed on the manifest's presence specifically, not mere non-emptiness of the target directory: a
+ * directory that happens to contain unrelated files, but was never installed into by this tool, is
+ * not what this guards against, and checking non-emptiness instead would make it impossible to
+ * exercise the write loop's own path-escape guard (see `assertRealPathWithinRoot`) through this
+ * function at all, since a target set up to test that guard necessarily already contains something
+ * (the symlink itself).
+ */
+export class SkillAlreadyInstalledError extends Error {
+  constructor(installedPath: string) {
+    super(
+      `A skill is already installed at ${installedPath}. Run \`reinvent-scout skill update\` ` +
+        "instead (add --force to overwrite local edits).",
+    );
+    this.name = "SkillAlreadyInstalledError";
+  }
+}
+
 /** The Claude Code default: `~/.claude/skills`. `--dir <path>` (the CLI's own flag) covers Kiro
  * and any other agent whose skills directory can't be guessed from here -- see the plan's own
  * "Kiro skill directory is not guessed" decision. */
@@ -75,6 +100,31 @@ export function resolveWithinRoot(root: string, relativePath: string): string {
     throw new Error(`Refusing to install "${relativePath}": it resolves outside ${resolvedRoot}.`);
   }
   return resolvedTarget;
+}
+
+/**
+ * The guard `resolveWithinRoot` alone can't provide: a lexical, string-only check never touches
+ * the filesystem, so it can't see a symlink swapped in for a real directory. Reviewer's finding:
+ * pre-creating `<installedPath>/reference` as a symlink to somewhere else lets every file this
+ * function is about to write into `reference/` land at the symlink's real target instead --
+ * `mkdirSync(..., { recursive: true })` on a path that passes through an existing symlink follows
+ * it transparently, so the lexical check (computed before any of that happens) sees only the
+ * innocent-looking pre-symlink path.
+ *
+ * Call this with a destination's *parent* directory after `mkdirSync`'ing it (so it's guaranteed to
+ * exist -- `realpathSync` throws on a path that doesn't) and before ever writing the file itself.
+ * Resolves both `parentDir` and `root` through any symlink via `realpathSync` and refuses when the
+ * former doesn't actually land inside the latter -- the one check that can see through the
+ * symlink, since it asks the real filesystem instead of just the path string.
+ */
+export function assertRealPathWithinRoot(root: string, parentDir: string): void {
+  const realRoot = realpathSync(root);
+  const realParent = realpathSync(parentDir);
+  if (realParent !== realRoot && !realParent.startsWith(realRoot + sep)) {
+    throw new Error(
+      `Refusing to write into "${parentDir}": it resolves (through a symlink) outside ${realRoot}.`,
+    );
+  }
 }
 
 /** Exported so `skill/update.ts` can hash a locally-installed file's current content the exact
@@ -113,6 +163,10 @@ export function installSkill(deps: InstallSkillDeps = {}): InstallSkillResult {
   const installedPath = join(targetsDir, SKILL_NAME);
   const version = deps.packageVersion ?? readPackageVersion();
 
+  if (existsSync(join(installedPath, MANIFEST_FILE_NAME))) {
+    throw new SkillAlreadyInstalledError(installedPath);
+  }
+
   mkdirSync(installedPath, { recursive: true });
 
   const relativeFiles = listFilesRecursive(sourceDir).sort();
@@ -120,7 +174,9 @@ export function installSkill(deps: InstallSkillDeps = {}): InstallSkillResult {
 
   for (const relPath of relativeFiles) {
     const destPath = resolveWithinRoot(installedPath, relPath);
-    mkdirSync(dirname(destPath), { recursive: true });
+    const destParent = dirname(destPath);
+    mkdirSync(destParent, { recursive: true });
+    assertRealPathWithinRoot(installedPath, destParent);
     const content = readFileSync(join(sourceDir, relPath));
     writeFileSync(destPath, content);
     files[relPath] = sha256Hex(content);

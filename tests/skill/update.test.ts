@@ -1,4 +1,13 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -140,5 +149,30 @@ describe("updateSkill", () => {
       "v2 profiling.\n",
     );
     expect(readManifest().version).toBe("2.0.0");
+  });
+
+  it("refuses when a destination directory is a symlink escaping the target root, and writes nothing outside it", () => {
+    // Same real vulnerability as installSkill's own write loop (reviewer's finding), reached here
+    // through update instead of install: swap the installed reference/ directory for a symlink
+    // before updating. The old manifest's own reference/*.md entries no longer exist AT that
+    // (symlinked, empty) location, so the modified-file scan treats them as "already gone" and
+    // doesn't refuse for that reason -- this update proceeds into the real write loop, which is
+    // exactly what needs to refuse instead.
+    installSkill({ sourceDir: sourceDirV1, targetsDir, packageVersion: "1.0.0" });
+    const outsideDir = mkdtempSync(join(tmpdir(), "reinvent-scout-skill-update-outside-"));
+    try {
+      rmSync(join(targetsDir, SKILL_NAME, "reference"), { recursive: true, force: true });
+      symlinkSync(outsideDir, join(targetsDir, SKILL_NAME, "reference"));
+
+      expect(() =>
+        updateSkill({ sourceDir: sourceDirV2, targetsDir, packageVersion: "2.0.0" }),
+      ).toThrow();
+
+      // The decisive check: none of the new version's reference/*.md content landed in the real
+      // directory the symlink points at.
+      expect(readdirSync(outsideDir)).toHaveLength(0);
+    } finally {
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
   });
 });

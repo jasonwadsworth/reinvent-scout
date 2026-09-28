@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { describe, expect, it } from "vitest";
 import { registerSkillCommands } from "../../src/cli/commands/skill.js";
-import type { InstallSkillDeps, InstallSkillResult } from "../../src/skill/install.js";
+import { SkillAlreadyInstalledError, type InstallSkillDeps, type InstallSkillResult } from "../../src/skill/install.js";
 import type { UpdateSkillDeps, UpdateSkillResult } from "../../src/skill/update.js";
 
 interface Harness {
@@ -62,6 +62,25 @@ describe("skill install command", () => {
 
     expect(h.printed[0]).toMatch(/1 file to /);
     expect(h.printed[0]).not.toMatch(/1 files to /);
+  });
+
+  it("exits non-zero and names skill update when a skill is already installed at the target", async () => {
+    const printed: string[] = [];
+    const program = new Command().exitOverride();
+    registerSkillCommands(program, {
+      print: (message: string) => {
+        printed.push(message);
+      },
+      install: () => {
+        throw new SkillAlreadyInstalledError("/home/user/.claude/skills/reinvent-scout");
+      },
+    });
+    process.exitCode = undefined;
+
+    await program.parseAsync(["node", "reinvent-scout", "skill", "install"]);
+
+    expect(printed.join("\n")).toMatch(/reinvent-scout skill update/);
+    expect(process.exitCode).toBe(1);
   });
 });
 
