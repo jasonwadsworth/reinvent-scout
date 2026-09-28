@@ -214,28 +214,46 @@ export function sha256Hex(content: Buffer): string {
 }
 
 /**
+ * Writes `content` to `destPath`, guarded by `assertNotSymlink` and via a temp file in the same
+ * directory (`destParent`) plus an atomic rename over the destination -- `rename(2)` replaces
+ * whatever directory entry is there (a stale regular file from a previous install or update, most
+ * often) without ever following it, so even a symlink slipped in between the `assertNotSymlink`
+ * check and this write can't turn the write into one landing outside the install directory. The
+ * temp file's name is randomized (`randomUUID`) so concurrent or interrupted writes to the same
+ * destination can never collide with each other, and it lives in `destParent` specifically --
+ * never a system temp directory -- so the rename is always same-filesystem and therefore atomic; a
+ * leftover temp file from a process that crashed between the write and the rename is harmless to a
+ * later run, since that run generates its own fresh, differently-named one.
+ *
+ * Reviewer's finding (F3): the install manifest itself is just as reachable through this exact
+ * attack as any content file -- swapped for a symlink, a plain `writeFileSync` at its path would
+ * follow the link and overwrite whatever it points at -- so both `installSkill` and `updateSkill`
+ * write the manifest through this same guarded path, not a bare `writeFileSync` of their own.
+ */
+export function writeGuardedFile(destPath: string, installedPath: string, content: string | Buffer): void {
+  assertNotSymlink(destPath, installedPath);
+  const destParent = dirname(destPath);
+  const tempPath = join(destParent, `.${basename(destPath)}.${randomUUID()}.tmp`);
+  writeFileSync(tempPath, content);
+  renameSync(tempPath, destPath);
+}
+
+/**
  * Writes one skill content file from `sourceDir` into `installedPath`, guarded by
- * `resolveWithinRoot` (lexical), `assertRealPathWithinRoot` (a symlinked *parent* directory) and
- * `assertNotSymlink` (the destination file *itself* a symlink) before anything touches disk, and
- * returns its sha256 hash for the manifest. The actual write goes through a temp file in the same
- * directory, then an atomic rename over the destination -- `rename(2)` replaces whatever directory
- * entry is there (a stale regular file from a previous install, most often) without ever following
- * it, so even a symlink slipped in between the `assertNotSymlink` check above and this write can't
- * make the write land outside the install directory. The one place both `installSkill`'s and
- * `updateSkill`'s own write loops go through -- a single shared function, not two textually similar
- * copies of the same few lines that could quietly drift out of sync with each other, carrying (or
- * losing) the guard independently.
+ * `resolveWithinRoot` (lexical) and `assertRealPathWithinRoot` (a symlinked *parent* directory)
+ * before anything touches disk, then `writeGuardedFile` for the write itself (the destination file
+ * *itself* a symlink, and the actual temp-file-plus-rename write). Returns its sha256 hash for the
+ * manifest. The one place both `installSkill`'s and `updateSkill`'s own write loops go through -- a
+ * single shared function, not two textually similar copies of the same few lines that could quietly
+ * drift out of sync with each other, carrying (or losing) the guard independently.
  */
 export function writeSkillFile(sourceDir: string, installedPath: string, relPath: string): string {
   const destPath = resolveWithinRoot(installedPath, relPath);
   const destParent = dirname(destPath);
   mkdirSync(destParent, { recursive: true });
   assertRealPathWithinRoot(installedPath, destParent);
-  assertNotSymlink(destPath, installedPath);
   const content = readFileSync(join(sourceDir, relPath));
-  const tempPath = join(destParent, `.${basename(destPath)}.${randomUUID()}.tmp`);
-  writeFileSync(tempPath, content);
-  renameSync(tempPath, destPath);
+  writeGuardedFile(destPath, installedPath, content);
   return sha256Hex(content);
 }
 
@@ -283,7 +301,11 @@ export function installSkill(deps: InstallSkillDeps = {}): InstallSkillResult {
   }
 
   const manifest: InstallSkillManifest = { version, files };
-  writeFileSync(join(installedPath, MANIFEST_FILE_NAME), JSON.stringify(manifest, null, 2));
+  writeGuardedFile(
+    join(installedPath, MANIFEST_FILE_NAME),
+    installedPath,
+    JSON.stringify(manifest, null, 2),
+  );
 
   return { installedPath, fileCount: relativeFiles.length };
 }

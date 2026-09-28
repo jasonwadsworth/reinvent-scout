@@ -230,6 +230,24 @@ describe("installSkill", () => {
       rmSync(outsideDir, { recursive: true, force: true });
     }
   });
+
+  it("refuses when a nested reference file is a dangling symlink escaping the target root, and writes nothing outside it (end to end)", () => {
+    // reviewer2's F4: the same dangling-symlink gap as SKILL.md above, but one level down --
+    // proves the guard isn't special-cased to the top-level file the write loop happens to reach
+    // first.
+    const outsideDir = mkdtempSync(join(tmpdir(), "reinvent-scout-skill-outside-"));
+    try {
+      const installedPath = join(targetsDir, SKILL_NAME);
+      mkdirSync(join(installedPath, "reference"), { recursive: true });
+      symlinkSync(join(outsideDir, "pwned-profiling.md"), join(installedPath, "reference", "profiling.md"));
+
+      expect(() => installSkill({ sourceDir, targetsDir })).toThrow(SymlinkEscapeError);
+
+      expect(existsSync(join(outsideDir, "pwned-profiling.md"))).toBe(false);
+    } finally {
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("resolveWithinRoot", () => {
@@ -328,5 +346,41 @@ describe("writeSkillFile", () => {
     writeSkillFile(sourceDir, installedPath, "profiling.md");
 
     expect(readdirSync(installedPath)).toEqual(["profiling.md"]);
+  });
+
+  it("reviewer2's ask: writes the temp file in the same directory as the destination, not elsewhere", () => {
+    // Forces the rename step itself to fail (an empty directory occupies the destination) so the
+    // temp file survives to inspect, rather than needing to intercept the write mid-flight -- proof
+    // it was created in destParent specifically, which is what makes the rename same-filesystem and
+    // therefore atomic (a temp directory elsewhere could straddle filesystems, where rename(2) isn't
+    // atomic, or fails outright with EXDEV).
+    const installedPath = join(targetsDir, SKILL_NAME);
+    mkdirSync(installedPath, { recursive: true });
+    mkdirSync(join(installedPath, "profiling.md")); // occupies the destination as a directory
+
+    expect(() => writeSkillFile(sourceDir, installedPath, "profiling.md")).toThrow();
+
+    const leftovers = readdirSync(installedPath).filter((name) => name !== "profiling.md");
+    expect(leftovers).toHaveLength(1);
+    expect(leftovers[0]).toMatch(/^\.profiling\.md\..+\.tmp$/);
+  });
+
+  it("reviewer2's ask: a leftover temp file from a previous crash doesn't prevent a later successful write", () => {
+    const installedPath = join(targetsDir, SKILL_NAME);
+    mkdirSync(installedPath, { recursive: true });
+    mkdirSync(join(installedPath, "profiling.md"));
+    expect(() => writeSkillFile(sourceDir, installedPath, "profiling.md")).toThrow();
+    const leftoverBefore = readdirSync(installedPath).filter((name) => name !== "profiling.md");
+    expect(leftoverBefore).toHaveLength(1);
+
+    // Clear the obstruction -- but deliberately not the leftover temp file -- and retry: a fresh,
+    // randomly-named temp file must not collide with the stale one left behind by the failed
+    // attempt, and the retry must still succeed.
+    rmSync(join(installedPath, "profiling.md"), { recursive: true });
+
+    const hash = writeSkillFile(sourceDir, installedPath, "profiling.md");
+
+    expect(readFileSync(join(installedPath, "profiling.md"), "utf8")).toBe("Profiling guidance.\n");
+    expect(hash).toBe(sha256("Profiling guidance.\n"));
   });
 });

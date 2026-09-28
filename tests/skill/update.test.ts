@@ -533,4 +533,57 @@ describe("updateSkill", () => {
       rmSync(outsideDir, { recursive: true, force: true });
     }
   });
+
+  it("refuses when the install manifest itself is a symlink escaping the target root, even under --force, and writes nothing outside it", () => {
+    // reviewer2's F3: the manifest write was never guarded the way content files were -- swapping
+    // .install-manifest.json for a symlink to an outside file let --force rewrite that outside file
+    // with the new manifest content. Guarded the same way as a content file now (writeGuardedFile
+    // for the write; assertNotSymlink up front in readAndValidateManifest for the read).
+    installSkill({ sourceDir: sourceDirV1, targetsDir, packageVersion: "1.0.0" });
+    const installedPath = join(targetsDir, SKILL_NAME);
+    const outsideDir = mkdtempSync(join(tmpdir(), "reinvent-scout-skill-manifest-symlink-"));
+    try {
+      const outsideFile = join(outsideDir, "not-a-manifest.json");
+      writeFileSync(outsideFile, "not a manifest, must never be touched\n");
+      const manifestPath = join(installedPath, MANIFEST_FILE_NAME);
+      rmSync(manifestPath);
+      symlinkSync(outsideFile, manifestPath);
+
+      expect(() =>
+        updateSkill({ sourceDir: sourceDirV2, targetsDir, packageVersion: "2.0.0", force: true }),
+      ).toThrow(SymlinkEscapeError);
+
+      expect(readFileSync(outsideFile, "utf8")).toBe("not a manifest, must never be touched\n");
+    } finally {
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses when a newly-shipped file lands on a dangling symlink escaping the target root, even under --force, and writes nothing outside it", () => {
+    // reviewer2's F5: a file the *new* version starts shipping for the first time (absent from the
+    // old manifest entirely) is checked by the second hash-read loop, not the first -- must be
+    // guarded exactly the same way as a file the old manifest already tracked.
+    installSkill({ sourceDir: sourceDirV1, targetsDir, packageVersion: "1.0.0" });
+    const installedPath = join(targetsDir, SKILL_NAME);
+
+    const sourceDirV3 = mkdtempSync(join(tmpdir(), "reinvent-scout-skill-v3-"));
+    const outsideDir = mkdtempSync(join(tmpdir(), "reinvent-scout-skill-new-file-symlink-"));
+    try {
+      mkdirSync(join(sourceDirV3, "reference"));
+      writeFileSync(join(sourceDirV3, "SKILL.md"), "v3 SKILL body.\n");
+      writeFileSync(join(sourceDirV3, "reference", "profiling.md"), "v3 profiling.\n");
+      writeFileSync(join(sourceDirV3, "reference", "new.md"), "brand new in v3.\n");
+
+      symlinkSync(join(outsideDir, "pwned-new.md"), join(installedPath, "reference", "new.md"));
+
+      expect(() =>
+        updateSkill({ sourceDir: sourceDirV3, targetsDir, packageVersion: "3.0.0", force: true }),
+      ).toThrow(SymlinkEscapeError);
+
+      expect(existsSync(join(outsideDir, "pwned-new.md"))).toBe(false);
+    } finally {
+      rmSync(sourceDirV3, { recursive: true, force: true });
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
+  });
 });

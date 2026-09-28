@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { z } from "zod";
 import { formatZodError } from "../cli/zod-errors.js";
@@ -14,6 +14,7 @@ import {
   resolveDefaultSkillsDir,
   resolveWithinRoot,
   sha256Hex,
+  writeGuardedFile,
   writeSkillFile,
   type InstallSkillDeps,
   type InstallSkillManifest,
@@ -129,6 +130,9 @@ const InstallSkillManifestSchema = z.object({
  * hash it, or removing a stale one -- until every key here has passed both checks.
  */
 function readAndValidateManifest(manifestPath: string, installedPath: string): InstallSkillManifest {
+  // Same reasoning as the content files' own hash-read loops below: reading straight through a
+  // symlinked manifest would trust whatever it points at as if it were this install's own record.
+  assertNotSymlink(manifestPath, installedPath);
   let raw: unknown;
   try {
     raw = JSON.parse(readFileSync(manifestPath, "utf8"));
@@ -228,7 +232,7 @@ export function updateSkill(deps: UpdateSkillDeps = {}): UpdateSkillResult {
       adoptedManifestFiles[relPath] = writeSkillFile(sourceDir, installedPath, relPath);
     }
     const adoptedManifest: InstallSkillManifest = { version: newVersion, files: adoptedManifestFiles };
-    writeFileSync(manifestPath, JSON.stringify(adoptedManifest, null, 2));
+    writeGuardedFile(manifestPath, installedPath, JSON.stringify(adoptedManifest, null, 2));
     return { status: "updated", installedPath, updatedFiles: adoptedFiles, removedFiles: [] };
   }
 
@@ -306,7 +310,7 @@ export function updateSkill(deps: UpdateSkillDeps = {}): UpdateSkillResult {
   removedFiles.sort();
 
   const manifest: InstallSkillManifest = { version: newVersion, files: newManifestFiles };
-  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+  writeGuardedFile(manifestPath, installedPath, JSON.stringify(manifest, null, 2));
 
   return { status: "updated", installedPath, updatedFiles: newFiles, removedFiles };
 }
