@@ -209,24 +209,25 @@ interface ValidateProfileResponse {
   hint?: string;
 }
 
-/** Builds one services-count's worth of response -- the one place that decides the shape for a
- * given `services`/`truncated` pair, so both the everything-fits attempt and every trial inside
- * the truncation loop below measure the exact same shape the caller will actually receive.
- * `unresolvedServices` is *derived* from `services` here, not passed in separately -- a profile
- * where every service is unresolvable (the realistic worst case, not a contrived one: an agent
- * profiling a repo against the wrong event's catalog would look exactly like this) would otherwise
- * make `unresolvedServices` alone as large as the untruncated `services` list, defeating the
- * truncation entirely. Deriving it from whatever's actually included keeps both lists internally
- * consistent (every name in `unresolvedServices` is also present in `services`) and shrinks them
- * together as the same truncation budget. */
+/** Builds one services/patterns-count's worth of response -- the one place that decides the shape
+ * for a given pair, so the everything-fits attempt and every trial inside both truncation loops
+ * below measure the exact same shape the caller will actually receive. `unresolvedServices` is
+ * *derived* from `services` here, not passed in separately -- a profile where every service is
+ * unresolvable (the realistic worst case, not a contrived one: an agent profiling a repo against
+ * the wrong event's catalog would look exactly like this) would otherwise make `unresolvedServices`
+ * alone as large as the untruncated `services` list, defeating the truncation entirely. Deriving it
+ * from whatever's actually included keeps both lists internally consistent (every name in
+ * `unresolvedServices` is also present in `services`) and shrinks them together under the same
+ * budget. */
 function buildValidateProfileResponse(
   services: CompactResolvedService[],
   patterns: string[],
   counts: ValidateProfileResponse["counts"],
   totalServices: number,
+  totalPatterns: number,
   truncated: boolean,
 ): ValidateProfileResponse {
-  const omitted = totalServices - services.length;
+  const omitted = totalServices - services.length + (totalPatterns - patterns.length);
   const unresolvedServices = services
     .filter((service) => service.catalogName === null)
     .map((service) => service.name);
@@ -240,7 +241,7 @@ function buildValidateProfileResponse(
     ...(truncated
       ? {
           hint:
-            `${omitted} services were left out of the services list to fit the response budget -- ` +
+            `${omitted} services and/or patterns were left out to fit the response budget -- ` +
             "counts still reports the true totals, but unresolvedServices only names the ones " +
             "still present above.",
         }
@@ -254,10 +255,18 @@ function buildValidateProfileResponse(
  * bytes for a 120-service profile, comfortably over budget, and none of that evidence is data this
  * tool computed anyway: it's the agent's own input echoed back. This reports only what
  * `resolveProfile` actually decided: each service's name and its resolved `catalogName` (or
- * `null`), each pattern's bare name, `unresolvedServices`, and counts. The `services` list (and,
- * derived from it, `unresolvedServices`) is enforced at the same 30 KB budget every other tool
- * holds to, the same truncate-in-order way `match_sessions` does -- `patterns` is never truncated,
- * since a hackathon-scale profile's own pattern list is small by construction. */
+ * `null`), each pattern's bare name, `unresolvedServices`, and counts.
+ *
+ * Both `services` (and, derived from it, `unresolvedServices`) *and* `patterns` are enforced at the
+ * same 30 KB budget every other tool holds to, the same truncate-in-order way `match_sessions`
+ * does -- reviewer's follow-up finding: a first version left `patterns` out of the budget
+ * entirely, on the assumption a hackathon-scale profile's own pattern list is small by
+ * construction. A profile naming many long patterns (as plausible as many long service names --
+ * neither is validated for length, and both are equally the agent's own free text) let `patterns`
+ * alone blow the budget regardless of how far `services` got truncated. Services are filled first,
+ * in order, then patterns get whatever budget is left, also in order -- a deliberate priority, not
+ * an accident of implementation order, matching this tool's existing "services are the primary
+ * data" precedent (unresolved services already got their own dedicated field; patterns did not). */
 function toCompactValidateProfileResponse(resolved: ResolvedProfile): ValidateProfileResponse {
   const services = resolved.services.map((service) => ({
     name: service.name,
@@ -270,26 +279,58 @@ function toCompactValidateProfileResponse(resolved: ResolvedProfile): ValidatePr
     unresolvedServices: resolved.unresolvedServices.length,
   };
 
-  const everything = buildValidateProfileResponse(services, patterns, counts, services.length, false);
+  const everything = buildValidateProfileResponse(
+    services,
+    patterns,
+    counts,
+    services.length,
+    patterns.length,
+    false,
+  );
   if (envelopeBytes(everything) <= RESPONSE_BYTE_BUDGET) {
     return everything;
   }
 
-  const included: CompactResolvedService[] = [];
+  const includedServices: CompactResolvedService[] = [];
   for (const service of services) {
     const trial = buildValidateProfileResponse(
-      [...included, service],
-      patterns,
+      [...includedServices, service],
+      [],
       counts,
       services.length,
+      patterns.length,
       true,
     );
     if (envelopeBytes(trial) > RESPONSE_BYTE_BUDGET) {
       break;
     }
-    included.push(service);
+    includedServices.push(service);
   }
-  return buildValidateProfileResponse(included, patterns, counts, services.length, true);
+
+  const includedPatterns: string[] = [];
+  for (const pattern of patterns) {
+    const trial = buildValidateProfileResponse(
+      includedServices,
+      [...includedPatterns, pattern],
+      counts,
+      services.length,
+      patterns.length,
+      true,
+    );
+    if (envelopeBytes(trial) > RESPONSE_BYTE_BUDGET) {
+      break;
+    }
+    includedPatterns.push(pattern);
+  }
+
+  return buildValidateProfileResponse(
+    includedServices,
+    includedPatterns,
+    counts,
+    services.length,
+    patterns.length,
+    true,
+  );
 }
 
 function registerValidateProfileTool(server: McpServer, deps: McpToolDeps): void {

@@ -343,6 +343,42 @@ describe("validate_profile tool", () => {
     expect(parsed.unresolvedServices.every((name) => serviceNames.has(name))).toBe(true);
   });
 
+  it("truncates patterns too, not just services, when many long pattern names alone would blow the budget", async () => {
+    // reviewer2's finding on the first version of this fix: patterns were never truncated at all,
+    // on the assumption a hackathon-scale profile's own pattern list is small by construction. A
+    // profile naming few services but many long patterns (as plausible as many long service
+    // names -- neither is length-validated, and both are equally the agent's own free text) proved
+    // that assumption wrong: patterns alone reached 33,889 bytes at 600 of them, over budget
+    // regardless of services being truncated to nothing.
+    seedFixtureCatalog(home.path);
+    const client = await connectedClient({ resolveStoreRoot: () => home.path });
+
+    const profile = {
+      schemaVersion: 1,
+      repos: [{ root: ".", languages: ["typescript"] }],
+      services: [{ name: "lambda", evidence: [{ repo: ".", file: "a.ts", line: 1 }] }],
+      patterns: Array.from({ length: 600 }, (_, i) => ({
+        name: `pattern-${"p".repeat(40)}-${i}`,
+        evidence: [{ repo: ".", file: `src/pattern-${i}.ts`, line: i + 1 }],
+      })),
+    };
+
+    const result = await client.callTool({ name: "validate_profile", arguments: { profile } });
+
+    expect(result.isError).not.toBe(true);
+    const raw = textOf(result);
+    expect(Buffer.byteLength(raw, "utf8")).toBeLessThanOrEqual(30 * 1024);
+    const parsed = JSON.parse(raw) as {
+      patterns: string[];
+      truncated: boolean;
+      omitted: number;
+      counts: { services: number; patterns: number };
+    };
+    expect(parsed.truncated).toBe(true);
+    expect(parsed.counts.patterns).toBe(600); // the true total, not the truncated length
+    expect(parsed.patterns.length).toBeLessThan(600);
+  });
+
   it("rejects a schema-invalid profile, naming the offending entry rather than failing opaquely", async () => {
     seedFixtureCatalog(home.path);
     const client = await connectedClient({ resolveStoreRoot: () => home.path });
