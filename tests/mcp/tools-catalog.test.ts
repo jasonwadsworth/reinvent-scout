@@ -235,6 +235,114 @@ describe("validate_profile tool", () => {
     expect(parsed.unresolvedServices).toEqual(["some-service-with-no-catalog-counterpart"]);
   });
 
+  it("returns a compact result -- pattern names and counts, never an evidence echo of the agent's own input", async () => {
+    // pr-reviewer's finding: echoing the whole resolved profile (evidence, repos, usage notes and
+    // all) breaks the README's own "every tool holds its response to a 30 KB budget" claim for a
+    // large profile. The tool only needs to report what it actually resolved.
+    seedFixtureCatalog(home.path);
+    const client = await connectedClient({ resolveStoreRoot: () => home.path });
+
+    const profile = {
+      schemaVersion: 1,
+      repos: [{ root: ".", languages: ["typescript"] }],
+      services: [{ name: "lambda", usage: "the order handler", evidence: [{ repo: ".", file: "a.ts", line: 12 }] }],
+      patterns: [{ name: "serverless", note: "API Gateway in front", evidence: [{ repo: ".", file: "b.ts" }] }],
+    };
+
+    const result = await client.callTool({ name: "validate_profile", arguments: { profile } });
+
+    expect(result.isError).not.toBe(true);
+    const raw = textOf(result);
+    // The evidence file paths and the usage/note text must not appear anywhere in the response --
+    // a substring check across the whole raw text, not just the parsed shape, since an evidence
+    // echo could in principle hide under a differently-named field.
+    expect(raw).not.toMatch(/a\.ts/);
+    expect(raw).not.toMatch(/b\.ts/);
+    expect(raw).not.toMatch(/order handler/);
+    expect(raw).not.toMatch(/API Gateway in front/);
+    expect(raw).not.toMatch(/"repos"/);
+
+    const parsed = JSON.parse(raw) as {
+      services: Array<{ name: string; catalogName: string | null }>;
+      patterns: string[];
+      unresolvedServices: string[];
+      counts: { services: number; patterns: number; unresolvedServices: number };
+    };
+    expect(parsed.services).toEqual([{ name: "lambda", catalogName: "AWS Lambda" }]);
+    expect(parsed.patterns).toEqual(["serverless"]);
+    expect(parsed.counts).toEqual({ services: 1, patterns: 1, unresolvedServices: 0 });
+  });
+
+  it("stays under the thirty-kilobyte response budget for a profile naming 120 services", async () => {
+    // pr-reviewer's own measurement: the old full-echo response for a 120-service profile was
+    // 45,439 bytes -- comfortably over budget. The compact shape must stay under it, and truncate
+    // (reporting how many were omitted) on the rare case it somehow doesn't.
+    seedFixtureCatalog(home.path);
+    const client = await connectedClient({ resolveStoreRoot: () => home.path });
+
+    const profile = {
+      schemaVersion: 1,
+      repos: [{ root: ".", languages: ["typescript"] }],
+      services: Array.from({ length: 120 }, (_, i) => ({
+        name: `unresolvable-service-number-${i}`,
+        evidence: [{ repo: ".", file: `src/service-${i}.ts`, line: i + 1 }],
+      })),
+      patterns: [],
+    };
+
+    const result = await client.callTool({ name: "validate_profile", arguments: { profile } });
+
+    expect(result.isError).not.toBe(true);
+    const raw = textOf(result);
+    expect(Buffer.byteLength(raw, "utf8")).toBeLessThanOrEqual(30 * 1024);
+    const parsed = JSON.parse(raw) as { services: unknown[]; counts: { services: number } };
+    expect(parsed.counts.services).toBe(120); // the true count, even if services[] itself is truncated
+    expect(parsed.services).toHaveLength(120); // 120 tiny entries comfortably fit; nothing truncated
+  });
+
+  it("truncates the services list, reporting the true count and an omitted count, when even the compact shape doesn't fit", async () => {
+    // Directly exercises the truncation branch itself (unlike the 120-service test above, which
+    // stays under budget without ever needing it) -- long enough service names, enough of them,
+    // that the compact shape genuinely can't all fit in 30 KB.
+    seedFixtureCatalog(home.path);
+    const client = await connectedClient({ resolveStoreRoot: () => home.path });
+
+    const profile = {
+      schemaVersion: 1,
+      repos: [{ root: ".", languages: ["typescript"] }],
+      services: Array.from({ length: 600 }, (_, i) => ({
+        name: `a-fairly-long-and-specific-unresolvable-service-name-number-${i}`,
+        evidence: [{ repo: ".", file: `src/service-${i}.ts`, line: i + 1 }],
+      })),
+      patterns: [],
+    };
+
+    const result = await client.callTool({ name: "validate_profile", arguments: { profile } });
+
+    expect(result.isError).not.toBe(true);
+    const raw = textOf(result);
+    expect(Buffer.byteLength(raw, "utf8")).toBeLessThanOrEqual(30 * 1024);
+    const parsed = JSON.parse(raw) as {
+      services: Array<{ name: string; catalogName: string | null }>;
+      unresolvedServices: string[];
+      truncated: boolean;
+      omitted: number;
+      hint?: string;
+      counts: { services: number; unresolvedServices: number };
+    };
+    expect(parsed.truncated).toBe(true);
+    expect(parsed.counts.services).toBe(600); // the true total, not the truncated length
+    expect(parsed.counts.unresolvedServices).toBe(600); // every one of them is unresolvable
+    expect(parsed.services.length).toBeLessThan(600);
+    expect(parsed.omitted).toBe(600 - parsed.services.length);
+    expect(parsed.hint).toBeDefined();
+    // unresolvedServices must shrink along with services, not stay at the full 600 -- otherwise it
+    // alone could still blow the budget even with services itself truncated.
+    expect(parsed.unresolvedServices).toHaveLength(parsed.services.length);
+    const serviceNames = new Set(parsed.services.map((s) => s.name));
+    expect(parsed.unresolvedServices.every((name) => serviceNames.has(name))).toBe(true);
+  });
+
   it("rejects a schema-invalid profile, naming the offending entry rather than failing opaquely", async () => {
     seedFixtureCatalog(home.path);
     const client = await connectedClient({ resolveStoreRoot: () => home.path });

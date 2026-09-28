@@ -18,7 +18,7 @@ import {
 } from "../core/errors.js";
 import { matchSessions } from "../match/match.js";
 import type { Lens } from "../match/lens.js";
-import { resolveProfile } from "../profile/profile.js";
+import { resolveProfile, type ResolvedProfile } from "../profile/profile.js";
 import { favoriteSessions, unfavoriteSession } from "../schedule/favorites.js";
 import { mergeAndSortScheduleEntries, timezoneWarnings, type MergedScheduleEntry } from "../schedule/merge.js";
 import { getSchedule } from "../schedule/schedule.js";
@@ -194,21 +194,119 @@ function resolveProfileAgainstCatalog(rawProfile: unknown, storeRoot: string) {
   return resolveProfile(rawProfile, serviceAliasIndex);
 }
 
+interface CompactResolvedService {
+  name: string;
+  catalogName: string | null;
+}
+
+interface ValidateProfileResponse {
+  services: CompactResolvedService[];
+  patterns: string[];
+  unresolvedServices: string[];
+  counts: { services: number; patterns: number; unresolvedServices: number };
+  truncated: boolean;
+  omitted: number;
+  hint?: string;
+}
+
+/** Builds one services-count's worth of response -- the one place that decides the shape for a
+ * given `services`/`truncated` pair, so both the everything-fits attempt and every trial inside
+ * the truncation loop below measure the exact same shape the caller will actually receive.
+ * `unresolvedServices` is *derived* from `services` here, not passed in separately -- a profile
+ * where every service is unresolvable (the realistic worst case, not a contrived one: an agent
+ * profiling a repo against the wrong event's catalog would look exactly like this) would otherwise
+ * make `unresolvedServices` alone as large as the untruncated `services` list, defeating the
+ * truncation entirely. Deriving it from whatever's actually included keeps both lists internally
+ * consistent (every name in `unresolvedServices` is also present in `services`) and shrinks them
+ * together as the same truncation budget. */
+function buildValidateProfileResponse(
+  services: CompactResolvedService[],
+  patterns: string[],
+  counts: ValidateProfileResponse["counts"],
+  totalServices: number,
+  truncated: boolean,
+): ValidateProfileResponse {
+  const omitted = totalServices - services.length;
+  const unresolvedServices = services
+    .filter((service) => service.catalogName === null)
+    .map((service) => service.name);
+  return {
+    services,
+    patterns,
+    unresolvedServices,
+    counts,
+    truncated,
+    omitted,
+    ...(truncated
+      ? {
+          hint:
+            `${omitted} services were left out of the services list to fit the response budget -- ` +
+            "counts still reports the true totals, but unresolvedServices only names the ones " +
+            "still present above.",
+        }
+      : {}),
+  };
+}
+
+/** pr-reviewer's finding: echoing the whole resolved profile (every service's `evidence`, `usage`,
+ * and every pattern's `note`/`evidence`, plus `repos`) breaks the README's own "every tool holds
+ * its response to a 30 KB budget" claim for a profile with many services -- measured at 45,439
+ * bytes for a 120-service profile, comfortably over budget, and none of that evidence is data this
+ * tool computed anyway: it's the agent's own input echoed back. This reports only what
+ * `resolveProfile` actually decided: each service's name and its resolved `catalogName` (or
+ * `null`), each pattern's bare name, `unresolvedServices`, and counts. The `services` list (and,
+ * derived from it, `unresolvedServices`) is enforced at the same 30 KB budget every other tool
+ * holds to, the same truncate-in-order way `match_sessions` does -- `patterns` is never truncated,
+ * since a hackathon-scale profile's own pattern list is small by construction. */
+function toCompactValidateProfileResponse(resolved: ResolvedProfile): ValidateProfileResponse {
+  const services = resolved.services.map((service) => ({
+    name: service.name,
+    catalogName: service.catalogName,
+  }));
+  const patterns = resolved.patterns.map((pattern) => pattern.name);
+  const counts = {
+    services: resolved.services.length,
+    patterns: resolved.patterns.length,
+    unresolvedServices: resolved.unresolvedServices.length,
+  };
+
+  const everything = buildValidateProfileResponse(services, patterns, counts, services.length, false);
+  if (envelopeBytes(everything) <= RESPONSE_BYTE_BUDGET) {
+    return everything;
+  }
+
+  const included: CompactResolvedService[] = [];
+  for (const service of services) {
+    const trial = buildValidateProfileResponse(
+      [...included, service],
+      patterns,
+      counts,
+      services.length,
+      true,
+    );
+    if (envelopeBytes(trial) > RESPONSE_BYTE_BUDGET) {
+      break;
+    }
+    included.push(service);
+  }
+  return buildValidateProfileResponse(included, patterns, counts, services.length, true);
+}
+
 function registerValidateProfileTool(server: McpServer, deps: McpToolDeps): void {
   server.registerTool(
     "validate_profile",
     {
       description:
         "Validate an agent-authored tech profile and resolve its service names against the " +
-        "local catalog. Returns the resolved profile plus any service names that did not " +
-        "resolve to a catalog session.",
+        "local catalog. Returns each service's resolved catalogName (or null), pattern names, " +
+        "unresolved service names, and counts -- never an echo of the profile's own evidence.",
       inputSchema: ValidateProfileInputSchema,
     },
     async ({ profile }) => {
       const storeRoot = deps.resolveStoreRoot();
       try {
         const resolved = resolveProfileAgainstCatalog(profile, storeRoot);
-        return textResult(resolved);
+        return textResult(toCompactValidateProfileResponse(resolved));
       } catch (err) {
         return toToolError(err);
       }
