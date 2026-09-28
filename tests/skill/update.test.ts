@@ -12,7 +12,13 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MANIFEST_FILE_NAME, SKILL_NAME, installSkill, type InstallSkillManifest } from "../../src/skill/install.js";
-import { CorruptManifestError, SkillNotInstalledError, updateSkill } from "../../src/skill/update.js";
+import {
+  CorruptManifestError,
+  SkillDirectoryUntrackedError,
+  SkillNotInstalledError,
+  SymlinkEscapeError,
+  updateSkill,
+} from "../../src/skill/update.js";
 
 describe("updateSkill", () => {
   let sourceDirV1: string;
@@ -58,14 +64,67 @@ describe("updateSkill", () => {
     expect(existsSync(join(targetsDir, SKILL_NAME))).toBe(false);
   });
 
-  it("refuses when the target exists but is empty, naming skill install", () => {
+  it("refuses when the target exists but has no install record, naming --force as the remedy", () => {
+    // Distinct from the "directory absent" case above: there's a real directory here, so the
+    // remedy is different (--force to adopt it, not `skill install`) -- reviewer's finding that an
+    // earlier version of this message routed both cases through install's own "already exists"
+    // wording, telling a user who just ran `update --force` to run `update --force`.
     const installedPath = join(targetsDir, SKILL_NAME);
     mkdirSync(installedPath, { recursive: true });
 
     expect(() =>
       updateSkill({ sourceDir: sourceDirV1, targetsDir, packageVersion: "1.0.0" }),
-    ).toThrow(SkillNotInstalledError);
+    ).toThrow(SkillDirectoryUntrackedError);
+    let message = "";
+    try {
+      updateSkill({ sourceDir: sourceDirV1, targetsDir, packageVersion: "1.0.0" });
+    } catch (err) {
+      message = (err as Error).message;
+    }
+    expect(message).toMatch(/--force/);
     expect(readdirSync(installedPath)).toHaveLength(0);
+  });
+
+  it("adopts an untracked, empty target directory under --force, writing every shipped file and a fresh manifest", () => {
+    const installedPath = join(targetsDir, SKILL_NAME);
+    mkdirSync(installedPath, { recursive: true });
+
+    const result = updateSkill({
+      sourceDir: sourceDirV1,
+      targetsDir,
+      packageVersion: "1.0.0",
+      force: true,
+    });
+
+    expect(result.status).toBe("updated");
+    expect(readFileSync(join(installedPath, "SKILL.md"), "utf8")).toBe("v1 SKILL body.\n");
+    expect(readManifest().version).toBe("1.0.0");
+    // Following the remedy actually works: a plain update call afterward reports up to date.
+    expect(
+      updateSkill({ sourceDir: sourceDirV1, targetsDir, packageVersion: "1.0.0" }).status,
+    ).toBe("up-to-date");
+  });
+
+  it("adopts a hand-copied, untracked target directory under --force, overwriting its shipped files but leaving unrelated ones alone", () => {
+    const installedPath = join(targetsDir, SKILL_NAME);
+    mkdirSync(join(installedPath, "reference"), { recursive: true });
+    writeFileSync(join(installedPath, "SKILL.md"), "HAND COPIED, no manifest\n");
+    writeFileSync(join(installedPath, "unrelated.txt"), "not a skill file\n");
+
+    const result = updateSkill({
+      sourceDir: sourceDirV1,
+      targetsDir,
+      packageVersion: "1.0.0",
+      force: true,
+    });
+
+    expect(result.status).toBe("updated");
+    // Overwritten: the skill's own shipped file.
+    expect(readFileSync(join(installedPath, "SKILL.md"), "utf8")).toBe("v1 SKILL body.\n");
+    // Untouched: a file the skill doesn't ship at all.
+    expect(readFileSync(join(installedPath, "unrelated.txt"), "utf8")).toBe(
+      "not a skill file\n",
+    );
   });
 
   it("reports already up to date when the installed content matches", () => {
@@ -372,9 +431,38 @@ describe("updateSkill", () => {
 
     expect(() =>
       updateSkill({ sourceDir: sourceDirV1, targetsDir, packageVersion: "1.0.0" }),
-    ).toThrow(SkillNotInstalledError);
+    ).toThrow(SkillDirectoryUntrackedError);
     expect(readFileSync(join(installedPath, "SKILL.md"), "utf8")).toBe(
       "HAND EDITED, no manifest present\n",
     );
+  });
+
+  it("distinguishes a symlink-caused escape from a genuinely corrupt manifest, naming the symlinked directory", () => {
+    // Reviewer's finding (R2b's diagnosis, non-blocking): the first version of this check reported
+    // a symlinked reference/ directory as the manifest itself "naming a path outside the install
+    // directory" -- correct refusal, wrong explanation, sending a user to inspect their manifest
+    // instead of the actual symlink.
+    installSkill({ sourceDir: sourceDirV1, targetsDir, packageVersion: "1.0.0" });
+    const installedPath = join(targetsDir, SKILL_NAME);
+    const outsideDir = mkdtempSync(join(tmpdir(), "reinvent-scout-skill-symlink-diag-"));
+    try {
+      rmSync(join(installedPath, "reference"), { recursive: true, force: true });
+      symlinkSync(outsideDir, join(installedPath, "reference"));
+
+      let thrown: unknown;
+      try {
+        updateSkill({ sourceDir: sourceDirV2, targetsDir, packageVersion: "2.0.0", force: true });
+      } catch (err) {
+        thrown = err;
+      }
+
+      expect(thrown).toBeInstanceOf(SymlinkEscapeError);
+      const message = (thrown as Error).message;
+      expect(message).toContain(join(installedPath, "reference"));
+      expect(message).toMatch(/symlink/i);
+      expect(message).not.toMatch(/manifest/i);
+    } finally {
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
   });
 });

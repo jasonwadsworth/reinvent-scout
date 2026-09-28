@@ -30,19 +30,19 @@ export type UpdateSkillResult =
   | { status: "refused"; installedPath: string; modifiedFiles: string[] };
 
 /**
- * Thrown by `updateSkill` when there's no install manifest at the target -- nothing is installed
- * there at all (the target doesn't exist, or is empty), or something untracked is (a hand-copied
- * skill directory, or any other content this tool never wrote a manifest for). Either way, `update`
- * has no baseline to safely compare against, and update is not install: it never performs a fresh
- * install itself, even when the target is completely empty -- one clear rule, one command that
- * owns bringing a skill onto disk for the first time. Never bypassed by `force`, for the same
- * reason a corrupt manifest isn't: there's no "modified file" to force an overwrite of when there's
- * no prior install to compare against in the first place.
+ * Thrown by `updateSkill` when the target directory doesn't exist at all -- there's nothing here
+ * for `update` to update, and `update` never performs a fresh install itself (`skill install` owns
+ * that, one command, one clear rule). Distinct from `SkillDirectoryUntrackedError` below: this is
+ * specifically "there is no directory here," not "there's a directory, but no install record in
+ * it" -- the two need different remedies (`skill install` outright, versus `--force` to adopt an
+ * existing one), so conflating them into one message would send a user who just ran the suggested
+ * remedy back to the same dead end (reviewer's finding on an earlier version of this message, which
+ * routed both cases through install's own "already exists" wording).
  */
 export class SkillNotInstalledError extends Error {
   constructor(installedPath: string) {
     super(
-      `No skill is installed at ${installedPath} (no install manifest found). Run ` +
+      `No skill is installed at ${installedPath} (the directory does not exist). Run ` +
         "`reinvent-scout skill install` first.",
     );
     this.name = "SkillNotInstalledError";
@@ -50,13 +50,57 @@ export class SkillNotInstalledError extends Error {
 }
 
 /**
+ * Thrown by `updateSkill` when the target directory exists but has no install manifest -- a hand-
+ * copied skill directory, one the manifest was deleted from, or genuinely just an empty directory
+ * someone created ahead of time. `update` has no baseline to compare against, so it refuses by
+ * default rather than guessing what's safe to overwrite -- but unlike `SkillNotInstalledError`,
+ * there's a real directory here for `update` itself to adopt: `--force` writes every file the
+ * skill ships (guarded exactly like an ordinary write), records a fresh manifest, and never
+ * touches anything already there that the skill doesn't ship. The message names `--force`
+ * directly, since simply re-running `update` without it lands right back here.
+ */
+export class SkillDirectoryUntrackedError extends Error {
+  constructor(installedPath: string) {
+    super(
+      `Found a skill directory with no install record at ${installedPath}; run ` +
+        "`reinvent-scout skill update --force` to replace its files and start tracking them, or " +
+        "remove the directory and run `skill install`.",
+    );
+    this.name = "SkillDirectoryUntrackedError";
+  }
+}
+
+/**
+ * Thrown when a path inside the installed skill directory turns out to be a symlink resolving
+ * outside it -- caught while validating an old manifest's own keys (a key's parent directory
+ * exists but its real path, via `assertRealPathWithinRoot`, lands outside the install root).
+ * Deliberately a different error from `CorruptManifestError`: the manifest's own keys are fine --
+ * "reference/profiling.md" is a perfectly ordinary relative path -- the problem is the filesystem
+ * underneath it, not anything the manifest says. Reviewer's finding: the first version of this
+ * check folded this case into `CorruptManifestError`'s own "names a path outside the install
+ * directory" wording, which sent a user investigating their manifest's contents instead of the
+ * actual symlink sitting in their install directory.
+ */
+export class SymlinkEscapeError extends Error {
+  constructor(escapingPaths: readonly string[], installedPath: string) {
+    super(
+      `${escapingPaths.join(", ")} resolve${escapingPaths.length === 1 ? "s" : ""} outside ` +
+        `${installedPath} through a symlink. Remove or replace ${escapingPaths.length === 1 ? "it" : "them"}, ` +
+        "then run `reinvent-scout skill update` again.",
+    );
+    this.name = "SymlinkEscapeError";
+  }
+}
+
+/**
  * Thrown when the installed manifest can't be trusted -- either its shape is wrong (unparseable
  * JSON, a missing or mistyped `files` map: reviewer's finding, a bare JS error such as "Cannot
  * convert undefined or null to object" was the entire CLI output for this before), or one of its
- * keys names a path that doesn't actually resolve inside the installed skill's own directory
- * (reviewer's finding: a manifest entry of `"../../victim.txt"` let a `--force` update both read
- * and then delete a file outside the install entirely, since the hash-read and removal loops
- * trusted every key as a plain relative path with no validation).
+ * keys names a path that lexically escapes the installed skill's own directory (reviewer's
+ * finding: a manifest entry of `"../../victim.txt"` let a `--force` update both read and then
+ * delete a file outside the install entirely, since the hash-read and removal loops trusted every
+ * key as a plain relative path with no validation) -- a genuinely bad manifest, unlike
+ * `SymlinkEscapeError`'s "the manifest is fine, the filesystem isn't."
  *
  * Never bypassed by `force`: `force` overwrites a file this tool's own manifest legitimately
  * tracks as locally modified, not a manifest whose own shape or contents can't be trusted at all --
@@ -81,14 +125,23 @@ const InstallSkillManifestSchema = z.object({
   files: z.record(z.string().min(1), z.string().regex(/^[0-9a-f]{64}$/)),
 });
 
-/** Reads, shape-validates (via zod) and path-validates an installed manifest, throwing
- * `CorruptManifestError` naming the specific problem for any failure -- malformed JSON, the wrong
- * shape, or a key that doesn't resolve inside `installedPath` (checked lexically via
- * `resolveWithinRoot`, and, when the key's parent directory already exists, also via
- * `assertRealPathWithinRoot` so a symlink swapped in for a tracked subdirectory is caught the same
- * way `writeSkillFile`'s own write-time guard catches one). Nothing in the manifest is trusted
- * for any other purpose -- comparing hashes, reading a file to hash it, or removing a stale one --
- * until every key here has passed.
+/** Reads, shape-validates (via zod) and path-validates an installed manifest.
+ *
+ * Two genuinely different failures are kept distinct rather than folded into one "something's
+ * wrong with the manifest" message (reviewer's finding on an earlier version of this check, which
+ * reported a symlinked `reference/` directory as the manifest itself "naming a path outside the
+ * install directory" -- sending a user to inspect the wrong thing entirely):
+ *
+ * - A key that lexically escapes `installedPath` (`resolveWithinRoot` throws on the key text
+ *   alone, before touching the filesystem) is a genuinely bad manifest -- `CorruptManifestError`.
+ * - A key whose parent directory *exists* but whose real path (`assertRealPathWithinRoot`) lands
+ *   outside `installedPath` means the manifest's own text is fine; a symlink sitting in the
+ *   install directory is what's wrong -- `SymlinkEscapeError`, naming the actual escaping
+ *   directory (deduplicated -- several tracked files can share one symlinked parent), not the
+ *   manifest entries that happen to live under it.
+ *
+ * Nothing in the manifest is trusted for any other purpose -- comparing hashes, reading a file to
+ * hash it, or removing a stale one -- until every key here has passed both checks.
  */
 function readAndValidateManifest(manifestPath: string, installedPath: string): InstallSkillManifest {
   let raw: unknown;
@@ -104,6 +157,7 @@ function readAndValidateManifest(manifestPath: string, installedPath: string): I
   }
 
   const unsafeKeys: string[] = [];
+  const escapingParents = new Set<string>();
   for (const relPath of Object.keys(parsed.data.files)) {
     let destPath: string;
     try {
@@ -117,7 +171,7 @@ function readAndValidateManifest(manifestPath: string, installedPath: string): I
       try {
         assertRealPathWithinRoot(installedPath, parent);
       } catch {
-        unsafeKeys.push(relPath);
+        escapingParents.add(parent);
       }
     }
   }
@@ -127,6 +181,9 @@ function readAndValidateManifest(manifestPath: string, installedPath: string): I
       `names a path outside the install directory: ${unsafeKeys.join(", ")}`,
     );
   }
+  if (escapingParents.size > 0) {
+    throw new SymlinkEscapeError([...escapingParents].sort(), installedPath);
+  }
 
   return parsed.data;
 }
@@ -134,10 +191,13 @@ function readAndValidateManifest(manifestPath: string, installedPath: string): I
 /**
  * Updates an already-installed skill in place, without clobbering a file the user edited locally.
  *
- * No manifest present at the target throws `SkillNotInstalledError` -- update only ever updates;
- * it never performs a fresh install itself, whether the target is completely empty, doesn't exist,
- * or holds some other untracked content (a hand-copied skill directory, the manifest deleted).
- * `skill install` owns bringing a skill onto disk for the first time, one command, one clear rule.
+ * No manifest present at the target is one of two cases, each with its own remedy: the target
+ * directory doesn't exist at all (`SkillNotInstalledError` -- run `skill install`), or it exists
+ * but has no install record (`SkillDirectoryUntrackedError` unless `force`, which instead *adopts*
+ * it -- writes every file the skill ships, guarded exactly like an ordinary write, records a fresh
+ * manifest, and never touches anything already there the skill doesn't ship). `update` still never
+ * performs an *unforced* fresh install of its own -- `skill install` owns that for a target that
+ * doesn't exist yet.
  *
  * "Up to date" is decided by content, never by the manifest's own `version` field alone: the new
  * source's exact file set and every file's hash must equal the manifest's for nothing to happen.
@@ -163,7 +223,25 @@ export function updateSkill(deps: UpdateSkillDeps = {}): UpdateSkillResult {
 
   const manifestPath = join(installedPath, MANIFEST_FILE_NAME);
   if (!existsSync(manifestPath)) {
-    throw new SkillNotInstalledError(installedPath);
+    if (!existsSync(installedPath)) {
+      throw new SkillNotInstalledError(installedPath);
+    }
+    if (!force) {
+      throw new SkillDirectoryUntrackedError(installedPath);
+    }
+    // Adopt: no prior manifest means no baseline to compare against, so there's nothing to
+    // "modify" -- every file the skill ships is written (still guarded by writeSkillFile's own
+    // escape check), and a fresh manifest starts tracking them. Anything already in the directory
+    // that the skill doesn't ship is left exactly as it is; there's no old manifest to compute a
+    // "no longer shipped" removal list from.
+    const adoptedFiles = listFilesRecursive(sourceDir).sort();
+    const adoptedManifestFiles: Record<string, string> = {};
+    for (const relPath of adoptedFiles) {
+      adoptedManifestFiles[relPath] = writeSkillFile(sourceDir, installedPath, relPath);
+    }
+    const adoptedManifest: InstallSkillManifest = { version: newVersion, files: adoptedManifestFiles };
+    writeFileSync(manifestPath, JSON.stringify(adoptedManifest, null, 2));
+    return { status: "updated", installedPath, updatedFiles: adoptedFiles, removedFiles: [] };
   }
 
   const oldManifest = readAndValidateManifest(manifestPath, installedPath);

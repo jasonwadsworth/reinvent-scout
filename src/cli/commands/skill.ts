@@ -7,7 +7,9 @@ import {
 } from "../../skill/install.js";
 import {
   CorruptManifestError,
+  SkillDirectoryUntrackedError,
   SkillNotInstalledError,
+  SymlinkEscapeError,
   updateSkill,
   type UpdateSkillDeps,
   type UpdateSkillResult,
@@ -85,7 +87,12 @@ export function registerSkillCommands(program: Command, deps: SkillCommandDeps =
           ...(options.force === undefined ? {} : { force: options.force }),
         });
       } catch (err) {
-        if (err instanceof CorruptManifestError || err instanceof SkillNotInstalledError) {
+        if (
+          err instanceof CorruptManifestError ||
+          err instanceof SkillNotInstalledError ||
+          err instanceof SkillDirectoryUntrackedError ||
+          err instanceof SymlinkEscapeError
+        ) {
           print(err.message);
           process.exitCode = 1;
           return;

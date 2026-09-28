@@ -4,7 +4,9 @@ import { registerSkillCommands } from "../../src/cli/commands/skill.js";
 import { SkillAlreadyInstalledError, type InstallSkillDeps, type InstallSkillResult } from "../../src/skill/install.js";
 import {
   CorruptManifestError,
+  SkillDirectoryUntrackedError,
   SkillNotInstalledError,
+  SymlinkEscapeError,
   type UpdateSkillDeps,
   type UpdateSkillResult,
 } from "../../src/skill/update.js";
@@ -217,6 +219,48 @@ describe("skill update command", () => {
     await program.parseAsync(["node", "reinvent-scout", "skill", "update"]);
 
     expect(printed.join("\n")).toContain(".install-manifest.json");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("exits non-zero and names --force when updateSkill throws SkillDirectoryUntrackedError", async () => {
+    const printed: string[] = [];
+    const program = new Command().exitOverride();
+    registerSkillCommands(program, {
+      print: (message: string) => {
+        printed.push(message);
+      },
+      update: () => {
+        throw new SkillDirectoryUntrackedError("/home/user/.claude/skills/reinvent-scout");
+      },
+    });
+    process.exitCode = undefined;
+
+    await program.parseAsync(["node", "reinvent-scout", "skill", "update"]);
+
+    expect(printed.join("\n")).toMatch(/--force/);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("exits non-zero and names the symlinked path when updateSkill throws SymlinkEscapeError", async () => {
+    const printed: string[] = [];
+    const program = new Command().exitOverride();
+    registerSkillCommands(program, {
+      print: (message: string) => {
+        printed.push(message);
+      },
+      update: () => {
+        throw new SymlinkEscapeError(
+          ["/home/user/.claude/skills/reinvent-scout/reference"],
+          "/home/user/.claude/skills/reinvent-scout",
+        );
+      },
+    });
+    process.exitCode = undefined;
+
+    await program.parseAsync(["node", "reinvent-scout", "skill", "update"]);
+
+    expect(printed.join("\n")).toContain("/home/user/.claude/skills/reinvent-scout/reference");
+    expect(printed.join("\n")).toMatch(/symlink/i);
     expect(process.exitCode).toBe(1);
   });
 });
