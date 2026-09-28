@@ -125,8 +125,12 @@ function formatEntryLine(entry: MergedScheduleEntry, eventTimezone: string | nul
       return `    ${start.time} - ${end.time} -- ${personalTime.title} (personal)`;
     }
     // Timezone unknown: printed exactly as the API gave it (raw UTC, no conversion attempted),
-    // per the lead's own decision -- the timezoneWarnings appended below already explain why.
-    return `    ${personalTime.startDateTime} - ${personalTime.endDateTime} -- ${personalTime.title} (personal)`;
+    // per the lead's own decision -- the timezoneWarnings appended below already explain why. The
+    // explicit "UTC" label (reviewer2's own finding) is load-bearing, not decorative: a raw
+    // "YYYY-MM-DDTHH:MM:SS" with no zone marker reads exactly like a local wall-clock time, right
+    // next to session times that *are* genuinely local -- without the label, this looks like the
+    // same misleading case the whole per-sitting-time fix was about, just relocated.
+    return `    ${personalTime.startDateTime} - ${personalTime.endDateTime} UTC -- ${personalTime.title} (personal)`;
   }
 
   const session = entry.session!;

@@ -238,7 +238,9 @@ describe("schedule show", () => {
     await h.run(["schedule", "show"]);
 
     const output = h.printed.join("\n");
-    expect(output).toContain("2026-12-01T00:30:00 - 2026-12-01T00:50:00 -- Dinner (personal)");
+    // reviewer2's nit: the raw value alone could be misread as local time -- label it UTC so it
+    // can't be.
+    expect(output).toContain("2026-12-01T00:30:00 - 2026-12-01T00:50:00 UTC -- Dinner (personal)");
     expect(output).toMatch(/Warning:.*timezone.*unknown/i);
   });
 });
