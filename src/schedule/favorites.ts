@@ -37,9 +37,23 @@ const NOT_ATTEMPTED_THROTTLED_REASON =
 /** reviewer2's finding on the first version of the auth-abort fix: the message must not just
  * repeat "not attempted" -- a caller reading one entry among many notAttempted ids needs to know
  * this is because the whole session stopped (see `aborted`), not that this one id was somehow
- * special. */
-const NOT_ATTEMPTED_AUTH_REASON =
-  "The session was interrupted before this could be attempted; see `aborted` for why, then retry after signing in again.";
+ * special. pr-reviewer-3's own follow-up finding: a single shared reason text for both
+ * `AuthRequiredError` and `NotRegisteredError` told a not-registered caller to "sign in again,"
+ * directly contradicting `NotRegisteredError`'s own message ("signing in again will not help") --
+ * the two need genuinely different remedies, the same way `aborted.reason` itself already
+ * distinguishes them. */
+function notAttemptedAuthReason(err: AuthRequiredError | NotRegisteredError): string {
+  if (err instanceof AuthRequiredError) {
+    return (
+      "The session was interrupted before this could be attempted; sign in again " +
+      "(`reinvent-scout auth login`), then retry."
+    );
+  }
+  return (
+    "The session was interrupted before this could be attempted; the account is not registered " +
+    "for this event, and signing in again will not help -- register for the event, then retry."
+  );
+}
 
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -346,8 +360,9 @@ export async function favoriteSessions(
           failed.push({ sessionId, code: REQUEST_FAILED_CODE, reason });
         }
         const notAttempted = chunks.slice(chunkIndex + 1).flat();
+        const notAttemptedReason = notAttemptedAuthReason(err);
         for (const sessionId of notAttempted) {
-          failed.push({ sessionId, code: NOT_ATTEMPTED_CODE, reason: NOT_ATTEMPTED_AUTH_REASON });
+          failed.push({ sessionId, code: NOT_ATTEMPTED_CODE, reason: notAttemptedReason });
         }
         return abortOrThrow(err);
       }

@@ -30,10 +30,14 @@ explained shortlist.
 3. Read the repository (or repositories) the user wants matched and write a profile object,
    following `reference/profiling.md` exactly -- what to read, how to cite evidence, how to name
    services and patterns, and what to do with absences and open issues.
-4. Call `validate_profile` with the profile. Fix anything it flags as a schema error (it names the
+4. Call `validate_profile` with the profile. Its response is a compact *report* on what resolved
+   (service names, pattern names, unresolved names, counts) -- not the profile itself, and not
+   something to pass anywhere else. Fix anything it flags as a schema error (it names the
    offending entry) and validate again. An unresolved service name is not an error -- keep going,
    but it's worth a passing mention to the user.
-5. Call `match_sessions` with the validated profile. Default to the `"all"` lens unless the user
+5. Call `match_sessions` with **the profile you wrote in step 3** -- never with `validate_profile`'s
+   own report, which is a different, smaller shape `match_sessions` doesn't accept. Default to the
+   `"all"` lens unless the user
    specifically wants foundational, concept-level sessions, in which case use `"explain"`. **Fix and
    Next-level lenses do not exist in this build** -- never promise a Well-Architected review or a
    migration-path recommendation; if asked, say those aren't available yet.

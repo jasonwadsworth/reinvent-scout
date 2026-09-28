@@ -6,7 +6,10 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { Command } from "commander";
 import { describe, expect, it } from "vitest";
 import type { Session } from "../../src/api/types.js";
+import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { buildServiceAliasIndex } from "../../src/catalog/service-aliases.js";
+import { CURRENT_SCHEMA_VERSION, writeCatalog } from "../../src/catalog/store.js";
+import { DEFAULT_EVENT_ID } from "../../src/catalog/sync.js";
 import { buildProgram } from "../../src/cli/main.js";
 import { createMcpServer } from "../../src/mcp/server.js";
 import { resolveProfile } from "../../src/profile/profile.js";
@@ -470,5 +473,72 @@ describe("reference/profiling.md worked example", () => {
     const topicSpelledPattern = patterns.find((p) => p.name === "Security & Identity");
     expect(topicSpelledPattern).toBeDefined();
     expect(vocabulary.topics).toContain("Security & Identity");
+  });
+});
+
+describe("workflow.md's validate_profile contract", () => {
+  it("documents exactly the keys the real tool's response actually has, so docs and tool can't drift", async () => {
+    // pr-reviewer-3's finding: workflow.md kept describing validate_profile's pre-budget-fix
+    // response (the whole profile echoed back) well after d4914df changed it to a compact report
+    // -- an agent that read both docs would (and, in the reviewer's own repro, did) pass that
+    // report straight into match_sessions, which rejects it outright. Calls the real tool, not a
+    // hand-written stand-in, so a future response-shape change is caught here too.
+    const home: TempHome = createTempHome();
+    try {
+      writeCatalog(
+        {
+          raw: fixture,
+          index: fixture.map(buildIndexRecord),
+          meta: {
+            schemaVersion: CURRENT_SCHEMA_VERSION,
+            eventId: DEFAULT_EVENT_ID,
+            syncedAt: 1_700_000_000_000,
+            totalCount: fixture.length,
+            count: fixture.length,
+            includedAbstracts: true,
+            timezone: null,
+          },
+        },
+        { storeRoot: home.path },
+      );
+
+      const profileBlocks = [...profilingMd.matchAll(/```json\n([\s\S]*?)```/g)]
+        .map((match) => JSON.parse(match[1]!) as unknown)
+        .filter(
+          (parsed): parsed is Record<string, unknown> =>
+            typeof parsed === "object" && parsed !== null && "schemaVersion" in parsed && "services" in parsed,
+        );
+      expect(profileBlocks).toHaveLength(1);
+
+      const server = createMcpServer({ resolveStoreRoot: () => home.path });
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      const client = new Client({ name: "test-client", version: "0.0.1" });
+      await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+
+      const result = await client.callTool({
+        name: "validate_profile",
+        arguments: { profile: profileBlocks[0] },
+      });
+      expect(result.isError).not.toBe(true);
+      const content = result.content as Array<{ type: string; text: string }>;
+      const realKeys = Object.keys(JSON.parse(content[0]!.text) as Record<string, unknown>).sort();
+
+      const documentedBlocks = [...extractSection(workflowMd, "## 4. `validate_profile`").matchAll(
+        /```json\n([\s\S]*?)```/g,
+      )].map((match) => JSON.parse(match[1]!) as Record<string, unknown>);
+      expect(documentedBlocks).toHaveLength(1);
+      const documentedKeys = Object.keys(documentedBlocks[0]!).sort();
+
+      expect(realKeys).toEqual(documentedKeys);
+    } finally {
+      home.cleanup();
+    }
+  });
+
+  it("never tells the agent to pass validate_profile's own response into match_sessions", () => {
+    // The other half of the same finding: SKILL.md step 5 must name the profile object itself as
+    // what gets sent, not validate_profile's report.
+    expect(skillMd).toMatch(/match_sessions.*the profile you wrote/i);
+    expect(skillMd).not.toMatch(/match_sessions.*validated profile/i);
   });
 });

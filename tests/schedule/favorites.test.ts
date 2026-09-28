@@ -631,6 +631,11 @@ describe("favoriteSessions", () => {
     expect(notAttempted.map((f) => f.sessionId).sort()).toEqual(ids.slice(30).sort());
     expect(result.verified).toBeNull();
     expect(result.aborted).toEqual({ reason: "authRequired", message: new AuthRequiredError().message });
+    // pr-reviewer-3's finding: a single shared reason for both abort reasons told a
+    // not-registered caller to "sign in again" -- the auth case's own reason must say that
+    // specifically, and must not contain the not-registered case's own wording.
+    expect(notAttempted.every((f) => f.reason?.includes("sign in again"))).toBe(true);
+    expect(notAttempted.every((f) => !f.reason?.includes("will not help"))).toBe(true);
   });
 
   it("does the same for NotRegisteredError surfacing after something was already written", async () => {
@@ -657,6 +662,13 @@ describe("favoriteSessions", () => {
     expect(callCount).toBe(2);
     expect(result.successful).toEqual(ids.slice(0, 10));
     expect(result.aborted).toEqual({ reason: "notRegistered", message: new NotRegisteredError().message });
+    // pr-reviewer-3's finding: the not-registered case's own notAttempted reason must say plainly
+    // that signing in again will not help -- not the auth case's "sign in again" remedy, which is
+    // actively wrong advice here.
+    const notAttempted = result.failed.filter((f) => f.code === "notAttempted");
+    expect(notAttempted.length).toBeGreaterThan(0);
+    expect(notAttempted.every((f) => f.reason?.includes("will not help"))).toBe(true);
+    expect(notAttempted.every((f) => !f.reason?.includes("sign in again"))).toBe(true);
   });
 
   it("returns the write results with verified null and a verificationError when the read-back itself fails", async () => {
