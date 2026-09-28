@@ -18,6 +18,10 @@ const fixture: Session[] = JSON.parse(
   readFileSync(join(here, "..", "fixtures", "catalog-sample.json"), "utf8"),
 );
 const ANT301 = fixture.find((session) => session.abbreviation === "ANT301")!;
+// Both sit on the same real day (2026-11-30) at two different times -- API303-R at 14:30, ANT301
+// at 10:30 -- which is exactly what a within-day ordering test needs: two real fixture sessions on
+// one day, not a single one.
+const API303_R = fixture.find((session) => session.abbreviation === "API303-R")!;
 
 function sampleMeta(overrides: Partial<CatalogMeta> = {}): CatalogMeta {
   return {
@@ -32,9 +36,9 @@ function sampleMeta(overrides: Partial<CatalogMeta> = {}): CatalogMeta {
   };
 }
 
-function seedFixtureCatalog(storeRoot: string): void {
+function seedFixtureCatalog(storeRoot: string, metaOverrides: Partial<CatalogMeta> = {}): void {
   writeCatalog(
-    { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
+    { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta(metaOverrides) },
     { storeRoot },
   );
 }
@@ -159,6 +163,83 @@ describe("schedule show", () => {
     expect(parsed.reserved).toHaveLength(1);
     expect(parsed.reserved[0].sessionId).toBe(ANT301.sessionId);
     expect(parsed.reserved[0].resolved).toBe(true);
+  });
+
+  it("sorts sessions within a day by time, not by the order the API happened to return them in", async () => {
+    // pr-reviewer's finding, reproduced from a real run: within one day, sessions appeared in raw
+    // API order, not time order. API303-R (14:30) is fed *before* ANT301 (10:30) here -- the exact
+    // shape that only a real time-based sort, not "whatever order came back," gets right.
+    seedFixtureCatalog(home.path, { timezone: "America/Los_Angeles" });
+    const h = harness(home.path, {
+      getSchedule: async () => ({
+        reserved: [],
+        favorites: [API303_R.sessionId, ANT301.sessionId],
+        personalTime: [],
+      }),
+    });
+
+    await h.run(["schedule", "show"]);
+
+    const output = h.printed.join("\n");
+    const ant301Index = output.indexOf(ANT301.abbreviation!);
+    const api303Index = output.indexOf(API303_R.abbreviation!);
+    expect(ant301Index).toBeGreaterThanOrEqual(0);
+    expect(api303Index).toBeGreaterThan(ant301Index);
+  });
+
+  it("prints personal time in event-local time, labeled (personal), grouped under the correct local day", async () => {
+    // reviewer's own exact repro: a block that's 16:30-16:50 in Las Vegas (America/Los_Angeles) on
+    // 2026-11-30 is stored by the API as 2026-12-01T00:30:00 - 2026-12-01T00:50:00 UTC -- printed
+    // raw, it looks like it happened after midnight on Dec 1; it did not.
+    seedFixtureCatalog(home.path, { timezone: "America/Los_Angeles" });
+    const h = harness(home.path, {
+      getSchedule: async () => ({
+        reserved: [],
+        favorites: [],
+        personalTime: [
+          {
+            personalTimeId: "pt1",
+            startDateTime: "2026-12-01T00:30:00",
+            endDateTime: "2026-12-01T00:50:00",
+            title: "Dinner",
+            description: "",
+          },
+        ],
+      }),
+    });
+
+    await h.run(["schedule", "show"]);
+
+    const output = h.printed.join("\n");
+    expect(output).toContain("Personal time:");
+    expect(output).toContain("2026-11-30"); // the correct *local* day, not the raw UTC date
+    expect(output).not.toContain("2026-12-01");
+    expect(output).toContain("16:30 - 16:50 -- Dinner (personal)");
+  });
+
+  it("falls back to the raw UTC personal-time value and warns, when the event timezone is unknown", async () => {
+    seedFixtureCatalog(home.path); // sampleMeta()'s own default: timezone: null
+    const h = harness(home.path, {
+      getSchedule: async () => ({
+        reserved: [],
+        favorites: [],
+        personalTime: [
+          {
+            personalTimeId: "pt1",
+            startDateTime: "2026-12-01T00:30:00",
+            endDateTime: "2026-12-01T00:50:00",
+            title: "Dinner",
+            description: "",
+          },
+        ],
+      }),
+    });
+
+    await h.run(["schedule", "show"]);
+
+    const output = h.printed.join("\n");
+    expect(output).toContain("2026-12-01T00:30:00 - 2026-12-01T00:50:00 -- Dinner (personal)");
+    expect(output).toMatch(/Warning:.*timezone.*unknown/i);
   });
 });
 

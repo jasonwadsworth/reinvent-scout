@@ -1,11 +1,14 @@
 import type { Command } from "commander";
 import { createApiClient, type ApiClient } from "../../api/client.js";
 import { createTokenProviderAdapter } from "../../auth/provider-adapter.js";
+import { readTimezoneAvailability } from "../../catalog/store.js";
 import { DEFAULT_EVENT_ID } from "../../catalog/sync.js";
 import { AuthRequiredError, NotRegisteredError, ValidationError } from "../../core/errors.js";
 import { ensureStoreRoot } from "../../core/paths.js";
 import { favoriteSessions, unfavoriteSession, type FavoriteSessionsResult } from "../../schedule/favorites.js";
-import { getSchedule, type ScheduleResult, type ScheduleSession } from "../../schedule/schedule.js";
+import { mergeAndSortScheduleEntries, timezoneWarnings, type MergedScheduleEntry } from "../../schedule/merge.js";
+import { getSchedule, type ScheduleResult } from "../../schedule/schedule.js";
+import { utcIsoToZonedWallClock } from "../../schedule/timezone.js";
 
 export interface ScheduleCommandDeps {
   /** Defaults to the real store root (`ensureStoreRoot`). Inject a fixed path in tests so
@@ -92,27 +95,52 @@ function assertValidIdCount(ids: readonly string[]): void {
   }
 }
 
-/** `YYYY-MM-DD`, or `"Unscheduled"` when the day isn't known -- either because the entry never
- * resolved against the local index at all, or because it did resolve but the session itself has
- * no `startDate` on record (see `schedule.ts`'s own distinction between the two). Both are
- * "nothing to group this under" from a day-grouping perspective, though `formatSessionLine` below
- * still tells them apart in the line itself. */
-function dayKey(entry: ScheduleSession): string {
-  return entry.resolved && entry.startDate !== null ? entry.startDate : "Unscheduled";
+/** `YYYY-MM-DD`, event-local, or `"Unscheduled"` when the day isn't known at all -- for a session,
+ * either because it never resolved against the local index, or resolved but has no `startDate` on
+ * record; personal time is never in this state, since it always has a real `startsAt`. A session's
+ * own `startDate` is already event-local (that's how the API reports it), so it's used directly;
+ * personal time's raw `startDateTime` is UTC, so its day is derived from `startsAt` via a real IANA
+ * conversion when the event's timezone is known -- reviewer's finding: printing personal time
+ * grouped by its own raw UTC date could put a late-evening block under the *next* calendar day in
+ * event-local time. When the timezone is unknown, personal time falls back to its raw UTC date,
+ * same as a session with no timezone falls back to plain "Unscheduled" -- both are already covered
+ * by the timezone-unavailability warning appended below, not silently guessed at here. */
+function dayKey(entry: MergedScheduleEntry, eventTimezone: string | null): string {
+  if (entry.kind === "personalTime") {
+    if (eventTimezone !== null) {
+      return utcIsoToZonedWallClock(entry.startsAt!, eventTimezone).date;
+    }
+    return entry.personalTime!.startDateTime.split("T")[0] ?? "Unscheduled";
+  }
+  const session = entry.session!;
+  return session.resolved && session.startDate !== null ? session.startDate : "Unscheduled";
 }
 
-function formatSessionLine(entry: ScheduleSession): string {
-  if (!entry.resolved) {
-    return `    ${entry.sessionId} (not in the local catalog -- try \`catalog sync\`)`;
+function formatEntryLine(entry: MergedScheduleEntry, eventTimezone: string | null): string {
+  if (entry.kind === "personalTime") {
+    const personalTime = entry.personalTime!;
+    if (eventTimezone !== null) {
+      const start = utcIsoToZonedWallClock(entry.startsAt!, eventTimezone);
+      const end = utcIsoToZonedWallClock(entry.endsAt!, eventTimezone);
+      return `    ${start.time} - ${end.time} -- ${personalTime.title} (personal)`;
+    }
+    // Timezone unknown: printed exactly as the API gave it (raw UTC, no conversion attempted),
+    // per the lead's own decision -- the timezoneWarnings appended below already explain why.
+    return `    ${personalTime.startDateTime} - ${personalTime.endDateTime} -- ${personalTime.title} (personal)`;
   }
-  const parts = [entry.abbreviation ?? entry.sessionId, entry.title];
-  if (entry.venue !== null) {
-    parts.push(entry.venue);
+
+  const session = entry.session!;
+  if (!session.resolved) {
+    return `    ${session.sessionId} (not in the local catalog -- try \`catalog sync\`)`;
   }
-  if (entry.room !== null) {
-    parts.push(entry.room);
+  const parts = [session.abbreviation ?? session.sessionId, session.title];
+  if (session.venue !== null) {
+    parts.push(session.venue);
   }
-  const time = entry.startTime ?? "unscheduled";
+  if (session.room !== null) {
+    parts.push(session.room);
+  }
+  const time = session.startTime ?? "unscheduled";
   return `    ${time} -- ${parts.join(" -- ")}`;
 }
 
@@ -126,13 +154,18 @@ function compareDayKeys(a: string, b: string): number {
   return a.localeCompare(b);
 }
 
-function formatSection(title: string, entries: ScheduleSession[]): string[] {
+/** Groups `entries` (already sorted, in `startsAt` order -- see `mergeAndSortScheduleEntries`) by
+ * event-local day and prints each day's own members in that same order, which is what makes this
+ * within-day time-ordered rather than API order: reviewer's finding, reproduced from a real run of
+ * the README flow, where sessions under one day appeared in whatever order the API happened to
+ * return them in. */
+function formatSection(title: string, entries: MergedScheduleEntry[], eventTimezone: string | null): string[] {
   if (entries.length === 0) {
     return [`${title}: none.`];
   }
-  const groups = new Map<string, ScheduleSession[]>();
+  const groups = new Map<string, MergedScheduleEntry[]>();
   for (const entry of entries) {
-    const key = dayKey(entry);
+    const key = dayKey(entry, eventTimezone);
     const members = groups.get(key);
     if (members === undefined) {
       groups.set(key, [entry]);
@@ -145,25 +178,38 @@ function formatSection(title: string, entries: ScheduleSession[]): string[] {
   for (const day of [...groups.keys()].sort(compareDayKeys)) {
     lines.push(`  ${day}`);
     for (const entry of groups.get(day)!) {
-      lines.push(formatSessionLine(entry));
+      lines.push(formatEntryLine(entry, eventTimezone));
     }
   }
   return lines;
 }
 
-function formatScheduleHuman(result: ScheduleResult): string {
+/** `timezoneWarningLines` are the exact same text `get_schedule` would report for the same
+ * condition (both come from `schedule/merge.ts`'s own `timezoneWarnings`) -- the lead's own
+ * decision: a person and an agent told about the same unknown-timezone condition read the same
+ * words, not two independently-worded explanations of the same thing. */
+function formatScheduleHuman(
+  result: ScheduleResult,
+  eventTimezone: string | null,
+  timezoneWarningLines: readonly string[],
+): string {
+  const merged = mergeAndSortScheduleEntries(result, eventTimezone);
+  const reserved = merged.filter((entry) => entry.kind === "reserved");
+  const favorites = merged.filter((entry) => entry.kind === "favorite");
+  const personalTime = merged.filter((entry) => entry.kind === "personalTime");
+
   const lines = [
-    ...formatSection("Reserved", result.reserved),
-    ...formatSection("Favorites", result.favorites),
+    ...formatSection("Reserved", reserved, eventTimezone),
+    ...formatSection("Favorites", favorites, eventTimezone),
   ];
-  if (result.personalTime.length > 0) {
-    lines.push("Personal time:");
-    for (const entry of result.personalTime) {
-      lines.push(`  ${entry.startDateTime} - ${entry.endDateTime} -- ${entry.title}`);
-    }
+  if (personalTime.length > 0) {
+    lines.push(...formatSection("Personal time", personalTime, eventTimezone));
   }
   if (result.warning !== null) {
     lines.push(`Warning: ${result.warning}`);
+  }
+  for (const warning of timezoneWarningLines) {
+    lines.push(`Warning: ${warning}`);
   }
   return lines.join("\n");
 }
@@ -229,7 +275,16 @@ export function registerScheduleCommands(program: Command, deps: ScheduleCommand
 
       try {
         const result = await getSchedule({ apiClient, storeRoot, eventId: options.event });
-        print(options.json ? JSON.stringify(result) : formatScheduleHuman(result));
+        if (options.json) {
+          print(JSON.stringify(result));
+        } else {
+          // Same source `get_schedule` itself reads from -- never falls back to the host
+          // machine's own timezone or a hardcoded one.
+          const timezoneAvailability = readTimezoneAvailability({ storeRoot });
+          const eventTimezone =
+            timezoneAvailability?.status === "known" ? timezoneAvailability.timezone : null;
+          print(formatScheduleHuman(result, eventTimezone, timezoneWarnings(timezoneAvailability)));
+        }
       } catch (err) {
         if (err instanceof NotRegisteredError) {
           print(

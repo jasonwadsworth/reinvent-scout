@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addMinutesToIso, zonedWallClockToUtcIso } from "../../src/schedule/timezone.js";
+import { addMinutesToIso, utcIsoToZonedWallClock, zonedWallClockToUtcIso } from "../../src/schedule/timezone.js";
 
 describe("zonedWallClockToUtcIso", () => {
   it("converts a Pacific Standard Time wall clock to its correct UTC instant", () => {
@@ -68,5 +68,45 @@ describe("addMinutesToIso", () => {
 
   it("carries across a day boundary", () => {
     expect(addMinutesToIso("2026-12-01T23:30:00Z", 90)).toBe("2026-12-02T01:00:00Z");
+  });
+});
+
+describe("utcIsoToZonedWallClock", () => {
+  it("is the exact inverse of zonedWallClockToUtcIso for a Pacific Standard Time instant", () => {
+    expect(utcIsoToZonedWallClock("2026-12-01T18:30:00Z", "America/Los_Angeles")).toEqual({
+      date: "2026-12-01",
+      time: "10:30",
+    });
+  });
+
+  it("moves the wall-clock date back a day when the UTC instant is just after local midnight", () => {
+    // reviewer's own repro: 2026-12-01T00:30:00Z is 16:30 the *previous* day in Las Vegas
+    // (Pacific), not "just after midnight on Dec 1" the way printing the raw UTC value implies.
+    expect(utcIsoToZonedWallClock("2026-12-01T00:30:00Z", "America/Los_Angeles")).toEqual({
+      date: "2026-11-30",
+      time: "16:30",
+    });
+  });
+
+  it("handles a timezone east of UTC with a positive offset", () => {
+    expect(utcIsoToZonedWallClock("2026-12-01T00:00:00Z", "Asia/Tokyo")).toEqual({
+      date: "2026-12-01",
+      time: "09:00",
+    });
+  });
+
+  it("round-trips through zonedWallClockToUtcIso for an ordinary wall clock", () => {
+    const utc = zonedWallClockToUtcIso("2026-12-02", "13:30", "America/New_York");
+    expect(utcIsoToZonedWallClock(utc, "America/New_York")).toEqual({
+      date: "2026-12-02",
+      time: "13:30",
+    });
+  });
+
+  it("never leaks the host machine's timezone into the result", () => {
+    expect(utcIsoToZonedWallClock("2026-12-01T18:30:00Z", "America/Los_Angeles")).toEqual({
+      date: "2026-12-01",
+      time: "10:30",
+    });
   });
 });

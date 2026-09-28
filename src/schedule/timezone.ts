@@ -70,3 +70,33 @@ export function addMinutesToIso(iso: string, minutes: number): string {
   const resultMs = new Date(iso).getTime() + minutes * 60_000;
   return new Date(resultMs).toISOString().replace(/\.\d{3}Z$/, "Z");
 }
+
+/**
+ * The inverse of `zonedWallClockToUtcIso`: renders a UTC instant as the wall-clock date and time
+ * an attendee in `timeZone` would actually see, split into `date` ("YYYY-MM-DD") and `time`
+ * ("HH:MM"). Used wherever a value that's only ever stored in UTC (a personal-time block's own
+ * `startDateTime`/`endDateTime`) needs to be shown the same way a session's already-local
+ * `startDate`/`startTime` is -- reviewer's finding: printing personal time in raw UTC right next
+ * to session times in event-local time made a block that's actually mid-afternoon local time look
+ * like it fell after midnight the next day.
+ */
+export function utcIsoToZonedWallClock(iso: string, timeZone: string): { date: string; time: string } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).formatToParts(new Date(iso));
+
+  const value: Record<string, string> = {};
+  for (const part of parts) {
+    if (part.type !== "literal") {
+      value[part.type] = part.value;
+    }
+  }
+
+  return { date: `${value.year}-${value.month}-${value.day}`, time: `${value.hour}:${value.minute}` };
+}
