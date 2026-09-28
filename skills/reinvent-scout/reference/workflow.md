@@ -210,7 +210,7 @@ answer "what's on my schedule" at any point in the flow.
 ```json
 {
   "entries": [
-    { "kind": "favorite", "sessionId": "1780441461150001GGoc", "title": "...", "startsAt": "2026-11-30T18:30:00.000Z", "endsAt": "2026-11-30T19:30:00.000Z", "...": "..." }
+    { "kind": "favorite", "sessionId": "1780441461150001GGoc", "title": "...", "startsAt": "2026-11-30T18:30:00Z", "endsAt": "2026-11-30T19:30:00Z", "...": "..." }
   ],
   "total": 1,
   "totals": { "reserved": 0, "favorites": 1, "personalTime": 0 },

@@ -413,6 +413,21 @@ describe("truncation advice consistency", () => {
     // so this isn't just proving the phrase was deleted along with the whole sentence.
     expect(skillMd).toMatch(/narrower lens/i);
   });
+
+  it("never shows a startsAt/endsAt example with milliseconds -- real output never has them", () => {
+    // Reviewer's finding: workflow.md's get_schedule example showed "startsAt":
+    // "2026-11-30T18:30:00.000Z", but zonedWallClockToUtcIso/addMinutesToIso (src/schedule/
+    // timezone.ts) always strip the ".000" for these two fields specifically -- real output never
+    // carries it. Scoped to startsAt/endsAt by name, not every timestamp in the skill corpus:
+    // `accessTokenExpiresAt` (the `status` tool, src/mcp/tools.ts) is a genuinely different field,
+    // built with a plain `new Date(...).toISOString()` that is never stripped -- its own example
+    // correctly does show milliseconds, and must not be flagged as if it were the same bug.
+    const startsAtOrEndsAtWithMs = /"(?:startsAt|endsAt)":\s*"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z"/;
+    expect(allSkillText).not.toMatch(startsAtOrEndsAtWithMs);
+    // Positive check that a real startsAt example is still present, so this isn't trivially
+    // passing because no such example exists at all.
+    expect(allSkillText).toMatch(/"startsAt":\s*"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z"/);
+  });
 });
 
 describe("reference file existence", () => {
