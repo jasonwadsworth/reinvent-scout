@@ -6,6 +6,7 @@ import { registerMatchCommands } from "./commands/match.js";
 import { registerMcpCommand } from "./commands/mcp.js";
 import { registerProfileCommands } from "./commands/profile.js";
 import { registerScheduleCommands } from "./commands/schedule.js";
+import { registerSkillCommands } from "./commands/skill.js";
 import { isMainModule } from "./entry.js";
 import { readPackageVersion } from "./version.js";
 
@@ -31,6 +32,7 @@ export function buildProgram(): Command {
   registerMatchCommands(program);
   registerScheduleCommands(program);
   registerMcpCommand(program);
+  registerSkillCommands(program);
 
   return program;
 }

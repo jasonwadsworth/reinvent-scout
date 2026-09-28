@@ -247,6 +247,10 @@ human running these directly gets human-formatted terminal output, not JSON):
 - `reinvent-scout schedule favorite`
 - `reinvent-scout schedule unfavorite`
 - `reinvent-scout mcp`
+- `reinvent-scout skill install`
 
 `reinvent-scout mcp` starts this stdio server itself -- it's what your MCP client config points at
 (see the project README), not a command you run yourself mid-conversation.
+`reinvent-scout skill install` is how this skill gets onto disk in the first place -- also not
+something you run on yourself mid-conversation, though it's fine to mention if the user asks how to
+install or update the skill.

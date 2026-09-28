@@ -326,8 +326,24 @@ catalog and the attendee's own data stay local; only a bounded summary ever reac
   conflict titles. A response carrying a refusal is never reported as a plain success.
 - `unfavorite_session`.
 
-A full setup guide (a `claude mcp add` / `.mcp.json` snippet and the agent skill that drives these
-tools) lands with the skill itself, later in this phase.
+A full setup guide (a `claude mcp add` / `.mcp.json` snippet) lands with the rest of this phase's
+README completion.
+
+## Install the agent skill
+
+```
+reinvent-scout skill install
+```
+
+Installs the `reinvent-scout` skill -- `SKILL.md` and its `reference/` files -- into Claude Code's
+default skills directory (`~/.claude/skills`), so an agent knows how to profile a repository, call
+the MCP tools above, and present matched sessions with evidence. Use `--dir <path>` to install
+into another agent's skills directory instead (Claude Code's own path can't be assumed for every
+agent, so it's never guessed):
+
+```
+reinvent-scout skill install --dir /path/to/other/skills
+```
 
 ## Where your data lives
 
