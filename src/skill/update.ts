@@ -8,7 +8,6 @@ import {
   MANIFEST_FILE_NAME,
   SKILL_NAME,
   assertRealPathWithinRoot,
-  installSkill,
   listFilesRecursive,
   resolveDefaultSkillsDir,
   resolveWithinRoot,
@@ -20,15 +19,35 @@ import {
 
 export interface UpdateSkillDeps extends InstallSkillDeps {
   /** Overwrite every locally modified file instead of refusing the whole update. Defaults to
-   * `false`. Never bypasses a corrupt manifest -- see `CorruptManifestError`. */
+   * `false`. Never bypasses a corrupt or missing manifest -- see `CorruptManifestError` and
+   * `SkillNotInstalledError`. */
   force?: boolean;
 }
 
 export type UpdateSkillResult =
   | { status: "up-to-date"; installedPath: string }
-  | { status: "fresh-install"; installedPath: string; fileCount: number }
   | { status: "updated"; installedPath: string; updatedFiles: string[]; removedFiles: string[] }
   | { status: "refused"; installedPath: string; modifiedFiles: string[] };
+
+/**
+ * Thrown by `updateSkill` when there's no install manifest at the target -- nothing is installed
+ * there at all (the target doesn't exist, or is empty), or something untracked is (a hand-copied
+ * skill directory, or any other content this tool never wrote a manifest for). Either way, `update`
+ * has no baseline to safely compare against, and update is not install: it never performs a fresh
+ * install itself, even when the target is completely empty -- one clear rule, one command that
+ * owns bringing a skill onto disk for the first time. Never bypassed by `force`, for the same
+ * reason a corrupt manifest isn't: there's no "modified file" to force an overwrite of when there's
+ * no prior install to compare against in the first place.
+ */
+export class SkillNotInstalledError extends Error {
+  constructor(installedPath: string) {
+    super(
+      `No skill is installed at ${installedPath} (no install manifest found). Run ` +
+        "`reinvent-scout skill install` first.",
+    );
+    this.name = "SkillNotInstalledError";
+  }
+}
 
 /**
  * Thrown when the installed manifest can't be trusted -- either its shape is wrong (unparseable
@@ -115,11 +134,10 @@ function readAndValidateManifest(manifestPath: string, installedPath: string): I
 /**
  * Updates an already-installed skill in place, without clobbering a file the user edited locally.
  *
- * No manifest present at the target delegates to `installSkill` outright as a fresh install --
- * `installSkill` itself refuses (see `SkillAlreadyInstalledError`) when the target already exists
- * and is non-empty, so a manifest-less-but-non-empty target (the manifest deleted, or never
- * written by this tool at all) is refused the same way a fresh `skill install` would be, rather
- * than silently treated as safe to write over.
+ * No manifest present at the target throws `SkillNotInstalledError` -- update only ever updates;
+ * it never performs a fresh install itself, whether the target is completely empty, doesn't exist,
+ * or holds some other untracked content (a hand-copied skill directory, the manifest deleted).
+ * `skill install` owns bringing a skill onto disk for the first time, one command, one clear rule.
  *
  * "Up to date" is decided by content, never by the manifest's own `version` field alone: the new
  * source's exact file set and every file's hash must equal the manifest's for nothing to happen.
@@ -145,8 +163,7 @@ export function updateSkill(deps: UpdateSkillDeps = {}): UpdateSkillResult {
 
   const manifestPath = join(installedPath, MANIFEST_FILE_NAME);
   if (!existsSync(manifestPath)) {
-    const result = installSkill(deps);
-    return { status: "fresh-install", installedPath: result.installedPath, fileCount: result.fileCount };
+    throw new SkillNotInstalledError(installedPath);
   }
 
   const oldManifest = readAndValidateManifest(manifestPath, installedPath);

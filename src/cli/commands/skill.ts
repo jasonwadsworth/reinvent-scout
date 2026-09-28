@@ -7,6 +7,7 @@ import {
 } from "../../skill/install.js";
 import {
   CorruptManifestError,
+  SkillNotInstalledError,
   updateSkill,
   type UpdateSkillDeps,
   type UpdateSkillResult,
@@ -70,8 +71,9 @@ export function registerSkillCommands(program: Command, deps: SkillCommandDeps =
   skill
     .command("update")
     .description(
-      "Update an already-installed skill without clobbering a locally modified file -- installs " +
-        "fresh if nothing is installed yet. --force overwrites local edits instead of refusing.",
+      "Update an already-installed skill without clobbering a locally modified file. Run " +
+        "`skill install` first if nothing is installed yet -- update never installs. --force " +
+        "overwrites local edits instead of refusing.",
     )
     .option("--dir <path>", "the skills directory the skill was installed into (matches install's own --dir)")
     .option("--force", "overwrite locally modified files instead of refusing")
@@ -83,7 +85,7 @@ export function registerSkillCommands(program: Command, deps: SkillCommandDeps =
           ...(options.force === undefined ? {} : { force: options.force }),
         });
       } catch (err) {
-        if (err instanceof SkillAlreadyInstalledError || err instanceof CorruptManifestError) {
+        if (err instanceof CorruptManifestError || err instanceof SkillNotInstalledError) {
           print(err.message);
           process.exitCode = 1;
           return;
@@ -94,11 +96,6 @@ export function registerSkillCommands(program: Command, deps: SkillCommandDeps =
       switch (result.status) {
         case "up-to-date":
           print(`Already up to date at ${result.installedPath}`);
-          break;
-        case "fresh-install":
-          print(
-            `Installed ${result.fileCount} ${pluralize(result.fileCount, "file")} to ${result.installedPath}`,
-          );
           break;
         case "updated": {
           print(

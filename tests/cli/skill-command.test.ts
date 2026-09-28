@@ -2,7 +2,12 @@ import { Command } from "commander";
 import { describe, expect, it } from "vitest";
 import { registerSkillCommands } from "../../src/cli/commands/skill.js";
 import { SkillAlreadyInstalledError, type InstallSkillDeps, type InstallSkillResult } from "../../src/skill/install.js";
-import { CorruptManifestError, type UpdateSkillDeps, type UpdateSkillResult } from "../../src/skill/update.js";
+import {
+  CorruptManifestError,
+  SkillNotInstalledError,
+  type UpdateSkillDeps,
+  type UpdateSkillResult,
+} from "../../src/skill/update.js";
 
 interface Harness {
   run: (args: string[]) => Promise<void>;
@@ -126,21 +131,6 @@ describe("skill update command", () => {
     expect(h.exitCode()).toBeUndefined();
   });
 
-  it("reports a fresh install with its file count", async () => {
-    const h = updateHarness({
-      status: "fresh-install",
-      installedPath: "/home/user/.claude/skills/reinvent-scout",
-      fileCount: 4,
-    });
-    process.exitCode = undefined;
-
-    await h.run(["skill", "update"]);
-
-    expect(h.printed[0]).toContain("4");
-    expect(h.printed[0]).toContain("/home/user/.claude/skills/reinvent-scout");
-    expect(h.exitCode()).toBeUndefined();
-  });
-
   it("reports the updated file count and any removed files", async () => {
     const h = updateHarness({
       status: "updated",
@@ -192,7 +182,7 @@ describe("skill update command", () => {
     expect(h.updateCalls[0]!.targetsDir).toBe("/opt/kiro/skills");
   });
 
-  it("exits non-zero and names skill update's own remedy when updateSkill throws SkillAlreadyInstalledError (no manifest, non-empty target)", async () => {
+  it("exits non-zero and names skill install when updateSkill throws SkillNotInstalledError", async () => {
     const printed: string[] = [];
     const program = new Command().exitOverride();
     registerSkillCommands(program, {
@@ -200,14 +190,14 @@ describe("skill update command", () => {
         printed.push(message);
       },
       update: () => {
-        throw new SkillAlreadyInstalledError("/home/user/.claude/skills/reinvent-scout");
+        throw new SkillNotInstalledError("/home/user/.claude/skills/reinvent-scout");
       },
     });
     process.exitCode = undefined;
 
     await program.parseAsync(["node", "reinvent-scout", "skill", "update"]);
 
-    expect(printed.join("\n")).toMatch(/already exists and is not empty/);
+    expect(printed.join("\n")).toMatch(/reinvent-scout skill install/);
     expect(process.exitCode).toBe(1);
   });
 

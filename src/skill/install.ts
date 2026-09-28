@@ -52,37 +52,46 @@ export interface InstallSkillResult {
 }
 
 /**
- * Thrown by `installSkill` when the target directory already exists and is non-empty -- a
- * previous install (or, for `skill update`'s own fresh-install path, some other pre-existing
- * content) already lives here, so blindly writing over it would silently destroy whatever the
- * user has there, manifest or not. Reviewer's findings, both closed by this: re-running `skill
- * install` (the obvious thing to try after upgrading) lost a locally-modified `SKILL.md` with
- * exit 0; separately, `skill update` treated a manifest-less-but-non-empty target (the manifest
- * deleted, or never written) as safe to overwrite via a silent "fresh install," losing a hand
- * edit the same way. `skill update` owns every legitimate overwrite decision on an existing
- * install from here on -- its own modified-file protection is the only path that may touch one;
- * `skill install` refuses outright rather than guessing.
- *
- * Deliberately keyed on non-emptiness, not the manifest's presence specifically: a directory that
- * happens to contain unrelated files, never installed into by this tool at all, is exactly the
- * kind of "something is already here, don't guess" situation this exists to catch too.
+ * Thrown by `installSkill` when installing would conflict with something already at the target --
+ * see `conflictsWithExistingInstall` for exactly what counts. A previous install (or a hand-copied
+ * skill directory) already lives here, so blindly writing over it would silently destroy whatever
+ * the user has there, manifest or not. Reviewer's findings, both closed by this: re-running `skill
+ * install` (the obvious thing to try after upgrading) lost a locally-modified `SKILL.md` with exit
+ * 0; separately, a hand-copied-and-edited skill directory with no manifest at all was overwritten
+ * the same way, since the original fix was keyed on the manifest's presence specifically. `skill
+ * update` owns every legitimate overwrite decision on an existing install from here on -- its own
+ * modified-file protection is the only path that may touch one; `skill install` refuses outright
+ * rather than guessing.
  */
 export class SkillAlreadyInstalledError extends Error {
   constructor(installedPath: string) {
     super(
-      `${installedPath} already exists and is not empty. Run \`reinvent-scout skill update\` ` +
-        "instead (add --force to overwrite local edits).",
+      `A skill (or a conflicting file) already exists at ${installedPath}. Run ` +
+        "`reinvent-scout skill update` instead (add --force to overwrite local edits).",
     );
     this.name = "SkillAlreadyInstalledError";
   }
 }
 
-/** True when `path` exists and has at least one entry -- the exact condition
- * `SkillAlreadyInstalledError` guards against. `false` for a path that doesn't exist at all,
- * which is the ordinary "nothing here yet" case both `installSkill` and `updateSkill`'s own
- * fresh-install path must still allow through. */
-export function existsAndNonEmpty(path: string): boolean {
-  return existsSync(path) && readdirSync(path).length > 0;
+/**
+ * True when installing `relativeFiles` into `installedPath` would conflict with something already
+ * there -- the manifest already exists (a previous install by this tool), or any individual file
+ * the install is *about to write* already exists at its destination (a hand-copied, or otherwise
+ * not-installed-by-this-tool, skill directory). This is deliberately not "the target directory is
+ * non-empty": an *unrelated* file that happens to already be there, but that installing this skill
+ * would never write over, is not a real conflict, and treating it as one would also make an empty-
+ * of-conflicting-files target holding only a symlinked `reference` directory (no files under it at
+ * all) impossible to reach `installSkill`'s own write loop through, defeating the point of testing
+ * the symlink-escape guard end to end via `installSkill` itself, not just `writeSkillFile` alone.
+ */
+export function conflictsWithExistingInstall(
+  installedPath: string,
+  relativeFiles: readonly string[],
+): boolean {
+  if (existsSync(join(installedPath, MANIFEST_FILE_NAME))) {
+    return true;
+  }
+  return relativeFiles.some((relPath) => existsSync(join(installedPath, relPath)));
 }
 
 /** The Claude Code default: `~/.claude/skills`. `--dir <path>` (the CLI's own flag) covers Kiro
@@ -190,13 +199,13 @@ export function installSkill(deps: InstallSkillDeps = {}): InstallSkillResult {
   const installedPath = join(targetsDir, SKILL_NAME);
   const version = deps.packageVersion ?? readPackageVersion();
 
-  if (existsAndNonEmpty(installedPath)) {
+  const relativeFiles = listFilesRecursive(sourceDir).sort();
+
+  if (conflictsWithExistingInstall(installedPath, relativeFiles)) {
     throw new SkillAlreadyInstalledError(installedPath);
   }
 
   mkdirSync(installedPath, { recursive: true });
-
-  const relativeFiles = listFilesRecursive(sourceDir).sort();
   const files: Record<string, string> = {};
 
   for (const relPath of relativeFiles) {

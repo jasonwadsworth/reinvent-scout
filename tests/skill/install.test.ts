@@ -148,16 +148,34 @@ describe("installSkill", () => {
     );
   });
 
-  it("refuses to install into a target directory that exists and is non-empty, even with no manifest at all", () => {
-    // Lead's decision, following the reviewer's second repro: keyed on non-emptiness, not the
-    // manifest's presence specifically, so a directory with unrelated content -- never installed
-    // into by this tool at all -- is refused too, rather than silently written over.
+  it("refuses to install into a target directory holding a hand-copied skill file, even with no manifest at all", () => {
+    // Reviewer's repro R6: a hand-copied-and-edited skill directory with no manifest was silently
+    // overwritten by the earlier manifest-only check. Keyed on a real conflict -- a file the
+    // install is about to write already exists at its destination -- not on the manifest's
+    // presence specifically or on the target directory's non-emptiness in general (see
+    // `conflictsWithExistingInstall`'s own doc comment for why non-emptiness alone would be too
+    // broad, breaking the symlink-escape test below).
     const installedPath = join(targetsDir, SKILL_NAME);
     mkdirSync(installedPath, { recursive: true });
-    writeFileSync(join(installedPath, "unrelated-file.txt"), "not ours\n");
+    writeFileSync(join(installedPath, "SKILL.md"), "HAND COPIED + EDITED\n");
 
     expect(() => installSkill({ sourceDir, targetsDir })).toThrow(SkillAlreadyInstalledError);
-    expect(existsSync(join(installedPath, "SKILL.md"))).toBe(false);
+    expect(readFileSync(join(installedPath, "SKILL.md"), "utf8")).toBe("HAND COPIED + EDITED\n");
+  });
+
+  it("does not refuse when the target directory holds only an unrelated file the install would never write over", () => {
+    // Locks in the deliberately narrower scope: non-emptiness alone is not the condition (see
+    // conflictsWithExistingInstall's own doc comment) -- a file this skill's own content never
+    // touches is not a real conflict, and install may add its own files alongside it.
+    const installedPath = join(targetsDir, SKILL_NAME);
+    mkdirSync(installedPath, { recursive: true });
+    writeFileSync(join(installedPath, "unrelated-file.txt"), "not ours, not a skill file\n");
+
+    const result = installSkill({ sourceDir, targetsDir });
+
+    expect(result.fileCount).toBe(4);
+    expect(readFileSync(join(installedPath, "SKILL.md"), "utf8")).toContain("Body.");
+    expect(existsSync(join(installedPath, "unrelated-file.txt"))).toBe(true);
   });
 
   it("installs cleanly into a target directory that exists but is genuinely empty", () => {
@@ -168,6 +186,24 @@ describe("installSkill", () => {
 
     expect(result.fileCount).toBe(4);
     expect(readFileSync(join(installedPath, "SKILL.md"), "utf8")).toContain("Body.");
+  });
+
+  it("refuses when a destination directory is a symlink escaping the target root, and writes nothing outside it (end to end)", () => {
+    // Reviewer's own CLI-level repro (R2): a fresh target holding only a symlinked `reference`
+    // directory -- no conflicting files, so conflictsWithExistingInstall above doesn't refuse
+    // first -- must still reach the write loop's own guard.
+    const outsideDir = mkdtempSync(join(tmpdir(), "reinvent-scout-skill-outside-"));
+    try {
+      const installedPath = join(targetsDir, SKILL_NAME);
+      mkdirSync(installedPath, { recursive: true });
+      symlinkSync(outsideDir, join(installedPath, "reference"));
+
+      expect(() => installSkill({ sourceDir, targetsDir })).toThrow();
+
+      expect(readdirSync(outsideDir)).toHaveLength(0);
+    } finally {
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
   });
 });
 

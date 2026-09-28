@@ -11,14 +11,8 @@ import {
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-  MANIFEST_FILE_NAME,
-  SKILL_NAME,
-  SkillAlreadyInstalledError,
-  installSkill,
-  type InstallSkillManifest,
-} from "../../src/skill/install.js";
-import { CorruptManifestError, updateSkill } from "../../src/skill/update.js";
+import { MANIFEST_FILE_NAME, SKILL_NAME, installSkill, type InstallSkillManifest } from "../../src/skill/install.js";
+import { CorruptManifestError, SkillNotInstalledError, updateSkill } from "../../src/skill/update.js";
 
 describe("updateSkill", () => {
   let sourceDirV1: string;
@@ -54,12 +48,24 @@ describe("updateSkill", () => {
     ) as InstallSkillManifest;
   }
 
-  it("installs cleanly when no manifest is present, treating it as a fresh install", () => {
-    const result = updateSkill({ sourceDir: sourceDirV1, targetsDir, packageVersion: "1.0.0" });
+  it("refuses when no manifest is present at all, naming skill install -- update never installs", () => {
+    // Lead's decision: update only ever updates, whether the target doesn't exist, is empty, or
+    // holds untracked content -- one clear rule, no silent "fresh install" branch to distinguish
+    // from an update that lost track of its own baseline.
+    expect(() =>
+      updateSkill({ sourceDir: sourceDirV1, targetsDir, packageVersion: "1.0.0" }),
+    ).toThrow(SkillNotInstalledError);
+    expect(existsSync(join(targetsDir, SKILL_NAME))).toBe(false);
+  });
 
-    expect(result.status).toBe("fresh-install");
-    expect(readFileSync(join(targetsDir, SKILL_NAME, "SKILL.md"), "utf8")).toBe("v1 SKILL body.\n");
-    expect(readManifest().version).toBe("1.0.0");
+  it("refuses when the target exists but is empty, naming skill install", () => {
+    const installedPath = join(targetsDir, SKILL_NAME);
+    mkdirSync(installedPath, { recursive: true });
+
+    expect(() =>
+      updateSkill({ sourceDir: sourceDirV1, targetsDir, packageVersion: "1.0.0" }),
+    ).toThrow(SkillNotInstalledError);
+    expect(readdirSync(installedPath)).toHaveLength(0);
   });
 
   it("reports already up to date when the installed content matches", () => {
@@ -323,6 +329,22 @@ describe("updateSkill", () => {
     }
   });
 
+  it("refuses when a manifest key is an absolute path, even one that happens not to exist", () => {
+    // Reviewer's specific follow-up: an absolute key like "/etc/hosts" must be rejected on its own
+    // terms, not merely "happen to be harmless" because the path it names isn't reachable or
+    // doesn't get removed for unrelated reasons.
+    installSkill({ sourceDir: sourceDirV1, targetsDir, packageVersion: "1.0.0" });
+
+    const manifestPath = join(targetsDir, SKILL_NAME, MANIFEST_FILE_NAME);
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as InstallSkillManifest;
+    manifest.files["/etc/hosts"] = "0".repeat(64);
+    writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+    expect(() =>
+      updateSkill({ sourceDir: sourceDirV2, targetsDir, packageVersion: "2.0.0", force: true }),
+    ).toThrow(CorruptManifestError);
+  });
+
   it("refuses cleanly, naming the manifest path, when the manifest is corrupt rather than crashing with a bare error", () => {
     installSkill({ sourceDir: sourceDirV1, targetsDir, packageVersion: "1.0.0" });
     const manifestPath = join(targetsDir, SKILL_NAME, MANIFEST_FILE_NAME);
@@ -340,7 +362,7 @@ describe("updateSkill", () => {
     expect((thrown as Error).message).toContain(manifestPath);
   });
 
-  it("propagates the already-installed refusal when no manifest exists but the target is non-empty", () => {
+  it("refuses when no manifest exists but the target is non-empty, leaving the hand edit untouched", () => {
     // Reviewer's finding: a deleted (or never-written) manifest over an otherwise-populated
     // install directory was treated as safe to silently "fresh install" over, losing a hand edit
     // the same way a second `skill install` did before that was fixed.
@@ -350,7 +372,7 @@ describe("updateSkill", () => {
 
     expect(() =>
       updateSkill({ sourceDir: sourceDirV1, targetsDir, packageVersion: "1.0.0" }),
-    ).toThrow(SkillAlreadyInstalledError);
+    ).toThrow(SkillNotInstalledError);
     expect(readFileSync(join(installedPath, "SKILL.md"), "utf8")).toBe(
       "HAND EDITED, no manifest present\n",
     );
