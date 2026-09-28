@@ -626,14 +626,15 @@ const MIN_TRUNCATED_FIELD_LENGTH = 20;
 
 /** Shrinks `entry`'s own single longest string-valued field in place (mutates `entry`), replacing
  * it with roughly half its current length plus an ellipsis -- repeatable, so a caller can call this
- * in a loop until the entry fits. Returns `false`, doing nothing, once nothing left is worth
- * shrinking (every string field already at or under `MIN_TRUNCATED_FIELD_LENGTH`), so a caller
- * doesn't loop forever chasing a budget no amount of truncation can close. Only ever touches this
- * one entry's own fields (a session's `title`/`venue`/`room`, personal time's own `title`/
- * `description`/`location`) -- never `sessionId`/`personalTimeId`/`startsAt`/`endsAt`, none of
- * which this function would ever pick anyway, since they're never the longest string present once
- * a single free-text field is what actually blew the budget. */
-function shrinkLongestStringField(entry: Record<string, unknown>): boolean {
+ * in a loop until the entry fits. Returns the field's own key, so a caller can report which field
+ * was touched; `null`, doing nothing, once nothing left is worth shrinking (every string field
+ * already at or under `MIN_TRUNCATED_FIELD_LENGTH`), so a caller doesn't loop forever chasing a
+ * budget no amount of truncation can close. Only ever touches this one entry's own fields (a
+ * session's `title`/`venue`/`room`, personal time's own `title`/`description`/`location`) -- never
+ * `sessionId`/`personalTimeId`/`startsAt`/`endsAt`, none of which this function would ever pick
+ * anyway, since they're never the longest string present once a single free-text field is what
+ * actually blew the budget. */
+function shrinkLongestStringField(entry: Record<string, unknown>): string | null {
   let longestKey: string | null = null;
   let longestValue = "";
   for (const [key, value] of Object.entries(entry)) {
@@ -643,21 +644,29 @@ function shrinkLongestStringField(entry: Record<string, unknown>): boolean {
     }
   }
   if (longestKey === null || longestValue.length <= MIN_TRUNCATED_FIELD_LENGTH) {
-    return false;
+    return null;
   }
   const targetLength = Math.max(MIN_TRUNCATED_FIELD_LENGTH, Math.floor(longestValue.length / 2));
   entry[longestKey] = `${longestValue.slice(0, targetLength)}...`;
-  return true;
+  return longestKey;
+}
+
+interface FittedEntry {
+  entry: Record<string, unknown>;
+  /** Every field name this entry had shrunk, in the order first touched -- `[]` when the entry
+   * fit as soon as the caller checked, before ever needing to shrink anything. */
+  shrunkFields: string[];
 }
 
 /** Shrinks a *copy* of `entry`'s own longest string field, repeatedly, until a response holding
- * just this one entry fits the budget, or there's nothing left worth shrinking. The lead's own
- * decision, closing the reviewer's finding: a single entry that alone exceeds the budget must
- * still come back -- truncated -- rather than being left out entirely, which returned an empty
- * page with `nextOffset` equal to `offset`, looping forever for a caller paging "until nextOffset
- * is absent." Never mutates the original entry (a shallow copy is shrunk instead), since the same
- * `windowed` array this is called from is also used to build the *next* page if this one somehow
- * still doesn't fit -- the original, untruncated value must survive for that attempt. */
+ * just this one entry fits the budget, or there's nothing left worth shrinking, tracking every
+ * field name touched along the way. The lead's own decision, closing the reviewer's finding: a
+ * single entry that alone exceeds the budget must still come back -- truncated -- rather than
+ * being left out entirely, which returned an empty page with `nextOffset` equal to `offset`,
+ * looping forever for a caller paging "until nextOffset is absent." Never mutates the original
+ * entry (a shallow copy is shrunk instead), since the same `windowed` array this is called from is
+ * also used to build the *next* page if this one somehow still doesn't fit -- the original,
+ * untruncated value must survive for that attempt. */
 function fitSingleEntry(
   entry: Record<string, unknown>,
   offset: number,
@@ -665,14 +674,37 @@ function fitSingleEntry(
   totals: GetScheduleResponse["totals"],
   warning: string | null,
   warnings: string[],
-): Record<string, unknown> {
+): FittedEntry {
   const shrunk = { ...entry };
+  const shrunkFields: string[] = [];
   for (;;) {
     const trial = buildScheduleResponseBody([shrunk], offset, total, totals, warning, warnings);
-    if (envelopeBytes(trial) <= RESPONSE_BYTE_BUDGET || !shrinkLongestStringField(shrunk)) {
-      return shrunk;
+    if (envelopeBytes(trial) <= RESPONSE_BYTE_BUDGET) {
+      return { entry: shrunk, shrunkFields };
+    }
+    const shrunkField = shrinkLongestStringField(shrunk);
+    if (shrunkField === null) {
+      return { entry: shrunk, shrunkFields };
+    }
+    if (!shrunkFields.includes(shrunkField)) {
+      shrunkFields.push(shrunkField);
     }
   }
+}
+
+/** Names the entry (its `title` when it has one -- every session and personal-time entry does --
+ * falling back to its own id otherwise) and the fields shortened, for a `warnings` entry alongside
+ * the already-shrunk data. Reviewer2's own finding: the *only* signal an entry was shortened used
+ * to be a trailing `"..."` on the field itself -- an agent relaying an attendee's own personal-time
+ * description (or a session title) verbatim could easily miss that, where a real, structured
+ * warning is exactly what `warnings` already exists for elsewhere in this response (the timezone-
+ * unavailability case). */
+function describeShrunkEntry(entry: Record<string, unknown>, shrunkFields: readonly string[]): string {
+  const label =
+    typeof entry.title === "string"
+      ? entry.title
+      : String(entry.sessionId ?? entry.personalTimeId ?? "an entry");
+  return `"${label}" was shortened to fit the response budget (${shrunkFields.join(", ")}).`;
 }
 
 /** Enforces the byte budget on top of the already-windowed page: a page fitting the requested
@@ -705,8 +737,15 @@ function buildScheduleResponse(
 
   if (included.length === 0 && windowed.length > 0) {
     // Nothing fit -- not even the first entry alone. Shrink its own long fields until it does, so
-    // this page always includes at least one entry and nextOffset always advances past it.
-    included.push(fitSingleEntry(windowed[0]!, offset, total, totals, warning, warnings));
+    // this page always includes at least one entry and nextOffset always advances past it. Named
+    // in `warnings` too -- the trailing "..." the shrink itself leaves behind is easy to miss.
+    const fitted = fitSingleEntry(windowed[0]!, offset, total, totals, warning, warnings);
+    included.push(fitted.entry);
+    const finalWarnings =
+      fitted.shrunkFields.length > 0
+        ? [...warnings, describeShrunkEntry(fitted.entry, fitted.shrunkFields)]
+        : warnings;
+    return buildScheduleResponseBody(included, offset, total, totals, warning, finalWarnings);
   }
 
   return buildScheduleResponseBody(included, offset, total, totals, warning, warnings);

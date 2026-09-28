@@ -362,6 +362,7 @@ describe("get_schedule tool", () => {
       offset: number;
       nextOffset?: number;
       total: number;
+      warnings?: string[];
     };
     // At least the oversized entry itself must come back -- not an empty page.
     expect(parsed.entries.length).toBeGreaterThanOrEqual(1);
@@ -374,6 +375,15 @@ describe("get_schedule tool", () => {
     // offset it started at -- the exact condition that made a naive paging loop forever.
     expect(parsed.nextOffset).toBeDefined();
     expect(parsed.nextOffset).toBeGreaterThan(parsed.offset);
+    // reviewer2's own follow-up: the only signal an entry was shortened used to be a trailing
+    // "..." on the field itself -- an agent relaying the attendee's own personal-time description
+    // verbatim could easily miss that. A warnings entry must name the entry (its title) and which
+    // field was shortened, not just the trailing ellipsis alone.
+    expect(parsed.warnings).toBeDefined();
+    const shrinkWarning = parsed.warnings!.find((w) => w.includes("Oversized block"));
+    expect(shrinkWarning).toBeDefined();
+    expect(shrinkWarning).toMatch(/description/i);
+    expect(shrinkWarning).toMatch(/shorten|truncat/i);
 
     // Paging must actually reach the sessions after it, not get stuck.
     const continued = await client.callTool({
