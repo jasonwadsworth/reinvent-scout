@@ -326,6 +326,65 @@ describe("get_schedule tool", () => {
     expect(continuedParsed.entries[0]!.sessionId).toBe(sessions[parsed.returned]!.sessionId);
   });
 
+  it("always advances past a single entry that alone exceeds the budget, truncating its own long fields rather than returning nothing", async () => {
+    // Reviewer's finding: a page whose very first entry alone exceeds the budget returned zero
+    // entries with nextOffset === offset -- an agent paging "until nextOffset is absent" loops
+    // forever on it. Reproduced with an oversized personal-time description (the OpenAPI schema
+    // caps this at 250 characters for a conforming API, but nothing here trusts that at runtime).
+    const oversizedPersonalTime: PersonalTime = {
+      personalTimeId: "pt-oversized",
+      startDateTime: "2026-12-01T08:00:00",
+      endDateTime: "2026-12-01T08:30:00",
+      title: "Oversized block",
+      description: "x".repeat(40 * 1024), // 40 KB alone, well past the 30 KB whole-response budget
+    };
+    const laterSessions = Array.from({ length: 20 }, (_, i) => ({
+      sessionId: `after-oversized-${i}`,
+      abbreviation: `AOS${i}`,
+      title: `Session after the oversized block ${i}`,
+      sessionTime: { date: "2026-12-01", time: `${String(9 + i).padStart(2, "0")}:00`, length: "30" },
+    }));
+    seedCatalog(home.path, laterSessions);
+    const client = await connectedClient(home.path, {
+      getSchedule: async () => ({
+        reserved: [],
+        favorites: laterSessions.map((s) => s.sessionId),
+        personalTime: [oversizedPersonalTime],
+      }),
+    });
+
+    const result = await client.callTool({ name: "get_schedule", arguments: {} });
+
+    expect(result.isError).not.toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(result), "utf8")).toBeLessThan(30 * 1024);
+    const parsed = JSON.parse(textOf(result)) as {
+      entries: Array<{ kind: string; personalTimeId?: string; description?: string }>;
+      offset: number;
+      nextOffset?: number;
+      total: number;
+    };
+    // At least the oversized entry itself must come back -- not an empty page.
+    expect(parsed.entries.length).toBeGreaterThanOrEqual(1);
+    expect(parsed.entries[0]!.personalTimeId).toBe("pt-oversized");
+    // Its own description was shrunk to fit -- the whole-response budget check above already
+    // proves it landed under 30 KB; this just confirms it's strictly smaller than the original 40 KB.
+    expect(parsed.entries[0]!.description!.length).toBeLessThan(oversizedPersonalTime.description.length);
+    expect(parsed.entries[0]!.description!.endsWith("...")).toBe(true);
+    // The decisive check: nextOffset must have genuinely advanced past this entry, not equal the
+    // offset it started at -- the exact condition that made a naive paging loop forever.
+    expect(parsed.nextOffset).toBeDefined();
+    expect(parsed.nextOffset).toBeGreaterThan(parsed.offset);
+
+    // Paging must actually reach the sessions after it, not get stuck.
+    const continued = await client.callTool({
+      name: "get_schedule",
+      arguments: { offset: parsed.nextOffset },
+    });
+    const continuedParsed = JSON.parse(textOf(continued)) as { entries: Array<{ sessionId: string }> };
+    expect(continuedParsed.entries.length).toBeGreaterThan(0);
+    expect(continuedParsed.entries[0]!.sessionId).toBe(laterSessions[0]!.sessionId);
+  });
+
   it("returns entries in stable sorted order across pages", async () => {
     const sessions = Array.from({ length: 6 }, (_, i) => ({
       sessionId: `order-${i}`,

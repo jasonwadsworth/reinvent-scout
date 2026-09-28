@@ -578,6 +578,62 @@ function buildScheduleResponseBody(
   };
 }
 
+/** Never shrinks a field below this many characters -- a floor against ever emptying it out
+ * entirely, not a target length; `shrinkLongestStringField` stops offering it up once it's this
+ * short, rather than continuing to chase a budget that field alone was never going to close. */
+const MIN_TRUNCATED_FIELD_LENGTH = 20;
+
+/** Shrinks `entry`'s own single longest string-valued field in place (mutates `entry`), replacing
+ * it with roughly half its current length plus an ellipsis -- repeatable, so a caller can call this
+ * in a loop until the entry fits. Returns `false`, doing nothing, once nothing left is worth
+ * shrinking (every string field already at or under `MIN_TRUNCATED_FIELD_LENGTH`), so a caller
+ * doesn't loop forever chasing a budget no amount of truncation can close. Only ever touches this
+ * one entry's own fields (a session's `title`/`venue`/`room`, personal time's own `title`/
+ * `description`/`location`) -- never `sessionId`/`personalTimeId`/`startsAt`/`endsAt`, none of
+ * which this function would ever pick anyway, since they're never the longest string present once
+ * a single free-text field is what actually blew the budget. */
+function shrinkLongestStringField(entry: Record<string, unknown>): boolean {
+  let longestKey: string | null = null;
+  let longestValue = "";
+  for (const [key, value] of Object.entries(entry)) {
+    if (typeof value === "string" && value.length > longestValue.length) {
+      longestKey = key;
+      longestValue = value;
+    }
+  }
+  if (longestKey === null || longestValue.length <= MIN_TRUNCATED_FIELD_LENGTH) {
+    return false;
+  }
+  const targetLength = Math.max(MIN_TRUNCATED_FIELD_LENGTH, Math.floor(longestValue.length / 2));
+  entry[longestKey] = `${longestValue.slice(0, targetLength)}...`;
+  return true;
+}
+
+/** Shrinks a *copy* of `entry`'s own longest string field, repeatedly, until a response holding
+ * just this one entry fits the budget, or there's nothing left worth shrinking. The lead's own
+ * decision, closing the reviewer's finding: a single entry that alone exceeds the budget must
+ * still come back -- truncated -- rather than being left out entirely, which returned an empty
+ * page with `nextOffset` equal to `offset`, looping forever for a caller paging "until nextOffset
+ * is absent." Never mutates the original entry (a shallow copy is shrunk instead), since the same
+ * `windowed` array this is called from is also used to build the *next* page if this one somehow
+ * still doesn't fit -- the original, untruncated value must survive for that attempt. */
+function fitSingleEntry(
+  entry: Record<string, unknown>,
+  offset: number,
+  total: number,
+  totals: GetScheduleResponse["totals"],
+  warning: string | null,
+  warnings: string[],
+): Record<string, unknown> {
+  const shrunk = { ...entry };
+  for (;;) {
+    const trial = buildScheduleResponseBody([shrunk], offset, total, totals, warning, warnings);
+    if (envelopeBytes(trial) <= RESPONSE_BYTE_BUDGET || !shrinkLongestStringField(shrunk)) {
+      return shrunk;
+    }
+  }
+}
+
 /** Enforces the byte budget on top of the already-windowed page: a page fitting the requested
  * `limit` can still exceed the budget if its entries are unusually long (long titles, rooms,
  * personal-time descriptions), so this checks the whole prospective response, in order, exactly
@@ -605,6 +661,13 @@ function buildScheduleResponse(
     }
     included.push(entry);
   }
+
+  if (included.length === 0 && windowed.length > 0) {
+    // Nothing fit -- not even the first entry alone. Shrink its own long fields until it does, so
+    // this page always includes at least one entry and nextOffset always advances past it.
+    included.push(fitSingleEntry(windowed[0]!, offset, total, totals, warning, warnings));
+  }
+
   return buildScheduleResponseBody(included, offset, total, totals, warning, warnings);
 }
 
