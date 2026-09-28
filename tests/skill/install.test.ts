@@ -16,6 +16,7 @@ import {
   MANIFEST_FILE_NAME,
   SKILL_NAME,
   SkillAlreadyInstalledError,
+  SymlinkEscapeError,
   installSkill,
   resolveDefaultSkillsDir,
   resolveWithinRoot,
@@ -209,6 +210,26 @@ describe("installSkill", () => {
       rmSync(outsideDir, { recursive: true, force: true });
     }
   });
+
+  it("refuses when SKILL.md itself is a dangling symlink escaping the target root, and writes nothing outside it (end to end)", () => {
+    // pr-reviewer's finding: conflictsWithExistingInstall uses existsSync, which reports false for
+    // a dangling symlink -- so this doesn't refuse first the way the hand-copied-file test above
+    // does. SKILL.md sorts first among the skill's own files (uppercase before lowercase), so it's
+    // the very first write the loop attempts, and must be the one that trips the guard.
+    const outsideDir = mkdtempSync(join(tmpdir(), "reinvent-scout-skill-outside-"));
+    try {
+      const installedPath = join(targetsDir, SKILL_NAME);
+      mkdirSync(installedPath, { recursive: true });
+      symlinkSync(join(outsideDir, "pwned.md"), join(installedPath, "SKILL.md"));
+
+      expect(() => installSkill({ sourceDir, targetsDir })).toThrow(SymlinkEscapeError);
+
+      // The decisive check: nothing was ever created at the symlink's target.
+      expect(existsSync(join(outsideDir, "pwned.md"))).toBe(false);
+    } finally {
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("resolveWithinRoot", () => {
@@ -276,5 +297,36 @@ describe("writeSkillFile", () => {
 
     expect(readFileSync(join(installedPath, "profiling.md"), "utf8")).toBe("Profiling guidance.\n");
     expect(hash).toBe(sha256("Profiling guidance.\n"));
+  });
+
+  it("refuses when the destination file itself is a dangling symlink, and writes nothing outside it", () => {
+    // pr-reviewer's finding: assertRealPathWithinRoot only guards the destination's *parent*
+    // directory -- a symlink swapped in for the file itself sails straight through it, and
+    // existsSync can't catch it either, since it reports false for a dangling link specifically.
+    const outsideDir = mkdtempSync(join(tmpdir(), "reinvent-scout-skill-outside-"));
+    try {
+      const installedPath = join(targetsDir, SKILL_NAME);
+      mkdirSync(installedPath, { recursive: true });
+      symlinkSync(join(outsideDir, "does-not-exist.md"), join(installedPath, "profiling.md"));
+
+      expect(() => writeSkillFile(sourceDir, installedPath, "profiling.md")).toThrow(
+        SymlinkEscapeError,
+      );
+
+      expect(readdirSync(outsideDir)).toHaveLength(0);
+    } finally {
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves no leftover temp file behind after a normal write", () => {
+    // Locks in the temp-file-then-rename write: the temp file used to avoid ever following a
+    // destination symlink during the write itself must not survive as debris next to the real one.
+    const installedPath = join(targetsDir, SKILL_NAME);
+    mkdirSync(installedPath, { recursive: true });
+
+    writeSkillFile(sourceDir, installedPath, "profiling.md");
+
+    expect(readdirSync(installedPath)).toEqual(["profiling.md"]);
   });
 });

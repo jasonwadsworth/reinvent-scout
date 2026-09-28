@@ -7,6 +7,8 @@ import {
   DEFAULT_SKILL_SOURCE_DIR,
   MANIFEST_FILE_NAME,
   SKILL_NAME,
+  SymlinkEscapeError,
+  assertNotSymlink,
   assertRealPathWithinRoot,
   listFilesRecursive,
   resolveDefaultSkillsDir,
@@ -16,6 +18,12 @@ import {
   type InstallSkillDeps,
   type InstallSkillManifest,
 } from "./install.js";
+
+// Re-exported so existing callers importing SymlinkEscapeError from this module (the manifest-key
+// validation below still throws it) keep working -- the class itself now lives in install.ts,
+// since writeSkillFile's own file-level symlink guard needs to throw it too, and install.ts can't
+// import from update.ts without a cycle.
+export { SymlinkEscapeError };
 
 export interface UpdateSkillDeps extends InstallSkillDeps {
   /** Overwrite every locally modified file instead of refusing the whole update. Defaults to
@@ -66,28 +74,6 @@ export class SkillDirectoryUntrackedError extends Error {
         "remove the directory and run `skill install`.",
     );
     this.name = "SkillDirectoryUntrackedError";
-  }
-}
-
-/**
- * Thrown when a path inside the installed skill directory turns out to be a symlink resolving
- * outside it -- caught while validating an old manifest's own keys (a key's parent directory
- * exists but its real path, via `assertRealPathWithinRoot`, lands outside the install root).
- * Deliberately a different error from `CorruptManifestError`: the manifest's own keys are fine --
- * "reference/profiling.md" is a perfectly ordinary relative path -- the problem is the filesystem
- * underneath it, not anything the manifest says. Reviewer's finding: the first version of this
- * check folded this case into `CorruptManifestError`'s own "names a path outside the install
- * directory" wording, which sent a user investigating their manifest's contents instead of the
- * actual symlink sitting in their install directory.
- */
-export class SymlinkEscapeError extends Error {
-  constructor(escapingPaths: readonly string[], installedPath: string) {
-    super(
-      `${escapingPaths.join(", ")} resolve${escapingPaths.length === 1 ? "s" : ""} outside ` +
-        `${installedPath} through a symlink. Remove or replace ${escapingPaths.length === 1 ? "it" : "them"}, ` +
-        "then run `reinvent-scout skill update` again.",
-    );
-    this.name = "SymlinkEscapeError";
   }
 }
 
@@ -268,6 +254,10 @@ export function updateSkill(deps: UpdateSkillDeps = {}): UpdateSkillResult {
 
   for (const [relPath, oldHash] of Object.entries(oldManifest.files)) {
     const filePath = join(installedPath, relPath);
+    // Checked before existsSync, and unconditionally: existsSync follows a symlink and reports
+    // false for a dangling one specifically, which would otherwise skip straight past this file as
+    // "already gone" while assertNotSymlink still needs to see -- and refuse on -- it either way.
+    assertNotSymlink(filePath, installedPath);
     if (!existsSync(filePath)) {
       // Already gone (removed by hand, or by a previous update) -- nothing left to protect.
       continue;
@@ -282,6 +272,7 @@ export function updateSkill(deps: UpdateSkillDeps = {}): UpdateSkillResult {
       continue; // already checked above
     }
     const filePath = join(installedPath, relPath);
+    assertNotSymlink(filePath, installedPath);
     if (!existsSync(filePath)) {
       continue; // nothing there yet -- safe to write
     }

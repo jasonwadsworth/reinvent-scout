@@ -1,6 +1,7 @@
 import type { Command } from "commander";
 import {
   SkillAlreadyInstalledError,
+  SymlinkEscapeError,
   installSkill,
   type InstallSkillDeps,
   type InstallSkillResult,
@@ -9,7 +10,6 @@ import {
   CorruptManifestError,
   SkillDirectoryUntrackedError,
   SkillNotInstalledError,
-  SymlinkEscapeError,
   updateSkill,
   type UpdateSkillDeps,
   type UpdateSkillResult,
@@ -61,7 +61,7 @@ export function registerSkillCommands(program: Command, deps: SkillCommandDeps =
         const result = install({ ...(options.dir === undefined ? {} : { targetsDir: options.dir }) });
         print(`Installed ${result.fileCount} ${pluralize(result.fileCount, "file")} to ${result.installedPath}`);
       } catch (err) {
-        if (err instanceof SkillAlreadyInstalledError) {
+        if (err instanceof SkillAlreadyInstalledError || err instanceof SymlinkEscapeError) {
           print(err.message);
           process.exitCode = 1;
           return;

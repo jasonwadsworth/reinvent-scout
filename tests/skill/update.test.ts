@@ -481,4 +481,56 @@ describe("updateSkill", () => {
       rmSync(outsideDir, { recursive: true, force: true });
     }
   });
+
+  it("refuses as a symlink escape, not a false 'modified locally', when an installed file is swapped for a symlink without --force", () => {
+    // pr-reviewer's finding, isolated to the read-only path specifically: without --force,
+    // updateSkill never reaches writeSkillFile's own write-time guard at all (a modified file
+    // refuses the whole update before any write is attempted), so this scenario can only be caught
+    // by lstat'ing the destination in the hash-read loop itself -- reading straight through the
+    // symlink to hash whatever it points at would otherwise misdiagnose this as an ordinary local
+    // edit ("modified locally") rather than the symlink it actually is.
+    installSkill({ sourceDir: sourceDirV1, targetsDir, packageVersion: "1.0.0" });
+    const installedPath = join(targetsDir, SKILL_NAME);
+    const outsideDir = mkdtempSync(join(tmpdir(), "reinvent-scout-skill-file-symlink-nf-"));
+    try {
+      const outsideFile = join(outsideDir, "victim.md");
+      writeFileSync(outsideFile, "victim content, must never be touched\n");
+      rmSync(join(installedPath, "SKILL.md"));
+      symlinkSync(outsideFile, join(installedPath, "SKILL.md"));
+
+      expect(() =>
+        updateSkill({ sourceDir: sourceDirV2, targetsDir, packageVersion: "2.0.0" }),
+      ).toThrow(SymlinkEscapeError);
+
+      expect(readFileSync(outsideFile, "utf8")).toBe("victim content, must never be touched\n");
+    } finally {
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses when an installed file itself is a symlink escaping the target root, even under --force, and writes nothing outside it", () => {
+    // pr-reviewer's finding: the parent-directory-only guard let SKILL.md itself be swapped for a
+    // symlink to an outside file. A plain update misdiagnosed this as "modified locally" (it read
+    // straight through the link to hash the *outside* file's content against the recorded hash),
+    // and --force then overwrote that outside file with the new SKILL.md content. lstat'ing the
+    // destination itself, before any hash read, must catch this regardless of --force -- force
+    // overwrites content this tool tracks, not a symlink pointing somewhere else entirely.
+    installSkill({ sourceDir: sourceDirV1, targetsDir, packageVersion: "1.0.0" });
+    const installedPath = join(targetsDir, SKILL_NAME);
+    const outsideDir = mkdtempSync(join(tmpdir(), "reinvent-scout-skill-file-symlink-"));
+    try {
+      const outsideFile = join(outsideDir, "victim.md");
+      writeFileSync(outsideFile, "victim content, must never be touched\n");
+      rmSync(join(installedPath, "SKILL.md"));
+      symlinkSync(outsideFile, join(installedPath, "SKILL.md"));
+
+      expect(() =>
+        updateSkill({ sourceDir: sourceDirV2, targetsDir, packageVersion: "2.0.0", force: true }),
+      ).toThrow(SymlinkEscapeError);
+
+      expect(readFileSync(outsideFile, "utf8")).toBe("victim content, must never be touched\n");
+    } finally {
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
+  });
 });

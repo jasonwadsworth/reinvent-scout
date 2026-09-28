@@ -1,7 +1,16 @@
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir as osHomedir } from "node:os";
-import { dirname, join, resolve, sep } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readPackageVersion } from "../cli/version.js";
 
@@ -146,6 +155,58 @@ export function assertRealPathWithinRoot(root: string, parentDir: string): void 
   }
 }
 
+/**
+ * Thrown when a path inside the installed skill directory turns out to be a symlink resolving
+ * outside it -- either the destination itself (a tracked file swapped for a symlink to somewhere
+ * else, dangling or not: `writeSkillFile`'s and `updateSkill`'s own hash-read loops both check via
+ * `assertNotSymlink`) or a parent directory along the way (an old manifest's own key validation:
+ * `assertRealPathWithinRoot`, in `skill/update.ts`). Deliberately a different error from
+ * `CorruptManifestError`: nothing about a manifest's own text, or a file's own name, is wrong here
+ * -- the problem is the filesystem underneath it, not anything a manifest or a relative path says.
+ * Reviewer's finding: the first version of this check folded the parent-directory case into
+ * `CorruptManifestError`'s own "names a path outside the install directory" wording, which sent a
+ * user investigating their manifest's contents instead of the actual symlink sitting in their
+ * install directory.
+ */
+export class SymlinkEscapeError extends Error {
+  constructor(escapingPaths: readonly string[], installedPath: string) {
+    super(
+      `${escapingPaths.join(", ")} resolve${escapingPaths.length === 1 ? "s" : ""} outside ` +
+        `${installedPath} through a symlink. Remove or replace ${escapingPaths.length === 1 ? "it" : "them"}, ` +
+        "then try again.",
+    );
+    this.name = "SymlinkEscapeError";
+  }
+}
+
+/**
+ * Refuses (throws `SymlinkEscapeError`) when `destPath` is itself a symlink, whether or not its
+ * target exists. Reviewer's finding: `assertRealPathWithinRoot` only guards a destination's
+ * *parent* directory -- a tracked file itself swapped for a symlink (`SKILL.md` replaced with a
+ * symlink to some file outside the install directory) sails straight through it, and
+ * `writeFileSync`/`readFileSync` then follow the link transparently, writing to (or reading from)
+ * whatever it points at. `existsSync` can't stand in for this check: it follows the link too, and
+ * reports `false` for a dangling one specifically -- exactly the case that must still be caught,
+ * since a dangling symlink is not "nothing there yet," it's something there that must not be
+ * written through. `lstatSync` never follows the final path component, so it sees the link itself
+ * regardless of whether its target exists. Never unlinks or otherwise touches what it finds --
+ * refusing is the only outcome, even under `--force` (see `updateSkill`), since `--force` overwrites
+ * content this tool itself tracks, not a symlink pointing somewhere else entirely.
+ */
+export function assertNotSymlink(destPath: string, installedPath: string): void {
+  let isSymlink = false;
+  try {
+    isSymlink = lstatSync(destPath).isSymbolicLink();
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw err;
+    }
+  }
+  if (isSymlink) {
+    throw new SymlinkEscapeError([destPath], installedPath);
+  }
+}
+
 /** Exported so `skill/update.ts` can hash a locally-installed file's current content the exact
  * same way, to compare against what an old manifest recorded. */
 export function sha256Hex(content: Buffer): string {
@@ -153,20 +214,28 @@ export function sha256Hex(content: Buffer): string {
 }
 
 /**
- * Writes one skill content file from `sourceDir` into `installedPath`, guarded by both
- * `resolveWithinRoot` (lexical) and `assertRealPathWithinRoot` (symlink-aware) before anything
- * touches disk, and returns its sha256 hash for the manifest. The one place both `installSkill`'s
- * and `updateSkill`'s own write loops go through -- a single shared function, not two textually
- * similar copies of the same few lines that could quietly drift out of sync with each other,
- * carrying (or losing) the guard independently.
+ * Writes one skill content file from `sourceDir` into `installedPath`, guarded by
+ * `resolveWithinRoot` (lexical), `assertRealPathWithinRoot` (a symlinked *parent* directory) and
+ * `assertNotSymlink` (the destination file *itself* a symlink) before anything touches disk, and
+ * returns its sha256 hash for the manifest. The actual write goes through a temp file in the same
+ * directory, then an atomic rename over the destination -- `rename(2)` replaces whatever directory
+ * entry is there (a stale regular file from a previous install, most often) without ever following
+ * it, so even a symlink slipped in between the `assertNotSymlink` check above and this write can't
+ * make the write land outside the install directory. The one place both `installSkill`'s and
+ * `updateSkill`'s own write loops go through -- a single shared function, not two textually similar
+ * copies of the same few lines that could quietly drift out of sync with each other, carrying (or
+ * losing) the guard independently.
  */
 export function writeSkillFile(sourceDir: string, installedPath: string, relPath: string): string {
   const destPath = resolveWithinRoot(installedPath, relPath);
   const destParent = dirname(destPath);
   mkdirSync(destParent, { recursive: true });
   assertRealPathWithinRoot(installedPath, destParent);
+  assertNotSymlink(destPath, installedPath);
   const content = readFileSync(join(sourceDir, relPath));
-  writeFileSync(destPath, content);
+  const tempPath = join(destParent, `.${basename(destPath)}.${randomUUID()}.tmp`);
+  writeFileSync(tempPath, content);
+  renameSync(tempPath, destPath);
   return sha256Hex(content);
 }
 
