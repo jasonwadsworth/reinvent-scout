@@ -1,7 +1,8 @@
 import type { Command } from "commander";
 import { createApiClient, type ApiClient } from "../../api/client.js";
 import { createTokenProviderAdapter } from "../../auth/provider-adapter.js";
-import { readTimezoneAvailability } from "../../catalog/store.js";
+import type { IndexRecord } from "../../catalog/index-record.js";
+import { readIndex, readTimezoneAvailability } from "../../catalog/store.js";
 import { DEFAULT_EVENT_ID } from "../../catalog/sync.js";
 import { AuthRequiredError, NotRegisteredError, ValidationError } from "../../core/errors.js";
 import { ensureStoreRoot } from "../../core/paths.js";
@@ -230,13 +231,36 @@ function formatFailureLine(failure: FavoriteSessionsResult["failed"][number]): s
   return `  ${parts.join(" -- ")}`;
 }
 
-function formatFavoriteResultHuman(result: FavoriteSessionsResult): string {
+/** `abbreviation -- title` when the local catalog index has a record for `sessionId`, or the bare
+ * id unchanged when it doesn't (unsynced, or synced after the id was favorited) -- the same
+ * fallback `schedule show`'s own session lines already use for an id the index has no record for.
+ * Reviewer's finding: a `schedule favorite` run against a real shortlist (the README's own
+ * `match --json | jq | schedule favorite -` pipe, thirty ids at once) printed thirty bare session
+ * ids with nothing to tell them apart at a glance -- `failed`'s own `scheduleConflict` entries
+ * already got resolved titles; a real success deserves the same. */
+function resolveSessionDisplay(sessionId: string, index: IndexRecord[] | null): string {
+  const record = index?.find((candidate) => candidate.sessionId === sessionId);
+  if (record === undefined) {
+    return sessionId;
+  }
+  return `${record.abbreviation ?? record.sessionId} -- ${record.title}`;
+}
+
+function formatFavoriteResultHuman(result: FavoriteSessionsResult, index: IndexRecord[] | null): string {
   const lines: string[] = [];
-  lines.push(
-    result.successful.length > 0 ? `Favorited: ${result.successful.join(", ")}` : "Favorited: none.",
-  );
+  if (result.successful.length > 0) {
+    lines.push("Favorited:");
+    for (const sessionId of result.successful) {
+      lines.push(`  ${resolveSessionDisplay(sessionId, index)}`);
+    }
+  } else {
+    lines.push("Favorited: none.");
+  }
   if (result.alreadyFavorited.length > 0) {
-    lines.push(`Already favorited: ${result.alreadyFavorited.join(", ")}`);
+    lines.push("Already favorited:");
+    for (const sessionId of result.alreadyFavorited) {
+      lines.push(`  ${resolveSessionDisplay(sessionId, index)}`);
+    }
   }
   if (result.failed.length > 0) {
     lines.push("Refused:");
@@ -336,7 +360,11 @@ export function registerScheduleCommands(program: Command, deps: ScheduleCommand
           eventId: options.event,
         });
 
-        print(options.json ? JSON.stringify(result) : formatFavoriteResultHuman(result));
+        print(
+          options.json
+            ? JSON.stringify(result)
+            : formatFavoriteResultHuman(result, readIndex({ storeRoot })),
+        );
         if (result.failed.length > 0) {
           process.exitCode = 1;
         }

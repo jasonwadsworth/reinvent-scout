@@ -273,6 +273,53 @@ describe("schedule favorite", () => {
     expect(output).toMatch(/scheduleConflict/);
   });
 
+  it("prints a real success with its abbreviation and title, not a bare session id", async () => {
+    // Reviewer's finding: a real run against a shortlist of thirty (the README's own
+    // match --json | jq | schedule favorite - pipe) printed thirty bare session ids with nothing
+    // to tell them apart at a glance -- scheduleConflict refusals already got resolved titles; a
+    // real success deserves the same.
+    seedFixtureCatalog(home.path);
+    const h = harness(home.path, {
+      associateFavorites: async () => ({ successful: [ANT301.sessionId], failed: [] }),
+      getSchedule: async () => ({ reserved: [], favorites: [ANT301.sessionId], personalTime: [] }),
+    });
+
+    await h.run(["schedule", "favorite", ANT301.sessionId]);
+
+    const output = h.printed.join("\n");
+    expect(output).toContain(`${ANT301.abbreviation} -- ${ANT301.title}`);
+    expect(output).not.toContain(ANT301.sessionId);
+  });
+
+  it("prints an already-favorited id with its abbreviation and title too", async () => {
+    seedFixtureCatalog(home.path);
+    const h = harness(home.path, {
+      associateFavorites: async () => ({
+        successful: [],
+        failed: [{ sessionId: ANT301.sessionId, code: "alreadyFavorited" }],
+      }),
+      getSchedule: async () => ({ reserved: [], favorites: [ANT301.sessionId], personalTime: [] }),
+    });
+
+    await h.run(["schedule", "favorite", ANT301.sessionId]);
+
+    const output = h.printed.join("\n");
+    expect(output).toContain(`${ANT301.abbreviation} -- ${ANT301.title}`);
+  });
+
+  it("falls back to the bare session id when the local catalog has no record for it", async () => {
+    seedFixtureCatalog(home.path);
+    const h = harness(home.path, {
+      associateFavorites: async () => ({ successful: ["not-in-any-catalog"], failed: [] }),
+      getSchedule: async () => ({ reserved: [], favorites: ["not-in-any-catalog"], personalTime: [] }),
+    });
+
+    await h.run(["schedule", "favorite", "not-in-any-catalog"]);
+
+    const output = h.printed.join("\n");
+    expect(output).toContain("not-in-any-catalog");
+  });
+
   it("prints the real successes plus the sign-in instruction, and exits non-zero, when auth is interrupted mid-run", async () => {
     // Lead's decision on reviewer2's own finding: a session-wide auth failure that surfaces after
     // an earlier chunk already wrote something must not make the CLI report nothing happened.
@@ -291,7 +338,10 @@ describe("schedule favorite", () => {
     await h.run(["schedule", "favorite", ...ids]);
 
     const output = h.printed.join("\n");
-    expect(output).toContain("Favorited: " + ids.slice(0, 10).join(", "));
+    // No catalog seeded in this test, so each id falls back to its bare form -- one per line.
+    for (const id of ids.slice(0, 10)) {
+      expect(output).toContain(`  ${id}`);
+    }
     expect(output).toContain("Stopped early:");
     expect(output).toMatch(/auth login/);
     expect(process.exitCode).toBe(1);
