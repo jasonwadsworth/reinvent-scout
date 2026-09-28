@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -248,6 +249,25 @@ describe("installSkill", () => {
       rmSync(outsideDir, { recursive: true, force: true });
     }
   });
+
+  it("refuses when the manifest path itself is a dangling symlink on an otherwise-empty target, and writes nothing outside it (end to end)", () => {
+    // reviewer2's F6: conflictsWithExistingInstall checks the manifest with existsSync, which
+    // reports false for a dangling symlink -- so an empty target holding only a dangling manifest
+    // symlink isn't refused up front either. The manifest write happens last, after every content
+    // file, so this proves the guard is reached even then.
+    const outsideDir = mkdtempSync(join(tmpdir(), "reinvent-scout-skill-outside-"));
+    try {
+      const installedPath = join(targetsDir, SKILL_NAME);
+      mkdirSync(installedPath, { recursive: true });
+      symlinkSync(join(outsideDir, "pwned-manifest.json"), join(installedPath, MANIFEST_FILE_NAME));
+
+      expect(() => installSkill({ sourceDir, targetsDir })).toThrow(SymlinkEscapeError);
+
+      expect(existsSync(join(outsideDir, "pwned-manifest.json"))).toBe(false);
+    } finally {
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("resolveWithinRoot", () => {
@@ -348,39 +368,55 @@ describe("writeSkillFile", () => {
     expect(readdirSync(installedPath)).toEqual(["profiling.md"]);
   });
 
-  it("reviewer2's ask: writes the temp file in the same directory as the destination, not elsewhere", () => {
-    // Forces the rename step itself to fail (an empty directory occupies the destination) so the
-    // temp file survives to inspect, rather than needing to intercept the write mid-flight -- proof
-    // it was created in destParent specifically, which is what makes the rename same-filesystem and
-    // therefore atomic (a temp directory elsewhere could straddle filesystems, where rename(2) isn't
-    // atomic, or fails outright with EXDEV).
+  it("reviewer2's ask: creates its temp file inside the destination directory, not elsewhere", () => {
+    // Proven without needing to inspect a leftover artifact (there isn't one -- see the cleanup
+    // test below): making the destination directory itself read-only fails the temp file's own
+    // creation specifically because of destParent's permissions. If the temp file were instead
+    // created somewhere else (a system temp directory, say), this directory's permissions
+    // wouldn't matter and the write would succeed regardless.
     const installedPath = join(targetsDir, SKILL_NAME);
     mkdirSync(installedPath, { recursive: true });
-    mkdirSync(join(installedPath, "profiling.md")); // occupies the destination as a directory
+    chmodSync(installedPath, 0o500); // read + execute, no write
+    try {
+      expect(() => writeSkillFile(sourceDir, installedPath, "profiling.md")).toThrow(
+        /EACCES|EPERM/,
+      );
+    } finally {
+      chmodSync(installedPath, 0o700);
+    }
+  });
+
+  it("cleans up its own temp file when the write fails partway, leaving no debris", () => {
+    // Lead's decision, on top of reviewer2's F3/F6/F7 manifest findings: a temp file left behind by
+    // a failed write (as opposed to one orphaned by an actual process crash, which no in-process
+    // cleanup can ever catch) must not accumulate as junk in the install directory.
+    const installedPath = join(targetsDir, SKILL_NAME);
+    mkdirSync(installedPath, { recursive: true });
+    mkdirSync(join(installedPath, "profiling.md")); // occupies the destination, failing the rename
 
     expect(() => writeSkillFile(sourceDir, installedPath, "profiling.md")).toThrow();
 
     const leftovers = readdirSync(installedPath).filter((name) => name !== "profiling.md");
-    expect(leftovers).toHaveLength(1);
-    expect(leftovers[0]).toMatch(/^\.profiling\.md\..+\.tmp$/);
+    expect(leftovers).toEqual([]);
   });
 
-  it("reviewer2's ask: a leftover temp file from a previous crash doesn't prevent a later successful write", () => {
+  it("reviewer2's ask: a leftover temp file from an earlier interrupted process doesn't block a later successful write", () => {
+    // Simulates the one kind of leftover no in-process cleanup can prevent -- the process itself
+    // killed between the temp write and the rename -- by planting a temp file by hand rather than
+    // by making writeSkillFile fail (which now cleans up after itself, per the test above). A fresh
+    // write must still succeed, generating its own randomly-named temp file that can't collide with
+    // the stale one.
     const installedPath = join(targetsDir, SKILL_NAME);
     mkdirSync(installedPath, { recursive: true });
-    mkdirSync(join(installedPath, "profiling.md"));
-    expect(() => writeSkillFile(sourceDir, installedPath, "profiling.md")).toThrow();
-    const leftoverBefore = readdirSync(installedPath).filter((name) => name !== "profiling.md");
-    expect(leftoverBefore).toHaveLength(1);
-
-    // Clear the obstruction -- but deliberately not the leftover temp file -- and retry: a fresh,
-    // randomly-named temp file must not collide with the stale one left behind by the failed
-    // attempt, and the retry must still succeed.
-    rmSync(join(installedPath, "profiling.md"), { recursive: true });
+    const staleTempFile = join(installedPath, ".profiling.md.stale-leftover.tmp");
+    writeFileSync(staleTempFile, "orphaned by a simulated crash\n");
 
     const hash = writeSkillFile(sourceDir, installedPath, "profiling.md");
 
     expect(readFileSync(join(installedPath, "profiling.md"), "utf8")).toBe("Profiling guidance.\n");
     expect(hash).toBe(sha256("Profiling guidance.\n"));
+    // The stale leftover is someone else's mess, from a crash this write had no part in -- left
+    // alone, not silently swept up as a side effect of an unrelated write.
+    expect(readFileSync(staleTempFile, "utf8")).toBe("orphaned by a simulated crash\n");
   });
 });

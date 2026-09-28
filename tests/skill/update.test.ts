@@ -586,4 +586,25 @@ describe("updateSkill", () => {
       rmSync(outsideDir, { recursive: true, force: true });
     }
   });
+
+  it("refuses when the manifest path is a dangling symlink on a manifest-less directory, even in the adopt path under --force", () => {
+    // reviewer2's F7: a hand-copied directory with real content but no manifest at all still goes
+    // through the adopt branch's own manifest write at the end -- the dangling manifest symlink
+    // must be caught there too, not just on the "manifest already exists" branch F3 covers.
+    const installedPath = join(targetsDir, SKILL_NAME);
+    mkdirSync(installedPath, { recursive: true });
+    writeFileSync(join(installedPath, "SKILL.md"), "hand\n");
+    const outsideDir = mkdtempSync(join(tmpdir(), "reinvent-scout-skill-adopt-manifest-symlink-"));
+    try {
+      symlinkSync(join(outsideDir, "pwned-manifest.json"), join(installedPath, MANIFEST_FILE_NAME));
+
+      expect(() =>
+        updateSkill({ sourceDir: sourceDirV1, targetsDir, packageVersion: "1.0.0", force: true }),
+      ).toThrow(SymlinkEscapeError);
+
+      expect(existsSync(join(outsideDir, "pwned-manifest.json"))).toBe(false);
+    } finally {
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
+  });
 });

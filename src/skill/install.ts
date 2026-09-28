@@ -1,18 +1,14 @@
-import { createHash, randomUUID } from "node:crypto";
-import {
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  realpathSync,
-  renameSync,
-  writeFileSync,
-} from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { homedir as osHomedir } from "node:os";
-import { basename, dirname, join, resolve, sep } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { writeFileAtomic } from "../core/atomic-write.js";
 import { readPackageVersion } from "../cli/version.js";
+
+/** Plain, world-readable content -- nothing here is a secret the way a token or a saved profile
+ * is, matching the mode a bare `writeFileSync` would produce under a typical umask. */
+const SKILL_FILE_MODE = 0o644;
 
 /** The name this skill installs under, and the one name `skill update` (task 9) looks for --
  * matches the source directory name, `skills/reinvent-scout`, and the product name everywhere
@@ -214,16 +210,15 @@ export function sha256Hex(content: Buffer): string {
 }
 
 /**
- * Writes `content` to `destPath`, guarded by `assertNotSymlink` and via a temp file in the same
- * directory (`destParent`) plus an atomic rename over the destination -- `rename(2)` replaces
- * whatever directory entry is there (a stale regular file from a previous install or update, most
- * often) without ever following it, so even a symlink slipped in between the `assertNotSymlink`
- * check and this write can't turn the write into one landing outside the install directory. The
- * temp file's name is randomized (`randomUUID`) so concurrent or interrupted writes to the same
- * destination can never collide with each other, and it lives in `destParent` specifically --
- * never a system temp directory -- so the rename is always same-filesystem and therefore atomic; a
- * leftover temp file from a process that crashed between the write and the rename is harmless to a
- * later run, since that run generates its own fresh, differently-named one.
+ * Writes `content` to `destPath`, guarded by `assertNotSymlink`, then via `writeFileAtomic`
+ * (`src/core/atomic-write.ts` -- the same temp-file-in-the-same-directory-plus-rename write every
+ * other store in this project already uses for exactly this reason). `rename(2)` replaces whatever
+ * directory entry is there (a stale regular file from a previous install or update, most often)
+ * without ever following it, so even a symlink slipped in between the `assertNotSymlink` check and
+ * this write can't turn the write into one landing outside the install directory. `writeFileAtomic`
+ * itself unlinks its temp file if the write or the rename fails, so a failed write leaves no debris
+ * behind -- only a process actually killed mid-write, which no in-process cleanup can ever catch,
+ * can still leave one, and its randomized name guarantees a later write can't collide with it.
  *
  * Reviewer's finding (F3): the install manifest itself is just as reachable through this exact
  * attack as any content file -- swapped for a symlink, a plain `writeFileSync` at its path would
@@ -232,10 +227,7 @@ export function sha256Hex(content: Buffer): string {
  */
 export function writeGuardedFile(destPath: string, installedPath: string, content: string | Buffer): void {
   assertNotSymlink(destPath, installedPath);
-  const destParent = dirname(destPath);
-  const tempPath = join(destParent, `.${basename(destPath)}.${randomUUID()}.tmp`);
-  writeFileSync(tempPath, content);
-  renameSync(tempPath, destPath);
+  writeFileAtomic(destPath, () => content, { mode: SKILL_FILE_MODE });
 }
 
 /**
