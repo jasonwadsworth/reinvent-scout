@@ -11,7 +11,7 @@ import {
   type CatalogMeta,
 } from "../../src/catalog/store.js";
 import { DEFAULT_EVENT_ID } from "../../src/catalog/sync.js";
-import { NotFoundError, ServiceError } from "../../src/core/errors.js";
+import { AuthRequiredError, NotFoundError, NotRegisteredError, ServiceError, ThrottledError } from "../../src/core/errors.js";
 import { favoriteSessions, unfavoriteSession } from "../../src/schedule/favorites.js";
 import { createFakeFetch } from "../helpers/fake-fetch.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
@@ -46,9 +46,31 @@ function fakeSleep(): { sleep: (ms: number) => Promise<void>; durations: number[
 }
 
 /** A fixed clock -- favoriteSessions never needs wall time to advance on its own; only `sleep`
- * being called (or not) is what these tests assert. */
+ * being called (or not) is what these tests assert. Safe whenever a single call needs at most one
+ * pacer wait -- `acquire` computes its own wait analytically from the entries on hand and never
+ * re-checks `now()` mid-wait, so a clock that never advances still produces the correct duration.
+ * Only a scenario that needs *more than one* wait within the same run of calls (see `stepClock`
+ * below) actually depends on `now()` reflecting real elapsed time. */
 function fixedClock(at: number): () => number {
   return () => at;
+}
+
+/** A clock whose `sleep` advances its own `now()` by exactly the duration slept, so a scenario
+ * spanning more than one pacer wait (e.g. enough ids that two separate chunks each have to wait
+ * for the rolling window to clear) sees an accurate elapsed time on the second wait, the same way
+ * the real `Date.now` + real `sleep` pairing would in production. `fixedClock` above is enough
+ * for anything needing at most one wait; this is only needed when that's not true. */
+function stepClock(startAt = 0): { now: () => number; sleep: (ms: number) => Promise<void>; durations: number[] } {
+  let current = startAt;
+  const durations: number[] = [];
+  return {
+    now: () => current,
+    sleep: async (ms: number) => {
+      durations.push(ms);
+      current += ms;
+    },
+    durations,
+  };
 }
 
 function emptySchedule(): Schedule {
@@ -285,9 +307,12 @@ describe("favoriteSessions", () => {
   });
 
   it("paces requests to stay within thirty session units per minute", async () => {
-    // 40 ids -> four chunks of ten. The bucket starts full at 30: chunks one through three spend
-    // exactly the whole budget (10 + 10 + 10 = 30) with no wait, and the fourth needs ten more
-    // units from an empty bucket -- a full ten-unit wait is 60000 * (10/30) = 20000ms exactly.
+    // 40 ids -> four chunks of ten. The rolling window starts empty: chunks one through three
+    // spend the whole budget (10 + 10 + 10 = 30) with no wait, and the fourth can't fit until the
+    // *oldest* ten units age fully out of the trailing 60-second window -- a full 60 s wait, not a
+    // fractional one computed from a refill rate (the pacer is a sliding window log, not a
+    // continuously-refilling token bucket -- see acquire's own doc comment for why that
+    // distinction matters).
     const ids = Array.from({ length: 40 }, (_, i) => `s${i}`);
     const sleeper = fakeSleep();
     const apiClient: Pick<ApiClient, "associateFavorites" | "getSchedule"> = {
@@ -302,7 +327,7 @@ describe("favoriteSessions", () => {
       now: fixedClock(0),
     });
 
-    expect(sleeper.durations).toEqual([20_000]);
+    expect(sleeper.durations).toEqual([60_000]);
   });
 
   it("re-reads the schedule exactly once after writing, regardless of chunk count", async () => {
@@ -328,7 +353,8 @@ describe("favoriteSessions", () => {
     // pacer, and never blocks on it either. If it did, this test's zero-argument sleep call count
     // below would catch it, since none of the ids here need a wait on the write side alone.
     expect(getScheduleCalls).toBe(1);
-    expect(result.verified.favorited.sort()).toEqual([...ids].sort());
+    expect(result.verified).not.toBeNull();
+    expect(result.verified!.favorited.sort()).toEqual([...ids].sort());
   });
 
   it("reports a mismatch when the API claims success but the read-back does not confirm it", async () => {
@@ -347,7 +373,8 @@ describe("favoriteSessions", () => {
     });
 
     expect(result.successful).toEqual(["a"]);
-    expect(result.verified.favorited).toEqual([]);
+    expect(result.verified).not.toBeNull();
+    expect(result.verified!.favorited).toEqual([]);
     expect(result.mismatch).toEqual(["a"]);
   });
 
@@ -431,6 +458,262 @@ describe("favoriteSessions", () => {
 
     expect(callCount).toBe(4);
     expect(calls).toEqual([]);
+  });
+
+  it("shares its rate window across back-to-back calls against the same store root", async () => {
+    // Reviewer's finding: a bucket created fresh inside every call let two calls in a row against
+    // the *same* store root (the MCP server's long-lived process is exactly this shape) each spend
+    // the full thirty-unit budget immediately -- sixty units in an instant against a thirty-unit
+    // quota. The second call here must see the first call's own spending and wait accordingly.
+    const sleeper = fakeSleep();
+    const apiClient: Pick<ApiClient, "associateFavorites" | "getSchedule"> = {
+      associateFavorites: async (_eventId, sessionIds) => ({ successful: sessionIds, failed: [] }),
+      getSchedule: async () => emptySchedule(),
+    };
+
+    const firstIds = Array.from({ length: 30 }, (_, i) => `first-${i}`); // spends the whole window
+    await favoriteSessions(firstIds, {
+      apiClient,
+      storeRoot: home.path,
+      sleep: sleeper.sleep,
+      now: fixedClock(0),
+    });
+    expect(sleeper.durations).toEqual([]);
+
+    const secondIds = ["second-0"]; // one more chunk, same store root, same instant
+    await favoriteSessions(secondIds, {
+      apiClient,
+      storeRoot: home.path,
+      sleep: sleeper.sleep,
+      now: fixedClock(0),
+    });
+
+    expect(sleeper.durations).toEqual([60_000]);
+  });
+
+  it("gives a different store root its own, independent rate window", async () => {
+    // reviewer2's own probe: separate store roots must not share -- or be blocked by -- a window
+    // that belongs to an unrelated one.
+    const sleeper = fakeSleep();
+    const apiClient: Pick<ApiClient, "associateFavorites" | "getSchedule"> = {
+      associateFavorites: async (_eventId, sessionIds) => ({ successful: sessionIds, failed: [] }),
+      getSchedule: async () => emptySchedule(),
+    };
+    const otherHome = createTempHome();
+    try {
+      const firstIds = Array.from({ length: 30 }, (_, i) => `first-${i}`);
+      await favoriteSessions(firstIds, {
+        apiClient,
+        storeRoot: home.path,
+        sleep: sleeper.sleep,
+        now: fixedClock(0),
+      });
+
+      const secondIds = ["second-0"];
+      await favoriteSessions(secondIds, {
+        apiClient,
+        storeRoot: otherHome.path,
+        sleep: sleeper.sleep,
+        now: fixedClock(0),
+      });
+
+      expect(sleeper.durations).toEqual([]);
+    } finally {
+      otherHome.cleanup();
+    }
+  });
+
+  it("sends thirty units immediately and the remaining twenty only after the oldest ten age out, for fifty ids in one call", async () => {
+    // The lead's own decision, verbatim: "50 ids send 30 at once, then 20 after 60 s." Needs a
+    // clock whose `sleep` actually advances `now()` -- chunk four's wait must age chunks one
+    // through three out of the window (they were all spent at the same instant) before chunk
+    // five's own acquire re-checks what's still in the trailing window; a clock fixed at one
+    // instant can't tell that story (see `stepClock`'s own doc comment).
+    const clock = stepClock();
+    const associateCalls: string[][] = [];
+    const apiClient: Pick<ApiClient, "associateFavorites" | "getSchedule"> = {
+      associateFavorites: async (_eventId, sessionIds) => {
+        associateCalls.push(sessionIds);
+        return { successful: sessionIds, failed: [] };
+      },
+      getSchedule: async () => emptySchedule(),
+    };
+    const ids = Array.from({ length: 50 }, (_, i) => `s${i}`); // five chunks of ten
+
+    await favoriteSessions(ids, { apiClient, storeRoot: home.path, sleep: clock.sleep, now: clock.now });
+
+    expect(associateCalls).toHaveLength(5);
+    // Exactly one wait, covering both chunk four and chunk five -- not two separate waits, one
+    // per chunk, the way a naive "wait then re-check the same stale window" implementation would.
+    expect(clock.durations).toEqual([60_000]);
+  });
+
+  it("aborts immediately on AuthRequiredError from the first chunk, with no pacer sleep and nothing reported as failed", async () => {
+    // pr-reviewer's own repro: 40 ids over real stdio with no stored session took 20+ real seconds
+    // to report "not signed in," because the auth error was swallowed into a per-chunk
+    // requestFailed and the loop kept going, paying a real pacer wait each time. Here, a single
+    // real call and zero sleeps proves the fix directly rather than by elapsed wall-clock time.
+    let callCount = 0;
+    const apiClient: Pick<ApiClient, "associateFavorites" | "getSchedule"> = {
+      associateFavorites: async () => {
+        callCount++;
+        throw new AuthRequiredError();
+      },
+      getSchedule: async () => emptySchedule(),
+    };
+    const ids = Array.from({ length: 40 }, (_, i) => `s${i}`); // four chunks, if it kept going
+    const sleeper = fakeSleep();
+
+    await expect(
+      favoriteSessions(ids, { apiClient, storeRoot: home.path, sleep: sleeper.sleep, now: fixedClock(0) }),
+    ).rejects.toBeInstanceOf(AuthRequiredError);
+
+    expect(callCount).toBe(1);
+    expect(sleeper.durations).toEqual([]);
+  });
+
+  it("aborts immediately on NotRegisteredError the same way", async () => {
+    let callCount = 0;
+    const apiClient: Pick<ApiClient, "associateFavorites" | "getSchedule"> = {
+      associateFavorites: async () => {
+        callCount++;
+        throw new NotRegisteredError();
+      },
+      getSchedule: async () => emptySchedule(),
+    };
+
+    await expect(
+      favoriteSessions(["a"], { apiClient, storeRoot: home.path, sleep: fakeSleep().sleep, now: fixedClock(0) }),
+    ).rejects.toBeInstanceOf(NotRegisteredError);
+
+    expect(callCount).toBe(1);
+  });
+
+  it("aborts immediately when AuthRequiredError surfaces on a later chunk, not just the first", async () => {
+    // Lead's decision: "anywhere," not only the first chunk -- a token that was valid when the
+    // first chunk ran can still be revoked mid-operation.
+    let callCount = 0;
+    const apiClient: Pick<ApiClient, "associateFavorites" | "getSchedule"> = {
+      associateFavorites: async (_eventId, sessionIds) => {
+        callCount++;
+        if (callCount === 1) {
+          return { successful: sessionIds, failed: [] };
+        }
+        throw new AuthRequiredError();
+      },
+      getSchedule: async () => emptySchedule(),
+    };
+    const ids = Array.from({ length: 21 }, (_, i) => `s${i}`); // three chunks
+
+    await expect(
+      favoriteSessions(ids, { apiClient, storeRoot: home.path, sleep: fakeSleep().sleep, now: fixedClock(0) }),
+    ).rejects.toBeInstanceOf(AuthRequiredError);
+
+    expect(callCount).toBe(2);
+  });
+
+  it("returns the write results with verified null and a verificationError when the read-back itself fails", async () => {
+    // pr-reviewer's finding: the read-back used to run outside any try, so this threw the writes
+    // above away entirely -- a caller would be told nothing happened when a real write did.
+    const apiClient: Pick<ApiClient, "associateFavorites" | "getSchedule"> = {
+      associateFavorites: async () => ({ successful: ["a"], failed: [] }),
+      getSchedule: async () => {
+        throw new ServiceError("The server exploded.");
+      },
+    };
+
+    const result = await favoriteSessions(["a"], {
+      apiClient,
+      storeRoot: home.path,
+      sleep: fakeSleep().sleep,
+      now: fixedClock(0),
+    });
+
+    expect(result.successful).toEqual(["a"]);
+    expect(result.verified).toBeNull();
+    expect(result.verificationError).toBe("The server exploded.");
+    expect(result.mismatch).toEqual([]);
+  });
+
+  it("still aborts on AuthRequiredError/NotRegisteredError from the read-back itself, not just the write chunks", async () => {
+    // The read-back's own catch must special-case these the same way the write loop does -- a
+    // session-wide problem, not a read-back-specific one, so it's surfaced as-is rather than
+    // folded into a verificationError the way a ServiceError or network failure is.
+    const apiClient: Pick<ApiClient, "associateFavorites" | "getSchedule"> = {
+      associateFavorites: async () => ({ successful: ["a"], failed: [] }),
+      getSchedule: async () => {
+        throw new NotRegisteredError();
+      },
+    };
+
+    await expect(
+      favoriteSessions(["a"], { apiClient, storeRoot: home.path, sleep: fakeSleep().sleep, now: fixedClock(0) }),
+    ).rejects.toBeInstanceOf(NotRegisteredError);
+  });
+
+  it("stops sending further chunks once one exhausts its 429 retries, marking the rest notAttempted, but still reads the schedule back", async () => {
+    // Lead's decision: the write quota is exhausted for the whole session at that point, not just
+    // the one chunk that actually got refused -- sending another chunk immediately would just be
+    // refused the same way. Uses a hand-rolled fake that throws ThrottledError directly, standing
+    // in for "the real API client already retried three times over real HTTP and gave up" (see the
+    // next test for that at the real HTTP layer).
+    const ids = Array.from({ length: 25 }, (_, i) => `s${i}`); // three chunks: 10, 10, 5
+    let callCount = 0;
+    const apiClient: Pick<ApiClient, "associateFavorites" | "getSchedule"> = {
+      associateFavorites: async (_eventId, sessionIds) => {
+        callCount++;
+        if (callCount === 1) {
+          throw new ThrottledError();
+        }
+        return { successful: sessionIds, failed: [] };
+      },
+      getSchedule: async () => emptySchedule(),
+    };
+
+    const result = await favoriteSessions(ids, {
+      apiClient,
+      storeRoot: home.path,
+      sleep: fakeSleep().sleep,
+      now: fixedClock(0),
+    });
+
+    // Only the first chunk was ever attempted -- chunks two and three never sent.
+    expect(callCount).toBe(1);
+    const requestFailed = result.failed.filter((f) => f.code === "requestFailed");
+    const notAttempted = result.failed.filter((f) => f.code === "notAttempted");
+    expect(requestFailed.map((f) => f.sessionId).sort()).toEqual(ids.slice(0, 10).sort());
+    expect(notAttempted.map((f) => f.sessionId).sort()).toEqual(ids.slice(10).sort());
+    expect(notAttempted.every((f) => f.reason !== undefined)).toBe(true);
+    // The read-back still ran, even though the loop stopped early.
+    expect(result.verified).not.toBeNull();
+  });
+
+  it("stops sending further chunks after a real chunk exhausts three real 429 responses over HTTP", async () => {
+    // The lead's own test description, at the real HTTP layer: a fake API that returns 429 three
+    // times on the first chunk's POST (exhausting the real client's own retry budget, see
+    // api/client.ts) must produce zero further POSTs and report the remaining ids notAttempted.
+    const ids = Array.from({ length: 25 }, (_, i) => `s${i}`); // three chunks: 10, 10, 5
+    const fake = createFakeFetch([
+      { status: 429, headers: { "Retry-After": "1" }, json: { message: "Slow down" } },
+      { status: 429, headers: { "Retry-After": "1" }, json: { message: "Slow down" } },
+      { status: 429, headers: { "Retry-After": "1" }, json: { message: "Slow down" } },
+      { status: 200, json: { schedule: { reserved: [], favorites: [], personalTime: [] } } },
+    ]);
+    const apiClient = createApiClient({
+      fetchFn: fake.fetch,
+      getAccessToken: async () => "token",
+      sleep: fakeSleep().sleep,
+    });
+
+    const result = await favoriteSessions(ids, { apiClient, storeRoot: home.path });
+
+    // Three retried POSTs for chunk one (exhausting the client's own retries), then exactly one
+    // more call -- the GetSchedule read-back -- and nothing for chunks two or three.
+    expect(fake.calls).toHaveLength(4);
+    const postCalls = fake.calls.filter((c) => c.init?.method === "POST");
+    expect(postCalls).toHaveLength(3);
+    const notAttempted = result.failed.filter((f) => f.code === "notAttempted");
+    expect(notAttempted.map((f) => f.sessionId).sort()).toEqual(ids.slice(10).sort());
   });
 });
 

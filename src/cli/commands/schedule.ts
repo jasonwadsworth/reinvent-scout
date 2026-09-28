@@ -194,7 +194,12 @@ function formatFavoriteResultHuman(result: FavoriteSessionsResult): string {
       lines.push(formatFailureLine(failure));
     }
   }
-  if (result.mismatch.length > 0) {
+  if (result.verified === null) {
+    lines.push(
+      `Warning: could not confirm these writes against the schedule (${result.verificationError}). ` +
+        "The results above are still real -- only the confirmation step failed.",
+    );
+  } else if (result.mismatch.length > 0) {
     lines.push(
       `Warning: the server reported success for ${result.mismatch.join(", ")}, but they are not ` +
         "on the schedule on re-read.",
