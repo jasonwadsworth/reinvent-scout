@@ -9,10 +9,16 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { MANIFEST_FILE_NAME, SKILL_NAME, installSkill, type InstallSkillManifest } from "../../src/skill/install.js";
-import { updateSkill } from "../../src/skill/update.js";
+import {
+  MANIFEST_FILE_NAME,
+  SKILL_NAME,
+  SkillAlreadyInstalledError,
+  installSkill,
+  type InstallSkillManifest,
+} from "../../src/skill/install.js";
+import { CorruptManifestError, updateSkill } from "../../src/skill/update.js";
 
 describe("updateSkill", () => {
   let sourceDirV1: string;
@@ -56,7 +62,7 @@ describe("updateSkill", () => {
     expect(readManifest().version).toBe("1.0.0");
   });
 
-  it("reports already up to date when the installed version matches", () => {
+  it("reports already up to date when the installed content matches", () => {
     installSkill({ sourceDir: sourceDirV1, targetsDir, packageVersion: "1.0.0" });
 
     const result = updateSkill({ sourceDir: sourceDirV1, targetsDir, packageVersion: "1.0.0" });
@@ -64,6 +70,43 @@ describe("updateSkill", () => {
     expect(result.status).toBe("up-to-date");
     // Untouched: still the v1 content, not re-copied or re-hashed.
     expect(readFileSync(join(targetsDir, SKILL_NAME, "SKILL.md"), "utf8")).toBe("v1 SKILL body.\n");
+  });
+
+  it("updates even when the version is unchanged, if the source content changed", () => {
+    // Lead's decision: package.json can sit at one version through many SKILL.md edits on this
+    // branch, and a hackathon user installs straight from git -- version alone would report
+    // "already up to date" and never apply a real content change. "Up to date" is decided by the
+    // new source's exact file set and hashes matching the manifest's, not by version.
+    installSkill({ sourceDir: sourceDirV1, targetsDir, packageVersion: "1.0.0" });
+
+    const sourceDirSameVersionNewContent = mkdtempSync(
+      join(tmpdir(), "reinvent-scout-skill-same-version-"),
+    );
+    try {
+      mkdirSync(join(sourceDirSameVersionNewContent, "reference"));
+      writeFileSync(join(sourceDirSameVersionNewContent, "SKILL.md"), "NEW flow, same version.\n");
+      writeFileSync(
+        join(sourceDirSameVersionNewContent, "reference", "profiling.md"),
+        "v1 profiling.\n",
+      );
+      writeFileSync(
+        join(sourceDirSameVersionNewContent, "reference", "taxonomy.md"),
+        "v1 taxonomy.\n",
+      );
+
+      const result = updateSkill({
+        sourceDir: sourceDirSameVersionNewContent,
+        targetsDir,
+        packageVersion: "1.0.0", // deliberately the same version as the install above
+      });
+
+      expect(result.status).toBe("updated");
+      expect(readFileSync(join(targetsDir, SKILL_NAME, "SKILL.md"), "utf8")).toBe(
+        "NEW flow, same version.\n",
+      );
+    } finally {
+      rmSync(sourceDirSameVersionNewContent, { recursive: true, force: true });
+    }
   });
 
   it("overwrites files whose hash matches the manifest", () => {
@@ -174,5 +217,142 @@ describe("updateSkill", () => {
     } finally {
       rmSync(outsideDir, { recursive: true, force: true });
     }
+  });
+
+  it("refuses when a new version starts shipping a path the user already has, untracked, on disk", () => {
+    // Reviewer's finding: the old manifest only protects paths it already knew about -- a file the
+    // user created themselves (never installed by this tool, so never in any manifest) gets
+    // silently overwritten the moment a new version happens to start shipping that same path.
+    installSkill({ sourceDir: sourceDirV1, targetsDir, packageVersion: "1.0.0" });
+    writeFileSync(
+      join(targetsDir, SKILL_NAME, "reference", "notes.md"),
+      "USER'S OWN NOTES, never installed by this tool\n",
+    );
+
+    const sourceDirV3 = mkdtempSync(join(tmpdir(), "reinvent-scout-skill-v3-"));
+    try {
+      mkdirSync(join(sourceDirV3, "reference"));
+      writeFileSync(join(sourceDirV3, "SKILL.md"), "v3 SKILL body.\n");
+      writeFileSync(join(sourceDirV3, "reference", "profiling.md"), "v3 profiling.\n");
+      writeFileSync(join(sourceDirV3, "reference", "taxonomy.md"), "v3 taxonomy.\n");
+      // v3 now ships reference/notes.md too -- exactly the path the user's own file already
+      // occupies, with different content.
+      writeFileSync(join(sourceDirV3, "reference", "notes.md"), "shipped notes content\n");
+
+      const result = updateSkill({ sourceDir: sourceDirV3, targetsDir, packageVersion: "3.0.0" });
+
+      expect(result.status).toBe("refused");
+      if (result.status === "refused") {
+        expect(result.modifiedFiles).toEqual(["reference/notes.md"]);
+      }
+      expect(readFileSync(join(targetsDir, SKILL_NAME, "reference", "notes.md"), "utf8")).toBe(
+        "USER'S OWN NOTES, never installed by this tool\n",
+      );
+
+      const forced = updateSkill({
+        sourceDir: sourceDirV3,
+        targetsDir,
+        packageVersion: "3.0.0",
+        force: true,
+      });
+      expect(forced.status).toBe("updated");
+      expect(readFileSync(join(targetsDir, SKILL_NAME, "reference", "notes.md"), "utf8")).toBe(
+        "shipped notes content\n",
+      );
+    } finally {
+      rmSync(sourceDirV3, { recursive: true, force: true });
+    }
+  });
+
+  it("does not refuse when an untracked on-disk file already has the exact bytes the new version would write", () => {
+    installSkill({ sourceDir: sourceDirV1, targetsDir, packageVersion: "1.0.0" });
+    writeFileSync(join(targetsDir, SKILL_NAME, "reference", "notes.md"), "identical content\n");
+
+    const sourceDirV3 = mkdtempSync(join(tmpdir(), "reinvent-scout-skill-v3-identical-"));
+    try {
+      mkdirSync(join(sourceDirV3, "reference"));
+      writeFileSync(join(sourceDirV3, "SKILL.md"), "v3 SKILL body.\n");
+      writeFileSync(join(sourceDirV3, "reference", "profiling.md"), "v3 profiling.\n");
+      writeFileSync(join(sourceDirV3, "reference", "taxonomy.md"), "v3 taxonomy.\n");
+      writeFileSync(join(sourceDirV3, "reference", "notes.md"), "identical content\n");
+
+      const result = updateSkill({ sourceDir: sourceDirV3, targetsDir, packageVersion: "3.0.0" });
+
+      expect(result.status).toBe("updated");
+    } finally {
+      rmSync(sourceDirV3, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses the entire update, deleting nothing, when a manifest key resolves outside the install directory, even under --force", () => {
+    // Reviewer's finding: a hand-edited or corrupted manifest entry of "../../victim.txt" let a
+    // --force update both read (as a "modified" check) and then delete a file outside the install
+    // entirely -- the removal loop trusted every manifest key as a plain relative path.
+    installSkill({ sourceDir: sourceDirV1, targetsDir, packageVersion: "1.0.0" });
+
+    const victimDir = mkdtempSync(join(tmpdir(), "reinvent-scout-skill-victim-"));
+    try {
+      const victimPath = join(victimDir, "victim.txt");
+      writeFileSync(victimPath, "please do not delete me\n");
+
+      const installedPath = join(targetsDir, SKILL_NAME);
+      const manifestPath = join(installedPath, MANIFEST_FILE_NAME);
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as InstallSkillManifest;
+      // A genuine relative path from the install directory to the victim file, using ".."
+      // segments -- exactly the shape a real escaping manifest entry takes. 64 hex characters, a
+      // well-shaped-but-meaningless hash so shape validation alone doesn't already reject it.
+      const relativeToVictim = relative(installedPath, victimPath);
+      manifest.files[relativeToVictim] = "0".repeat(64);
+      writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+      expect(() =>
+        updateSkill({
+          sourceDir: sourceDirV2,
+          targetsDir,
+          packageVersion: "2.0.0",
+          force: true,
+        }),
+      ).toThrow(CorruptManifestError);
+
+      // The decisive check: the victim file, entirely outside the install directory, still exists
+      // with its original content -- force must not reach it at all.
+      expect(existsSync(victimPath)).toBe(true);
+      expect(readFileSync(victimPath, "utf8")).toBe("please do not delete me\n");
+    } finally {
+      rmSync(victimDir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses cleanly, naming the manifest path, when the manifest is corrupt rather than crashing with a bare error", () => {
+    installSkill({ sourceDir: sourceDirV1, targetsDir, packageVersion: "1.0.0" });
+    const manifestPath = join(targetsDir, SKILL_NAME, MANIFEST_FILE_NAME);
+    // Missing the required `files` map entirely.
+    writeFileSync(manifestPath, JSON.stringify({ version: "1.0.0" }));
+
+    let thrown: unknown;
+    try {
+      updateSkill({ sourceDir: sourceDirV2, targetsDir, packageVersion: "2.0.0" });
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).toBeInstanceOf(CorruptManifestError);
+    expect((thrown as Error).message).toContain(manifestPath);
+  });
+
+  it("propagates the already-installed refusal when no manifest exists but the target is non-empty", () => {
+    // Reviewer's finding: a deleted (or never-written) manifest over an otherwise-populated
+    // install directory was treated as safe to silently "fresh install" over, losing a hand edit
+    // the same way a second `skill install` did before that was fixed.
+    const installedPath = join(targetsDir, SKILL_NAME);
+    mkdirSync(installedPath, { recursive: true });
+    writeFileSync(join(installedPath, "SKILL.md"), "HAND EDITED, no manifest present\n");
+
+    expect(() =>
+      updateSkill({ sourceDir: sourceDirV1, targetsDir, packageVersion: "1.0.0" }),
+    ).toThrow(SkillAlreadyInstalledError);
+    expect(readFileSync(join(installedPath, "SKILL.md"), "utf8")).toBe(
+      "HAND EDITED, no manifest present\n",
+    );
   });
 });

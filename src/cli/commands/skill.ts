@@ -5,7 +5,12 @@ import {
   type InstallSkillDeps,
   type InstallSkillResult,
 } from "../../skill/install.js";
-import { updateSkill, type UpdateSkillDeps, type UpdateSkillResult } from "../../skill/update.js";
+import {
+  CorruptManifestError,
+  updateSkill,
+  type UpdateSkillDeps,
+  type UpdateSkillResult,
+} from "../../skill/update.js";
 
 export interface SkillCommandDeps {
   /** Where command output goes. Defaults to stdout. */
@@ -71,10 +76,20 @@ export function registerSkillCommands(program: Command, deps: SkillCommandDeps =
     .option("--dir <path>", "the skills directory the skill was installed into (matches install's own --dir)")
     .option("--force", "overwrite locally modified files instead of refusing")
     .action((options: UpdateCommandOptions) => {
-      const result = update({
-        ...(options.dir === undefined ? {} : { targetsDir: options.dir }),
-        ...(options.force === undefined ? {} : { force: options.force }),
-      });
+      let result: UpdateSkillResult;
+      try {
+        result = update({
+          ...(options.dir === undefined ? {} : { targetsDir: options.dir }),
+          ...(options.force === undefined ? {} : { force: options.force }),
+        });
+      } catch (err) {
+        if (err instanceof SkillAlreadyInstalledError || err instanceof CorruptManifestError) {
+          print(err.message);
+          process.exitCode = 1;
+          return;
+        }
+        throw err;
+      }
 
       switch (result.status) {
         case "up-to-date":
