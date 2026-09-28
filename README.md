@@ -1,10 +1,19 @@
 # reinvent-scout
 
-Sign in with AWS Builder ID, sync the re:Invent session catalog to your machine, search it
-offline, validate an agent-authored profile of your repository against it, and rank the catalog
-against that profile with an explanation for every match. This is phase 1 and 2 of three: a CLI
-you can use standalone today, with the schedule, an MCP server, and an agent skill (phase 3)
-landing in later PRs on top of it.
+Sign in with AWS Builder ID once, sync the re:Invent session catalog to your machine, and let an
+agent (Claude Code, or anything else that speaks MCP) profile your repository, rank the catalog
+against it with a reason for every match, and manage your schedule -- all through a local MCP
+server and skill this CLI also installs. Everything that can be deterministic (auth, the catalog,
+scoring, schedule writes) lives in the CLI; the one genuinely judgment-heavy step -- reading a
+repository and deciding what it's built with -- is left to the agent, backed by file evidence it
+cites itself.
+
+This is phase 1 of the project: sign-in, the catalog, agent-authored profiles, matching, the
+schedule, the MCP server, and the skill that ties them together end to end. It does not yet cover
+session reservations (the write API for those opens closer to the event) or two lenses named in the
+design but not yet built: Fix (Well-Architected gaps) and Next-level (migration paths) -- only `all`
+and `explain` exist today, and the skill is told to say so plainly if asked for either of the
+others.
 
 ## What's here right now
 
@@ -17,15 +26,19 @@ landing in later PRs on top of it.
   service names against the catalog; save one under a name for later reuse.
 - `match` -- rank the local catalog against a profile, offline, with a plain-language reason for
   every candidate.
-
-The schedule, the MCP server and the agent skill are not in this part of the codebase yet -- they
-land in phase 3.
+- `schedule show` / `schedule favorite` / `schedule unfavorite` -- read your real schedule and
+  manage favorites, resolved against the local catalog.
+- `mcp` -- run all of the above as a local MCP server over stdio, for an agent to call directly.
+- `skill install` / `skill update` -- install the agent skill that drives the MCP tools (Claude
+  Code by default, `--dir` for any other agent), and update it later without losing a local edit.
 
 ## Requirements
 
 - Node.js `>=22.13.0`.
 - A terminal that can open a URL in your default browser (macOS, Linux, or Windows). If it can't,
   every command that would open one prints the URL too, so you can open it by hand.
+- An AWS Builder ID (free) to sign in with -- create one at the browser prompt during `auth login`
+  if you don't already have one.
 
 ## Install
 
@@ -48,6 +61,12 @@ Or put `reinvent-scout` on your `PATH`:
 npm link
 reinvent-scout --help
 ```
+
+Three runtime dependencies: `commander` (the CLI itself), `zod` (validating an agent-authored
+profile and an installed skill's manifest), and `@modelcontextprotocol/sdk` (the `mcp` command's
+stdio server) -- the last one alone brings roughly ninety transitive packages with it (measured
+directly: a bare `npm install @modelcontextprotocol/sdk` in an empty project pulls 91), by far the
+biggest share of what `npm install` downloads here.
 
 ## Sign in
 
@@ -130,10 +149,10 @@ A session with no repeats always reports an empty `relatedAbbreviations`.
 
 ## Validate and save a repo profile
 
-Phase 2 doesn't profile a repository itself -- an agent (the phase 3 skill) reads the repo and
-writes a **tech profile**: a small JSON document naming the services and architecture patterns it
-found, each backed by file evidence. This tool validates that document and resolves its service
-names against the catalog.
+This tool doesn't profile a repository itself -- an agent (via the skill installed below) reads the
+repo and writes a **tech profile**: a small JSON document naming the services and architecture
+patterns it found, each backed by file evidence. This tool validates that document and resolves its
+service names against the catalog.
 
 A profile looks like this:
 
@@ -326,8 +345,39 @@ catalog and the attendee's own data stay local; only a bounded summary ever reac
   conflict titles. A response carrying a refusal is never reported as a plain success.
 - `unfavorite_session`.
 
-A full setup guide (a `claude mcp add` / `.mcp.json` snippet) lands with the rest of this phase's
-README completion.
+### Connect it to Claude Code
+
+```
+claude mcp add reinvent-scout -- reinvent-scout mcp
+```
+
+Or, if you'd rather not put `reinvent-scout` on your `PATH`, point it at the built entry point
+directly (use an absolute path):
+
+```
+claude mcp add reinvent-scout -- node /absolute/path/to/re-invent-helper/dist/cli/main.js mcp
+```
+
+Either way adds an entry to your user-level MCP config. To check it into a project instead (so
+anyone who clones the project gets the same server configured), add it to a `.mcp.json` at the
+project root:
+
+```json
+{
+  "mcpServers": {
+    "reinvent-scout": {
+      "command": "reinvent-scout",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Any other MCP-speaking agent (Kiro, or anything else) configures a stdio server the same way --
+point it at `reinvent-scout mcp` (or the built `main.js mcp` path above), no extra flags or
+environment variables needed. It reads and writes the same `~/.reinvent-scout/` store the CLI
+itself uses, so signing in and syncing once from the CLI (or letting the skill run `auth login`
+itself) is enough for both.
 
 ## Install the agent skill
 
@@ -345,18 +395,65 @@ agent, so it's never guessed):
 reinvent-scout skill install --dir /path/to/other/skills
 ```
 
+Refuses rather than overwriting anything if a skill (or just a conflicting file) is already at the
+target -- `skill update` (below) owns every decision about touching an existing install.
+
 To pick up a newer version of the skill later, without losing a file you edited locally:
 
 ```
 reinvent-scout skill update
 ```
 
-Compares the currently-installed skill's own version against this build's; already matching is
-reported as up to date with nothing touched. Otherwise, every file is checked against the hash
-recorded at install time -- a file that still matches is safely overwritten with the new content, a
-file that's changed since (a local edit) refuses the *entire* update and names every file it found
-modified, so nothing is silently lost. Pass `--force` to overwrite local edits anyway, and `--dir`
-to match wherever `skill install` put it.
+Compares the new build's exact file set and content against what's installed -- if nothing
+changed, it reports up to date and touches nothing; a version bump alone with identical content is
+not treated as a reason to rewrite anything, and unchanged version numbers never mask a real content
+change either. Otherwise, every tracked file is checked against the hash recorded at install time:
+one that still matches is safely overwritten with the new content, one that's changed since (a
+local edit) refuses the *entire* update and names every file it found modified, so nothing is
+silently lost -- including a file the new version is about to start shipping for the first time
+under a name you already have on disk, untracked. Pass `--force` to overwrite local edits anyway,
+and `--dir` to match wherever `skill install` put it.
+
+`skill update` never performs a fresh install itself -- run `skill install` first if nothing is
+there yet, or if the target directory is empty. If the directory exists with content but was never
+tracked by this tool at all (hand-copied, or the manifest deleted), `update` refuses and tells you
+to either run it again with `--force` (which adopts the directory -- installs the skill's own files
+into it and starts tracking them, leaving anything else already there alone) or remove the directory
+and run `skill install` instead.
+
+## How it works
+
+**The catalog is synced locally and never passed through agent context, on purpose.** The full
+re:Invent catalog is over 2,000 sessions -- hundreds of thousands of tokens even without abstracts.
+Handing that to an agent on every turn (or even once, to "look something up") would burn a
+significant chunk of a conversation's context on data that's mostly irrelevant to any one question.
+`catalog sync` pulls it once into a local, indexed store; every MCP tool response is held to a
+30 KB budget (measured on the real wire format, not just the JSON text) and reports a bounded,
+already-ranked or already-paginated slice -- a few dozen candidates from `match_sessions`, one page
+of a schedule from `get_schedule` -- never the raw catalog itself. `catalog search`/`catalog show`
+exist specifically so a human (or an agent that wants one more specific lookup) can query it
+directly without that ever meaning "send the whole thing somewhere."
+
+**This CLI runs its own local MCP server instead of using the official `api.awsevents.com/mcp`
+server.** Two reasons, both load-bearing rather than incidental: first, the official server would
+mean signing in twice -- once for the CLI's own catalog sync and schedule writes, once more for
+whatever the official server's own auth flow requires -- when one PKCE sign-in, stored once and
+reused by both the CLI and this server, is strictly simpler and is exactly what `skill install` and
+the skill's own flow are built around. Second, and more fundamentally: a remote MCP server has no
+way to enforce the local-only, budgeted-response design above -- it would have to either pass the
+full catalog through agent context on a lookup, or build the same local-indexing story this CLI
+already has, at which point it isn't a "the API can do it for you" server anymore. Building a local
+server over the same 12-operation REST API everything else in this project already talks to keeps
+one code path responsible for both.
+
+**API surface used today:** `GetEvent` (the event's IANA timezone, for `get_schedule`'s common
+`startsAt`/`endsAt`), `ListSessions` (paginated to build the catalog), `GetSchedule`,
+`AssociateFavorites`, and `DisassociateFavorite`. Not yet used: `ListEvents` (the event id is a
+CLI/tool argument, defaulting to `reinvent2026`, rather than something this build discovers),
+`GetSession` (a single session lookup -- `catalog show` reads the local index instead), and the
+reservation and personal-time-management operations (`ReserveSessions`, `CancelReservation`,
+`Create`/`Update`/`DeletePersonalTime`) -- reservations open closer to the event and land in a
+later phase.
 
 ## Where your data lives
 
