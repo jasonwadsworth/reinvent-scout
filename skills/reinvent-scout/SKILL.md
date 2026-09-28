@@ -40,8 +40,9 @@ explained shortlist.
 6. Present the candidates to the user: title, format and level, every `reasons` entry (why it
    matched) and every `offerings` entry (when and where each sitting happens) -- not just a bare
    title and score. If the response came back `truncated`, say so and offer to narrow the request
-   (a smaller `limit`, a narrower lens, or a more specific profile) rather than silently showing a
-   partial list as if it were everything.
+   (a narrower lens or a more specific profile -- **not** a smaller `limit`, which only returns
+   fewer of the exact same top-ranked candidates and can never reach the ones already omitted)
+   rather than silently showing a partial list as if it were everything.
 7. Ask for confirmation before favoriting anything. On confirmation, call `favorite_sessions` with
    the chosen session ids. Report every outcome plainly: a `failed` entry is a real refusal (most
    often a schedule conflict, named with the conflicting session's own title) and must be reported

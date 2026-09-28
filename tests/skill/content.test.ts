@@ -397,6 +397,24 @@ describe("SKILL.md auth login instructions", () => {
   });
 });
 
+describe("truncation advice consistency", () => {
+  it("never tells the agent a smaller limit can reach omitted match_sessions candidates", () => {
+    // Reviewer's finding: SKILL.md once suggested "a smaller limit" as a way to narrow a
+    // truncated match_sessions response, contradicting both workflow.md and the tool's own
+    // truncationHint (src/mcp/tools.ts), which say a smaller limit returns fewer of the exact
+    // same top-ranked candidates and can never reach the ones already omitted for size. It's fine
+    // for the phrase to appear as part of explicitly saying *not* to do it (which is what should
+    // be there now) -- the bug was offering it as one of the narrowing options in the same breath
+    // as "a narrower lens, a more specific profile."
+    const offeredAsOption = /\(a smaller\s+`?limit`?,/i;
+    expect(skillMd).not.toMatch(offeredAsOption);
+    expect(skillMd).toMatch(/not\*{0,2}\s+a smaller\s+`?limit`?/i);
+    // Positive check that the real advice (narrower lens / more specific profile) is still there,
+    // so this isn't just proving the phrase was deleted along with the whole sentence.
+    expect(skillMd).toMatch(/narrower lens/i);
+  });
+});
+
 describe("reference file existence", () => {
   it("ships all three reference files named by the plan", () => {
     expect(taxonomyMd.length).toBeGreaterThan(0);
