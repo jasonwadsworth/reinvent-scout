@@ -587,6 +587,50 @@ describe("updateSkill", () => {
     }
   });
 
+  it("throws SymlinkEscapeError from the untracked-new-file loop's own guard, not a plain 'refused' result, when another file is also genuinely modified", () => {
+    // pr-reviewer-3's finding on the F5 test above: it used --force, which reaches writeSkillFile's
+    // own guard regardless of whether the untracked-new-file loop's own assertNotSymlink (line 279)
+    // exists at all -- so that test can't tell the two apart. The one case where it matters: WITHOUT
+    // force, a dangling symlink at a newly-shipped path is invisible to existsSync (the loop's very
+    // next line would otherwise read it as "nothing there yet, safe to write" and silently
+    // `continue`). If some *other* already-modified tracked file is present too, the function would
+    // then reach its ordinary "refused: modified" *return* instead of throwing -- a real, opposite
+    // outcome from the guard actually firing.
+    installSkill({ sourceDir: sourceDirV1, targetsDir, packageVersion: "1.0.0" });
+    const installedPath = join(targetsDir, SKILL_NAME);
+
+    // A genuine local edit to an already-tracked file -- independent of the symlink below, this
+    // alone is enough to make modifiedFiles non-empty.
+    writeFileSync(join(installedPath, "reference", "profiling.md"), "hand-edited locally\n");
+
+    const sourceDirNew = mkdtempSync(join(tmpdir(), "reinvent-scout-skill-new-plus-edit-"));
+    const outsideDir = mkdtempSync(join(tmpdir(), "reinvent-scout-skill-new-file-symlink-nf-"));
+    try {
+      mkdirSync(join(sourceDirNew, "reference"));
+      writeFileSync(join(sourceDirNew, "SKILL.md"), "v1 SKILL body.\n"); // unchanged from v1
+      writeFileSync(join(sourceDirNew, "reference", "profiling.md"), "v1 profiling.\n"); // unchanged from v1
+      writeFileSync(join(sourceDirNew, "reference", "new.md"), "brand new, ships for the first time.\n");
+
+      symlinkSync(join(outsideDir, "pwned-new.md"), join(installedPath, "reference", "new.md"));
+
+      let thrown: unknown;
+      let result: unknown;
+      try {
+        result = updateSkill({ sourceDir: sourceDirNew, targetsDir, packageVersion: "2.0.0" }); // no force
+      } catch (err) {
+        thrown = err;
+      }
+
+      expect(thrown).toBeInstanceOf(SymlinkEscapeError);
+      expect((thrown as Error)?.message).toContain(join(installedPath, "reference", "new.md"));
+      expect(result).toBeUndefined();
+      expect(existsSync(join(outsideDir, "pwned-new.md"))).toBe(false);
+    } finally {
+      rmSync(sourceDirNew, { recursive: true, force: true });
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
+  });
+
   it("refuses when the manifest path is a dangling symlink on a manifest-less directory, even in the adopt path under --force", () => {
     // reviewer2's F7: a hand-copied directory with real content but no manifest at all still goes
     // through the adopt branch's own manifest write at the end -- the dangling manifest symlink

@@ -210,6 +210,39 @@ export function sha256Hex(content: Buffer): string {
 }
 
 /**
+ * Checks every path component from `installedPath` down to `relPath` for a symlink -- ancestor
+ * directories along the way, not just the final file -- purely via `lstatSync`, never `mkdirSync`
+ * or `realpathSync`, so this can run before anything is created on disk at all. pr-reviewer-3's
+ * finding: refusing at the first symlinked destination *while writing*, one file at a time, still
+ * left every file processed *before* it already written with no manifest to show for it -- neither
+ * a clean "not installed" nor a genuine "installed" state, confusing both `skill install`'s own
+ * conflict check (a dangling symlink is invisible to `existsSync`) and `skill update`'s (finds real
+ * content but no manifest, so "untracked"). Calling this for every file *before* writing any of
+ * them makes a refusal atomic: either every file lands, or none does. Stops at the first path
+ * segment that doesn't exist at all (`ENOENT`), since nothing deeper than a segment that isn't
+ * there can exist either -- there is nothing further along this particular path left to check.
+ */
+export function assertNoSymlinksAlongPath(installedPath: string, relPath: string): void {
+  const segments = relPath.split("/");
+  let current = installedPath;
+  for (const segment of segments) {
+    current = join(current, segment);
+    let stats;
+    try {
+      stats = lstatSync(current);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        return;
+      }
+      throw err;
+    }
+    if (stats.isSymbolicLink()) {
+      throw new SymlinkEscapeError([current], installedPath);
+    }
+  }
+}
+
+/**
  * Writes `content` to `destPath`, guarded by `assertNotSymlink`, then via `writeFileAtomic`
  * (`src/core/atomic-write.ts` -- the same temp-file-in-the-same-directory-plus-rename write every
  * other store in this project already uses for exactly this reason). `rename(2)` replaces whatever
@@ -284,6 +317,15 @@ export function installSkill(deps: InstallSkillDeps = {}): InstallSkillResult {
   if (conflictsWithExistingInstall(installedPath, relativeFiles)) {
     throw new SkillAlreadyInstalledError(installedPath);
   }
+
+  // Every destination checked before any of them is touched -- see assertNoSymlinksAlongPath's
+  // own doc comment for why a per-file check inside the write loop below isn't enough on its own.
+  // Every destination checked before any of them is touched -- see assertNoSymlinksAlongPath's
+  // own doc comment for why a per-file check inside the write loop below isn't enough on its own.
+  for (const relPath of relativeFiles) {
+    assertNoSymlinksAlongPath(installedPath, relPath);
+  }
+  assertNoSymlinksAlongPath(installedPath, MANIFEST_FILE_NAME);
 
   mkdirSync(installedPath, { recursive: true });
   const files: Record<string, string> = {};

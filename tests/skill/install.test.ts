@@ -6,6 +6,7 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -250,6 +251,35 @@ describe("installSkill", () => {
     }
   });
 
+  it("refuses atomically: a symlink at the last file processed still leaves nothing written, not even the files sorted before it", () => {
+    // pr-reviewer-3's finding, reproduced exactly: a dangling reference/workflow.md symlink (the
+    // last file in sorted order -- SKILL.md, reference/profiling.md, reference/taxonomy.md all
+    // sort before it) used to leave those three already written, with no manifest, by the time the
+    // write loop reached the symlinked one. That left an install that's neither a clean "not
+    // installed" (skill install's own conflict check missed it, existsSync being blind to a
+    // dangling link) nor a genuine one (skill update calls it "untracked"). Every destination must
+    // be checked before any of them is written, so a refusal is always all-or-nothing.
+    const outsideDir = mkdtempSync(join(tmpdir(), "reinvent-scout-skill-outside-"));
+    try {
+      const installedPath = join(targetsDir, SKILL_NAME);
+      mkdirSync(join(installedPath, "reference"), { recursive: true });
+      symlinkSync(join(outsideDir, "pwned-workflow.md"), join(installedPath, "reference", "workflow.md"));
+
+      expect(() => installSkill({ sourceDir, targetsDir })).toThrow(SymlinkEscapeError);
+
+      // The decisive check: none of the files sorted *before* the symlinked one were written --
+      // the only thing under installedPath is the pre-existing reference/ directory (holding only
+      // the symlink itself, which this call must never touch or remove).
+      expect(existsSync(join(installedPath, "SKILL.md"))).toBe(false);
+      expect(existsSync(join(installedPath, "reference", "profiling.md"))).toBe(false);
+      expect(existsSync(join(installedPath, "reference", "taxonomy.md"))).toBe(false);
+      expect(existsSync(join(installedPath, MANIFEST_FILE_NAME))).toBe(false);
+      expect(existsSync(join(outsideDir, "pwned-workflow.md"))).toBe(false);
+    } finally {
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
+  });
+
   it("refuses when the manifest path itself is a dangling symlink on an otherwise-empty target, and writes nothing outside it (end to end)", () => {
     // reviewer2's F6: conflictsWithExistingInstall checks the manifest with existsSync, which
     // reports false for a dangling symlink -- so an empty target holding only a dangling manifest
@@ -335,6 +365,31 @@ describe("writeSkillFile", () => {
 
     expect(readFileSync(join(installedPath, "profiling.md"), "utf8")).toBe("Profiling guidance.\n");
     expect(hash).toBe(sha256("Profiling guidance.\n"));
+  });
+
+  it("replaces an existing destination via rename, not an in-place rewrite -- pr-reviewer-3's finding", () => {
+    // Reviewer's finding: nothing at this level distinguished writeFileAtomic's own
+    // temp-file-then-rename write from a plain writeFileSync -- both leave the destination holding
+    // the right final bytes, so a content-only assertion can't tell them apart. The inode changing
+    // is the decisive signal (mirrors tests/core/atomic-write.test.ts's own equivalent check): an
+    // in-place rewrite (open the existing path, truncate, write) keeps the same inode, while a
+    // rename over the destination always creates a new directory entry pointing at a new inode.
+    // This matters here specifically because writeGuardedFile's own comment claims a symlink
+    // slipped in between the assertNotSymlink check and the write "can't turn the write into one
+    // landing outside the install directory" *because* of the rename -- a claim only a rename-vs-
+    // rewrite distinction can actually verify.
+    const installedPath = join(targetsDir, SKILL_NAME);
+    mkdirSync(installedPath, { recursive: true });
+    writeSkillFile(sourceDir, installedPath, "profiling.md");
+    const originalInode = statSync(join(installedPath, "profiling.md")).ino;
+
+    writeFileSync(join(sourceDir, "profiling.md"), "Updated profiling guidance.\n");
+    writeSkillFile(sourceDir, installedPath, "profiling.md");
+
+    expect(readFileSync(join(installedPath, "profiling.md"), "utf8")).toBe(
+      "Updated profiling guidance.\n",
+    );
+    expect(statSync(join(installedPath, "profiling.md")).ino).not.toBe(originalInode);
   });
 
   it("refuses when the destination file itself is a dangling symlink, and writes nothing outside it", () => {
