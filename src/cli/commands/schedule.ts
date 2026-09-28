@@ -219,8 +219,11 @@ function formatScheduleHuman(
   return lines.join("\n");
 }
 
-function formatFailureLine(failure: FavoriteSessionsResult["failed"][number]): string {
-  const parts = [failure.sessionId, failure.code];
+function formatFailureLine(
+  failure: FavoriteSessionsResult["failed"][number],
+  index: IndexRecord[] | null,
+): string {
+  const parts = [resolveSessionDisplay(failure.sessionId, index), failure.code];
   if (failure.conflictsWith !== undefined && failure.conflictsWith.length > 0) {
     const titles = failure.conflictsWith.map((c) => c.title ?? c.sessionId).join(", ");
     parts.push(`conflicts with: ${titles}`);
@@ -237,7 +240,9 @@ function formatFailureLine(failure: FavoriteSessionsResult["failed"][number]): s
  * Reviewer's finding: a `schedule favorite` run against a real shortlist (the README's own
  * `match --json | jq | schedule favorite -` pipe, thirty ids at once) printed thirty bare session
  * ids with nothing to tell them apart at a glance -- `failed`'s own `scheduleConflict` entries
- * already got resolved titles; a real success deserves the same. */
+ * already got resolved titles; a real success deserves the same. pr-reviewer-3's own follow-up
+ * finding: `formatFailureLine` itself still printed the bare id as its own first part, regardless
+ * of code -- this resolves that one too. */
 function resolveSessionDisplay(sessionId: string, index: IndexRecord[] | null): string {
   const record = index?.find((candidate) => candidate.sessionId === sessionId);
   if (record === undefined) {
@@ -265,7 +270,7 @@ function formatFavoriteResultHuman(result: FavoriteSessionsResult, index: IndexR
   if (result.failed.length > 0) {
     lines.push("Refused:");
     for (const failure of result.failed) {
-      lines.push(formatFailureLine(failure));
+      lines.push(formatFailureLine(failure, index));
     }
   }
   if (result.aborted !== undefined) {

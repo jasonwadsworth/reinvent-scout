@@ -320,6 +320,26 @@ describe("schedule favorite", () => {
     expect(output).toContain("not-in-any-catalog");
   });
 
+  it("prints a refused id with its abbreviation and title too, not a bare session id -- pr-reviewer-3's finding", async () => {
+    // Successes and scheduleConflict's own conflict targets already got resolved titles; a plain
+    // refusal (requestFailed here, but the same bare-id shape applied to any code) deserves the
+    // same treatment, not just the ones with a `conflictsWith` list.
+    seedFixtureCatalog(home.path);
+    const h = harness(home.path, {
+      associateFavorites: async () => ({
+        successful: [],
+        failed: [{ sessionId: ANT301.sessionId, code: "requestFailed", reason: "The server exploded." }],
+      }),
+      getSchedule: async () => ({ reserved: [], favorites: [], personalTime: [] }),
+    });
+
+    await h.run(["schedule", "favorite", ANT301.sessionId]);
+
+    const output = h.printed.join("\n");
+    expect(output).toContain(`${ANT301.abbreviation} -- ${ANT301.title}`);
+    expect(output).not.toContain(ANT301.sessionId);
+  });
+
   it("prints the real successes plus the sign-in instruction, and exits non-zero, when auth is interrupted mid-run", async () => {
     // Lead's decision on reviewer2's own finding: a session-wide auth failure that surfaces after
     // an earlier chunk already wrote something must not make the CLI report nothing happened.
