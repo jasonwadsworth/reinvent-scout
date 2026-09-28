@@ -14,7 +14,18 @@ const MAX_FAVORITES_PER_REQUEST = 10;
  * the quota). `GetSchedule`'s own re-read at the end of `favoriteSessions` has a separate rate
  * quota entirely and is never paced against this bucket. */
 const SESSION_UNITS_PER_MINUTE = 30;
-const PACE_WINDOW_MS = 60_000;
+/** The API's own real quota window. */
+const RATE_LIMIT_WINDOW_MS = 60_000;
+/** pr-reviewer-3's finding: entries expire at exactly `>= RATE_LIMIT_WINDOW_MS`, with zero margin
+ * at the boundary -- measured over real stdio, a server process sending a 50-id call then a 10-id
+ * call spent 30 units at t=0.0 s and 20+10 at t=60.0 s, which is within the real quota by this
+ * process's own clock, but any timestamp jitter against the server's own clock (a different
+ * process, a slow tick, clock drift) could make the *server* count all sixty as landing within one
+ * real 60 s window. `PACE_WINDOW_MS` is what `acquire` actually treats as the trailing window an
+ * entry ages out of -- one extra second of margin costs nothing in practice (the pacer already
+ * waits in one-minute-ish increments) and removes the boundary case entirely. */
+const PACE_SAFETY_MARGIN_MS = 1_000;
+const PACE_WINDOW_MS = RATE_LIMIT_WINDOW_MS + PACE_SAFETY_MARGIN_MS;
 
 /** Reported instead of throwing when a whole chunk's request fails outright (a thrown error --
  * network trouble, an exhausted retry, a sign-in problem) rather than a per-session refusal

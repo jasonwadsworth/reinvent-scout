@@ -306,13 +306,15 @@ describe("favoriteSessions", () => {
     expect(result.successful.sort()).toEqual([...ids].sort());
   });
 
-  it("paces requests to stay within thirty session units per minute", async () => {
+  it("paces requests to stay within thirty session units per minute, with a one-second safety margin at the window boundary", async () => {
     // 40 ids -> four chunks of ten. The rolling window starts empty: chunks one through three
     // spend the whole budget (10 + 10 + 10 = 30) with no wait, and the fourth can't fit until the
-    // *oldest* ten units age fully out of the trailing 60-second window -- a full 60 s wait, not a
-    // fractional one computed from a refill rate (the pacer is a sliding window log, not a
-    // continuously-refilling token bucket -- see acquire's own doc comment for why that
-    // distinction matters).
+    // *oldest* ten units age fully out of the trailing window -- a full wait, not a fractional one
+    // computed from a refill rate (the pacer is a sliding window log, not a continuously-refilling
+    // token bucket -- see acquire's own doc comment for why that distinction matters). The wait is
+    // 61 s, not a bare 60 s: pr-reviewer-3's finding -- entries expiring at exactly the real 60 s
+    // quota boundary leave zero margin against timestamp jitter between this process's own clock
+    // and the server's, so PACE_WINDOW_MS carries a deliberate one-second margin.
     const ids = Array.from({ length: 40 }, (_, i) => `s${i}`);
     const sleeper = fakeSleep();
     const apiClient: Pick<ApiClient, "associateFavorites" | "getSchedule"> = {
@@ -327,7 +329,7 @@ describe("favoriteSessions", () => {
       now: fixedClock(0),
     });
 
-    expect(sleeper.durations).toEqual([60_000]);
+    expect(sleeper.durations).toEqual([61_000]);
   });
 
   it("re-reads the schedule exactly once after writing, regardless of chunk count", async () => {
@@ -488,7 +490,41 @@ describe("favoriteSessions", () => {
       now: fixedClock(0),
     });
 
-    expect(sleeper.durations).toEqual([60_000]);
+    expect(sleeper.durations).toEqual([61_000]);
+  });
+
+  it("still waits a full extra second at exactly the real sixty-second quota boundary -- the margin itself", async () => {
+    // pr-reviewer-3's finding, isolated directly: measured over real stdio, a server process
+    // sending a 50-id call then a 10-id call spent 30 units at t=0.0 s and 20+10 at t=60.0 s --
+    // within the real 60 s quota by this *process's* own clock, but any timestamp jitter against
+    // the *server's* own clock could make it count as sixty landing within one real window. Two
+    // separate calls, the second's own `now` fixed at exactly 60,000 ms after the first (not a
+    // sleep-driven clock -- the point is to ask "what does the pacer do if a caller's clock reads
+    // exactly 60 s later", not to simulate 60 s of real waiting): if the window were a bare 60 s,
+    // the first call's entries would already be expired and the second would need no wait at all;
+    // with the real 61 s window, it still needs the one remaining second.
+    const apiClient: Pick<ApiClient, "associateFavorites" | "getSchedule"> = {
+      associateFavorites: async (_eventId, sessionIds) => ({ successful: sessionIds, failed: [] }),
+      getSchedule: async () => emptySchedule(),
+    };
+    const sleeper = fakeSleep();
+
+    await favoriteSessions(Array.from({ length: 30 }, (_, i) => `a${i}`), {
+      apiClient,
+      storeRoot: home.path,
+      sleep: sleeper.sleep,
+      now: fixedClock(0),
+    });
+    expect(sleeper.durations).toEqual([]);
+
+    await favoriteSessions(["b0"], {
+      apiClient,
+      storeRoot: home.path,
+      sleep: sleeper.sleep,
+      now: fixedClock(60_000), // exactly the real quota's own window length, not the margin's
+    });
+
+    expect(sleeper.durations).toEqual([1_000]);
   });
 
   it("gives a different store root its own, independent rate window", async () => {
@@ -545,7 +581,7 @@ describe("favoriteSessions", () => {
     expect(associateCalls).toHaveLength(5);
     // Exactly one wait, covering both chunk four and chunk five -- not two separate waits, one
     // per chunk, the way a naive "wait then re-check the same stale window" implementation would.
-    expect(clock.durations).toEqual([60_000]);
+    expect(clock.durations).toEqual([61_000]);
   });
 
   it("aborts immediately on AuthRequiredError from the first chunk, with no pacer sleep and nothing reported as failed", async () => {
