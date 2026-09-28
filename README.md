@@ -133,10 +133,13 @@ narrowed with:
 reinvent-scout catalog show ANT301
 ```
 
-Shows one session's full local detail (including its abstract), by either its session id or its
-abbreviation -- the abbreviation is what `catalog search` prints, and matching it is
-case-insensitive, so you can paste exactly what search showed you. (Real session ids are opaque,
-e.g. `1780441461150001GGoc`; the abbreviation is what you'll actually have on hand.)
+Prints the session's title, every other sitting of the same talk (see "Also offered as" below), and
+its abstract, by either its session id or its abbreviation -- the abbreviation is what `catalog
+search` prints, and matching it is case-insensitive, so you can paste exactly what search showed
+you. (Real session ids are opaque, e.g. `1780441461150001GGoc`; the abbreviation is what you'll
+actually have on hand.) The rest of the record -- type, level, venue, room, date, time, and the
+session id itself -- is only in the `--json` output; the human-readable form is deliberately just
+enough to read and decide, not the full record.
 
 Some talks repeat on a later day under a suffixed abbreviation (`ARC325-R`, `ARC325-R1`). `catalog
 show` also accepts the **bare base code** with the suffix removed (`ARC325`) and resolves it to the
@@ -216,33 +219,30 @@ reinvent-scout match --profile my-profile.json
 Ranks every session in the local catalog against a profile and prints the candidates that share
 at least one real signal with it -- an exact catalog service match, a topic or area-of-interest
 match, or free-text overlap with the profile's own prose (service usage notes, pattern names and
-notes, interests, and intents). Each candidate carries a `score` and a list of `reasons`, so you
-(or an agent) can see exactly why a session was suggested, not just that it was:
+notes, interests, and intents). Each candidate carries a `score` and a list of `reasons`, plus every
+scheduled `offerings` (day, time, venue, room), so you (or an agent) can see exactly why a session
+was suggested and when to actually attend it, not just that it was suggested -- this is real output,
+from the profile example above run against the real catalog:
 
 ```
-API318 -- Deep dive into event-driven architectures with Lambda and Step Functions -- [Breakout session] -- (score: 100)
-  - Uses AWS Lambda, which this session covers.
-  - Uses AWS Step Functions, which this session covers.
-```
-
-The real catalog repeats many talks on more than one day, under a suffixed abbreviation
-(`ARC325-R`, `ARC325-R1`). `match` groups those into a single candidate by its base `code`, so
-asking for thirty candidates gets thirty genuinely different talks rather than the same one
-occupying several slots. Every sitting still shows up, under `offerings`:
-
-```
-ARC325 -- Serverless at 1M RPS: Lambda, DynamoDB & SQS Scaling Lessons -- [Breakout session] -- (score: 127.37)
-  - Uses AWS Lambda, which this session covers.
+ARC325 -- Serverless at 1M RPS: Lambda, DynamoDB & SQS Scaling Lessons -- [Chalk talk] -- (score: 76.96)
   - Uses Amazon DynamoDB, which this session covers.
+  - Matches the topic "Serverless".
+  - Text overlap on: dynamodb, lambda, serverless.
   Offerings:
     2026-12-02 -- 13:30 -- Caesars Forum -- Level 1 | Alliance 314
     2026-12-03 -- 10:00 -- Caesars Palace -- Caesars Palace | Promenade Level | Trevi
 ```
 
-A candidate's own `score` and `reasons` come from its best-scoring sitting (never a sum across
-repeats -- they're the same talk, not independent signals), and `--limit` counts these grouped
-candidates, not raw sittings. `catalog search`, by contrast, is left ungrouped: it's a raw listing
-of the catalog, not a ranked set of choices to pick between.
+The real catalog repeats many talks on more than one day, under a suffixed abbreviation
+(`ARC325-R`, `ARC325-R1` above). `match` groups those into a single candidate by its base `code`
+(`ARC325`), so asking for thirty candidates gets thirty genuinely different talks rather than the
+same one occupying several slots -- both of `ARC325`'s real sittings show up under `offerings`
+above, a day apart and in different venues. A candidate's own `score` and `reasons` come from its
+best-scoring sitting (never a sum across repeats -- they're the same talk, not independent
+signals), and `--limit` counts these grouped candidates, not raw sittings. `catalog search`, by
+contrast, is left ungrouped: it's a raw listing of the catalog, not a ranked set of choices to pick
+between.
 
 `--profile` takes either a file path or a name previously saved with `profile save` -- whichever
 it is, it's resolved through the exact same validation and catalog-name resolution `profile
@@ -279,18 +279,25 @@ vanishing from your own schedule. `--event <id>` reads a different event; `--jso
 machine-readable output, including each entry's `resolved: true|false` status.
 
 ```
-reinvent-scout schedule favorite ANT301-SESSION-ID ARC325-SESSION-ID
+reinvent-scout schedule favorite <session-id> [<session-id> ...]
 ```
 
-Favorites one or more sessions by their real session id -- the `sessionId` field `catalog search`,
-`catalog show` and `match` all print, not the human-readable abbreviation or `match`'s own grouped
-`code`. Requests are chunked at ten ids per call (the API's own limit) and paced to stay within the
-write quota, and every outcome is reported: which ids succeeded, which were already favorited
-(not treated as a failure), and which were refused and why -- including, for a scheduling
-conflict, the conflicting sessions' titles. After writing, it reads your schedule back once and
-warns if anything the API reported as favorited doesn't actually show up, so a response you can't
-fully trust never gets reported as a clean success. The command exits non-zero if any session was
-refused.
+Favorites one or more sessions by their real session id -- present in every command's `--json`
+output as the `sessionId` field, but deliberately *not* printed in any human-readable output
+(`catalog search`, `catalog show` and `match` all print the shorter abbreviation or grouped `code`
+instead, since that's what you'd actually read and remember). Pull the real id out with `--json` and
+`jq` when you need one to paste, for example to favorite one specific sitting you just looked up:
+
+```
+reinvent-scout schedule favorite "$(reinvent-scout catalog show ARC325-R1 --json | jq -r .sessionId)"
+```
+
+Requests are chunked at ten ids per call (the API's own limit) and paced to stay within the write
+quota, and every outcome is reported: which ids succeeded, which were already favorited (not
+treated as a failure), and which were refused and why -- including, for a scheduling conflict, the
+conflicting sessions' titles. After writing, it reads your schedule back once and warns if anything
+the API reported as favorited doesn't actually show up, so a response you can't fully trust never
+gets reported as a clean success. The command exits non-zero if any session was refused.
 
 A single `-` in place of session ids reads them from stdin instead, one per line -- the point of
 this is piping `match`'s own output straight in:
@@ -348,19 +355,22 @@ catalog and the attendee's own data stay local; only a bounded summary ever reac
 ### Connect it to Claude Code
 
 ```
-claude mcp add reinvent-scout -- reinvent-scout mcp
+claude mcp add --scope user reinvent-scout -- reinvent-scout mcp
 ```
 
 Or, if you'd rather not put `reinvent-scout` on your `PATH`, point it at the built entry point
 directly (use an absolute path):
 
 ```
-claude mcp add reinvent-scout -- node /absolute/path/to/re-invent-helper/dist/cli/main.js mcp
+claude mcp add --scope user reinvent-scout -- node /absolute/path/to/re-invent-helper/dist/cli/main.js mcp
 ```
 
-Either way adds an entry to your user-level MCP config. To check it into a project instead (so
-anyone who clones the project gets the same server configured), add it to a `.mcp.json` at the
-project root:
+`--scope user` is what makes this available in every project, not just whichever directory you
+happen to run `claude mcp add` from -- `claude mcp add`'s own default scope (`local`) is scoped to
+the current project only, which would defeat the point for a tool meant to profile *any* repo you
+point an agent at. Either way adds an entry to your user-level MCP config. To check it into a
+project instead (so anyone who clones the project gets the same server configured), add it to a
+`.mcp.json` at the project root:
 
 ```json
 {
