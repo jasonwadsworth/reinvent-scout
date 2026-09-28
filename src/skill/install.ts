@@ -17,8 +17,9 @@ export const MANIFEST_FILE_NAME = ".install-manifest.json";
 const here = dirname(fileURLToPath(import.meta.url));
 /** This module compiles to `dist/skill/install.js`; the skill's own content ships at the package
  * root's `skills/reinvent-scout` (see `package.json`'s `files` list), two levels up from
- * `dist/skill`. Mirrors `cli/version.ts`'s own `defaultPackageJsonPath` convention exactly. */
-const defaultSourceDir = join(here, "..", "..", "skills", SKILL_NAME);
+ * `dist/skill`. Mirrors `cli/version.ts`'s own `defaultPackageJsonPath` convention exactly.
+ * Exported so `skill/update.ts` shares the exact same default, rather than recomputing it. */
+export const DEFAULT_SKILL_SOURCE_DIR = join(here, "..", "..", "skills", SKILL_NAME);
 
 export interface InstallSkillManifest {
   version: string;
@@ -76,15 +77,17 @@ export function resolveWithinRoot(root: string, relativePath: string): string {
   return resolvedTarget;
 }
 
-function sha256Hex(content: Buffer): string {
+/** Exported so `skill/update.ts` can hash a locally-installed file's current content the exact
+ * same way, to compare against what an old manifest recorded. */
+export function sha256Hex(content: Buffer): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
 /** Every regular file under `dir`, as paths relative to `dir` -- always `/`-separated (POSIX
  * style) regardless of platform, so the manifest this feeds is portable and stable across OSes,
  * and recursive, so a nested directory (`reference/`) is never silently skipped by a shallow
- * listing. */
-function listFilesRecursive(dir: string, prefix = ""): string[] {
+ * listing. Exported so `skill/update.ts` lists the *new* source version's files the same way. */
+export function listFilesRecursive(dir: string, prefix = ""): string[] {
   const entries = readdirSync(dir, { withFileTypes: true });
   const files: string[] = [];
   for (const entry of entries) {
@@ -105,7 +108,7 @@ function listFilesRecursive(dir: string, prefix = ""): string[] {
  * doesn't already exist.
  */
 export function installSkill(deps: InstallSkillDeps = {}): InstallSkillResult {
-  const sourceDir = deps.sourceDir ?? defaultSourceDir;
+  const sourceDir = deps.sourceDir ?? DEFAULT_SKILL_SOURCE_DIR;
   const targetsDir = deps.targetsDir ?? resolveDefaultSkillsDir(deps);
   const installedPath = join(targetsDir, SKILL_NAME);
   const version = deps.packageVersion ?? readPackageVersion();

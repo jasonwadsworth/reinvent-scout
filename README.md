@@ -345,6 +345,19 @@ agent, so it's never guessed):
 reinvent-scout skill install --dir /path/to/other/skills
 ```
 
+To pick up a newer version of the skill later, without losing a file you edited locally:
+
+```
+reinvent-scout skill update
+```
+
+Compares the currently-installed skill's own version against this build's; already matching is
+reported as up to date with nothing touched. Otherwise, every file is checked against the hash
+recorded at install time -- a file that still matches is safely overwritten with the new content, a
+file that's changed since (a local edit) refuses the *entire* update and names every file it found
+modified, so nothing is silently lost. Pass `--force` to overwrite local edits anyway, and `--dir`
+to match wherever `skill install` put it.
+
 ## Where your data lives
 
 Everything is stored under `~/.reinvent-scout/` (override with the `REINVENT_SCOUT_HOME`
