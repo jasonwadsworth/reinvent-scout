@@ -550,3 +550,60 @@ describe("workflow.md's validate_profile contract", () => {
     expect(skillMd).not.toMatch(/match_sessions.*validated profile/i);
   });
 });
+
+describe("documented evidence lenses", () => {
+  it("documents the exact MCP lens enum and executes every example pattern through matching", async () => {
+    const home = createTempHome();
+    try {
+      const server = createMcpServer({ resolveStoreRoot: () => home.path });
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      const client = new Client({ name: "lens-doc-test", version: "0.0.1" });
+      await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+      const { tools } = await client.listTools();
+      const lensSchema = tools.find(tool => tool.name === "match_sessions")!.inputSchema.properties!.lens as { enum: string[] };
+      const declaration = /"lens"\?: ([^,]+)/.exec(workflowMd)![1]!;
+      expect([...declaration.matchAll(/"([a-z-]+)"/g)].map(match => match[1])).toEqual(lensSchema.enum);
+      const profiles = [...workflowMd.matchAll(/```json\n([\s\S]*?)```/g)]
+        .map(match => JSON.parse(match[1]!) as Record<string, unknown>)
+        .filter(value => "schemaVersion" in value && "patterns" in value);
+      expect(profiles).toHaveLength(1);
+      const resolved = resolveProfile(profiles[0], buildServiceAliasIndex([]));
+      const examples = [
+        ["gap-no-dlq", "Dead-letter queues"], ["gap-no-alarms", "Observability"],
+        ["gap-no-tests", "Automated testing"], ["gap-broad-iam", "Least privilege"],
+        ["gap-no-load-tests", "Load testing"], ["gap-no-cost-monitoring", "Cost monitoring"],
+        ["gap-no-resource-rightsizing", "Rightsizing"], ["serverless", "Containers"],
+        ["ecs", "Kubernetes"], ["genai-single-call", "Agentic workflows"],
+      ];
+      expect(resolved.patterns.map(pattern => pattern.name).sort()).toEqual(examples.map(example => example[0]).sort());
+      for (const [name, title] of examples) {
+        const raw = [{ sessionId: "documented", abbreviation: "DOC400", title: title! }];
+        writeCatalog({ raw, index: raw.map(buildIndexRecord), meta: { schemaVersion: CURRENT_SCHEMA_VERSION, eventId: DEFAULT_EVENT_ID, syncedAt: 1, totalCount: 1, count: 1, includedAbstracts: true, timezone: null } }, { storeRoot: home.path });
+        const pattern = resolved.patterns.find(entry => entry.name === name)!;
+        const input = { ...profiles[0], patterns: [pattern] };
+        const validation = await client.callTool({ name: "validate_profile", arguments: { profile: input } });
+        expect(validation.isError).not.toBe(true);
+        const lens = name!.startsWith("gap-") ? "fix" : "next-level";
+        const result = await client.callTool({ name: "match_sessions", arguments: { profile: input, lens } });
+        expect(result.isError).not.toBe(true);
+        const parsed = JSON.parse((result.content as Array<{ text: string }>)[0]!.text);
+        expect(parsed.candidates).toHaveLength(1);
+        expect(parsed.candidates[0].code).toBe("DOC400");
+        expect(parsed.candidates[0].reasons).toContainEqual(expect.objectContaining({ kind: lens === "fix" ? "pillarGap" : "migrationPath", profileEvidence: pattern.evidence }));
+      }
+      await client.close();
+      await server.close();
+    } finally { home.cleanup(); }
+  });
+  it("states the evidence boundary and migration trade-offs throughout the guidance", () => {
+    for (const text of [skillMd, workflowMd, profilingMd]) {
+      expect(text).toContain("profileEvidence");
+      expect(text).toContain("not evident in the cited scope");
+      expect(text).toContain("genai-single-call");
+      expect(text).not.toMatch(/lenses (?:do not exist|are\s+not available)/);
+    }
+    for (const phrase of ["runtime control", "operational ownership", "portability", "complexity", "multi-step tool use", "latency"]) {
+      expect(profilingMd).toContain(phrase);
+    }
+  });
+});

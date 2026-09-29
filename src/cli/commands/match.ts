@@ -11,7 +11,7 @@ import {
   ValidationError,
 } from "../../core/errors.js";
 import { ensureStoreRoot } from "../../core/paths.js";
-import type { Lens } from "../../match/lens.js";
+import { LENSES, type Lens } from "../../match/lens.js";
 import { matchSessions, type MatchCandidate } from "../../match/match.js";
 import { resolveProfile } from "../../profile/profile.js";
 import { readProfileFile } from "../../profile/store.js";
@@ -36,7 +36,6 @@ interface MatchCommandOptions {
 const DEFAULT_MATCH_LIMIT = 30;
 const MAX_MATCH_LIMIT = 100;
 const NO_CANDIDATES_MESSAGE = "No matching sessions found.";
-const KNOWN_LENSES: readonly Lens[] = ["explain", "all"];
 
 function parseMatchLimit(raw: string): number {
   const limit = Number(raw);
@@ -50,8 +49,8 @@ function parseMatchLimit(raw: string): number {
 }
 
 function parseLens(raw: string): Lens {
-  if (!KNOWN_LENSES.includes(raw as Lens)) {
-    throw new ValidationError(`--lens must be one of ${KNOWN_LENSES.join(", ")}, got "${raw}".`);
+  if (!LENSES.includes(raw as Lens)) {
+    throw new ValidationError(`--lens must be one of ${LENSES.join(", ")}, got "${raw}".`);
   }
   return raw as Lens;
 }
@@ -118,7 +117,11 @@ function formatOfferingLine(offering: MatchCandidate["offerings"][number]): stri
  * gets its ordinary line, never invented text. */
 function formatCandidateWithReasons(candidate: MatchCandidate, abstract?: string | null): string {
   const line = formatCandidateLine(candidate);
-  const reasonLines = candidate.reasons.map((reason) => `  - ${reason.detail}`);
+  const reasonLines = candidate.reasons.flatMap((reason) => [
+    `  - ${reason.detail}`,
+    ...(reason.profileEvidence ?? []).map(citation =>
+      `    Source: ${citation.repo}/${citation.file}${citation.line === undefined ? "" : `:${citation.line}`}`),
+  ]);
   const offeringLines = candidate.offerings.map(formatOfferingLine);
   const parts = [line, ...reasonLines, "  Offerings:", ...offeringLines];
   if (abstract !== undefined && abstract !== null && abstract !== "") {
@@ -136,7 +139,7 @@ export function registerMatchCommands(program: Command, deps: MatchCommandDeps =
     .command("match")
     .description("Rank the local catalog against an agent-authored tech profile.")
     .requiredOption("--profile <file|name>", "a profile file path, or a name saved with `profile save`")
-    .option("--lens <lens>", "explain (default level bands and formats) or all", "all")
+    .option("--lens <lens>", `one of ${LENSES.join(", ")}`, "all")
     .option("--limit <n>", "maximum number of candidates", String(DEFAULT_MATCH_LIMIT))
     .option("--include-abstracts", "include each session's abstract in the output")
     .option("--json", "print machine-readable JSON instead of a human-readable table")

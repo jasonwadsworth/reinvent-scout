@@ -1,4 +1,5 @@
-import type { CatalogStoreDeps } from "../catalog/store.js";
+import { scoreLensSignals } from "./lens-signals.js";
+import { readRaw, type CatalogStoreDeps } from "../catalog/store.js";
 import { baseSessionCode, requireCurrentIndex } from "../catalog/query.js";
 import type { IndexRecord } from "../catalog/index-record.js";
 import type { Venue } from "../catalog/venue.js";
@@ -273,6 +274,9 @@ export function matchSessions(
   const lensProfile = getLensProfile(lens);
   const index = requireCurrentIndex(deps);
   const query = buildMatchQuery(profile);
+  const rawById = lens === "fix" || lens === "next-level"
+    ? new Map((readRaw(deps) ?? []).map(session => [session.sessionId, session]))
+    : undefined;
   // Built once, over the whole loaded catalog, and reused for every candidate below -- inverse
   // document frequency is a corpus-wide statistic, not a per-record one; computing it fresh per
   // record would be both wasteful and simply wrong, since it needs to see every document to know
@@ -288,7 +292,9 @@ export function matchSessions(
       }
     }
 
-    const base = scoreSession(record, query, corpusStats);
+    const base = lens === "fix" || lens === "next-level"
+      ? scoreLensSignals(record, profile, lens, rawById?.get(record.sessionId)?.abstract)
+      : scoreSession(record, query, corpusStats);
     // Gated on the scorer's own score, before the lens's format bonus is even considered -- a
     // format preference is a tiebreak among sessions that already share a real signal with the
     // profile (a service, a topic, an area of interest, or free-text overlap), never a standalone
@@ -299,8 +305,13 @@ export function matchSessions(
       continue;
     }
 
-    const reasons = [...base.reasons];
     let score = base.score;
+    const reasons = [...base.reasons];
+    if (lens === "fix" || lens === "next-level") {
+      const relevance = scoreSession(record, query, corpusStats);
+      score += relevance.score;
+      reasons.push(...relevance.reasons);
+    }
 
     const formatBonus = record.type !== null ? lensProfile.typeWeights.get(record.type) : undefined;
     if (formatBonus !== undefined) {

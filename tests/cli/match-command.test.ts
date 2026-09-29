@@ -1,3 +1,4 @@
+import { LENSES } from "../../src/match/lens.js";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -100,6 +101,31 @@ describe("match command", () => {
 
   afterEach(() => {
     home.cleanup();
+  });
+
+  it.each([
+    ["fix", "gap-no-dlq", "Dead-letter queues", "pillarGap", "not evident in the cited scope"],
+    ["next-level", "genai-single-call", "Agentic workflows", "migrationPath", "latency"],
+  ])("renders %s cited reasons in JSON and human output", async (lens, pattern, title, kind, wording) => {
+    const evidence = [{ repo: "repo", file: "src/agent.ts", line: 17, note: "Inspected handler" }];
+    writeFileSync(profileFilePath, JSON.stringify({ schemaVersion: 1, repos: [{ root: "repo", languages: [] }], services: [], patterns: [{ name: pattern, evidence }] }));
+    const raw = [{ sessionId: "lens", abbreviation: "LENS400", title: title! }];
+    writeCatalog({ raw, index: raw.map(buildIndexRecord), meta: sampleMeta() }, { storeRoot: home.path });
+    const json = harness(home.path);
+    await json.run(["match", "--profile", profileFilePath, "--lens", lens!, "--json"]);
+    const results = JSON.parse(json.printed[0]!);
+    expect(results.map((result: { code: string }) => result.code)).toEqual(["LENS400"]);
+    expect(results[0].reasons).toContainEqual(expect.objectContaining({ kind, profileEvidence: evidence }));
+    const human = harness(home.path);
+    await human.run(["match", "--profile", profileFilePath, "--lens", lens!]);
+    expect(human.printed.join("\n")).toContain("repo/src/agent.ts:17");
+    expect(human.printed.join("\n")).toContain(wording);
+  });
+  it.each(LENSES)("accepts shared lens %s", async lens => {
+    seedFixtureCatalog(home.path);
+    const h = harness(home.path);
+    await h.run(["match", "--profile", profileFilePath, "--lens", lens, "--json"]);
+    expect(() => JSON.parse(h.printed[0]!)).not.toThrow();
   });
 
   it("accepts a profile file and prints candidates as compact JSON", async () => {

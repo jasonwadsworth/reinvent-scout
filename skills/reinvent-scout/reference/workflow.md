@@ -88,11 +88,12 @@ offending entry -- fix the *profile object* and call `validate_profile` again wi
 
 ## 5. `match_sessions`
 
-Arguments: `{ "profile": <profile object>, "lens"?: "all" | "explain", "limit"?: number }`.
+Arguments: `{ "profile": <profile object>, "lens"?: "all" | "explain" | "fix" | "next-level", "limit"?: number }`.
 `lens` defaults to `"all"` (no restriction). `limit` defaults to 25 and is silently capped at 50 --
-asking for more never errors, it just gets the largest sensible set. **Fix and Next-level lenses are
-not available in this build** -- only `"all"` and `"explain"` are valid; don't promise a Well-
-Architected review or a migration-path lens to the user.
+asking for more never errors, it just gets the largest sensible set. Fix requires an exact supported
+cited gap and a remediation signal; Next-level requires a cited source pattern and destination
+signal. Both have neutral level/format preferences. Unknown patterns or an alien catalog return
+no candidates. Ordinary profile matches rank already eligible sessions only.
 
 ```json
 {
@@ -291,3 +292,158 @@ human running these directly gets human-formatted terminal output, not JSON):
 stays current -- also not something you run on yourself mid-conversation, though it's fine to
 mention if the user asks how to install or update the skill. `skill update` never overwrites a
 locally-modified file without `--force`.
+
+## Evidence lens example
+
+This synthetic teaching profile covers all seven gap rules and three migration paths. Replace
+it with evidence from the repositories you actually inspect; these are not claims about this
+project. Save the original JSON as `lens-profile.json`. Validation returns a report, so pass
+this original profile object to `match_sessions`, never that report.
+
+```json
+{
+  "schemaVersion": 1,
+  "repos": [
+    {
+      "root": "example",
+      "languages": [
+        "typescript"
+      ]
+    }
+  ],
+  "services": [],
+  "patterns": [
+    {
+      "name": "gap-no-dlq",
+      "note": "Redrive not evident in this queue declaration.",
+      "evidence": [
+        {
+          "repo": "example",
+          "file": "infra/queue.ts",
+          "line": 12
+        }
+      ]
+    },
+    {
+      "name": "gap-no-alarms",
+      "note": "Alarms not evident in the cited deployment scope.",
+      "evidence": [
+        {
+          "repo": "example",
+          "file": "infra/stack.ts",
+          "line": 24
+        }
+      ]
+    },
+    {
+      "name": "gap-no-tests",
+      "note": "Test automation not evident in these scripts; checked associated workflows.",
+      "evidence": [
+        {
+          "repo": "example",
+          "file": "package.json",
+          "line": 8
+        }
+      ]
+    },
+    {
+      "name": "gap-broad-iam",
+      "note": "Wildcard resource scope in the policy statement.",
+      "evidence": [
+        {
+          "repo": "example",
+          "file": "infra/policy.ts",
+          "line": 31
+        }
+      ]
+    },
+    {
+      "name": "gap-no-load-tests",
+      "note": "Load testing not evident in the cited workflow.",
+      "evidence": [
+        {
+          "repo": "example",
+          "file": "ci/test.yml",
+          "line": 16
+        }
+      ]
+    },
+    {
+      "name": "gap-no-cost-monitoring",
+      "note": "Cost monitoring not evident in the inspected infrastructure scope.",
+      "evidence": [
+        {
+          "repo": "example",
+          "file": "infra/budget.ts",
+          "line": 7
+        }
+      ]
+    },
+    {
+      "name": "gap-no-resource-rightsizing",
+      "note": "Rightsizing controls not evident in the inspected workload scope.",
+      "evidence": [
+        {
+          "repo": "example",
+          "file": "infra/service.ts",
+          "line": 20
+        }
+      ]
+    },
+    {
+      "name": "serverless",
+      "note": "Application is deployed as event-driven Lambda handlers.",
+      "evidence": [
+        {
+          "repo": "example",
+          "file": "infra/functions.ts",
+          "line": 15
+        }
+      ]
+    },
+    {
+      "name": "ecs",
+      "note": "Another component runs as an ECS service.",
+      "evidence": [
+        {
+          "repo": "example",
+          "file": "infra/service.ts",
+          "line": 10
+        }
+      ]
+    },
+    {
+      "name": "genai-single-call",
+      "note": "One model call returns a summary; no tool loop in this handler.",
+      "evidence": [
+        {
+          "repo": "example",
+          "file": "src/summarize.ts",
+          "line": 18
+        }
+      ]
+    }
+  ]
+}
+```
+
+```text
+reinvent-scout profile validate lens-profile.json
+reinvent-scout match --profile lens-profile.json --lens fix
+reinvent-scout match --profile lens-profile.json --lens next-level
+```
+
+For MCP, call `validate_profile` with that object, then `match_sessions` with the same object
+and `lens: "fix"` or `lens: "next-level"`. Results depend on your synced catalog; zero is valid.
+Fix reasons use `kind: "pillarGap"`; Next-level reasons use `kind: "migrationPath"`. Both add
+`profileEvidence` containing the original repo/file/line (and any snippet/note), while `evidence`
+contains the actual matched catalog selector. Display both. Source citations are deduplicated;
+ordinary service/text reasons may follow them to explain ranking.
+
+Fix reasons say “not evident in the cited scope” rather than asserting a global absence. For
+`genai-single-call` → agentic, for example, describe multi-step tool use alongside latency, cost,
+evaluation, and control requirements. For serverless → containers discuss runtime control versus
+operational ownership; for ECS → EKS discuss portability/ecosystem versus platform complexity.
+These are options, not prescriptions. Open issues are intent to connect to evidence, not proof of
+a gap or permission to migrate. Large cited reasons retain the same whole-candidate MCP budget:
+read `truncated` and `omitted`; citations are not silently clipped to make a candidate fit.

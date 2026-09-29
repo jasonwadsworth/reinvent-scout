@@ -1,3 +1,4 @@
+import { LENSES } from "../../src/match/lens.js";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -420,6 +421,33 @@ describe("match_sessions tool", () => {
 
   afterEach(() => {
     home.cleanup();
+  });
+
+  it("advertises the shared lens enum", async () => {
+    const client = await connectedClient({ resolveStoreRoot: () => home.path });
+    const { tools } = await client.listTools();
+    expect(tools.find(tool => tool.name === "match_sessions")!.inputSchema.properties!.lens).toMatchObject({ enum: [...LENSES] });
+  });
+  it.each([
+    ["fix", "gap-no-dlq", "Dead-letter queues", "pillarGap"],
+    ["next-level", "genai-single-call", "Agentic workflows", "migrationPath"],
+  ])("%s forwards complete cited reasons within the response budget", async (lens, source, title, kind) => {
+    const evidence = [{ repo: "repo", file: "src/agent.ts", line: 17, note: "Complete citation" }];
+    const profile = { schemaVersion: 1, repos: [{ root: "repo", languages: [] }], services: [], patterns: [{ name: source, evidence }] };
+    seedCatalog(home.path, [{ sessionId: "lens", abbreviation: "LENS400", title: title! }]);
+    const client = await connectedClient({ resolveStoreRoot: () => home.path });
+    const result = await client.callTool({ name: "match_sessions", arguments: { profile, lens } });
+    expect(result.isError).not.toBe(true);
+    const parsed = JSON.parse(textOf(result));
+    expect(parsed.candidates.map((candidate: { code: string }) => candidate.code)).toEqual(["LENS400"]);
+    expect(parsed.candidates[0].reasons).toContainEqual(expect.objectContaining({ kind, profileEvidence: evidence }));
+    expect(parsed.candidates[0].reasons[0].evidence).toBe(lens === "fix" ? "Dead-letter queues" : "Agentic");
+    expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(30 * 1024);
+    evidence[0]!.note = "long citation ".repeat(4000);
+    const huge = await client.callTool({ name: "match_sessions", arguments: { profile, lens } });
+    expect(huge.isError).not.toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(huge))).toBeLessThan(30 * 1024);
+    expect(JSON.parse(textOf(huge))).toMatchObject({ candidates: [], truncated: true, omitted: 1 });
   });
 
   it("returns ranked candidates from match_sessions", async () => {

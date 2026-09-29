@@ -1,3 +1,4 @@
+import type { Evidence } from "../profile/profile.js";
 import { getOwnTermCount, tokenize, type IndexRecord } from "../catalog/index-record.js";
 
 /**
@@ -7,7 +8,7 @@ import { getOwnTermCount, tokenize, type IndexRecord } from "../catalog/index-re
  * touching this module's arithmetic.
  */
 export interface Reason {
-  kind: "service" | "topic" | "areaOfInterest" | "text" | "level" | "format";
+  kind: "service" | "topic" | "areaOfInterest" | "text" | "level" | "format" | "pillarGap" | "migrationPath";
   /** A one-line, human-readable explanation, e.g. `Uses Amazon DynamoDB, which this session
    * covers.` */
   detail: string;
@@ -17,6 +18,8 @@ export interface Reason {
   /** The specific value that matched -- a catalog service name, a topic, or the query terms a
    * text match found -- so the detail can be checked against the session's own real fields. */
   evidence: string;
+  /** Source citations for a pillarGap or migrationPath reason. */
+  profileEvidence?: Evidence[];
 }
 
 export interface MatchQuery {

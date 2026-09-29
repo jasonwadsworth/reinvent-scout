@@ -17,7 +17,7 @@ import {
   ValidationError,
 } from "../core/errors.js";
 import { matchSessions } from "../match/match.js";
-import type { Lens } from "../match/lens.js";
+import { LENSES, type Lens } from "../match/lens.js";
 import { resolveProfile, type ResolvedProfile } from "../profile/profile.js";
 import { favoriteSessions, unfavoriteSession } from "../schedule/favorites.js";
 import { mergeAndSortScheduleEntries, timezoneWarnings, type MergedScheduleEntry } from "../schedule/merge.js";
@@ -380,7 +380,7 @@ const MAX_MATCH_SESSIONS_LIMIT = 50;
 
 const MatchSessionsInputSchema = z.strictObject({
   profile: z.unknown(),
-  lens: z.enum(["all", "explain"]).optional(),
+  lens: z.enum(LENSES).optional(),
   /** Silently capped at `MAX_MATCH_SESSIONS_LIMIT`, never rejected -- unlike the CLI's own
    * `--limit`, which refuses a too-large value outright. An agent asking for "a lot" of
    * candidates should get the largest sensible set rather than a validation error it has to

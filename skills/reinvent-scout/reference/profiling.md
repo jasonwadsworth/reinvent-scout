@@ -81,7 +81,7 @@ at all -- it looks verified when it isn't.
 This distinction is JavaScript/TypeScript-specific. `aws-sdk` (v2, a single monolithic package) and
 `@aws-sdk/client-*` (v3, one package per service) are different signals there, not interchangeable
 spellings of "uses the AWS SDK." Note which generation a repository is on when it's relevant --
-it can matter for how current the codebase is, which the Fix lens (a later phase) will use.
+it can matter for how current the codebase is, but the Fix lens does not infer gaps from version numbers.
 
 Python has no equivalent split to track: `boto3` and the AWS CLI (invoked from a script) are
 equivalent evidence of using whatever service they call, with no generation distinction to note.
@@ -185,8 +185,8 @@ rather than scoped to what the code actually needs. These aren't services in the
 applied to the nearest relevant line: cite the resource that *lacks* the thing -- the queue
 declaration with no redrive policy, the stack with no alarm construct, the IAM statement with a
 wildcard resource -- and explain what's absent and why it matters in `note`; there's no line of
-code for an absence itself to point at. Phase 1 doesn't act on this itself, but a later "Fix" lens
-will, and this is where that signal has to come from.
+code for an absence itself to point at. The Fix lens consumes these agent-authored judgments;
+it does not scan repositories or infer an absence from missing service entries.
 
 ## Interests
 
@@ -299,3 +299,46 @@ would silently fail to match the real topic at all.
 
 For a multi-repository profile, add one entry per repository to `repos` and use its `root` as the
 `repo` value in every citation that belongs to it.
+
+## Supported evidence lenses
+
+Fix is a curated starting vocabulary spanning the [six Well-Architected pillars](https://docs.aws.amazon.com/wellarchitected/latest/framework/the-pillars-of-the-framework.html).
+The pillar names come from AWS; the pattern-to-session mappings below are our own guidance,
+not a complete assessment or a claim that every repository has these gaps.
+
+| Exact pattern | Pillar | Session signal examples |
+| --- | --- | --- |
+| `gap-no-dlq` | Reliability | Dead-letter queues, DLQ, redrive |
+| `gap-no-alarms` | Operational Excellence | Alarms, observability |
+| `gap-no-tests` | Operational Excellence | Unit, integration, automated, end-to-end tests |
+| `gap-broad-iam` | Security | Least privilege, IAM policy scope |
+| `gap-no-load-tests` | Performance Efficiency | Load, performance, stress testing |
+| `gap-no-cost-monitoring` | Cost Optimization | Cost monitoring, allocation, anomalies, AWS Budgets |
+| `gap-no-resource-rightsizing` | Sustainability | Resource rightsizing |
+
+Use “not evident in the cited scope” for an absence. Cite the nearest relevant resource or
+workflow and explain what you inspected in `note`; never infer a system-wide absence from one
+file. Broad IAM is a positive scope concern: cite the permissive statement. An open GitHub issue
+is intent, not proof of an absence; relate it to independently cited evidence in the presentation.
+
+Next-level recognizes exactly these source patterns (case-insensitively):
+
+| Source pattern → destination | Gain to explore | Cost to discuss |
+| --- | --- | --- |
+| `serverless` → containers | runtime control | operational ownership |
+| `ecs` → EKS | Kubernetes portability and ecosystem | cluster/platform complexity |
+| `genai-single-call` → agentic | multi-step tool use | latency, cost, evaluation, control requirements |
+
+These are exploration options, not automatic upgrades. Cite real architecture usage: an SDK
+import, a Bedrock service entry, or an interest in Kubernetes alone cannot establish a source
+pattern. Mixed architectures may have both source and destination patterns. A relevant issue
+helps explain why the option matters, but is not authorization to migrate.
+
+Each lens requires an exact supported source name and an actual remediation/destination catalog
+signal. Unknown names remain valid profile data but activate no rule; no active rule or no matching
+catalog signal returns zero candidates. Generic source services, interests, and issue prose never
+admit a session. Once admitted, ordinary profile relevance ranks sessions. Each distinct rule adds
+30 points once, with deduplicated source citations in `profileEvidence`; `evidence` remains the
+matched catalog signal. Titles and available abstracts match contiguous whole phrases; narrow
+exact taxonomy/service selectors also apply. Neither lens restricts level or boosts format.
+See `workflow.md` for an executable synthetic profile covering every rule.
