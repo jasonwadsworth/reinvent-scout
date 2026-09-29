@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildIndexRecord, type IndexRecord } from "../../src/catalog/index-record.js";
-import { buildStackFit } from "../../src/match/stack-fit.js";
+import { buildStackFit, PREFIX_REQUIRED_SERVICE_NAMES } from "../../src/match/stack-fit.js";
 import type { ResolvedProfile } from "../../src/profile/profile.js";
 
 const evidence = [{ repo: "r", file: "f" }];
@@ -27,23 +27,47 @@ describe("buildStackFit", () => {
   });
   it("uses the profile's own spelling for a service the catalog does not have", () => {
     const fits = buildStackFit(profile({ name: "Amazon Polly", catalogName: null }))!;
-    expect(fits(record("Voices"), "Polly reads text aloud.")).toBe(true);
+    expect(fits(record("Voices"), "Amazon Polly reads text aloud.")).toBe(true);
+    expect(fits(record("Voices"), "Polly the parrot reads text aloud.")).toBe(false);
   });
   it("matches whole words only", () => {
     const fits = buildStackFit(profile({ name: "s3", catalogName: "Amazon Simple Storage Service (Amazon S3)" }))!;
-    expect(fits(record("Deep dive"), "The s3rver project.")).toBe(false);
+    expect(fits(record("Deep dive"), "The S3rver project.")).toBe(false);
     expect(fits(record("Deep dive"), "Store it in S3.")).toBe(true);
   });
-  it("does not read an English word as a service short name", () => {
-    const fits = buildStackFit(profile({ name: "AWS Amplify", catalogName: "AWS Amplify" }))!;
-    expect(fits(record("Deep dive"), "Agents amplify all of them.")).toBe(false);
-    expect(fits(record("Deep dive"), "Amplify Hosting serves the site.")).toBe(true);
-    expect(fits(record("Deep dive"), "Ship it with AWS Amplify.")).toBe(true);
-    expect(fits(record("Deep dive"), "Ship it with aws amplify.")).toBe(true);
+  it("needs the Amazon or AWS prefix for a short name that is an ordinary English word", () => {
+    const amplify = buildStackFit(profile({ name: "AWS Amplify", catalogName: "AWS Amplify" }))!;
+    expect(amplify(record("Deep dive"), "Agents amplify all of them.")).toBe(false);
+    expect(amplify(record("Deep dive"), "Amplify your reach.")).toBe(false);
+    expect(amplify(record("Deep dive"), "Ship it with AWS Amplify.")).toBe(true);
+    expect(amplify(record("Deep dive"), "Ship it with aws amplify hosting.")).toBe(true);
+    const connect = buildStackFit(profile({ name: "connect", catalogName: "Amazon Connect" }))!;
+    expect(connect(record("Deep dive"), "Connect your systems.")).toBe(false);
+    expect(connect(record("Deep dive"), "Route calls with Amazon Connect.")).toBe(true);
+    expect(connect(record("Deep dive", ["Amazon Connect"]), "")).toBe(true);
   });
-  it("still matches acronyms and the profile's own spelling in any case", () => {
+  it("lists the prefix-required names in one exported constant", () => {
+    for (const name of ["amplify", "connect", "glue", "batch", "backup", "config", "shield", "inspector", "detective", "transcribe", "polly"]) {
+      expect(PREFIX_REQUIRED_SERVICE_NAMES).toContain(name);
+    }
+    for (const name of ["lambda", "dynamodb", "textract", "kendra"]) expect(PREFIX_REQUIRED_SERVICE_NAMES).not.toContain(name);
+  });
+  it("matches distinctive product names as capitalized whole words without a prefix", () => {
+    const fits = buildStackFit(profile(lambda))!;
+    expect(fits(record("Deep dive"), "Lambda functions scale out.")).toBe(true);
+    expect(fits(record("Lambda tips"), "")).toBe(true);
+    expect(fits(record("Deep dive"), "A lambda expression in Java.")).toBe(false);
+  });
+  it("matches an acronym short name case-sensitively as a whole word", () => {
+    const fits = buildStackFit(profile({ name: "s3", catalogName: "Amazon Simple Storage Service (Amazon S3)" }))!;
+    expect(fits(record("Deep dive"), "Store it in S3.")).toBe(true);
+    expect(fits(record("Deep dive"), "Read ./s3/config.json first.")).toBe(false);
+    expect(fits(record("Deep dive"), "Amazon S3 and friends.")).toBe(true);
+    expect(fits(record("Deep dive"), "The S3rver project.")).toBe(false);
+  });
+  it("keeps the profile's own spelling of an unresolved service in any case", () => {
     const fits = buildStackFit(profile(sqs, { name: "Kiro", catalogName: null }))!;
-    expect(fits(record("Queues"), "Poll sqs queues.")).toBe(true);
+    expect(fits(record("Queues"), "Poll SQS queues.")).toBe(true);
     expect(fits(record("Editor"), "The kiro editor.")).toBe(true);
   });
   it("ignores supporting services", () => {

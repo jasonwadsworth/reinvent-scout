@@ -191,13 +191,19 @@ inline to temp directories. No account writes. Commits end with the attribution 
 - Remaining limitation: Fix candidates are leads, not verdicts. The agent must read each abstract
   before presenting a pick (SKILL.md already requires it), and the docs say so.
 
-### Stack-fit name matching (reviewer finding)
+### Stack-fit name matching (reviewer finding, lead's rule)
 
 - The gate matched a service name with its Amazon/AWS prefix stripped ("AWS Amplify" to "Amplify")
-  as an ordinary word in any case, so ARC330 ("Agents amplify all of them") fit on Amplify, which
-  under 1% of sessions list. Prefix-stripped names now match case-sensitively unless they are
-  acronyms (SQS, S3); full names, parenthesized names and the profile's own whole spelling still
-  match in any case.
+  as an ordinary word, so ARC330 ("Agents amplify all of them") fit on Amplify, which under 1% of
+  sessions list. Rule now: full and parenthesized catalog names match in any case; a prefix-stripped
+  short name (Lambda, DynamoDB, S3, SQS) matches only as written, as a whole word; names in the
+  exported `PREFIX_REQUIRED_SERVICE_NAMES` (Amplify, Connect, Glue, Batch, Backup, Config, Shield,
+  Inspector, Detective, Transcribe, Polly, Translate, Comprehend, Forecast, Personalize) never match
+  bare, only inside "Amazon X"/"AWS X" or the full display name. The profile's own spelling stays
+  case-insensitive unless the catalog's cased short name already covers it. A record's own services
+  list counts regardless.
 - Re-measured: hallway Fix admits 8 (ARC330 gone), 6 genuine; KiroCrew Fix unchanged (7 admitted,
-  about 4 genuine); hallway Next-level unchanged. Remaining hazard: a sentence-initial verb that
-  equals a stripped name ("Connect", "Glue") still matches.
+  about 4 genuine); hallway Next-level unchanged (CON337, SVS320, COM320 in the top 6).
+- Remaining hazard: a capitalized sentence-initial use of a distinctive short name ("Lambda" is
+  safe; a hypothetical "Kinesis" is not an English word either) is fine, but a capitalized ordinary
+  word not on the list would still match; extend the constant when one is found.
