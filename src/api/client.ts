@@ -46,6 +46,7 @@ export interface ListAllSessionsOptions {
 }
 
 export interface ApiClient {
+  getSession(eventId: string, sessionId: string): Promise<Session>;
   getSchedule(eventId: string): Promise<Schedule>;
   reserveSessions(eventId: string, sessionIds: string[]): Promise<BulkResult>;
   cancelReservation(eventId: string, sessionId: string): Promise<void>;
@@ -233,6 +234,10 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
   }
 
   return {
+    async getSession(eventId: string, sessionId: string): Promise<Session> {
+      const body = await requestJson<{ session: Session }>("GET", `/v1/events/${encodeURIComponent(eventId)}/sessions/${encodeURIComponent(sessionId)}`, deps);
+      return body.session;
+    },
     async reserveSessions(eventId: string, sessionIds: string[]): Promise<BulkResult> {
       if (sessionIds.length < 1 || sessionIds.length > 10 || new Set(sessionIds).size !== sessionIds.length) {
         throw new ValidationError("Reservations require 1–10 unique session IDs per request.");

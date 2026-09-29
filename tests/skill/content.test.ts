@@ -107,7 +107,7 @@ function cliCommandMentions(text: string): string[] {
     (match) => match[1]!,
   );
   for (const remainder of inlineSpans) {
-    const pathMatch = /^[a-z]+(?: [a-z]+)?/.exec(remainder);
+    const pathMatch = /^[a-z][a-z-]*(?: [a-z][a-z-]*)?/.exec(remainder);
     paths.push(`reinvent-scout ${pathMatch ? pathMatch[0] : remainder.trim()}`);
   }
 
@@ -117,7 +117,7 @@ function cliCommandMentions(text: string): string[] {
       continue;
     }
     for (const line of fence[2]!.split("\n")) {
-      const lineMatch = /^[\s$]*(?:npx\s+)?reinvent-scout\s+([a-z]+(?: [a-z]+)?)/.exec(line);
+      const lineMatch = /^[\s$]*(?:npx\s+)?reinvent-scout\s+([a-z][a-z-]*(?: [a-z][a-z-]*)?)/.exec(line);
       if (lineMatch) {
         paths.push(`reinvent-scout ${lineMatch[1]!}`);
       }

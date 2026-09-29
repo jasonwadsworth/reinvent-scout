@@ -1,3 +1,8 @@
+import { readFileSync } from "node:fs";
+import { z } from "zod";
+import { recommendNearbySessions, nearbyInputSchema } from "../../onsite/recommend.js";
+import { readOnsiteConfig, updateOnsiteConfig, effectiveOnsitePreferences, onsitePatchSchema } from "../../onsite/config.js";
+import { resolveStoreRoot as resolveRootWithoutCreation } from "../../core/paths.js";
 import { planSchedule, type SchedulePlan } from "../../schedule/plan.js";
 import { reserveSessions, cancelReservation, reservationNeedsAttention, cancellationNeedsAttention, validateSessionIds, type ReserveSessionsResult } from "../../schedule/reservations.js";
 import type { Command } from "commander";
@@ -328,6 +333,35 @@ export function registerScheduleCommands(program: Command, deps: ScheduleCommand
   const schedule = program
     .command("schedule")
     .description("Read your event schedule and manage favorites.");
+
+  schedule.command("onsite-config").description("Read or update local on-site preferences")
+    .option("--event <event>", "Event ID", DEFAULT_EVENT_ID).option("--file <path>", "JSON preference patch")
+    .option("--allow-walk-up <boolean>", "Global default: true or false").option("--json", "JSON output", false)
+    .action((options: { event: string; file?: string; allowWalkUp?: string; json: boolean }) => {
+      const storeRoot = (deps.resolveStoreRoot ?? resolveRootWithoutCreation)();
+      const patch = options.file ? onsitePatchSchema.parse(JSON.parse(readFileSync(options.file, "utf8"))) : {};
+      if (options.allowWalkUp !== undefined) patch.allowWalkUp = z.enum(["true", "false"]).parse(options.allowWalkUp) === "true";
+      const config = options.file || options.allowWalkUp !== undefined ? updateOnsiteConfig(options.event, patch, { storeRoot }) : readOnsiteConfig({ storeRoot });
+      print(JSON.stringify(effectiveOnsitePreferences(config, options.event), null, options.json ? undefined : 2));
+    });
+  schedule.command("nearby").description("Suggest feasible nearby sessions after venue confirmation")
+    .option("--event <event>", "Event ID", DEFAULT_EVENT_ID).option("--venue <venue>", "Current venue")
+    .option("--source <source>", "user, location, or schedule", "user").option("--confirm-venue", "Confirm this venue for this call", false)
+    .option("--skip-session <ids...>", "Ignore these reserved commitments for this calculation only")
+    .option("--within <minutes>", "Start horizon (1–240)", "60").option("--limit <count>", "Maximum results (1–20)", "10").option("--json", "JSON output", false)
+    .action(async (options: { event: string; venue?: string; source: string; confirmVenue: boolean; skipSession?: string[]; within: string; limit: string; json: boolean }) => {
+      const input = nearbyInputSchema.parse({ eventId: options.event, ...(options.venue ? { location: { venue: options.venue, source: options.source, confirmed: options.confirmVenue } } : {}), ...(options.skipSession ? { skipSessionIds: options.skipSession } : {}), withinMinutes: Number(options.within), limit: Number(options.limit) });
+      const storeRoot = resolveStoreRoot();
+      const result = await recommendNearbySessions(input, { storeRoot, apiClient: buildApiClient(storeRoot), ...(deps.now ? { now: deps.now } : {}) });
+      if (options.json) print(JSON.stringify(result));
+      else {
+        for (const item of result.candidates) print(`${item.sessionId} ${item.title} — ${item.venue}, starts ${item.startsAt} (in ${Math.floor(item.minutesToStart)} min)\n  ${item.outbound.mode}: ${item.outbound.totalMinutes} min + ${item.outbound.checkInMinutes} min check-in (${item.outbound.provenance}); ${item.admission} Band ${item.availability}, ${item.availabilitySource}, age ${item.ageMinutes === null ? "unknown" : `${item.ageMinutes.toFixed(1)} min`}.${item.onward ? ` Onward ${item.onward.totalMinutes} min + ${item.onward.checkInMinutes} min check-in to ${item.nextCommitmentId}.` : ""}`);
+        for (const rejection of result.rejected) print(`Excluded ${rejection.count}: ${rejection.reason}`);
+        for (const warning of result.warnings) print(warning);
+        if (!result.candidates.length) print("No feasible candidates with the current confirmation, travel and admission settings.");
+        print(`${result.limitations} Refreshed ${result.coverage.refreshed}/${result.coverage.eligible}; omitted ${result.coverage.omitted}.`);
+      }
+    });
 
   schedule
     .command("show")

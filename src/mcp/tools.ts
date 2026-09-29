@@ -1,3 +1,7 @@
+import { recommendNearbySessions, nearbyInputSchema } from "../onsite/recommend.js";
+import { readOnsiteConfig, updateOnsiteConfig, effectiveOnsitePreferences, onsitePatchSchema } from "../onsite/config.js";
+import { DEFAULT_EVENT_ID } from "../catalog/sync.js";
+import { boundedNearbyResult, boundedOnsitePreferences } from "./response-budget.js";
 import { planSchedule } from "../schedule/plan.js";
 import { reserveSessions, cancelReservation, validateSessionIds, reservationNeedsAttention, cancellationNeedsAttention, MAX_RESERVATION_IDS, MAX_SESSION_ID_LENGTH } from "../schedule/reservations.js";
 import { boundedReservationResult, boundedCancelResult, boundedSchedulePlan, shortenDescription } from "./response-budget.js";
@@ -692,6 +696,7 @@ function registerReservationTools(server: McpServer, deps: McpToolDeps): void {
  * `match_sessions`, `get_schedule`, `favorite_sessions` and `unfavorite_session` -- the seven the
  * skill (task 7) is written against. */
 export function registerTools(server: McpServer, deps: McpToolDeps): void {
+  registerOnsiteTools(server, deps);
   registerReservationTools(server, deps);
   registerStatusTool(server, deps);
   registerCatalogSyncTool(server, deps);
@@ -700,4 +705,19 @@ export function registerTools(server: McpServer, deps: McpToolDeps): void {
   registerGetScheduleTool(server, deps);
   registerFavoriteSessionsTool(server, deps);
   registerUnfavoriteSessionTool(server, deps);
+}
+
+function registerOnsiteTools(server: McpServer, deps: McpToolDeps): void {
+  const eventIdSchema = z.string().min(1).max(128).optional();
+  const fail = (err: unknown) => { const result = toToolError(err); result.content[0].text = shortenDescription(result.content[0].text, 512); return result; };
+  server.registerTool("nearby_sessions", { description: "Read-only nearby suggestions after confirming your current venue for this call. Uses full hard schedule, conservative travel, fresh bands and at most20 serial session reads. Skipping does not cancel reservations.", inputSchema: nearbyInputSchema }, async input => {
+    try { const storeRoot = deps.resolveStoreRoot(); return textResult(boundedNearbyResult(await recommendNearbySessions(input, { storeRoot, apiClient: (deps.buildApiClient ?? defaultBuildApiClient)(storeRoot), ...(deps.now ? { now: deps.now } : {}) }))); }
+    catch (err) { return fail(err); }
+  });
+  server.registerTool("get_onsite_preferences", { description: "Read effective on-site preferences for one event without creating config or contacting the account. Explicit session false overrides global walk-up preference.", inputSchema: z.strictObject({ eventId: eventIdSchema }) }, async ({ eventId }) => {
+    try { return textResult(boundedOnsitePreferences(effectiveOnsitePreferences(readOnsiteConfig({ storeRoot: deps.resolveStoreRoot() }), eventId ?? DEFAULT_EVENT_ID))); } catch (err) { return fail(err); }
+  });
+  server.registerTool("set_onsite_preferences", { description: "Persist local on-site preferences atomically. Session walk-up null resets inheritance; false is explicit. Routes and windows replace their lists. No AWS schedule writes.", inputSchema: z.strictObject({ eventId: eventIdSchema, patch: onsitePatchSchema }) }, async ({ eventId, patch }) => {
+    try { const event = eventId ?? DEFAULT_EVENT_ID; return textResult(boundedOnsitePreferences(effectiveOnsitePreferences(updateOnsiteConfig(event, patch, { storeRoot: deps.resolveStoreRoot() }), event))); } catch (err) { return fail(err); }
+  });
 }

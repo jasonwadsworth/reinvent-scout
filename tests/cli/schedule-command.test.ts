@@ -58,6 +58,7 @@ function fakeApiClient(overrides: ApiClientOverrides = {}): ApiClient {
       favorites: [],
       personalTime: [],
     })),
+    getSession: async () => { throw new Error("unused getSession"); },
     getEvent: async () => {
       throw new Error("not implemented in this fake");
     },
@@ -554,4 +555,16 @@ describe("reservation CLI flow", () => {
     await h.run(["schedule", "reserve", ...Array.from({ length: 51 }, (_, i) => String(i))]);
     expect(calls).toBe(0); expect(process.exitCode).toBe(1);
   });
+});
+
+
+it("reads and updates on-site config through CLI without account access", async () => {
+  const home = createTempHome();
+  try {
+    const h = harness(home.path);
+    await h.run(["schedule", "onsite-config", "--event", "constructor", "--json"]);
+    expect(JSON.parse(h.printed.pop()!).allowWalkUp).toBe(false);
+    await h.run(["schedule", "onsite-config", "--event", "constructor", "--allow-walk-up", "true", "--json"]);
+    expect(JSON.parse(h.printed.pop()!).allowWalkUp).toBe(true);
+  } finally { home.cleanup(); }
 });

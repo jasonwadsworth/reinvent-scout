@@ -35,6 +35,7 @@ function fakeApiClient(
     getSchedule: async () => {
       throw new Error("fakeApiClient: getSchedule is not implemented, sync.ts should never call it");
     },
+    getSession: async () => { throw new Error("unused getSession"); },
     getEvent: getEventImpl,
     listSessions: async () => {
       throw new Error("fakeApiClient: listSessions is not implemented, sync.ts should never call it");

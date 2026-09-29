@@ -46,6 +46,14 @@ function fakeSleep(): { sleep: (ms: number) => Promise<void>; durations: number[
 }
 
 describe("createApiClient", () => {
+  it("reads one fresh session using escaped IDs and unwraps its record", async () => {
+    const fake = createFakeFetch([{ status: 200, json: { session: { sessionId: "s/x", title: "Fresh" } } }]);
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: async () => "token" });
+    expect(await client.getSession("e/x", "s/x")).toEqual({ sessionId: "s/x", title: "Fresh" });
+    expect(fake.calls[0]!.url).toContain("/v1/events/e%2Fx/sessions/s%2Fx");
+    expect(fake.calls[0]!.init?.method).toBe("GET");
+  });
+
   it("sends the bearer token and Accept application/json", async () => {
     const fake = createFakeFetch([{ status: 200, json: EMPTY_SCHEDULE_BODY }]);
     const auth = fakeAuth(["token-abc"]);
