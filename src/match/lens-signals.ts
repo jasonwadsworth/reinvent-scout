@@ -40,7 +40,7 @@ const SOURCE_STACK_SERVICES = 2;
 /** A Fix rule's phrase described as absent ("missing dead-letter queues") is the gap itself, not a
  * passing mention, so it earns one more strength than the same phrase without the cue. Looks only
  * at the few words before the first abstract match. */
-const GAP_CUE = /(?:\b(?:missing|without|lack(?:s|ing)?|absent|forgotten)\b(?: [\w-]+){0,2}|\bno) $/i;
+const GAP_CUE = /\b(?:missing|without|lack(?:s|ing)?|absent|forgotten)\b(?: [\w-]+){0,2} $/i;
 const GAP_CUE_WINDOW = 30;
 const BASE_WEIGHT = 20;
 const STRENGTH_WEIGHT = 10;
@@ -48,9 +48,11 @@ const STRENGTH_WEIGHT = 10;
 // Our curated mappings, not an automated Well-Architected assessment. Pillar vocabulary:
 // https://docs.aws.amazon.com/wellarchitected/latest/framework/the-pillars-of-the-framework.html
 const RULES: readonly SignalRule[] = [
-  { source: "gap-no-dlq", lens: "fix", detail: "Reliability: dead-letter handling is not evident in the cited scope.", phrase: /\b(?:dead[- ]letter queues?|DLQs?|redrive)\b/i, minStrength: 1 },
-  { source: "gap-no-alarms", lens: "fix", detail: "Operational Excellence: alarms are not evident in the cited scope.", phrase: /\b(?:CloudWatch alarms?|alarms?|alerting|alerts|anomaly detection)\b/i, areas: ["Monitoring & Observability"] },
-  { source: "gap-no-tests", lens: "fix", detail: "Operational Excellence: automated tests are not evident in the cited scope.", phrase: /\b(?:unit|integration|automated|end[- ]to[- ]end) test(?:s|ing)?\b/i },
+  // Two mentions, a title hit or a "missing" cue: a DLQ named once is usually one scenario among many.
+  { source: "gap-no-dlq", lens: "fix", detail: "Reliability: dead-letter handling is not evident in the cited scope.", phrase: /\b(?:dead[- ]letter queues?|DLQs?|redrive)\b/i },
+  // Operational alarm or alerting language only: bare "alerts" or "alarms" is telecom NOCs, dashboards and agent talks.
+  { source: "gap-no-alarms", lens: "fix", detail: "Operational Excellence: alarms are not evident in the cited scope.", phrase: /\b(?:CloudWatch alarms?|alarms? (?:on|for) (?:the |your |each |every |a )?[\w-]+|alerting strateg(?:y|ies)|on-call|paging|(?:SLO|SLI)s?(?: (?:and|or))? alerting|(?:SLO|SLI)[- ]based alert(?:s|ing)|alerting on (?:SLO|SLI)s?)\b/i },
+  { source: "gap-no-tests", lens: "fix", detail: "Operational Excellence: automated tests are not evident in the cited scope.", phrase: /\b(?:(?:unit|integration|automated|end[- ]to[- ]end) test(?:s|ing)?|test[- ]driven|test coverage|testing infrastructure)\b/i },
   { source: "gap-broad-iam", lens: "fix", detail: "Security: broad IAM permissions are an evidenced scope concern; explore tighter policies.", phrase: /\b(?:least[- ]privilege|IAM polic(?:y|ies)|policy scoping)\b/i },
   { source: "gap-no-load-tests", lens: "fix", detail: "Performance Efficiency: load tests are not evident in the cited scope.", phrase: /\b(?:load|performance|stress) test(?:s|ing)?\b/i },
   { source: "gap-no-cost-monitoring", lens: "fix", detail: "Cost Optimization: cost monitoring is not evident in the cited scope.", phrase: /\b(?:cost (?:monitoring|allocation|anomal(?:y|ies)|visibility)|AWS Budgets)\b/i },

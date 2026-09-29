@@ -1085,14 +1085,14 @@ describe("evidence lenses end to end", () => {
   it("retains the winning sitting's signals, sources, grouping, limits and deterministic order", () => {
     seed([
       { sessionId: "weak", abbreviation: "FIX400-R1", title: "Dead-letter queues [REPEAT]", abstract: "Lambda and SQS." },
-      { sessionId: "strong", abbreviation: "FIX400-R2", title: "Dead-letter queues and alarms [REPEAT]", abstract: "Lambda and SQS." },
+      { sessionId: "strong", abbreviation: "FIX400-R2", title: "Dead-letter queues and CloudWatch alarms [REPEAT]", abstract: "Lambda and SQS." },
       { sessionId: "other", abbreviation: "FIX401", title: "Dead-letter queues", abstract: "Lambda and SQS." },
     ]);
     const result = matchSessions(p(["gap-no-dlq", "GAP-NO-DLQ", "gap-no-alarms"]), { storeRoot: home.path }, { lens: "fix", limit: 1 });
     expect(result).toHaveLength(1);
     expect(result[0]!.record.sessionId).toBe("strong");
     expect(result[0]!.score).toBeGreaterThanOrEqual(60);
-    expect(result[0]!.reasons.filter(reason => reason.kind === "pillarGap").map(reason => reason.evidence)).toEqual(["Dead-letter queues", "alarms"]);
+    expect(result[0]!.reasons.filter(reason => reason.kind === "pillarGap").map(reason => reason.evidence)).toEqual(["Dead-letter queues", "CloudWatch alarms"]);
     expect(result[0]!.reasons.filter(reason => reason.kind === "pillarGap").every(reason => JSON.stringify(reason.profileEvidence) === JSON.stringify(evidence))).toBe(true);
     expect(result[0]!.offerings.map(offering => offering.sessionId).sort()).toEqual(["strong", "weak"]);
   });

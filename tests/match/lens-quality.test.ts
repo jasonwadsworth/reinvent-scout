@@ -96,7 +96,7 @@ describe("lens quality on real abstracts", () => {
     });
     it("ranks within a rule by strength before profile relevance", () => {
       const raw: Session[] = [
-        { sessionId: "weak", abbreviation: "WEAK100", title: "Queues", abstract: "Covers dead-letter queues once.", services: ["AWS Lambda", "AWS Step Functions"] },
+        { sessionId: "weak", abbreviation: "WEAK100", title: "Queues", abstract: "Anti-patterns such as missing dead-letter queues.", services: ["AWS Lambda", "AWS Step Functions"] },
         { sessionId: "strong", abbreviation: "STRONG100", title: "Dead-letter queues", abstract: "Lambda and Step Functions consumers." },
       ];
       seed(raw);

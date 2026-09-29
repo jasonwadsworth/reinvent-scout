@@ -15,13 +15,44 @@ const profile = (...names: string[]): ResolvedProfile => ({
 const record = (title: string) => buildIndexRecord({ sessionId: "test", title });
 const gaps = [
   ["gap-no-dlq", "Reliability", "Dead-letter queues and redrive", "Queue messaging with Amazon SQS"],
-  ["gap-no-alarms", "Operational Excellence", "Observability and alarms", "Operational best practices"],
+  ["gap-no-alarms", "Operational Excellence", "CloudWatch alarms and alerting strategy", "Operational best practices"],
   ["gap-no-tests", "Operational Excellence", "Automated testing strategies", "Application development with latest tools"],
   ["gap-broad-iam", "Security", "Least privilege IAM policies", "Security best practices"],
   ["gap-no-load-tests", "Performance Efficiency", "Load testing distributed applications", "High performance compute"],
   ["gap-no-cost-monitoring", "Cost Optimization", "Cost monitoring and cost allocation", "Save money on cloud costs"],
   ["gap-no-resource-rightsizing", "Sustainability", "Resource rightsizing", "Sustainable resources for the future"],
 ] as const;
+
+describe("gap-no-alarms phrase", () => {
+  const score = (title: string, abstract = "") => scoreLensSignals(record(title), profile("gap-no-alarms"), "fix", abstract).score;
+  it.each([
+    "CloudWatch alarms in practice", "Alarms on queue depth", "Alarm for error rate", "Building an alerting strategy",
+    "On-call rotations that work", "Paging the right person", "SLO alerting at scale", "SLI and alerting design",
+  ])("matches operational alarm or alerting language: %s", title => expect(score(title)).toBe(50));
+  it.each([
+    "Bare alerts and alarms", "Handling alerts", "Intelligent alerts", "Alarms", "Anomaly detection with alerts",
+    "Telecom network alarms", "Alerting", "A dashboard of alarms",
+  ])("does not match bare alerts or alarms: %s", title => expect(score(title, `${title}. Again: ${title}.`)).toBe(0));
+});
+
+describe("Fix phrases and gap cue", () => {
+  const weight = (name: string, title: string, abstract = "") => scoreLensSignals(record(title), profile(name), "fix", abstract).reasons[0]?.weight;
+  it("does not read a bare no as a gap cue", () => {
+    expect(weight("gap-no-dlq", "Deep dive", "In ways no dead-letter queues or dead-letter queues can catch.")).toBe(40);
+    expect(weight("gap-no-tests", "Deep dive", "There is no exception, no unit testing, and no unit tests.")).toBe(40);
+    expect(weight("gap-no-tests", "Deep dive", "We were missing unit tests.")).toBe(40);
+    expect(weight("gap-no-tests", "Deep dive", "We were missing unit tests. Also, without integration tests.")).toBe(50);
+    expect(weight("gap-broad-iam", "Deep dive", "In ways no IAM policy catches.")).toBeUndefined();
+  });
+  it("admits a DLQ mentioned once only when the abstract calls it missing or the title names it", () => {
+    expect(weight("gap-no-dlq", "Deep dive", "One scenario is SQS dead-letter queue buildup.")).toBeUndefined();
+    expect(weight("gap-no-dlq", "Deep dive", "Anti-patterns such as missing dead-letter queues.")).toBe(40);
+    expect(weight("gap-no-dlq", "Dead-letter queues")).toBe(50);
+  });
+  it.each(["Test-driven infrastructure", "Raising test coverage", "Testing infrastructure as code"])("matches %s for gap-no-tests", title => {
+    expect(weight("gap-no-tests", title)).toBe(50);
+  });
+});
 
 describe("Fix signals", () => {
   it.each(gaps)("maps %s to scoped guidance in %s", (name, pillar, title) => {
@@ -50,14 +81,14 @@ describe("Fix signals", () => {
     expect(result.reasons[0]!.profileEvidence).toEqual([citation, { ...citation, file: "other.ts" }]);
   });
   it("adds distinct rules with their own sources", () => {
-    const result = scoreLensSignals(record("Alarms and dead-letter queues"), profile("gap-no-dlq", "gap-no-alarms"), "fix");
+    const result = scoreLensSignals(record("CloudWatch alarms and dead-letter queues"), profile("gap-no-dlq", "gap-no-alarms"), "fix");
     expect(result.reasons).toHaveLength(2);
     expect(result.score).toBe(100);
     expect(result.score).toBe(result.reasons.reduce((sum, reason) => sum + reason.weight, 0));
   });
   it("uses contiguous whole phrases from abstract text, not bag-of-words overlap", () => {
     const r = record("Queue operations");
-    expect(scoreLensSignals(r, profile("gap-no-dlq"), "fix", "Learn Dead-Letter queues.").reasons[0]?.evidence).toBe("Dead-Letter queues");
+    expect(scoreLensSignals(r, profile("gap-no-dlq"), "fix", "Learn about missing Dead-Letter queues.").reasons[0]?.evidence).toBe("Dead-Letter queues");
     expect(scoreLensSignals(r, profile("gap-no-load-tests"), "fix", "Balance load while testing unrelated features.").score).toBe(0);
     expect(scoreLensSignals(record("Download testing tools"), profile("gap-no-load-tests"), "fix").score).toBe(0);
     expect(scoreLensSignals(record("An alarming tale"), profile("gap-no-alarms"), "fix").score).toBe(0);
@@ -75,28 +106,30 @@ describe("Fix signals", () => {
     expect(strengthOf("Unit testing", "")).toBe(50);
     expect(strengthOf("Deep dive", "We cover unit tests and integration testing.")).toBe(40);
     expect(strengthOf("Deep dive", "Only one mention of unit tests here.")).toBeUndefined();
-    expect(strengthOf("Deep dive", "Mentions dead-letter queues once.", "gap-no-dlq")).toBe(30);
+    expect(strengthOf("Deep dive", "Mentions dead-letter queues twice: dead-letter queues.", "gap-no-dlq")).toBe(40);
   });
   it("adds one strength when the abstract describes the phrase as missing", () => {
     const weight = (abstract: string) => scoreLensSignals(record("Deep dive"), profile("gap-no-dlq"), "fix", abstract).reasons[0]?.weight;
     expect(weight("Anti-patterns such as missing dead-letter queues.")).toBe(40);
     expect(weight("Systems without any dead-letter queues fail.")).toBe(40);
-    expect(weight("Anti-patterns such as dead-letter queues.")).toBe(30);
-    expect(weight("We had no idea about many other things, then dead-letter queues.")).toBe(30);
-    expect(weight("Teams that no longer need dead-letter queues can skip this.")).toBe(30);
-    expect(weight("Anti-patterns include no dead-letter queues.")).toBe(40);
+    expect(weight("Anti-patterns include dead-letter queues and dead-letter queues.")).toBe(40);
+    expect(weight("Anti-patterns include lacking dead-letter queues.")).toBe(40);
+    expect(weight("Anti-patterns include absent DLQs.")).toBe(40);
+    expect(weight("We had no idea about many other things, then dead-letter queues.")).toBeUndefined();
+    expect(weight("Teams that no longer need dead-letter queues can skip this.")).toBeUndefined();
+    expect(weight("Anti-patterns include no dead-letter queues.")).toBeUndefined();
   });
-  it("lets a matching tag add one strength but only on top of a text hit", () => {
-    const r = buildIndexRecord({ sessionId: "x", title: "Deep dive", areasOfInterest: ["Monitoring & Observability"] });
-    expect(scoreLensSignals(r, profile("gap-no-alarms"), "fix", "Set up an alarm for the queue.").reasons[0]?.weight).toBe(40);
-    expect(scoreLensSignals(record("Deep dive"), profile("gap-no-alarms"), "fix", "Set up an alarm for the queue.").reasons[0]).toBeUndefined();
+  it("never lets the Monitoring tag lift one weak alarm mention to admission", () => {
+    const tagged = (abstract: string) => scoreLensSignals(buildIndexRecord({ sessionId: "x", title: "Deep dive", areasOfInterest: ["Monitoring & Observability"] }), profile("gap-no-alarms"), "fix", abstract).score;
+    expect(tagged("Set up a CloudWatch alarm for the queue.")).toBe(0);
+    expect(tagged("Set up a CloudWatch alarm for the queue, then another CloudWatch alarm.")).toBe(40);
   });
   it("does not treat the bare word observability as an alarms signal", () => {
     expect(scoreLensSignals(record("Observability deep dive"), profile("gap-no-alarms"), "fix", "Observability and observability again.").score).toBe(0);
-    expect(scoreLensSignals(record("Alerting and anomaly detection"), profile("gap-no-alarms"), "fix").score).toBe(50);
+    expect(scoreLensSignals(record("Alerting strategy deep dive"), profile("gap-no-alarms"), "fix").score).toBe(50);
   });
   it("reports which rule admitted the session and at what strength", () => {
-    const result = scoreLensSignals(record("Alarms and dead-letter queues"), profile("gap-no-dlq", "gap-no-alarms"), "fix");
+    const result = scoreLensSignals(record("CloudWatch alarms and dead-letter queues"), profile("gap-no-dlq", "gap-no-alarms"), "fix");
     expect(result.hits).toEqual([{ rule: "gap-no-dlq", strength: 3 }, { rule: "gap-no-alarms", strength: 3 }]);
   });
 });
