@@ -130,16 +130,31 @@ describe("buildStackFit", () => {
 
   describe("remedy services", () => {
     const iam = "AWS Identity and Access Management (IAM)";
-    it("fits a session that lists a remedy service in place of the profile's services", () => {
-      const fits = buildStackFit(profile(lambda, sqs), { minDistinct: 2 });
-      const remedy = record("Policy tools", [iam]);
-      expect(fits(remedy, "")).toBe(false);
-      expect(fits(remedy, "", { remedy: [iam] })).toBe(true);
-      expect(fits(record("Policy tools", ["Amazon Aurora"]), "", { remedy: [iam] })).toBe(false);
+    const analyzer = "AWS IAM Access Analyzer";
+    const billing = "AWS Billing and Cost Management";
+    const fits = buildStackFit(profile(lambda, sqs), { minDistinct: 2 });
+    it("counts each listed remedy service as one more distinct service", () => {
+      const tools = record("Policy tools", [iam, analyzer]);
+      expect(fits(tools, "")).toBe(false);
+      expect(fits(tools, "", { remedy: [iam, analyzer] })).toBe(true);
+      expect(fits(record("Policy tools", ["Amazon Aurora"]), "", { remedy: [iam, analyzer] })).toBe(false);
+    });
+    it("lets one remedy service and one core service fit, but not a remedy service alone", () => {
+      expect(fits(record("Hardening", [iam, "AWS Lambda"]), "", { remedy: [iam, analyzer] })).toBe(true);
+      expect(fits(record("Hardening", [iam]), "", { remedy: [iam, analyzer] })).toBe(false);
+      expect(fits(record("Billing", [billing]), "", { remedy: [billing] })).toBe(false);
+      expect(fits(record("Billing", [billing, "AWS Lambda"]), "", { remedy: [billing] })).toBe(true);
+    });
+    it("counts a remedy service that is also a core service once", () => {
+      const both = buildStackFit(profile(lambda, { name: "billing", catalogName: billing }), { minDistinct: 3 });
+      expect(both(record("Costs", ["AWS Lambda", billing]), "", { remedy: [billing] })).toBe(false);
+    });
+    it("treats an empty remedy list as no remedy", () => {
+      expect(fits(record("Policy tools", [iam]), "", { remedy: [] })).toBe(false);
     });
     it("does not open a profile that has no core service", () => {
-      const fits = buildStackFit(profile({ ...lambda, role: "supporting" }));
-      expect(fits(record("Policy tools", [iam]), "", { remedy: [iam] })).toBe(false);
+      const none = buildStackFit(profile({ ...lambda, role: "supporting" }));
+      expect(none(record("Policy tools", [iam, analyzer]), "", { remedy: [iam, analyzer] })).toBe(false);
     });
   });
 

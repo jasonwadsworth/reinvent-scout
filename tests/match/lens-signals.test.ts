@@ -345,26 +345,34 @@ describe("remediation-tool gate path", () => {
     services: ["AWS Lambda", "Amazon Simple Queue Service (Amazon SQS)"].map(name => ({ name, catalogName: name, evidence: [citation] })),
   };
   const fits = buildStackFit(stacked, { minDistinct: 2 });
+  const iamTools = [iam, "AWS IAM Access Analyzer"];
   const score = (title: string, abstract: string, services: string[], p: ResolvedProfile = stacked) =>
     scoreLensSignals(buildIndexRecord({ sessionId: "x", title, services }), p, "fix", abstract, fits).score;
-  it("admits a remedy-service session whose title names the phrase, without the profile's services", () => {
-    expect(score("Least privilege IAM policies in CI", "", [iam])).toBe(50);
-    expect(score("Least privilege in CI", "", ["AWS IAM Access Analyzer"])).toBe(50);
-    expect(score("Cost monitoring and cost allocation", "", ["AWS Billing and Cost Management"])).toBe(50);
+  it("admits a remedy-tool session whose title names the phrase, with little of the profile's stack", () => {
+    expect(score("Least privilege IAM policies in CI", "", iamTools)).toBe(50);
+    expect(score("Cost monitoring and cost allocation", "", ["AWS Billing and Cost Management", "AWS Lambda"])).toBe(50);
   });
   it("admits it when the abstract names the phrase twice, not once", () => {
-    expect(score("Ship faster", "We cover least privilege. Then least privilege again.", [iam])).toBe(40);
-    expect(score("Ship faster", "We cover least privilege once.", [iam])).toBe(0);
-    expect(score("Ship faster", "We were missing least privilege.", [iam])).toBe(0);
+    expect(score("Ship faster", "We cover least privilege. Then least privilege again.", iamTools)).toBe(40);
+    expect(score("Ship faster", "We cover least privilege once.", iamTools)).toBe(0);
+    expect(score("Ship faster", "We were missing least privilege.", iamTools)).toBe(0);
+  });
+  it("counts a remedy service as one of the two services, so IAM alone is not enough", () => {
+    expect(score("Least privilege IAM policies in CI", "", [iam])).toBe(0);
+    expect(score("Least privilege IAM policies in CI", "", ["AWS IAM Access Analyzer"])).toBe(0);
+    expect(score("Production-ready Lambda", "Implement least privilege.", [iam, "AWS Lambda"])).toBe(0);
+    expect(score("Least privilege for Lambda", "", [iam, "AWS Lambda"])).toBe(50);
+    expect(score("Cost monitoring", "", ["AWS Billing and Cost Management"])).toBe(0);
+    expect(score("Cost monitoring", "", ["AWS Billing and Cost Management", "AWS Lambda"])).toBe(50);
   });
   it("needs the remedy service on the session and a rule that names remedy services", () => {
     expect(score("Least privilege IAM policies in CI", "", ["Amazon Aurora"])).toBe(0);
-    expect(score("Dead-letter queues", "", [iam])).toBe(0);
-    expect(score("Cost monitoring", "", [iam])).toBe(0);
+    expect(score("Dead-letter queues", "", iamTools)).toBe(0);
+    expect(score("Cost monitoring", "", iamTools)).toBe(0);
   });
   it("does not admit a profile with no core service", () => {
     const bare = { ...stacked, services: [] };
-    const r = buildIndexRecord({ sessionId: "x", title: "Least privilege IAM policies in CI", services: [iam] });
+    const r = buildIndexRecord({ sessionId: "x", title: "Least privilege IAM policies in CI", services: iamTools });
     expect(scoreLensSignals(r, bare, "fix", "", buildStackFit(bare, { minDistinct: 2 })).score).toBe(0);
   });
 });

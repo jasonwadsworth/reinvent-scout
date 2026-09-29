@@ -395,9 +395,11 @@ Two more gates apply to both lenses. Stack fit: a Fix session must list or name 
 your core services, or one core service that fewer than 3% of catalog sessions list; a Next-level
 session needs one. Supporting and platform services never count. A session whose title names
 `gap-broad-iam` or `gap-no-cost-monitoring`'s phrase (or whose abstract does so twice) and that
-lists one of that rule's remedy services (IAM or IAM Access Analyzer; AWS Billing and Cost
-Management, which covers Budgets and Cost Explorer) fits in place of your services: a session
-about the fix is not about the stack the gap sits in. A profile with no core service (none listed, or
+lists that rule's remedy services (IAM and IAM Access Analyzer; AWS Billing and Cost Management,
+which covers Budgets and Cost Explorer) needs fewer of your services: each remedy service it lists
+counts as one of the two, so IAM alone, which is on almost every security talk, is not enough, but
+IAM with Access Analyzer, or IAM with one of your core services, is. A session about the fix is not
+about the stack the gap sits in. A profile with no core service (none listed, or
 every one marked supporting) has no stack to fit, so both lenses admit nothing and `skippedRules`
 names each activated rule with "profile has no core services to check stack fit": list the
 product's real services before expecting Fix or Next-level results. Direction and source: a Next-level session must

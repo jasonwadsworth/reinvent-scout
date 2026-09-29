@@ -6,8 +6,10 @@ export interface StackFitQuery {
   without?: readonly string[];
   /** Overrides the gate's own minimum of distinct services, and disables the rare-service path. */
   minDistinct?: number;
-  /** Catalog services that fit a session in place of the profile's own, when it lists one. Never
-   * opens a profile that has no core service. */
+  /** Catalog services that close the gap the caller is looking for. Each one the session lists
+   * counts as one more distinct service alongside the profile's own, and at least one must be
+   * listed: a session about the tools lists the tools. Never opens a profile that has no core
+   * service. */
   remedy?: readonly string[];
 }
 
@@ -159,12 +161,16 @@ export function buildStackFit(profile: ResolvedProfile, options: StackFitOptions
   }
   return (record, abstract, query = {}) => {
     const without = query.without ?? [];
-    if (query.remedy?.some(name => record.services.includes(name)) === true) return true;
     const shared = services.filter(service =>
       !(service.catalogName !== null && without.includes(service.catalogName))
       && ((service.catalogName !== null && record.services.includes(service.catalogName))
         || service.named(record.title) || service.named(abstract)));
-    if (shared.length >= (query.minDistinct ?? minDistinct)) return true;
-    return query.minDistinct === undefined && options.rareBelow !== undefined && shared.length > 0 && shared.every(service => service.frequency < options.rareBelow!);
+    const needed = query.minDistinct ?? minDistinct;
+    if (shared.length >= needed) return true;
+    const remedies = (query.remedy ?? []).filter(name => record.services.includes(name)
+      && !shared.some(service => service.catalogName === name)).length;
+    if (remedies > 0) return shared.length + remedies >= needed;
+    return query.minDistinct === undefined && options.rareBelow !== undefined && shared.length > 0
+      && shared.every(service => service.frequency < options.rareBelow!);
   };
 }
