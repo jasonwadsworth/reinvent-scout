@@ -87,41 +87,52 @@ describe("lens quality on real abstracts", () => {
   describe("interleaving", () => {
     it("gives each activated rule a session in the top 2 even when one rule has far more relevant sessions", () => {
       const raw: Session[] = [
-        ...["A", "B", "C"].map(letter => ({ sessionId: `dlq${letter}`, abbreviation: `DLQ10${letter}`, title: "Dead-letter queues", services: ["AWS Lambda"] })),
-        { sessionId: "iam", abbreviation: "IAM100", title: "Least privilege IAM policies", abstract: "Runs on Lambda." },
+        ...["A", "B", "C"].map(letter => ({ sessionId: `dlq${letter}`, abbreviation: `DLQ10${letter}`, title: "Dead-letter queues", services: ["AWS Lambda", "AWS Step Functions"] })),
+        { sessionId: "iam", abbreviation: "IAM100", title: "Least privilege IAM policies", abstract: "Runs on Lambda and Step Functions." },
       ];
       seed(raw);
-      const p = profile(["gap-no-dlq", "gap-broad-iam"], ["AWS Lambda"]);
+      const p = profile(["gap-no-dlq", "gap-broad-iam"], ["AWS Lambda", "AWS Step Functions"]);
       expect(codes(run(p, "fix", 2).candidates).sort()).toEqual(["DLQ10A", "IAM100"].sort());
     });
     it("ranks within a rule by strength before profile relevance", () => {
       const raw: Session[] = [
-        { sessionId: "weak", abbreviation: "WEAK100", title: "Queues", abstract: "Covers dead-letter queues once.", services: ["AWS Lambda"] },
-        { sessionId: "strong", abbreviation: "STRONG100", title: "Dead-letter queues", abstract: "Lambda consumers." },
+        { sessionId: "weak", abbreviation: "WEAK100", title: "Queues", abstract: "Covers dead-letter queues once.", services: ["AWS Lambda", "AWS Step Functions"] },
+        { sessionId: "strong", abbreviation: "STRONG100", title: "Dead-letter queues", abstract: "Lambda and Step Functions consumers." },
       ];
       seed(raw);
-      expect(codes(run(profile(["gap-no-dlq"], ["AWS Lambda"]), "fix").candidates)).toEqual(["STRONG100", "WEAK100"]);
+      expect(codes(run(profile(["gap-no-dlq"], ["AWS Lambda", "AWS Step Functions"]), "fix").candidates)).toEqual(["STRONG100", "WEAK100"]);
     });
   });
 
   describe("stack gate", () => {
-    const raw: Session[] = [
-      { sessionId: "on", abbreviation: "ON100", title: "Dead-letter queues", services: ["AWS Lambda"] },
-      { sessionId: "text", abbreviation: "TEXT100", title: "Dead-letter queues", abstract: "Covers SQS consumers." },
-      { sessionId: "off", abbreviation: "OFF100", title: "Dead-letter queues", services: ["Amazon Aurora"], abstract: "Database failover." },
-      { sessionId: "gateway", abbreviation: "GATE100", title: "Dead-letter queues", abstract: "API Gateway integrations." },
-    ];
     const service = (name: string, catalogName: string, role?: "core" | "supporting") => ({ name, catalogName, evidence, ...(role === undefined ? {} : { role }) });
     const withServices = (services: ResolvedProfile["services"]): ResolvedProfile => ({ ...profile(["gap-no-dlq"]), services });
-    it("admits only sessions that list or name a core service", () => {
+    const lambda = service("lambda", "AWS Lambda");
+    const sqs = service("sqs", "Amazon Simple Queue Service (Amazon SQS)");
+    const raw: Session[] = [
+      { sessionId: "both", abbreviation: "BOTH100", title: "Dead-letter queues", services: ["AWS Lambda", "Amazon Simple Queue Service (Amazon SQS)"] },
+      { sessionId: "text", abbreviation: "TEXT100", title: "Dead-letter queues", abstract: "Lambda functions polling SQS." },
+      { sessionId: "one", abbreviation: "ONE100", title: "Dead-letter queues", services: ["AWS Lambda"] },
+      { sessionId: "off", abbreviation: "OFF100", title: "Dead-letter queues", services: ["Amazon Aurora"], abstract: "Database failover." },
+    ];
+    it("admits Fix sessions only when they share two distinct core services", () => {
       seed(raw);
-      const p = withServices([service("lambda", "AWS Lambda"), service("sqs", "Amazon Simple Queue Service (Amazon SQS)")]);
-      expect(codes(run(p, "fix").candidates).sort()).toEqual(["ON100", "TEXT100"]);
+      expect(codes(run(withServices([lambda, sqs]), "fix").candidates).sort()).toEqual(["BOTH100", "TEXT100"]);
     });
-    it("does not let a supporting service admit a session", () => {
+    it("admits a session sharing one core service when that service is rare in the catalog", () => {
+      const filler: Session[] = Array.from({ length: 40 }, (_, i) => ({ sessionId: `f${i}`, abbreviation: `FIL${100 + i}`, title: "Unrelated", services: i < 10 ? ["AWS Lambda"] : [] }));
+      seed([...filler, { sessionId: "polly", abbreviation: "POL100", title: "Dead-letter queues", services: ["Amazon Polly"] }, { sessionId: "lam", abbreviation: "LAM100", title: "Dead-letter queues", services: ["AWS Lambda"] }]);
+      expect(codes(run(withServices([lambda, service("polly", "Amazon Polly")]), "fix").candidates)).toEqual(["POL100"]);
+    });
+    it("does not require two services for Next-level", () => {
+      seed([{ sessionId: "n", abbreviation: "NEX100", title: "Containers", abstract: "Beyond Lambda." }]);
+      const p = { ...withServices([lambda, sqs]), patterns: [{ name: "serverless", evidence }] };
+      expect(codes(run(p, "next-level").candidates)).toEqual(["NEX100"]);
+    });
+    it("does not let a supporting service count toward the two", () => {
       seed(raw);
-      const p = withServices([service("lambda", "AWS Lambda"), service("apigateway", "Amazon API Gateway", "supporting")]);
-      expect(codes(run(p, "fix").candidates)).toEqual(["ON100"]);
+      const p = withServices([lambda, service("eventbridge", "Amazon EventBridge"), service("sqs", sqs.catalogName, "supporting")]);
+      expect(codes(run(p, "fix").candidates)).toEqual([]);
     });
     it("is off for a profile with no core service", () => {
       seed(raw);

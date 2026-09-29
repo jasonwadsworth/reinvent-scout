@@ -18,7 +18,7 @@ const lensFixture: Session[] = JSON.parse(readFileSync(join(here, "..", "fixture
 const evidence = [{ repo: "repo", file: "stack.ts", line: 3, snippet: "new Queue()", note: "Queue has no redrive policy" }];
 const profile = {
   schemaVersion: 1, repos: [{ root: "repo", languages: [] }],
-  services: [{ name: "lambda", role: "core", evidence }, { name: "sns", evidence }],
+  services: [{ name: "lambda", role: "core", evidence }, { name: "sqs", evidence }, { name: "eventbridge", evidence }, { name: "stepfunctions", evidence }, { name: "sns", evidence }],
   patterns: [{ name: "gap-no-dlq", evidence }, { name: "genai-single-call", evidence }, { name: "agentic", evidence }],
 };
 

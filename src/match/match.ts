@@ -8,6 +8,10 @@ import type { ResolvedProfile } from "../profile/profile.js";
 import { getLensProfile, type Lens } from "./lens.js";
 import { buildCorpusStats, scoreSession, type MatchQuery, type Reason } from "./score.js";
 
+/** A core service listed by fewer than this fraction of catalog sessions is distinctive enough to
+ * fit a Fix session on its own. */
+const RARE_SERVICE_FRACTION = 0.03;
+
 export interface MatchOptions {
   /** Defaults to `"all"` -- no level restriction, no format preference. */
   lens?: Lens;
@@ -383,7 +387,11 @@ export function matchSessionsDetailed(
   // how rare a term actually is.
   const corpusStats = buildCorpusStats(index);
 
-  const fitsStack = buildStackFit(profile);
+  // Fix has to be pickier than Next-level: its phrases (alarms, tests, IAM) appear in talks about any
+// stack, so one shared near-universal service such as CloudWatch is not evidence of fit.
+const fitsStack = buildStackFit(profile, lens === "fix"
+    ? { minDistinct: 2, rareBelow: RARE_SERVICE_FRACTION, catalog: index }
+    : {});
   const scoredRecords: ScoredRecord[] = [];
 
   for (const record of index) {
