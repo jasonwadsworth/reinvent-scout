@@ -167,8 +167,8 @@ export function assertRealPathWithinRoot(root: string, parentDir: string): void 
 export class SymlinkEscapeError extends Error {
   constructor(escapingPaths: readonly string[], installedPath: string) {
     super(
-      `${escapingPaths.join(", ")} resolve${escapingPaths.length === 1 ? "s" : ""} outside ` +
-        `${installedPath} through a symlink. Remove or replace ${escapingPaths.length === 1 ? "it" : "them"}, ` +
+      `${escapingPaths.join(", ")} involve${escapingPaths.length === 1 ? "s" : ""} a refused symlink in ` +
+        `${installedPath}. Remove or replace ${escapingPaths.length === 1 ? "it" : "them"}, ` +
         "then try again.",
     );
     this.name = "SymlinkEscapeError";
@@ -318,8 +318,6 @@ export function installSkill(deps: InstallSkillDeps = {}): InstallSkillResult {
     throw new SkillAlreadyInstalledError(installedPath);
   }
 
-  // Every destination checked before any of them is touched -- see assertNoSymlinksAlongPath's
-  // own doc comment for why a per-file check inside the write loop below isn't enough on its own.
   // Every destination checked before any of them is touched -- see assertNoSymlinksAlongPath's
   // own doc comment for why a per-file check inside the write loop below isn't enough on its own.
   for (const relPath of relativeFiles) {

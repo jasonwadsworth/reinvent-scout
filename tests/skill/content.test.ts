@@ -84,7 +84,7 @@ function backtickIdentifiers(text: string): string[] {
 /** Language tags treated as a shell example -- content an agent would actually copy and run,
  * unlike a ```json response example. An untagged fence ("```\n...\n```") counts too, since a
  * plain command example is often left untagged. */
-const SHELL_FENCE_LANGS = new Set(["", "sh", "bash", "shell", "console"]);
+const SHELL_FENCE_LANGS = new Set(["", "sh", "bash", "shell", "console", "text"]);
 
 /**
  * Every `reinvent-scout <path>` mention across a document -- both backtick-quoted inline spans
@@ -117,7 +117,7 @@ function cliCommandMentions(text: string): string[] {
       continue;
     }
     for (const line of fence[2]!.split("\n")) {
-      const lineMatch = /^[\s$]*reinvent-scout\s+([a-z]+(?: [a-z]+)?)/.exec(line);
+      const lineMatch = /^[\s$]*(?:npx\s+)?reinvent-scout\s+([a-z]+(?: [a-z]+)?)/.exec(line);
       if (lineMatch) {
         paths.push(`reinvent-scout ${lineMatch[1]!}`);
       }
@@ -319,6 +319,14 @@ describe("skill files CLI command names", () => {
         "reinvent-scout mcp",
       ]),
     );
+  });
+
+  it("extracts text-fenced and npx commands including invalid commands for registry checking", () => {
+    const sample = "```text\n$ npx reinvent-scout match --lens fix\nnpx reinvent-scout catalog invented --json\nreinvent-scout profile validate --help\n```";
+    const extracted = cliCommandMentions(sample);
+    expect(extracted).toEqual(["reinvent-scout match", "reinvent-scout catalog invented", "reinvent-scout profile validate"]);
+    const registered = new Set(collectLeafCommandPaths(buildProgram()).map(path => `reinvent-scout ${path}`));
+    expect(extracted.filter(path => !registered.has(path))).toEqual(["reinvent-scout catalog invented"]);
   });
 
   it("does not extract a command mentioned only inside a non-shell fence, such as a json example", () => {

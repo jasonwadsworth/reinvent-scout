@@ -208,8 +208,21 @@ describe("installSkill", () => {
       expect(() => installSkill({ sourceDir, targetsDir })).toThrow();
 
       expect(readdirSync(outsideDir)).toHaveLength(0);
+      expect(existsSync(join(installedPath, "SKILL.md"))).toBe(false);
     } finally {
       rmSync(outsideDir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses an inside-root directory symlink atomically with a truthful diagnostic", () => {
+    const installedPath = join(targetsDir, SKILL_NAME);
+    mkdirSync(join(installedPath, "internal"), { recursive: true });
+    symlinkSync(join(installedPath, "internal"), join(installedPath, "reference"));
+    expect(() => installSkill({ sourceDir, targetsDir })).toThrow(/symlink/);
+    expect(existsSync(join(installedPath, "SKILL.md"))).toBe(false);
+    expect(readdirSync(join(installedPath, "internal"))).toEqual([]);
+    try { installSkill({ sourceDir, targetsDir }); } catch (error) {
+      expect((error as Error).message).not.toMatch(/resolves outside/);
     }
   });
 
@@ -294,6 +307,7 @@ describe("installSkill", () => {
       expect(() => installSkill({ sourceDir, targetsDir })).toThrow(SymlinkEscapeError);
 
       expect(existsSync(join(outsideDir, "pwned-manifest.json"))).toBe(false);
+      expect(readdirSync(installedPath)).toEqual([MANIFEST_FILE_NAME]);
     } finally {
       rmSync(outsideDir, { recursive: true, force: true });
     }
