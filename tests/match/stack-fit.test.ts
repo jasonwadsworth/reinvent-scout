@@ -34,6 +34,18 @@ describe("buildStackFit", () => {
     expect(fits(record("Deep dive"), "The s3rver project.")).toBe(false);
     expect(fits(record("Deep dive"), "Store it in S3.")).toBe(true);
   });
+  it("does not read an English word as a service short name", () => {
+    const fits = buildStackFit(profile({ name: "AWS Amplify", catalogName: "AWS Amplify" }))!;
+    expect(fits(record("Deep dive"), "Agents amplify all of them.")).toBe(false);
+    expect(fits(record("Deep dive"), "Amplify Hosting serves the site.")).toBe(true);
+    expect(fits(record("Deep dive"), "Ship it with AWS Amplify.")).toBe(true);
+    expect(fits(record("Deep dive"), "Ship it with aws amplify.")).toBe(true);
+  });
+  it("still matches acronyms and the profile's own spelling in any case", () => {
+    const fits = buildStackFit(profile(sqs, { name: "Kiro", catalogName: null }))!;
+    expect(fits(record("Queues"), "Poll sqs queues.")).toBe(true);
+    expect(fits(record("Editor"), "The kiro editor.")).toBe(true);
+  });
   it("ignores supporting services", () => {
     const fits = buildStackFit(profile(lambda, { name: "apigateway", catalogName: "Amazon API Gateway", role: "supporting" }))!;
     expect(fits(record("Gateway", ["Amazon API Gateway"]), "API Gateway front doors.")).toBe(false);

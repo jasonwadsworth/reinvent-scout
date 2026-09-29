@@ -190,3 +190,14 @@ inline to temp directories. No account writes. Commits end with the attribution 
   S3) in passing.
 - Remaining limitation: Fix candidates are leads, not verdicts. The agent must read each abstract
   before presenting a pick (SKILL.md already requires it), and the docs say so.
+
+### Stack-fit name matching (reviewer finding)
+
+- The gate matched a service name with its Amazon/AWS prefix stripped ("AWS Amplify" to "Amplify")
+  as an ordinary word in any case, so ARC330 ("Agents amplify all of them") fit on Amplify, which
+  under 1% of sessions list. Prefix-stripped names now match case-sensitively unless they are
+  acronyms (SQS, S3); full names, parenthesized names and the profile's own whole spelling still
+  match in any case.
+- Re-measured: hallway Fix admits 8 (ARC330 gone), 6 genuine; KiroCrew Fix unchanged (7 admitted,
+  about 4 genuine); hallway Next-level unchanged. Remaining hazard: a sentence-initial verb that
+  equals a stripped name ("Connect", "Glue") still matches.
