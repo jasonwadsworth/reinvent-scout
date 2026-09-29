@@ -106,7 +106,7 @@ const paths = [
   ["genai-single-call", "Agentic workflows", "agentic", "multi-step tool use", "latency"],
 ] as const;
 
-const onSource: Record<string, string> = { serverless: "Runs on Lambda today.", ecs: "Runs on ECS today.", "genai-single-call": "Starts from one prompt today." };
+const onSource: Record<string, string> = { serverless: "Runs on Lambda today.", ecs: "Runs on ECS today.", "genai-single-call": "Starts from a basic prompt today." };
 
 describe("Next-level signals", () => {
   it.each(paths)("offers %s to %s with gains and costs", (source, title, destination, gain, cost) => {
@@ -188,16 +188,80 @@ describe("Next-level source co-mention", () => {
   const sourceMention = [
     ["serverless", "Containers", "Runs on Lambda today.", "Runs on serverless today.", "Split into functions today.", "Amazon Elastic Container Service (Amazon ECS)", "AWS Lambda"],
     ["ecs", "Kubernetes", "Migrate from ECS.", "Started on Amazon ECS.", "Our ECS clusters.", "Amazon Elastic Kubernetes Service (Amazon EKS)", "Amazon Elastic Container Service (Amazon ECS)"],
-    ["genai-single-call", "Agentic workflows", "Beyond a single model call.", "From one prompt to many.", "Replace InvokeModel loops.", "Amazon Bedrock", "Amazon Bedrock"],
+    ["genai-single-call", "Agentic workflows", "Beyond a single model call.", "Started as a simple RAG chatbot.", "Replace InvokeModel loops.", "Amazon Bedrock", "Amazon Bedrock"],
   ] as const;
   it.each(sourceMention)("requires %s sessions to mention the source side", (source, title, a, b, c, _destination, sourceService) => {
     expect(scoreLensSignals(record(title), profile(source), "next-level").score).toBe(0);
     for (const abstract of [a, b, c]) expect(scoreLensSignals(record(title), profile(source), "next-level", abstract).score).toBe(50);
     const listed = buildIndexRecord({ sessionId: "x", title, services: [sourceService] });
-    expect(scoreLensSignals(listed, profile(source), "next-level").score).toBe(50);
+    expect(scoreLensSignals(listed, profile(source), "next-level").score).toBe(0);
   });
   it("does not apply to Fix", () => {
     expect(scoreLensSignals(record("Dead-letter queues"), profile("gap-no-dlq"), "fix").score).toBe(50);
+  });
+});
+
+describe("Next-level list co-mentions", () => {
+  const score = (title: string, abstract: string, source = "serverless", extra: object = {}) =>
+    scoreLensSignals(buildIndexRecord({ sessionId: "x", title, ...extra }), profile(source), "next-level", abstract).score;
+  it("does not count a destination named only inside an enumeration of three or more names", () => {
+    expect(score("Observability tips", "Runs on Lambda today. Works on Lambda, Amazon EC2, ECS and EKS.")).toBe(0);
+    expect(score("Observability tips", "Runs on Lambda today. Works on Lambda or EC2 or ECS.")).toBe(0);
+    expect(score("Observability tips", "Runs on Lambda today. Works on Lambda, EC2/ECS/EKS.")).toBe(0);
+  });
+  it("still counts unlisted mentions, and a listing adds nothing to the count", () => {
+    expect(score("Deep dive", "Runs on Lambda today. Covers ECS. Then containers.")).toBe(40);
+    expect(score("Deep dive", "Runs on Lambda today. Covers ECS. Works on Lambda, EC2, ECS and EKS.")).toBe(0);
+    expect(score("Containers deep dive", "Runs on Lambda today. Works on Lambda, EC2, ECS and EKS.")).toBe(50);
+  });
+  it("treats two names joined by and as too few to be a listing", () => {
+    expect(score("Deep dive", "Runs on Lambda today. Covers ECS and EKS. Then containers.")).toBe(40);
+  });
+  it("does not count a destination in a title enumeration", () => {
+    expect(score("Shared storage for containers, serverless, and Lambda", "Runs on Lambda today.")).toBe(0);
+  });
+  it("does not let a listing satisfy the source side", () => {
+    expect(score("Containers deep dive", "Works on Lambda, EC2 and ECS.")).toBe(0);
+    expect(score("Containers deep dive", "Runs on Lambda today.")).toBe(50);
+    expect(score("Containers, Lambda and EC2", "")).toBe(0);
+  });
+  it("does not let a tag booster rescue a listed mention", () => {
+    const tagged = { services: ["Amazon Elastic Kubernetes Service (Amazon EKS)"], areasOfInterest: ["Kubernetes"] };
+    expect(score("Deep dive", "Started on ECS. Works on ECS, EC2, Fargate and EKS.", "ecs", tagged)).toBe(0);
+    expect(score("Deep dive", "Started on ECS. Kubernetes and EKS.", "ecs", tagged)).toBe(30 + 20);
+  });
+});
+
+describe("genai-single-call source and strength", () => {
+  const score = (title: string, abstract: string, extra: object = {}) =>
+    scoreLensSignals(buildIndexRecord({ sessionId: "x", title, ...extra }), profile("genai-single-call"), "next-level", abstract).score;
+  it.each([
+    "Started with single-shot prompting.",
+    "Beyond basic prompting.",
+    "Your first GenAI app is a chatbot.",
+    "A RAG baseline answers questions.",
+    "We call InvokeModel today.",
+    "Your Converse call returns text.",
+    "Go from a chatbot to agents.",
+    "Walk a path from \"I have a serverless app\" to \"my app has agent capabilities\".",
+  ])("accepts a starting-point description: %s", starting => {
+    expect(score("Agentic workflows", starting)).toBe(50);
+  });
+  it("does not take Bedrock or prompts alone as the single-call source", () => {
+    expect(score("Agentic workflows", "Build on Amazon Bedrock with good prompts.")).toBe(0);
+    expect(score("Agentic workflows", "", { services: ["Amazon Bedrock"] })).toBe(0);
+  });
+  it("needs two agentic mentions, tag or not: a tag never lifts one mention to admission", () => {
+    const tagged = { areasOfInterest: ["Agentic AI"] };
+    const starting = "Starts from a chatbot today. ";
+    expect(score("Deep dive", `${starting}Covers agentic patterns once.`, tagged)).toBe(0);
+    expect(score("Deep dive", `${starting}Covers agentic patterns and agentic tools.`)).toBe(40);
+    expect(score("Deep dive", `${starting}Covers agentic patterns and agentic tools.`, tagged)).toBe(50);
+    expect(score("Deep dive", starting, tagged)).toBe(0);
+  });
+  it("rejects a Bedrock session that says agentic once in passing", () => {
+    const bedrock = { services: ["Amazon Bedrock"], areasOfInterest: ["Agentic AI"] };
+    expect(score("Model choice deep dive", "Compare models on Amazon Bedrock with our prompts. We mention agentic once.", bedrock)).toBe(0);
   });
 });
 

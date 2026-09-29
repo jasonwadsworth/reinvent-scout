@@ -2,6 +2,7 @@ import type { IndexRecord } from "../catalog/index-record.js";
 import type { Evidence, ResolvedProfile } from "../profile/profile.js";
 import type { Reason, ScoredSession } from "./score.js";
 import type { StackFit } from "./stack-fit.js";
+import { unlistedMatches } from "./listing.js";
 
 type SignalLens = "fix" | "next-level";
 interface SignalRule {
@@ -14,15 +15,16 @@ interface SignalRule {
    * mention plus a booster tag). A rule whose phrase is specific enough that one abstract mention
    * is a real signal lowers it to 1. */
   minStrength?: number;
+  /** Strength the text alone must reach, before a gap cue or a tag adds to it. Defaults to 1. */
+  minTextStrength?: number;
   /** Next-level only: a title or abstract match means the session runs the migration the other
    * way, so it is excluded for this rule. */
   reverse?: RegExp;
   /** Next-level only: a profile that already has this pattern has already made the move. */
   destination?: string;
-  /** Next-level only: the session must also mention the source side, in its title or abstract or
-   * as a listed service, or it is about the destination alone. */
+  /** Next-level only: the session must also mention the source side in its title or abstract,
+   * outside an enumeration, or it is about the destination alone. */
   sourceText?: RegExp;
-  sourceServices?: readonly string[];
   /** Tags, topics and services that add one strength to a text hit but never admit on their own. */
   services?: readonly string[];
   topics?: readonly string[];
@@ -50,7 +52,7 @@ const RULES: readonly SignalRule[] = [
   { source: "gap-no-resource-rightsizing", lens: "fix", detail: "Sustainability: resource rightsizing is not evident in the cited scope.", phrase: /\b(?:right[- ]?sizing|right[- ]?size)\b/i },
   {
     source: "serverless", lens: "next-level", destination: "containers",
-    sourceText: /\b(?:Lambda|serverless|functions?)\b/i, sourceServices: ["AWS Lambda"],
+    sourceText: /\b(?:Lambda|serverless|functions?)\b/i,
     detail: "serverless → containers is an exploration option: gain runtime control; take on operational ownership.",
     phrase: /\b(?:containers?|containerization|ECS|EKS)\b/i,
     // Tuned on the real catalog: the first branch catches "replacing always-on containers with
@@ -62,7 +64,7 @@ const RULES: readonly SignalRule[] = [
   },
   {
     source: "ecs", lens: "next-level", destination: "eks",
-    sourceText: /\bECS\b/i, sourceServices: ["Amazon Elastic Container Service (Amazon ECS)"],
+    sourceText: /\bECS\b/i,
     detail: "ecs → EKS is an exploration option: gain Kubernetes portability and ecosystem; take on cluster/platform complexity.",
     phrase: /\b(?:Kubernetes|EKS)\b/i,
     reverse: /\bfrom (?:Amazon )?EKS (?:\w+ ){0,3}to (?:Amazon )?ECS\b/i,
@@ -71,10 +73,13 @@ const RULES: readonly SignalRule[] = [
   },
   {
     source: "genai-single-call", lens: "next-level", destination: "agentic",
-    sourceText: /\b(?:single (?:model )?(?:call|invocation)|prompts?|InvokeModel|Bedrock)\b/i, sourceServices: ["Amazon Bedrock"],
+    // The starting point, not the platform: Bedrock and prompts alone appear in every GenAI talk.
+    sourceText: /\b(?:single[- ](?:shot|turn|(?:model |LLM )?(?:call|invocation|prompt)s?)|(?:basic|simple) prompt(?:ing|s)?|first (?:GenAI|generative AI|AI) (?:app|application)|chatbots?|RAG|retrieval[- ]augmented|InvokeModel|Converse(?: API| call|Stream))\b|\bfrom(?: \S+){1,8} to (?:\S+ ){0,3}agent/i,
     detail: "genai-single-call → agentic is an exploration option: gain multi-step tool use; take on latency, cost, evaluation, and control requirements.",
     phrase: /\b(?:agentic|agents? with tools|tool[- ](?:use|calling)|multi[- ]agent|agent orchestration)\b/i,
     areas: ["Agentic AI"],
+    // A tag never lifts a single passing mention to admission; two mentions or a title hit do.
+    minTextStrength: 2,
   },
 ];
 
@@ -138,12 +143,7 @@ function boosted(rule: SignalRule, record: IndexRecord): boolean {
 
 function mentionsSource(rule: SignalRule, record: IndexRecord, abstract: string): boolean {
   if (rule.sourceText === undefined) return true;
-  return rule.sourceText.test(record.title) || rule.sourceText.test(abstract)
-    || record.services.some(service => rule.sourceServices?.includes(service) === true);
-}
-
-function countMatches(phrase: RegExp, text: string): number {
-  return text.match(new RegExp(phrase.source, phrase.flags.includes("g") ? phrase.flags : `${phrase.flags}g`))?.length ?? 0;
+  return unlistedMatches(rule.sourceText, record.title).length > 0 || unlistedMatches(rule.sourceText, abstract).length > 0;
 }
 
 interface Signal {
@@ -158,13 +158,14 @@ interface Signal {
 function catalogSignal(rule: SignalRule, record: IndexRecord, abstract: string): Signal | undefined {
   if (rule.reverse?.test(record.title) === true || rule.reverse?.test(abstract) === true) return undefined;
   if (!mentionsSource(rule, record, abstract)) return undefined;
-  const titleMatch = rule.phrase.exec(record.title);
-  const abstractMatch = rule.phrase.exec(abstract);
-  const text = titleMatch !== null
+  const titleMatch = unlistedMatches(rule.phrase, record.title)[0];
+  const abstractMatches = unlistedMatches(rule.phrase, abstract);
+  const abstractMatch = abstractMatches[0];
+  const text = titleMatch !== undefined
     ? TITLE_STRENGTH
-    : Math.min(countMatches(rule.phrase, abstract), 2);
-  if (text === 0) return undefined;
-  const cued = rule.lens === "fix" && titleMatch === null && abstractMatch !== null
+    : Math.min(abstractMatches.length, 2);
+  if (text === 0 || text < (rule.minTextStrength ?? 1)) return undefined;
+  const cued = rule.lens === "fix" && titleMatch === undefined && abstractMatch !== undefined
     && GAP_CUE.test(abstract.slice(Math.max(0, abstractMatch.index - GAP_CUE_WINDOW), abstractMatch.index));
   const strength = text + (cued ? 1 : 0) + (boosted(rule, record) ? 1 : 0);
   if (strength < (rule.minStrength ?? 2)) return undefined;

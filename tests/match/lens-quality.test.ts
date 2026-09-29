@@ -78,7 +78,7 @@ describe("lens quality on real abstracts", () => {
       seed(lensFixture);
       const result = run(profile(["genai-single-call"], ["Amazon Bedrock"]), "next-level");
       const top = codes(result.candidates);
-      expect(top).toContain("SVS324");
+      expect(top).toContain("SVS326");
       expect(top).not.toContain("IND3320");
       expect(result.skippedRules).toEqual([]);
     });

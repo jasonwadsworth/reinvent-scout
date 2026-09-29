@@ -437,7 +437,7 @@ describe("match_sessions tool", () => {
   ])("%s forwards complete cited reasons within the response budget", async (lens, source, title, kind) => {
     const evidence = [{ repo: "repo", file: "src/agent.ts", line: 17, note: "Complete citation" }];
     const profile = { schemaVersion: 1, repos: [{ root: "repo", languages: [] }], services: [{ name: "Amazon Bedrock", evidence }], patterns: [{ name: source, evidence }] };
-    seedCatalog(home.path, [{ sessionId: "lens", abbreviation: "LENS400", title: title!, abstract: "Starts from one prompt today on Bedrock." }]);
+    seedCatalog(home.path, [{ sessionId: "lens", abbreviation: "LENS400", title: title!, abstract: "Starts from basic prompting today on Bedrock." }]);
     const client = await connectedClient({ resolveStoreRoot: () => home.path });
     const result = await client.callTool({ name: "match_sessions", arguments: { profile, lens } });
     expect(result.isError).not.toBe(true);
