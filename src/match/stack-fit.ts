@@ -43,16 +43,20 @@ function catalogForms(name: string): NameForm[] {
   }).filter(form => form.text.length >= 2);
 }
 
-/** The profile's own spelling of a service: kept in any case, since the agent chose it, unless the
- * catalog's own cased short name already covers it ("lambda" for AWS Lambda would otherwise read
- * "a lambda expression" as a mention) or it is an ordinary word needing its prefix. */
-function profileForms(name: string, catalog: readonly NameForm[]): NameForm[] {
+/** The profile's own spelling of a service. It gets no special treatment: an ordinary-word name
+ * needs its prefix like any other spelling, and otherwise it matches as written, so a bare
+ * "Amplify" is never the verb. Exceptions: a spelling equal to the catalog display name ignoring
+ * case matches in any case ("kiro" for "Kiro"), and one the catalog's cased short name already
+ * covers adds nothing ("lambda" for AWS Lambda would read "a lambda expression" as a mention). */
+function profileForms(name: string, catalogName: string | null, catalog: readonly NameForm[]): NameForm[] {
   const whole = name.trim();
-  const stripped = stripPrefix(whole).trim();
-  if (stripped !== whole) return catalogForms(whole);
-  if (whole.length < 2 || requiresPrefix(whole)) return [];
-  const covered = catalog.some(form => form.caseSensitive && form.text.toLowerCase() === whole.toLowerCase());
-  return covered ? [] : [{ text: whole, caseSensitive: false }];
+  if (stripPrefix(whole).trim() !== whole) return catalogForms(whole);
+  if (whole.length < 2) return [];
+  if (requiresPrefix(whole)) {
+    return [`Amazon ${whole}`, `AWS ${whole}`].map(text => ({ text, caseSensitive: false }));
+  }
+  if (catalog.some(form => form.caseSensitive && form.text.toLowerCase() === whole.toLowerCase())) return [];
+  return [{ text: whole, caseSensitive: catalogName?.toLowerCase() !== whole.toLowerCase() }];
 }
 
 export interface StackFitOptions {
@@ -96,7 +100,7 @@ export function buildStackFit(profile: ResolvedProfile, options: StackFitOptions
     if (seen.has(key)) continue;
     seen.add(key);
     const fromCatalog = service.catalogName === null ? [] : catalogForms(service.catalogName);
-    const forms = [...fromCatalog, ...profileForms(service.name, fromCatalog)];
+    const forms = [...fromCatalog, ...profileForms(service.name, service.catalogName, fromCatalog)];
     const alternation = (caseSensitive: boolean): RegExp | undefined => {
       const texts = [...new Set(forms.filter(form => form.caseSensitive === caseSensitive).map(form => form.text))];
       return texts.length === 0 ? undefined
