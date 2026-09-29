@@ -182,6 +182,18 @@ describe("Next-level signals", () => {
   it.each(reverseCases)("excludes a reverse-direction %s session: %s", (source, abstract) => {
     expect(scoreLensSignals(record("Compute deep dive"), profile(source), "next-level", abstract).score).toBe(0);
   });
+  it.each([
+    "Runs on Lambda today. Starting from Amazon EKS and EKS clusters, migrate the agents to AgentCore's serverless runtime.",
+    "Runs on Lambda today. EKS and containers are the start; then move each tenant onto serverless AgentCore.",
+    "Runs on Lambda today. Refactor EKS services and ECS services into Lambda functions.",
+  ])("excludes a Kubernetes-to-serverless move: %s", abstract => {
+    expect(scoreLensSignals(record("Deep dive"), profile("serverless"), "next-level", abstract).score).toBe(0);
+    expect(scoreLensSignals(record("Move your agents to serverless AgentCore"), profile("serverless"), "next-level", "Runs on Lambda today. EKS and containers.").score).toBe(0);
+  });
+  it("still admits containers as the destination of a move", () => {
+    expect(scoreLensSignals(record("Deep dive"), profile("serverless"), "next-level", "Runs on Lambda today. We moved agents off Lambda onto ECS Fargate, with containers and EKS.").score).toBe(40);
+    expect(scoreLensSignals(record("Deep dive"), profile("serverless"), "next-level", "Runs on Lambda today. Compare containers and EKS.").score).toBe(40);
+  });
   it("excludes a reverse-direction title as well", () => {
     expect(scoreLensSignals(record("Lambda MicroVMs for containers"), profile("serverless"), "next-level").score).toBe(0);
   });

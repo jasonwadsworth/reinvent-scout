@@ -67,9 +67,10 @@ const RULES: readonly SignalRule[] = [
     detail: "serverless → containers is an exploration option: gain runtime control; take on operational ownership.",
     phrase: /\b(?:containers?|containerization|ECS|EKS)\b/i,
     // Tuned on the real catalog: the first branch catches "replacing always-on containers with
-    // MicroVMs" (COM340); the MicroVMs branch catches the 19 Lambda MicroVM and AgentCore sandbox
-    // talks, none of which is a move onto containers.
-    reverse: /\b(?:from|replac\w*|migrat\w*|mov\w*) (?:[\w-]+ ){0,3}containers? (?:[\w-]+ ){0,4}(?:to|with|into) (?:[\w-]+ ){0,2}(?:Lambda|serverless|functions?|MicroVMs?)\b|\bMicroVMs?\b/i,
+    // MicroVMs" (COM340); the second any move onto serverless or AgentCore, such as a Kubernetes
+    // workload migrated to it; the MicroVMs branch catches the 19 Lambda MicroVM and AgentCore
+    // sandbox talks, none of which is a move onto containers.
+    reverse: /\b(?:from|replac\w*|migrat\w*|mov\w*) (?:[\w-]+ ){0,3}containers? (?:[\w-]+ ){0,4}(?:to|with|into) (?:[\w-]+ ){0,2}(?:Lambda|serverless|functions?|MicroVMs?)\b|\b(?:migrat\w*|mov\w*|refactor\w*|port\w*) (?:[\w'’-]+ ){0,8}(?:to|onto|into) (?:[\w'’-]+ ){0,3}(?:serverless|AgentCore|Lambda)\b|\bMicroVMs?\b/i,
     topics: ["Containers"],
     services: ["Amazon Elastic Container Service (Amazon ECS)", "Amazon Elastic Kubernetes Service (Amazon EKS)"],
   },
