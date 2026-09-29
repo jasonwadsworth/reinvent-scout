@@ -9,28 +9,50 @@ function escapeRegExp(text: string): string {
 
 interface NameForm {
   text: string;
-  /** A prefix-stripped short name that is an ordinary word ("Amplify", "Connect", "Glue") is
-   * matched case-sensitively, so "Agents amplify" is not a mention of AWS Amplify. */
   caseSensitive: boolean;
 }
 
+/**
+ * Service short names that are ordinary English words. Bare, they read as prose ("Agents amplify
+ * all of them", "Connect your systems"), so they count only inside a prefixed name ("AWS Amplify",
+ * "Amazon Connect") or the full catalog display name. Distinctive product names (Lambda, DynamoDB,
+ * Bedrock, Textract, Kendra...) and acronyms (S3, SQS) are not listed: they match bare, as
+ * capitalized whole words. Lowercase, as compared.
+ */
+export const PREFIX_REQUIRED_SERVICE_NAMES: readonly string[] = [
+  "amplify", "connect", "glue", "batch", "backup", "config", "shield", "inspector", "detective",
+  "transcribe", "polly", "translate", "comprehend", "forecast", "personalize",
+];
+
 const stripPrefix = (name: string): string => name.replace(/^(?:Amazon|AWS)\s+/i, "");
-const isAcronym = (text: string): boolean => /^[A-Z0-9]+$/.test(text);
+const requiresPrefix = (name: string): boolean => PREFIX_REQUIRED_SERVICE_NAMES.includes(name.toLowerCase());
 
 /** "Amazon Simple Queue Service (Amazon SQS)" names itself three ways: the whole, the part before
- * the parenthesis, and the parenthesized short name; each is also tried without its "Amazon" or
- * "AWS" prefix ("Lambda" for "AWS Lambda"). Full names and acronyms match in any case; a stripped
- * word only as written. */
-function nameForms(name: string): NameForm[] {
+ * the parenthesis, and the parenthesized short name. Each whole matches in any case. Each is also
+ * tried without its "Amazon" or "AWS" prefix ("Lambda" for "AWS Lambda", "SQS" for "Amazon SQS"),
+ * but only as written (case-sensitive) and never for an ordinary-word name. */
+function catalogForms(name: string): NameForm[] {
   const parenthesized = /^(.*?)\s*\(([^)]+)\)\s*$/.exec(name);
-  const wholes = parenthesized === null ? [name] : [name, parenthesized[1]!, parenthesized[2]!];
+  const wholes = (parenthesized === null ? [name] : [name, parenthesized[1]!, parenthesized[2]!]).map(whole => whole.trim());
   return wholes.flatMap(whole => {
     const stripped = stripPrefix(whole).trim();
     return [
-      { text: whole.trim(), caseSensitive: false },
-      ...(stripped === whole.trim() ? [] : [{ text: stripped, caseSensitive: !isAcronym(stripped) }]),
+      { text: whole, caseSensitive: false },
+      ...(stripped === whole || requiresPrefix(stripped) ? [] : [{ text: stripped, caseSensitive: true }]),
     ];
   }).filter(form => form.text.length >= 2);
+}
+
+/** The profile's own spelling of a service: kept in any case, since the agent chose it, unless the
+ * catalog's own cased short name already covers it ("lambda" for AWS Lambda would otherwise read
+ * "a lambda expression" as a mention) or it is an ordinary word needing its prefix. */
+function profileForms(name: string, catalog: readonly NameForm[]): NameForm[] {
+  const whole = name.trim();
+  const stripped = stripPrefix(whole).trim();
+  if (stripped !== whole) return catalogForms(whole);
+  if (whole.length < 2 || requiresPrefix(whole)) return [];
+  const covered = catalog.some(form => form.caseSensitive && form.text.toLowerCase() === whole.toLowerCase());
+  return covered ? [] : [{ text: whole, caseSensitive: false }];
 }
 
 export interface StackFitOptions {
@@ -73,9 +95,8 @@ export function buildStackFit(profile: ResolvedProfile, options: StackFitOptions
     const key = service.catalogName ?? service.name.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    const forms = [
-      ...(service.catalogName === null ? [] : nameForms(service.catalogName)), ...nameForms(service.name),
-    ];
+    const fromCatalog = service.catalogName === null ? [] : catalogForms(service.catalogName);
+    const forms = [...fromCatalog, ...profileForms(service.name, fromCatalog)];
     const alternation = (caseSensitive: boolean): RegExp | undefined => {
       const texts = [...new Set(forms.filter(form => form.caseSensitive === caseSensitive).map(form => form.text))];
       return texts.length === 0 ? undefined
