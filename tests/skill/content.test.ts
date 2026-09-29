@@ -634,6 +634,7 @@ describe("lens-quality documentation", () => {
     expect(taxonomyMd).not.toContain("tests/fixtures");
     expect(allSkillText).not.toContain("tests/fixtures");
   });
+});
 
 it("executes the documented plan-confirm-reserve-cancel contracts using plan-returned IDs", async () => {
   const blocks = [...workflowMd.matchAll(/```json\n([\s\S]*?)```/g)].map(match => JSON.parse(match[1]!) as { tool?: string; arguments?: { sessionIds?: string[]; sessionId?: string } }).filter(value => ["plan_schedule", "reserve_sessions", "cancel_reservation"].includes(value.tool ?? ""));
