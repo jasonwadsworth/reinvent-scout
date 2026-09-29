@@ -101,6 +101,33 @@ describe("buildStackFit", () => {
     expect(hasCoreService(profile({ ...lambda, role: "supporting" }, sqs))).toBe(true);
   });
 
+  describe("excluding services", () => {
+    const bedrock = { name: "bedrock", catalogName: "Amazon Bedrock" };
+    it("ignores the excluded services when deciding fit", () => {
+      const fits = buildStackFit(profile(lambda, bedrock));
+      const both = record("Agents", ["AWS Lambda", "Amazon Bedrock"]);
+      const bedrockOnly = record("Models", ["Amazon Bedrock"]);
+      expect(fits(bedrockOnly, "")).toBe(true);
+      expect(fits(bedrockOnly, "", { without: ["Amazon Bedrock"] })).toBe(false);
+      expect(fits(both, "", { without: ["Amazon Bedrock"] })).toBe(true);
+      expect(fits(record("Models"), "Amazon Bedrock and Bedrock again.", { without: ["Amazon Bedrock"] })).toBe(false);
+    });
+    it("applies the exclusion to the distinct count too", () => {
+      const fits = buildStackFit(profile(lambda, sqs, bedrock), { minDistinct: 2 });
+      const r = record("Agents", ["AWS Lambda", "Amazon Bedrock"]);
+      expect(fits(r, "")).toBe(true);
+      expect(fits(r, "", { without: ["Amazon Bedrock"] })).toBe(false);
+    });
+    it("lets a caller raise the number of distinct services and turns the rare path off", () => {
+      const catalog: IndexRecord[] = [...Array.from({ length: 40 }, (_, i) => record(`Filler ${i}`)), record("Queues", ["Amazon Simple Queue Service (Amazon SQS)"])];
+      const fits = buildStackFit(profile(lambda, sqs), { minDistinct: 1, rareBelow: 0.05, catalog });
+      const one = record("Queues", ["Amazon Simple Queue Service (Amazon SQS)"]);
+      expect(fits(one, "")).toBe(true);
+      expect(fits(one, "", { minDistinct: 2 })).toBe(false);
+      expect(fits(record("Both", ["AWS Lambda", "Amazon Simple Queue Service (Amazon SQS)"]), "", { minDistinct: 2 })).toBe(true);
+    });
+  });
+
   describe("platform services", () => {
     const cloudwatch = { name: "cloudwatch", catalogName: "Amazon CloudWatch" };
     const s3 = { name: "s3", catalogName: "Amazon Simple Storage Service (Amazon S3)" };

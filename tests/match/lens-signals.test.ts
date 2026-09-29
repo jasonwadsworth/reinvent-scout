@@ -3,6 +3,7 @@ import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildStackFit } from "../../src/match/stack-fit.js";
 import { LENS_RULE_SELECTORS, scoreLensSignals, skippedLensRules } from "../../src/match/lens-signals.js";
 import type { ResolvedProfile } from "../../src/profile/profile.js";
 
@@ -243,17 +244,21 @@ describe("genai-single-call source and strength", () => {
     "We call InvokeModel today.",
     "Your Converse call returns text.",
     "Go from a chatbot to agents.",
-    "Walk a path from \"I have a serverless app\" to \"my app has agent capabilities\".",
+    "Grow a simple chatbot into agents.",
+    "Extend your existing RAG application.",
+    "Beyond a RAG baseline.",
   ])("accepts a starting-point description: %s", starting => {
     expect(score("Agentic workflows", starting)).toBe(50);
   });
   it("does not take Bedrock or prompts alone as the single-call source", () => {
     expect(score("Agentic workflows", "Build on Amazon Bedrock with good prompts.")).toBe(0);
+    expect(score("Agentic workflows", "Trusted chatbot answers use RAG retrieval and traces.")).toBe(0);
+    expect(score("Agentic workflows", "Move from on-premises to agentic AI. From SAP data to agents.")).toBe(0);
     expect(score("Agentic workflows", "", { services: ["Amazon Bedrock"] })).toBe(0);
   });
   it("needs two agentic mentions, tag or not: a tag never lifts one mention to admission", () => {
     const tagged = { areasOfInterest: ["Agentic AI"] };
-    const starting = "Starts from a chatbot today. ";
+    const starting = "Starts from basic prompting today. ";
     expect(score("Deep dive", `${starting}Covers agentic patterns once.`, tagged)).toBe(0);
     expect(score("Deep dive", `${starting}Covers agentic patterns and agentic tools.`)).toBe(40);
     expect(score("Deep dive", `${starting}Covers agentic patterns and agentic tools.`, tagged)).toBe(50);
@@ -262,6 +267,29 @@ describe("genai-single-call source and strength", () => {
   it("rejects a Bedrock session that says agentic once in passing", () => {
     const bedrock = { services: ["Amazon Bedrock"], areasOfInterest: ["Agentic AI"] };
     expect(score("Model choice deep dive", "Compare models on Amazon Bedrock with our prompts. We mention agentic once.", bedrock)).toBe(0);
+  });
+});
+
+describe("genai-single-call source on the profile's own stack", () => {
+  const stacked = {
+    ...profile("genai-single-call"),
+    services: ["AWS Lambda", "AWS Step Functions", "Amazon Bedrock"].map(name => ({ name, catalogName: name, evidence: [citation] })),
+  };
+  const fits = buildStackFit(stacked);
+  const score = (title: string, abstract: string, extra: object = {}) =>
+    scoreLensSignals(buildIndexRecord({ sessionId: "x", title, ...extra }), stacked, "next-level", abstract, fits).score;
+  it("takes agents built on two of the profile's other services as the move from a single call", () => {
+    expect(score("Agentic workflows", "Lambda functions and Step Functions run the tools.")).toBe(50);
+    expect(score("Agentic workflows", "Tools.", { services: ["AWS Lambda", "AWS Step Functions"] })).toBe(50);
+  });
+  it("does not take one other service, or the source service alone", () => {
+    expect(score("Agentic workflows", "Lambda functions run the tools.", { services: ["AWS Lambda"] })).toBe(0);
+    expect(score("Agentic workflows", "Amazon Bedrock models and prompts.", { services: ["Amazon Bedrock"] })).toBe(0);
+  });
+  it("does not open other rules' source side", () => {
+    const p = { ...stacked, patterns: [{ name: "serverless", evidence: [citation] }] };
+    const r = buildIndexRecord({ sessionId: "x", title: "Containers", services: ["AWS Lambda", "AWS Step Functions"] });
+    expect(scoreLensSignals(r, p, "next-level", "", fits).score).toBe(0);
   });
 });
 

@@ -76,7 +76,7 @@ describe("lens quality on real abstracts", () => {
     });
     it("without agentic, admits title-level agentic sessions and not a tag-only build talk", () => {
       seed(lensFixture);
-      const result = run(profile(["genai-single-call"], ["Amazon Bedrock"]), "next-level");
+      const result = run(profile(["genai-single-call"], ["Amazon Bedrock", "AWS Lambda", "Amazon EventBridge"]), "next-level");
       const top = codes(result.candidates);
       expect(top).toContain("SVS326");
       expect(top).not.toContain("IND3320");

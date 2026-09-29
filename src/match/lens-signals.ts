@@ -25,6 +25,10 @@ interface SignalRule {
   /** Next-level only: the session must also mention the source side in its title or abstract,
    * outside an enumeration, or it is about the destination alone. */
   sourceText?: RegExp;
+  /** Next-level only: the catalog service that is this rule's source itself. Naming it says nothing
+   * about the move, so a session with no starting-point text still satisfies the source side when
+   * it is about at least `SOURCE_STACK_SERVICES` of the profile's other core services. */
+  sourceService?: string;
   /** Tags, topics and services that add one strength to a text hit but never admit on their own. */
   services?: readonly string[];
   topics?: readonly string[];
@@ -32,6 +36,7 @@ interface SignalRule {
 }
 
 const TITLE_STRENGTH = 3;
+const SOURCE_STACK_SERVICES = 2;
 /** A Fix rule's phrase described as absent ("missing dead-letter queues") is the gap itself, not a
  * passing mention, so it earns one more strength than the same phrase without the cue. Looks only
  * at the few words before the first abstract match. */
@@ -74,7 +79,8 @@ const RULES: readonly SignalRule[] = [
   {
     source: "genai-single-call", lens: "next-level", destination: "agentic",
     // The starting point, not the platform: Bedrock and prompts alone appear in every GenAI talk.
-    sourceText: /\b(?:single[- ](?:shot|turn|(?:model |LLM )?(?:call|invocation|prompt)s?)|(?:basic|simple) prompt(?:ing|s)?|first (?:GenAI|generative AI|AI) (?:app|application)|chatbots?|RAG|retrieval[- ]augmented|InvokeModel|Converse(?: API| call|Stream))\b|\bfrom(?: \S+){1,8} to (?:\S+ ){0,3}agent/i,
+    sourceText: /\b(?:single[- ](?:shot|turn|(?:model |LLM )?(?:call|invocation|prompt)s?)|(?:basic|simple) prompt(?:ing|s)?|first (?:GenAI|generative AI|AI) (?:app|application)|(?:basic|simple|existing|standalone|first|starter) (?:(?:RAG|GenAI|LLM|AI) )?(?:chatbots?|RAG(?: (?:app|application|pipeline|system)s?)?|assistants?|copilots?)|(?:chatbot|RAG) baselines?|InvokeModel|Converse(?: API| call|Stream))\b|\bfrom (?:\S+ ){0,4}(?:chatbots?|assistants?|copilots?|prompts?|prompting|RAG|LLM|GenAI|generative AI|single[- ]\w+)(?: \S+){0,4} to (?:\S+ ){0,3}agent/i,
+    sourceService: "Amazon Bedrock",
     detail: "genai-single-call → agentic is an exploration option: gain multi-step tool use; take on latency, cost, evaluation, and control requirements.",
     phrase: /\b(?:agentic|agents? with tools|tool[- ](?:use|calling)|multi[- ]agent|agent orchestration)\b/i,
     areas: ["Agentic AI"],
@@ -141,9 +147,10 @@ function boosted(rule: SignalRule, record: IndexRecord): boolean {
     values.some(value => allowed?.some(expected => value.toLowerCase() === expected.toLowerCase())));
 }
 
-function mentionsSource(rule: SignalRule, record: IndexRecord, abstract: string): boolean {
+function mentionsSource(rule: SignalRule, record: IndexRecord, abstract: string, fitsStack: StackFit): boolean {
   if (rule.sourceText === undefined) return true;
-  return unlistedMatches(rule.sourceText, record.title).length > 0 || unlistedMatches(rule.sourceText, abstract).length > 0;
+  return unlistedMatches(rule.sourceText, record.title).length > 0 || unlistedMatches(rule.sourceText, abstract).length > 0
+    || (rule.sourceService !== undefined && fitsStack(record, abstract, { without: [rule.sourceService], minDistinct: SOURCE_STACK_SERVICES }));
 }
 
 interface Signal {
@@ -155,9 +162,9 @@ interface Signal {
  * abstract = 2, once = 1; a gap cue before the phrase and a matching tag, topic or service each add
  * 1, but a text hit is required. Title
  * and abstract are matched separately so a phrase cannot bridge them. */
-function catalogSignal(rule: SignalRule, record: IndexRecord, abstract: string): Signal | undefined {
+function catalogSignal(rule: SignalRule, record: IndexRecord, abstract: string, fitsStack: StackFit): Signal | undefined {
   if (rule.reverse?.test(record.title) === true || rule.reverse?.test(abstract) === true) return undefined;
-  if (!mentionsSource(rule, record, abstract)) return undefined;
+  if (!mentionsSource(rule, record, abstract, fitsStack)) return undefined;
   const titleMatch = unlistedMatches(rule.phrase, record.title)[0];
   const abstractMatches = unlistedMatches(rule.phrase, abstract);
   const abstractMatch = abstractMatches[0];
@@ -180,7 +187,7 @@ export function scoreLensSignals(
   profile: ResolvedProfile,
   lens: SignalLens,
   abstract = "",
-  fitsStack: StackFit = () => true,
+  fitsStack: StackFit = (_record, _abstract, query) => query === undefined,
 ): LensScored {
   if (!fitsStack(record, abstract)) return { score: 0, reasons: [], hits: [] };
   const reasons: Reason[] = [];
@@ -189,7 +196,7 @@ export function scoreLensSignals(
     if (rule.lens !== lens) continue;
     const citations = activeCitations(rule, profile);
     if (citations.length === 0) continue;
-    const signal = catalogSignal(rule, record, abstract);
+    const signal = catalogSignal(rule, record, abstract, fitsStack);
     if (signal === undefined) continue;
     const unique = new Map<string, Evidence>();
     for (const citation of citations) {

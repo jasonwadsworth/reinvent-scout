@@ -1,7 +1,16 @@
 import type { IndexRecord } from "../catalog/index-record.js";
 import type { ResolvedProfile } from "../profile/profile.js";
 
-export type StackFit = (record: IndexRecord, abstract: string) => boolean;
+export interface StackFitQuery {
+  /** Catalog services that do not count toward the fit. */
+  without?: readonly string[];
+  /** Overrides the gate's own minimum of distinct services, and disables the rare-service path. */
+  minDistinct?: number;
+}
+
+/** A caller that has to know the session is about the profile's stack beyond one service (a rule's
+ * own source) narrows the gate with `query`. */
+export type StackFit = (record: IndexRecord, abstract: string, query?: StackFitQuery) => boolean;
 
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -145,11 +154,13 @@ export function buildStackFit(profile: ResolvedProfile, options: StackFitOptions
       frequency: service.catalogName === null ? 1 : total === 0 ? 0 : (listedCount.get(service.catalogName) ?? 0) / total,
     });
   }
-  return (record, abstract) => {
+  return (record, abstract, query = {}) => {
+    const without = query.without ?? [];
     const shared = services.filter(service =>
-      (service.catalogName !== null && record.services.includes(service.catalogName))
-      || service.named(record.title) || service.named(abstract));
-    if (shared.length >= minDistinct) return true;
-    return options.rareBelow !== undefined && shared.length > 0 && shared.every(service => service.frequency < options.rareBelow!);
+      !(service.catalogName !== null && without.includes(service.catalogName))
+      && ((service.catalogName !== null && record.services.includes(service.catalogName))
+        || service.named(record.title) || service.named(abstract)));
+    if (shared.length >= (query.minDistinct ?? minDistinct)) return true;
+    return query.minDistinct === undefined && options.rareBelow !== undefined && shared.length > 0 && shared.every(service => service.frequency < options.rareBelow!);
   };
 }
