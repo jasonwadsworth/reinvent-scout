@@ -70,3 +70,13 @@ The real pull's sessions only ever populated this subset of the `Session` schema
 (`tracks`, `segments`, `customerPersonas`, `experiences`, `additionalActivities`, `focusAreas`,
 `seatAvailability`) are absent here too — the index builder must tolerate their absence
 regardless, since the schema documents them as legitimate for other events.
+
+## `catalog-lens-sample.json`
+
+33 sessions carved from the same 2026-09-25 real pull, for the Fix and Next-level lens tests: the
+22 sessions whose real titles and abstracts drove the lens-quality plan (API311, SVS329, SVS314,
+COM326, SVS322, SVS317, COM324, SVS336, COM201, ARC410, SVS320, COM320, ARC325, CON337, COM340,
+SVS207, COM303, AMZ401, IND3320, SVS324, SVS326, SVS325; API311 keeps both sittings), plus 10
+unrelated sessions with no lens phrases, one per topic. Titles, abstracts, tags and services are
+verbatim; speakers are replaced with synthetic names. The carving script was a throwaway. The 60
+session fixture above is unchanged.

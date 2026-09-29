@@ -1,0 +1,1401 @@
+[
+  {
+    "abbreviation": "API311-R",
+    "abstract": "Event-driven architectures promise decoupling and scalability, but production systems reveal hard-won lessons. In this chalk talk, we dissect the most expensive anti-patterns teams encounter such as unbounded fan-out, missing dead-letter queues, chatty event schemas that drive up costs, and orchestration gaps that silently drop work. We whiteboard fixes using Amazon EventBridge, AWS Step Functions, and proven enterprise integration patterns, then walk through designs that keep event-driven systems reliable, cost-effective, and observable at scale.",
+    "features": [
+      "Discussion"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "300 - Advanced",
+    "room": "Level 1 | Academy 417",
+    "sessionId": "1780442233172001c2Yk",
+    "sessionTime": {
+      "date": "2026-12-03",
+      "length": "60",
+      "time": "14:30"
+    },
+    "speakers": [
+      {
+        "name": "Speaker 1",
+        "jobTitle": "Principal Engineer",
+        "company": "Example Corp"
+      }
+    ],
+    "title": "How event driven architectures go wrong and how to fix them",
+    "topics": [
+      "Application Integration"
+    ],
+    "type": "Chalk talk",
+    "venue": "Caesars Forum"
+  },
+  {
+    "abbreviation": "API311-R1",
+    "abstract": "Event-driven architectures promise decoupling and scalability, but production systems reveal hard-won lessons. In this chalk talk, we dissect the most expensive anti-patterns teams encounter such as unbounded fan-out, missing dead-letter queues, chatty event schemas that drive up costs, and orchestration gaps that silently drop work. We whiteboard fixes using Amazon EventBridge, AWS Step Functions, and proven enterprise integration patterns, then walk through designs that keep event-driven systems reliable, cost-effective, and observable at scale.",
+    "features": [
+      "Discussion"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "300 - Advanced",
+    "room": "Wynn/Encore | Level 1 | Chopin 4",
+    "sessionId": "1790358241371001iMXd",
+    "sessionTime": {
+      "date": "2026-12-02",
+      "length": "60",
+      "time": "12:00"
+    },
+    "title": "How event driven architectures go wrong and how to fix them [REPEAT]",
+    "topics": [
+      "Application Integration"
+    ],
+    "type": "Chalk talk"
+  },
+  {
+    "abbreviation": "SVS329-R",
+    "abstract": "You're shipping faster with serverless, but your testing strategy hasn't kept up. Local mocks drift from cloud behavior. Integration tests require full deployments. Contract changes between services break downstream consumers silently. In this chalk talk, whiteboard testing approaches that match how serverless developers actually work: unit testing business logic in isolation, integration testing service interactions without deploying everything, and contract testing event schemas between producers and consumers. We cover local versus cloud testing tradeoffs, when each makes sense, and chaos engineering techniques like injecting message delays, duplicates, and out-of-order delivery to catch failures before your users do.",
+    "areasOfInterest": [
+      "DevOps",
+      "Event-Driven Architecture",
+      "Lambda-Based Applications"
+    ],
+    "features": [
+      "Discussion"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "300 - Advanced",
+    "roles": [
+      "DevOps Engineer",
+      "Developer / Engineer",
+      "Solution / Systems Architect"
+    ],
+    "room": "Level 1 | Academy 417",
+    "services": [
+      "AWS Lambda",
+      "AWS Step Functions",
+      "Amazon EventBridge"
+    ],
+    "sessionId": "1780442251182001cAGd",
+    "sessionTime": {
+      "date": "2026-11-30",
+      "length": "60",
+      "time": "13:00"
+    },
+    "speakers": [
+      {
+        "name": "Speaker 3",
+        "jobTitle": "Principal Engineer",
+        "company": "Example Corp"
+      }
+    ],
+    "title": "Testing serverless and event-driven applications",
+    "topics": [
+      "Serverless"
+    ],
+    "type": "Chalk talk",
+    "venue": "Caesars Forum"
+  },
+  {
+    "abbreviation": "SVS314-R",
+    "abstract": "A Lambda function that handles traffic well in prototype isn't necessarily production-ready—there's a gap between \"works\" and \"hardened.\" In this builders' session, take a working Lambda function and add the security and performance layers that production demands. You'll implement least-privilege IAM policies, add request validation and secrets management, reduce cold start duration with SnapStart and right-sized memory, and configure reserved concurrency for predictable performance under load. Each change includes the trade-off: what you gain, what it costs, and when to skip it. Bring your laptop.",
+    "areasOfInterest": [
+      "Application Security",
+      "Cost Optimization",
+      "Lambda-Based Applications"
+    ],
+    "features": [
+      "Hands-on"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "300 - Advanced",
+    "roles": [
+      "Cloud Security Specialist",
+      "DevOps Engineer",
+      "Developer / Engineer"
+    ],
+    "room": "Level 1 | Alliance 311",
+    "services": [
+      "AWS Identity and Access Management (IAM)",
+      "AWS Lambda",
+      "AWS Secrets Manager"
+    ],
+    "sessionId": "1780442231438001clcu",
+    "sessionTime": {
+      "date": "2026-12-03",
+      "length": "60",
+      "time": "14:30"
+    },
+    "speakers": [
+      {
+        "name": "Speaker 4",
+        "jobTitle": "Principal Engineer",
+        "company": "Example Corp"
+      }
+    ],
+    "title": "Production-ready Lambda: Security and performance patterns",
+    "topics": [
+      "Application Integration",
+      "Serverless"
+    ],
+    "type": "Builders' session",
+    "venue": "Caesars Forum"
+  },
+  {
+    "abbreviation": "COM326",
+    "abstract": "When AI agents run as long-lived, multi-invocation workflows on Lambda Durable Functions, standard observability breaks down. A single durable execution spanning five specialists producing independent telemetry, replays pollute logs with duplicates, and no tool can tell you which agents are failing across thousands of concurrent runs. We'll build a multi-agent purchasing coordinator with Lambda durable functions, instrument it with the OpenTelemetry plugin for one coherent trace across all invocations, and CloudWatch insights to answer fleet-wide queries with business context. Attendees leave with fully observable architecture and the investigation pattern from CloudWatch alarm to end-to-end traces and correlated log entries.",
+    "areasOfInterest": [
+      "Agentic AI",
+      "Lambda-Based Applications",
+      "Monitoring & Observability"
+    ],
+    "features": [
+      "Community-led",
+      "Discussion"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "300 - Advanced",
+    "roles": [
+      "DevOps Engineer",
+      "Developer / Engineer",
+      "Solution / Systems Architect"
+    ],
+    "room": "Level 1 | Forum 120 | Content Hub | Code Talk",
+    "services": [
+      "AWS Lambda",
+      "Amazon CloudWatch"
+    ],
+    "sessionId": "1780442254857001cak0",
+    "sessionTime": {
+      "date": "2026-11-30",
+      "length": "60",
+      "time": "15:00"
+    },
+    "speakers": [
+      {
+        "name": "Speaker 5",
+        "jobTitle": "Principal Engineer",
+        "company": "Example Corp"
+      }
+    ],
+    "title": "Observable Agents with Lambda Durable Functions and OpenTelemetry",
+    "topics": [
+      "Architecture",
+      "Serverless"
+    ],
+    "type": "Code talk",
+    "venue": "Caesars Forum"
+  },
+  {
+    "abbreviation": "SVS322-R",
+    "abstract": "Production incidents at 2 a.m. don't wait for your team to wake up. In this builders' session, work with a deployed serverless application and use AWS DevOps Agent to resolve real-world failures autonomously. You'll inject common production issues—such as Lambda throttling, timeout cascades, DynamoDB throughput exceeded, and SQS dead-letter queue buildup—then configure the agent to perform root cause analysis, propose remediation, and apply fixes. You'll tune detection sensitivity, set approval gates for automated actions, and evaluate where autonomous remediation is safe versus where human oversight is required. Bring your laptop.",
+    "areasOfInterest": [
+      "Agentic AI",
+      "Monitoring & Observability",
+      "Resilience"
+    ],
+    "features": [
+      "Hands-on"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "300 - Advanced",
+    "roles": [
+      "DevOps Engineer",
+      "Developer / Engineer",
+      "IT Professional / Technical Manager"
+    ],
+    "room": "Level 1 | Forum 120 | Content Hub | Builders' Session 1",
+    "services": [
+      "AWS Lambda",
+      "Amazon DynamoDB",
+      "Amazon Simple Queue Service (Amazon SQS)"
+    ],
+    "sessionId": "1780442231384001cmU0",
+    "sessionTime": {
+      "date": "2026-11-30",
+      "length": "60",
+      "time": "16:30"
+    },
+    "speakers": [
+      {
+        "name": "Speaker 6",
+        "jobTitle": "Principal Engineer",
+        "company": "Example Corp"
+      }
+    ],
+    "title": "Build self-healing Serverless applications with AWS DevOps Agent",
+    "topics": [
+      "Application Integration",
+      "Serverless"
+    ],
+    "type": "Builders' session",
+    "venue": "Caesars Forum"
+  },
+  {
+    "abbreviation": "SVS317-R",
+    "abstract": "Most multi-agent systems start with direct API calls between agents—then debugging becomes impossible, one slow agent blocks the chain, and replaying a failed workflow means re-running everything. In this chalk talk, discuss why event-driven patterns solve these coordination problems and how to design multi-agent systems using EventBridge for routing, human-in-the-loop controls that pause and resume agent actions via events, and compute selection—such as Lambda, Fargate, or AgentCore—based on your agent's execution profile. Bring architecture questions; we'll whiteboard patterns for decoupling agents across domains without sacrificing observability.",
+    "areasOfInterest": [
+      "Agentic AI",
+      "Event-Driven Architecture",
+      "Lambda-Based Applications"
+    ],
+    "features": [
+      "Discussion"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "300 - Advanced",
+    "roles": [
+      "Developer / Engineer",
+      "IT Professional / Technical Manager",
+      "Solution / Systems Architect"
+    ],
+    "room": "Level 1 | Forum 103",
+    "services": [
+      "AWS Fargate",
+      "AWS Lambda",
+      "Amazon EventBridge"
+    ],
+    "sessionId": "1780442250876001c6kp",
+    "sessionTime": {
+      "date": "2026-11-30",
+      "length": "60",
+      "time": "11:30"
+    },
+    "speakers": [
+      {
+        "name": "Speaker 7",
+        "jobTitle": "Principal Engineer",
+        "company": "Example Corp"
+      }
+    ],
+    "title": "Integrating AI agents with event-driven architectures",
+    "topics": [
+      "Application Integration",
+      "Serverless"
+    ],
+    "type": "Chalk talk",
+    "venue": "Caesars Forum"
+  },
+  {
+    "abbreviation": "COM324-R",
+    "abstract": "AI can generate code at racing speed, but production workloads still require continuous attention to security, reliability, cost, and operational risks. In this Code Talk, we build a multi-agent architecture on AWS inspired by a Formula 1 pit crew. Using Amazon Bedrock AgentCore, Strands Agents, MCP, GitHub, Jira, and Infrastructure as Code, we evolve from a single agent to a team of specialized agents for security, cost optimization, reliability, and observability. Through a live demonstration, you’ll see how agents turn cloud findings into engineering tasks. Attendees will leave with reusable architectures, orchestration patterns, and examples for cloud operations on AWS.",
+    "areasOfInterest": [
+      "Agentic AI",
+      "DevOps",
+      "Monitoring & Observability"
+    ],
+    "features": [
+      "Community-led",
+      "Discussion"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "300 - Advanced",
+    "roles": [
+      "DevOps Engineer",
+      "Developer / Engineer",
+      "Solution / Systems Architect"
+    ],
+    "room": "Level 1 | Forum 120 | Content Hub | Code Talk",
+    "services": [
+      "Amazon Bedrock",
+      "Amazon CloudWatch",
+      "Amazon EventBridge"
+    ],
+    "sessionId": "1780442254725001cOip",
+    "sessionTime": {
+      "date": "2026-12-02",
+      "length": "60",
+      "time": "15:00"
+    },
+    "speakers": [
+      {
+        "name": "Speaker 8",
+        "jobTitle": "Principal Engineer",
+        "company": "Example Corp"
+      }
+    ],
+    "title": "Pit Crew AI: Building Multi-Agent Cloud Operations on AWS",
+    "topics": [
+      "Artificial Intelligence",
+      "Cloud Operations"
+    ],
+    "type": "Code talk",
+    "venue": "Caesars Forum"
+  },
+  {
+    "abbreviation": "SVS336",
+    "abstract": "AI agents need more than an LLM and a prompt. Production agents require tool execution with least-privilege isolation, orchestration that recovers from partial failures, and observability that tracks token spend alongside function duration. In this chalk talk, we discuss architectural patterns for Serverless AI agents: model routing across providers and cost tiers, fault-tolerant orchestration with Step Functions and Lambda durable functions, isolated code execution using MicroVMs, and state management for long-running multi-step workflows. We whiteboard the decisions that matter for your workload shape and where each pattern introduces complexity you may not need.",
+    "areasOfInterest": [
+      "Agentic AI",
+      "Event-Driven Architecture",
+      "Lambda-Based Applications"
+    ],
+    "features": [
+      "Lecture-style"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "300 - Advanced",
+    "roles": [
+      "Developer / Engineer",
+      "IT Professional / Technical Manager",
+      "Solution / Systems Architect"
+    ],
+    "room": "Level 1 | Forum 120 | Content Hub | Orange Theater",
+    "services": [
+      "AWS Lambda",
+      "AWS Step Functions"
+    ],
+    "sessionId": "1780441481593001GlFY",
+    "sessionTime": {
+      "date": "2026-12-01",
+      "length": "60",
+      "time": "11:30"
+    },
+    "speakers": [
+      {
+        "name": "Speaker 9",
+        "jobTitle": "Principal Engineer",
+        "company": "Example Corp"
+      }
+    ],
+    "title": "Building Serverless AI agents",
+    "topics": [
+      "Serverless"
+    ],
+    "type": "Breakout session",
+    "venue": "Caesars Forum"
+  },
+  {
+    "abbreviation": "COM201",
+    "abstract": "In April 2026, an AI coding agent deleted a company's entire production database in nine seconds, without being asked. The agent was confidently wrong and had the permissions to act on it. In this session, we recreate that incident live using Amazon Bedrock, walk through every failure in the chain, then rebuild the architecture with six hardening layers: Bedrock Guardrails, human approval gates, least-privilege IAM, deletion protection, isolated backups, and real-time monitoring. Walk away with a concrete checklist for designing AI-assisted systems that plan for when the AI is wrong, not just when it performs perfectly.",
+    "areasOfInterest": [
+      "Agentic AI",
+      "Application Security",
+      "DevSecOps"
+    ],
+    "features": [
+      "Lecture-style"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "200 - Intermediate",
+    "roles": [
+      "Advisor / Consultant",
+      "Cloud Security Specialist",
+      "Developer / Engineer"
+    ],
+    "services": [
+      "AWS Identity and Access Management (IAM)",
+      "Amazon DynamoDB",
+      "Amazon Simple Storage Service (Amazon S3)"
+    ],
+    "sessionId": "1780442262723001cYoO",
+    "title": "Nine Seconds to Zero: Protecting AWS from AI Agent Disasters",
+    "topics": [
+      "Artificial Intelligence",
+      "Security & Identity"
+    ],
+    "type": "Lightning talk"
+  },
+  {
+    "abbreviation": "ARC410",
+    "abstract": "Instant, vast scale and elasticity. Infrastructure as Code. Eventual consistency. Immutable infrastructure. Serverless. Event-driven computing. Internet of Things. Chaos engineering. Zero trust. Pervasive observability. Twenty years of cloud have produced an extraordinary density of patterns — each arriving with conviction and shaping what came next. Some became invisible foundations we build on without thinking. Others evolved in ways nobody predicted. And the evolution continues — now with agentic architectures. What has stood the test of time? What's still evolving? And what can we learn to be ready for the next twenty years?",
+    "areasOfInterest": [
+      "DevSecOps",
+      "Well-Architected Framework"
+    ],
+    "features": [
+      "Lecture-style"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "400 - Expert",
+    "roles": [
+      "Developer / Engineer",
+      "IT Executive",
+      "Solution / Systems Architect"
+    ],
+    "room": "Level 1 | Grand 115",
+    "services": [
+      "Amazon CloudFront",
+      "Amazon Elastic Compute Cloud (Amazon EC2)",
+      "Amazon Elastic Container Service (Amazon ECS)"
+    ],
+    "sessionId": "1780441463262001Gcbv",
+    "sessionTime": {
+      "date": "2026-12-01",
+      "length": "60",
+      "time": "16:30"
+    },
+    "title": "Twenty years of cloud architecture",
+    "topics": [
+      "Compute",
+      "Containers"
+    ],
+    "type": "Breakout session",
+    "venue": "MGM Grand"
+  },
+  {
+    "abbreviation": "SVS320",
+    "abstract": "Your business logic shouldn't be coupled to a compute service. In this session, apply Hexagonal Architecture and 12-factor patterns to design workloads where compute is a deployment decision, not an architectural one. Through live code, see the same logic packaged as a Lambda function, a Fargate task, and an EKS pod using AWS Lambda Web Adapter and runtime-neutral handler patterns. You'll learn where portability pays off, where it adds unnecessary abstraction, and how to evaluate the trade-offs between pay-per-request, always-on containers, and orchestrated clusters for your workloads.",
+    "areasOfInterest": [
+      "Lambda-Based Applications"
+    ],
+    "features": [
+      "Hands-on"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "300 - Advanced",
+    "roles": [
+      "DevOps Engineer",
+      "Developer / Engineer",
+      "Solution / Systems Architect"
+    ],
+    "room": "Level 1 | Forum 120 | Content Hub | Builders' Session 2",
+    "services": [
+      "AWS Fargate",
+      "AWS Lambda",
+      "Amazon Elastic Kubernetes Service (Amazon EKS)"
+    ],
+    "sessionId": "1780441493253001GQEC",
+    "sessionTime": {
+      "date": "2026-12-02",
+      "length": "60",
+      "time": "14:30"
+    },
+    "speakers": [
+      {
+        "name": "Speaker 12",
+        "jobTitle": "Principal Engineer",
+        "company": "Example Corp"
+      }
+    ],
+    "title": "Same code, any compute: Portable architecture on AWS",
+    "topics": [
+      "Application Integration",
+      "Serverless"
+    ],
+    "type": "Builders' session",
+    "venue": "Caesars Forum"
+  },
+  {
+    "abbreviation": "COM320",
+    "abstract": "In six weeks on reality TV coding show The Full Stack, we built DataSwarm — a data-observability solution shipped as an open-source CLI with cloud-hosted data analysis and remediation. Great demo, wrong architecture. When real users arrived, the demo cracked. So we pivoted. Long-running agents moved off Lambda onto ephemeral ECS Fargate tasks. API keys swapped for firewalled Amazon Bedrock, feature-branched CI/CD with dev-to-prod promotion, and Next.js behind CloudFront, S3, and Lambda@Edge. We break down each tradeoff from first idea to first customer. Leave knowing how to tell demo-grade architectures from customer-grade ones — and when to make the jump.",
+    "areasOfInterest": [
+      "Agentic AI",
+      "Monitoring & Observability"
+    ],
+    "features": [
+      "Community-led",
+      "Lecture-style"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "300 - Advanced",
+    "roles": [
+      "Data Engineer",
+      "DevOps Engineer",
+      "Developer / Engineer"
+    ],
+    "services": [
+      "AWS Lambda",
+      "Amazon Bedrock",
+      "Amazon Elastic Container Service (Amazon ECS)"
+    ],
+    "sessionId": "1780441467622001GM4k",
+    "title": "Lights, Camera, Fargate—A Reality-TV Startup Hardened for Scale on AWS",
+    "topics": [
+      "Artificial Intelligence",
+      "Serverless"
+    ],
+    "type": "Breakout session"
+  },
+  {
+    "abbreviation": "ARC325-R",
+    "abstract": "We push Lambda, DynamoDB, and SQS to one million requests per second and share what breaks. Learn partition-aware DynamoDB design for extreme write throughput, Lambda concurrency shaping to prevent downstream crush, SQS as a backpressure buffer with adaptive batching, and retry amplification math that turns a blip into a cascade. We present real numbers: cold start budgets at scale, the exact crossover point where serverless cost exceeds containers, and the operational trade-offs at each threshold.",
+    "areasOfInterest": [
+      "Resilience"
+    ],
+    "features": [
+      "Discussion"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "300 - Advanced",
+    "roles": [
+      "DevOps Engineer",
+      "Developer / Engineer",
+      "Solution / Systems Architect"
+    ],
+    "room": "Level 1 | Alliance 314",
+    "services": [
+      "AWS Lambda",
+      "Amazon DynamoDB",
+      "Amazon Simple Queue Service (Amazon SQS)"
+    ],
+    "sessionId": "1780442233390001cyew",
+    "sessionTime": {
+      "date": "2026-12-02",
+      "length": "60",
+      "time": "13:30"
+    },
+    "speakers": [
+      {
+        "name": "Speaker 14",
+        "jobTitle": "Principal Engineer",
+        "company": "Example Corp"
+      }
+    ],
+    "title": "Serverless at 1M RPS: Lambda, DynamoDB & SQS Scaling Lessons",
+    "topics": [
+      "Architecture",
+      "Serverless"
+    ],
+    "type": "Chalk talk",
+    "venue": "Caesars Forum"
+  },
+  {
+    "abbreviation": "CON337-R",
+    "abstract": "Not every container workload needs to run all the time. Some should wake up when an event arrives, process it, and stop. Amazon ECS makes this straightforward, but choosing the right trigger pattern matters. In this chalk talk, discuss how to connect events to containers using Amazon EventBridge, Amazon SQS, and AWS Step Functions. Walk through four common patterns: single-event task launch, queue-based consumer scaling, fan-out processing, and multi-step workflow orchestration. Explore how to handle failures gracefully with dead-letter queues and retry policies, and how Amazon ECS provides serverless compute for event-triggered deployments.",
+    "areasOfInterest": [
+      "Automation",
+      "DevOps",
+      "Event-Driven Architecture"
+    ],
+    "features": [
+      "Discussion"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "300 - Advanced",
+    "roles": [
+      "DevOps Engineer",
+      "Developer / Engineer",
+      "Solution / Systems Architect"
+    ],
+    "room": "Level 1 | Alliance 314",
+    "services": [
+      "AWS Step Functions",
+      "Amazon Elastic Container Service (Amazon ECS)",
+      "Amazon Simple Queue Service (Amazon SQS)"
+    ],
+    "sessionId": "1780442239285001cZIY",
+    "sessionTime": {
+      "date": "2026-12-02",
+      "length": "60",
+      "time": "15:00"
+    },
+    "speakers": [
+      {
+        "name": "Speaker 15",
+        "jobTitle": "Principal Engineer",
+        "company": "Example Corp"
+      }
+    ],
+    "title": "Decouple and scale Amazon ECS workloads with event-driven patterns",
+    "topics": [
+      "Containers",
+      "Developer Tools"
+    ],
+    "type": "Chalk talk",
+    "venue": "Caesars Forum"
+  },
+  {
+    "abbreviation": "COM340",
+    "abstract": "Lambda Functions are stateless and time out after 15 minutes. Fargate tasks are expensive to keep warm. When building multi-tenant agent platforms, I needed per-tenant isolation without per-tenant cost. Lambda MicroVMs solve this: Firecracker VM-level isolation, 8-hour stateful execution, auto-suspend when idle, instant resume on next request. This session walks through the architecture I built, replacing always-on containers with MicroVMs as per-tenant agent sandboxes. I'll share the tradeoffs, what surprised me, and a deployable pattern you can take home and ship.",
+    "areasOfInterest": [
+      "Agentic AI",
+      "Application Security"
+    ],
+    "features": [
+      "Lecture-style"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "300 - Advanced",
+    "roles": [
+      "DevOps Engineer",
+      "Developer / Engineer",
+      "IT Professional / Technical Manager"
+    ],
+    "services": [
+      "AWS Lambda",
+      "Amazon Bedrock",
+      "Amazon EventBridge"
+    ],
+    "sessionId": "1780442262481001cLnj",
+    "title": "Lambda MicroVMs: The Missing Serverless Primitive for Multi-Tenant Agents",
+    "topics": [
+      "Artificial Intelligence",
+      "Serverless"
+    ],
+    "type": "Lightning talk"
+  },
+  {
+    "abbreviation": "SVS207",
+    "abstract": "You're running workloads across Lambda, EC2, and containers because no single service handled orchestration, always-on compute, and isolated execution. Lambda's new execution models change that: durable functions add checkpointed orchestration, Managed Instances provide always-on compute at EC2 economics, and MicroVMs offer hardware-level sandboxes with persistent state. In this breakout, we discuss the operational decision tree: which execution model to standardize on for each workload class, how to manage mixed-model deployments, monitoring differences across models, and when to migrate workloads between them. Bring your workload portfolio. We'll help you build an operational playbook for multi-model Lambda.",
+    "areasOfInterest": [
+      "Cost Optimization",
+      "Lambda-Based Applications"
+    ],
+    "features": [
+      "Lecture-style"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "200 - Intermediate",
+    "roles": [
+      "Developer / Engineer",
+      "IT Professional / Technical Manager",
+      "Solution / Systems Architect"
+    ],
+    "room": "Level 1 | Grand 115",
+    "services": [
+      "AWS Lambda"
+    ],
+    "sessionId": "1780441481823001G4G8",
+    "sessionTime": {
+      "date": "2026-12-01",
+      "length": "60",
+      "time": "13:30"
+    },
+    "speakers": [
+      {
+        "name": "Speaker 17",
+        "jobTitle": "Principal Engineer",
+        "company": "Example Corp"
+      }
+    ],
+    "title": "Modernizing your compute stack with Lambda's new execution models",
+    "topics": [
+      "Serverless"
+    ],
+    "type": "Breakout session",
+    "venue": "MGM Grand"
+  },
+  {
+    "abbreviation": "COM303",
+    "abstract": "Honeycomb spends millions of dollars a year on Lambda. Every cold query runs through a map-reduce backend that used to mean one tier, Lambda Functions, regardless of shape. We outgrew Lambda Functions, not Lambda: Managed Instances now absorbs steady-state baseline traffic at roughly 7.5x lower cost than Functions, MicroVMs takes spikes of load tolerating 1.5 seconds of added latency, and Functions still catches bursty spillover. We'll walk through the observability and benchmarks that drove each cutover, and the routing logic deciding which tier a query lands on before it executes. You'll learn how to scale your serverless workloads multiple orders of magnitude without linear cost.",
+    "areasOfInterest": [
+      "Cost Optimization",
+      "Monitoring & Observability"
+    ],
+    "features": [
+      "Community-led",
+      "Lecture-style"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "300 - Advanced",
+    "roles": [
+      "Data Engineer",
+      "Developer / Engineer",
+      "IT Professional / Technical Manager"
+    ],
+    "room": "Level 1 | Forum 120 | Content Hub | Red Theater",
+    "services": [
+      "AWS Lambda"
+    ],
+    "sessionId": "1780441467066001Gmuq",
+    "sessionTime": {
+      "date": "2026-12-02",
+      "length": "60",
+      "time": "13:00"
+    },
+    "speakers": [
+      {
+        "name": "Speaker 18",
+        "jobTitle": "Principal Engineer",
+        "company": "Example Corp"
+      }
+    ],
+    "title": "Lambda for every scale and workload shape",
+    "topics": [
+      "Analytics",
+      "Containers",
+      "Serverless"
+    ],
+    "type": "Breakout session",
+    "venue": "Caesars Forum"
+  },
+  {
+    "abbreviation": "AMZ401-R",
+    "abstract": "Most service meshes require dedicated infrastructure just to manage the mesh itself. Amazon Ads took a different approach: a fully serverless xDS control plane built with AWS Lambda and S3 that manages hundreds of Envoy proxies serving 100K+ requests per second at 2ms p99 overhead — with no long-running control plane servers. In this session, we walk through the architecture end to end: Envoy sidecars on Amazon ECS for service-to-service communication, an edge proxy for external ingress, and the serverless control plane that ties it together. You'll leave with patterns you can adopt immediately.",
+    "areasOfInterest": [
+      "Automation",
+      "Innovation & Transformation",
+      "Learning from Amazon"
+    ],
+    "features": [
+      "Discussion"
+    ],
+    "industries": [
+      "Advertising & Marketing",
+      "Media & Entertainment"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "400 - Expert",
+    "roles": [
+      "Developer / Engineer",
+      "Solution / Systems Architect",
+      "System Administrator"
+    ],
+    "room": "Level 1 | Forum 120 | Content Hub | Code Talk",
+    "services": [
+      "AWS Lambda",
+      "Amazon Elastic Compute Cloud (Amazon EC2)",
+      "Amazon Simple Storage Service (Amazon S3)"
+    ],
+    "sessionId": "1780442256737001cYLc",
+    "sessionTime": {
+      "date": "2026-12-01",
+      "length": "60",
+      "time": "15:00"
+    },
+    "speakers": [
+      {
+        "name": "Speaker 19",
+        "jobTitle": "Principal Engineer",
+        "company": "Example Corp"
+      }
+    ],
+    "title": "How Amazon Ads Built a Service Mesh Without a Control Plane Service",
+    "topics": [
+      "Architecture",
+      "Migration & Modernization",
+      "Serverless"
+    ],
+    "type": "Code talk",
+    "venue": "Caesars Forum"
+  },
+  {
+    "abbreviation": "IND3320-R",
+    "abstract": "Automotive software teams lose hours to a slow development cycle: Android builds run for hours, and testing means waiting on scarce physical target hardware. This chalk talk shows how to compress that cycle on AWS. SourceFS cuts Android build times from ~3 hours to under 5 minutes, and the Virtual Engineering Workbench (VEW) lets engineers test against virtual targets in the cloud instead of queuing for physical boards. We'll build up the reference architecture live, show where each piece fits, and walk through the adoption path customers are on today.",
+    "areasOfInterest": [
+      "Agentic AI",
+      "DevOps",
+      "Innovation & Transformation"
+    ],
+    "features": [
+      "Discussion"
+    ],
+    "industries": [
+      "Automotive"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "300 - Advanced",
+    "roles": [
+      "Developer / Engineer",
+      "Solution / Systems Architect"
+    ],
+    "room": "Wynn/Encore | Convention Promenade | Latour 5",
+    "services": [
+      "AWS Lambda",
+      "Amazon Elastic Compute Cloud (Amazon EC2)",
+      "Amazon Simple Storage Service (Amazon S3)"
+    ],
+    "sessionId": "1780442245097001cPaL",
+    "sessionTime": {
+      "date": "2026-11-30",
+      "length": "60",
+      "time": "11:30"
+    },
+    "speakers": [
+      {
+        "name": "Speaker 20",
+        "jobTitle": "Principal Engineer",
+        "company": "Example Corp"
+      }
+    ],
+    "title": "From Hours to Minutes: Fast Android Builds and Virtual Testing on AWS",
+    "topics": [
+      "Architecture",
+      "Artificial Intelligence",
+      "Industry Solutions"
+    ],
+    "type": "Chalk talk"
+  },
+  {
+    "abbreviation": "SVS324-R",
+    "abstract": "Agents need tools—functions they can call to retrieve data, take actions, and interact with external systems. Lambda is well-suited for this, but designing functions as agent tools requires different thinking than traditional API backends. In this chalk talk, discuss design principles for agentic Serverless: single-responsibility tools with clear input/output schemas, MCP-compatible interfaces for universal agent consumption, and multi-tenant isolation that keeps workloads secure. We'll whiteboard the trade-offs that matter—provisioned concurrency versus on-demand cold starts, cost per invocation at agent scale, and where Serverless fits versus where you need different compute.",
+    "areasOfInterest": [
+      "Agentic AI",
+      "Cost Optimization",
+      "Lambda-Based Applications"
+    ],
+    "features": [
+      "Discussion"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "300 - Advanced",
+    "roles": [
+      "DevOps Engineer",
+      "Developer / Engineer",
+      "Solution / Systems Architect"
+    ],
+    "room": "Level 1 | Forum 103",
+    "services": [
+      "AWS Lambda",
+      "Amazon Bedrock",
+      "Amazon EventBridge"
+    ],
+    "sessionId": "1780442250949001cCMw",
+    "sessionTime": {
+      "date": "2026-11-30",
+      "length": "60",
+      "time": "10:00"
+    },
+    "speakers": [
+      {
+        "name": "Speaker 21",
+        "jobTitle": "Principal Engineer",
+        "company": "Example Corp"
+      }
+    ],
+    "title": "Building agentic apps with serverless: Lambda as your agent's toolbox",
+    "topics": [
+      "Application Integration",
+      "Serverless"
+    ],
+    "type": "Chalk talk",
+    "venue": "Caesars Forum"
+  },
+  {
+    "abbreviation": "SVS326-R",
+    "abstract": "You've been building event-driven, async systems for years. Agents are a new type of consumer in your existing architecture. In this chalk talk, we discuss what actually changes: reframing functions as tools with schema-first interfaces, managing agent state with storage and checkpoints, and handling non-deterministic failures from LLM calls. We walk through a practical path from \"I have a serverless app\" to \"my app has agent capabilities,\" adding capabilities incrementally without rewriting what already works. Bring your architecture. We'll whiteboard where agents fit in what you've already built.",
+    "areasOfInterest": [
+      "Agentic AI",
+      "Event-Driven Architecture",
+      "Lambda-Based Applications"
+    ],
+    "features": [
+      "Discussion"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "300 - Advanced",
+    "roles": [
+      "DevOps Engineer",
+      "Developer / Engineer",
+      "Solution / Systems Architect"
+    ],
+    "room": "Level 1 | Academy 417",
+    "services": [
+      "AWS Lambda",
+      "Amazon Bedrock",
+      "Amazon EventBridge"
+    ],
+    "sessionId": "1780442251002001cQ9T",
+    "sessionTime": {
+      "date": "2026-12-02",
+      "length": "60",
+      "time": "14:30"
+    },
+    "speakers": [
+      {
+        "name": "Speaker 22",
+        "jobTitle": "Principal Engineer",
+        "company": "Example Corp"
+      }
+    ],
+    "title": "Thinking agentic: What developers using Serverless need to know",
+    "topics": [
+      "Serverless"
+    ],
+    "type": "Chalk talk",
+    "venue": "Caesars Forum"
+  },
+  {
+    "abbreviation": "SVS325-R",
+    "abstract": "Distributed transactions across microservices break in ways monoliths never did: partial failures, inconsistent state, rollbacks that don't roll back. In this builders' session, build a payment processing using saga pattern that orchestrates multiple serverless microservices using AWS Step Functions and Lambda durable functions. You'll implement compensation mechanisms that handle partial failures, compare orchestration approaches for short-lived versus long-running transactions, and monitor transaction flows across distributed services. Walk away with working saga patterns and the observability setup to troubleshoot them in production. Bring your laptop.",
+    "areasOfInterest": [
+      "Event-Driven Architecture",
+      "Lambda-Based Applications",
+      "Resilience"
+    ],
+    "features": [
+      "Hands-on"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "300 - Advanced",
+    "roles": [
+      "DevOps Engineer",
+      "Developer / Engineer",
+      "Solution / Systems Architect"
+    ],
+    "room": "Level 1 | Forum 120 | Content Hub | Builders' Session 1",
+    "services": [
+      "AWS Lambda",
+      "AWS Step Functions",
+      "Amazon DynamoDB"
+    ],
+    "sessionId": "1780442231560001chVC",
+    "sessionTime": {
+      "date": "2026-12-01",
+      "length": "60",
+      "time": "12:00"
+    },
+    "speakers": [
+      {
+        "name": "Speaker 23",
+        "jobTitle": "Principal Engineer",
+        "company": "Example Corp"
+      }
+    ],
+    "title": "Distributed transactions with Step Functions and durable functions",
+    "topics": [
+      "Application Integration",
+      "Serverless"
+    ],
+    "type": "Builders' session",
+    "venue": "Caesars Forum"
+  },
+  {
+    "abbreviation": "API303-R",
+    "abstract": "Build real-time features using AWS AppSync Events in this hands-on builders' session. Working in small groups with guidance from AWS experts, you'll implement in-app notifications and live updates, configure WebSocket connections, and design data persistence strategies. Using provided code samples, you'll gain practical experience creating responsive, event-driven applications that push updates to connected clients instantly. By the end of this 60-minute session, you'll have working real-time patterns you can apply directly to your own applications. Bring your laptop and come ready to code!",
+    "areasOfInterest": [
+      "Event-Driven Architecture"
+    ],
+    "features": [
+      "Hands-on"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "300 - Advanced",
+    "roles": [
+      "Developer / Engineer",
+      "IT Professional / Technical Manager",
+      "Solution / Systems Architect"
+    ],
+    "room": "Level 1 | Forum 120 | Content Hub | Builders' Session 2",
+    "services": [
+      "AWS AppSync"
+    ],
+    "sessionId": "1780441491675001GHkU",
+    "sessionTime": {
+      "date": "2026-11-30",
+      "length": "60",
+      "time": "14:30"
+    },
+    "speakers": [
+      {
+        "name": "Speaker 24",
+        "jobTitle": "Principal Engineer",
+        "company": "Example Corp"
+      }
+    ],
+    "title": "Building real-time applications with event-driven architectures",
+    "topics": [
+      "Serverless"
+    ],
+    "type": "Builders' session",
+    "venue": "Caesars Forum"
+  },
+  {
+    "abbreviation": "COP305-R",
+    "abstract": "Security teams drown in logs but struggle to investigate fast. In this hands-on session, turn raw security telemetry from CloudTrail, S3 access logs, and VPC flow logs into actionable intelligence with Amazon CloudWatch. We'll centralize logs in the CloudWatch Unified Data Store, then query across sources to investigate real scenarios: after-hours data access, credential misuse, and exfiltration patterns. You'll build a security dashboard that surfaces who did what, from where, and when. Walk away with reusable queries and dashboards you can deploy in your own accounts, moving from reactive log search to proactive security visibility.",
+    "areasOfInterest": [
+      "Governance, Risk & Compliance",
+      "Monitoring & Observability",
+      "Threat Detection & Incident Response"
+    ],
+    "features": [
+      "Hands-on"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "300 - Advanced",
+    "roles": [
+      "Cloud Security Specialist",
+      "DevOps Engineer",
+      "System Administrator"
+    ],
+    "room": "Wynn/Encore | Upper Convention Promenade | Cristal 2 | Content Hub | Builders' Session 2",
+    "services": [
+      "AWS CloudTrail",
+      "Amazon CloudWatch",
+      "Amazon Simple Storage Service (Amazon S3)"
+    ],
+    "sessionId": "1780441492027001GE0A",
+    "sessionTime": {
+      "date": "2026-11-30",
+      "length": "60",
+      "time": "12:00"
+    },
+    "speakers": [
+      {
+        "name": "Speaker 25",
+        "jobTitle": "Principal Engineer",
+        "company": "Example Corp"
+      }
+    ],
+    "title": "Turn security logs into actionable intelligence",
+    "topics": [
+      "Cloud Operations",
+      "Security & Identity"
+    ],
+    "type": "Builders' session"
+  },
+  {
+    "abbreviation": "CMP348-R",
+    "abstract": "Quantum computers could revolutionize fields like pharmacy and logistics, but today's hardware is too error-prone for practical use. To design better error-correction strategies, simulating how real quantum hardware operates is essential, yet computationally intractable. In this talk, we demonstrate quantum processor digital twins developed by Quantum Elements and powered by AWS HPC infrastructure - that faithfully mimic real hardware at experimental scale. Attendees will leave understanding why error correction matters and how classical compute accelerates the path to useful quantum computing.",
+    "areasOfInterest": [
+      "Generative AI",
+      "Innovation & Transformation",
+      "Quantum Technologies"
+    ],
+    "features": [
+      "Discussion"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "300 - Advanced",
+    "roles": [
+      "Academic / Researcher",
+      "Advisor / Consultant",
+      "Developer / Engineer"
+    ],
+    "room": "Level 1 | Boulevard 163",
+    "services": [
+      "AWS Parallel Computing Service",
+      "Amazon Braket",
+      "Amazon Elastic Compute Cloud (Amazon EC2)"
+    ],
+    "sessionId": "1780441498604001GLKy",
+    "sessionTime": {
+      "date": "2026-12-03",
+      "length": "60",
+      "time": "11:30"
+    },
+    "speakers": [
+      {
+        "name": "Speaker 26",
+        "jobTitle": "Principal Engineer",
+        "company": "Example Corp"
+      }
+    ],
+    "title": "Building better quantum computers with digital twins",
+    "topics": [
+      "Architecture",
+      "Compute"
+    ],
+    "type": "Chalk talk",
+    "venue": "MGM Grand"
+  },
+  {
+    "abbreviation": "IND316-R",
+    "abstract": "The session covers best practices, architectural guidance and lessons learned for successful multiplayer game launches at scale. It's based on experience from helping hundreds of game customers from indie studios to AAA titles launch their games on AWS.",
+    "areasOfInterest": [
+      "Global Infrastructure",
+      "Well-Architected Framework"
+    ],
+    "features": [
+      "Discussion"
+    ],
+    "industries": [
+      "Games"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "300 - Advanced",
+    "roles": [
+      "DevOps Engineer",
+      "Developer / Engineer",
+      "Solution / Systems Architect"
+    ],
+    "room": "Level 1 | Forum 103",
+    "services": [
+      "Amazon DynamoDB",
+      "Amazon Elastic Container Service (Amazon ECS)",
+      "Amazon GameLift"
+    ],
+    "sessionId": "1780441500913001GZmK",
+    "sessionTime": {
+      "date": "2026-12-03",
+      "length": "60",
+      "time": "10:00"
+    },
+    "speakers": [
+      {
+        "name": "Speaker 27",
+        "jobTitle": "Principal Engineer",
+        "company": "Example Corp"
+      }
+    ],
+    "title": "Best Practices for Successful Multiplayer Game Launches",
+    "topics": [
+      "Compute",
+      "Industry Solutions"
+    ],
+    "type": "Chalk talk",
+    "venue": "Caesars Forum"
+  },
+  {
+    "abbreviation": "NET324-R",
+    "abstract": "As organizations scale across multiple accounts with hybrid connectivity, designing effective network inspection becomes critical. Join this chalk talk to discuss deployment patterns for AWS Network Firewall and Gateway Load Balancer with third-party firewalls for ingress and egress inspection.",
+    "areasOfInterest": [
+      "Application Security",
+      "Culture of Security",
+      "Network & Infrastructure Security"
+    ],
+    "features": [
+      "Discussion"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "300 - Advanced",
+    "roles": [
+      "Cloud Security Specialist",
+      "IT Professional / Technical Manager",
+      "Solution / Systems Architect"
+    ],
+    "room": "Level 3 | Premier 320",
+    "services": [
+      "AWS Network Firewall"
+    ],
+    "sessionId": "1780441501608001GKca",
+    "sessionTime": {
+      "date": "2026-12-03",
+      "length": "60",
+      "time": "08:30"
+    },
+    "speakers": [
+      {
+        "name": "Speaker 28",
+        "jobTitle": "Principal Engineer",
+        "company": "Example Corp"
+      }
+    ],
+    "title": "Network security architecture: Deployment patterns for firewalls",
+    "topics": [
+      "Networking & Content Delivery",
+      "Security & Identity"
+    ],
+    "type": "Chalk talk",
+    "venue": "MGM Grand"
+  },
+  {
+    "abbreviation": "NET217-R",
+    "abstract": "Great health checks tell you exactly how your application is really performing - not just that a port is open. In this chalk talk we whiteboard meaningful health check patterns across ELB, Amazon Global Accelerator, and Amazon Route 53 - covering how to validate database readiness, confirm replica currency, and verify end-to-end request success. We'll explore thresholds, timing configurations, and graceful failover strategies. Bring your architectures - diagrams, napkin sketches, or draw live on the whiteboard - and we'll design your health strategy together. Leave with actionable patterns that reflect true application liveness.",
+    "areasOfInterest": [
+      "Disaster Response & Recovery",
+      "Monitoring & Observability",
+      "Network & Infrastructure Security"
+    ],
+    "features": [
+      "Discussion"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "200 - Intermediate",
+    "roles": [
+      "DevOps Engineer",
+      "Developer / Engineer",
+      "System Administrator"
+    ],
+    "room": "Level 3 | Room 306",
+    "services": [
+      "Amazon Route 53",
+      "Elastic Load Balancing (ELB)"
+    ],
+    "sessionId": "1780441501665001GFY1",
+    "sessionTime": {
+      "date": "2026-11-30",
+      "length": "60",
+      "time": "10:00"
+    },
+    "speakers": [
+      {
+        "name": "Speaker 29",
+        "jobTitle": "Principal Engineer",
+        "company": "Example Corp"
+      }
+    ],
+    "title": "More than a heartbeat: Designing health checks that matter",
+    "topics": [
+      "Migration & Modernization",
+      "Networking & Content Delivery"
+    ],
+    "type": "Chalk talk",
+    "venue": "MGM Grand"
+  },
+  {
+    "abbreviation": "STG420-R",
+    "abstract": "Amazon S3 security settings and access controls suit virtually any workload, but as data estates grow to millions of buckets across organizational boundaries, standard policy approaches hit limits. In this chalk talk, equip yourself with proven patterns for managing access at scale: optimizing policy evaluation with access points and access grants, scaling beyond IAM policy limits with cross-account structures, implementing attribute-based controls that adapt as teams and datasets grow, and securing your data lake perimeter with resource control policies. Join the S3 security team for a structured discussion of the patterns that solve the hardest multi-account access problems at scale.",
+    "areasOfInterest": [
+      "Data Protection",
+      "Identity & Access Management",
+      "Resilience"
+    ],
+    "features": [
+      "Discussion"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "400 - Expert",
+    "room": "Level 1 | Boulevard 165",
+    "services": [
+      "Amazon Simple Storage Service (Amazon S3)"
+    ],
+    "sessionId": "1780441503152001G1ju",
+    "sessionTime": {
+      "date": "2026-12-02",
+      "length": "60",
+      "time": "09:00"
+    },
+    "speakers": [
+      {
+        "name": "Speaker 30",
+        "jobTitle": "Principal Engineer",
+        "company": "Example Corp"
+      }
+    ],
+    "title": "Advanced security patterns on Amazon S3",
+    "topics": [
+      "Security & Identity",
+      "Storage"
+    ],
+    "type": "Chalk talk",
+    "venue": "MGM Grand"
+  },
+  {
+    "abbreviation": "COP315-R",
+    "abstract": "Tracking patch compliance across hundreds of accounts is manual, slow, and hard to prove to auditors. In this hands-on builder's session, you automate patching and continuous compliance across Linux and Windows, then let AI do the heavy lifting: generate a multi-account compliance dashboard with spec-driven development and answer compliance questions with natural language instead of hand-building reports. You define patch baselines, maintenance windows, and exception rules, then reason through the trade-offs, rather than running pre-made scripts.",
+    "areasOfInterest": [
+      "Automation",
+      "Generative AI",
+      "Management & Governance"
+    ],
+    "features": [
+      "Hands-on"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "300 - Advanced",
+    "roles": [
+      "DevOps Engineer",
+      "IT Administrator",
+      "IT Professional / Technical Manager"
+    ],
+    "room": "Wynn/Encore | Upper Convention Promenade | Cristal 2 | Content Hub | Builders' Session 1",
+    "services": [
+      "AWS Systems Manager",
+      "Amazon Q",
+      "Amazon Quick"
+    ],
+    "sessionId": "1780442225168001cRdN",
+    "sessionTime": {
+      "date": "2026-11-30",
+      "length": "60",
+      "time": "13:00"
+    },
+    "speakers": [
+      {
+        "name": "Speaker 31",
+        "jobTitle": "Principal Engineer",
+        "company": "Example Corp"
+      }
+    ],
+    "title": "Automate patching and compliance with AI-powered visibility",
+    "topics": [
+      "Application Integration",
+      "Cloud Operations"
+    ],
+    "type": "Builders' session"
+  },
+  {
+    "abbreviation": "DAT415-R",
+    "abstract": "Designing business applications for low latency, high throughput, high consistency, and high availability presents unique challenges at scale. In this session, learn how to model business entities including accounts, journals, and ledgers using Amazon DynamoDB to support workflows that process millions of requests per second. Explore distributed computing patterns that leverage multi-Region replication features in DynamoDB. Bring your laptop to participate.",
+    "areasOfInterest": [
+      "Innovation & Transformation"
+    ],
+    "features": [
+      "Hands-on"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "400 - Expert",
+    "roles": [
+      "Developer / Engineer",
+      "IT Professional / Technical Manager",
+      "Solution / Systems Architect"
+    ],
+    "room": "Level 3 | Chairman's 363 | Content Hub | Builders' Session 2",
+    "services": [
+      "Amazon DynamoDB"
+    ],
+    "sessionId": "1780442226645001ciVq",
+    "sessionTime": {
+      "date": "2026-11-30",
+      "length": "60",
+      "time": "11:30"
+    },
+    "speakers": [
+      {
+        "name": "Speaker 32",
+        "jobTitle": "Principal Engineer",
+        "company": "Example Corp"
+      }
+    ],
+    "title": "Financial data modeling with Amazon DynamoDB",
+    "topics": [
+      "Databases"
+    ],
+    "type": "Builders' session",
+    "venue": "MGM Grand"
+  },
+  {
+    "abbreviation": "DVT301-R",
+    "abstract": "Every codebase has that annoying pattern: the deprecated internal library, the logging convention nobody follows, the framework migration that keeps getting deferred. In this small-group builder session, you'll tackle yours. Bring a real modernization problem from your own code and build a custom transformation in AWS Transform custom that solves it—defining the transformation in natural language, running it against a repository, and refining it until it holds up. No fixed curriculum and no slides: this is open-ended, hands-on time. Stuck for an idea? We'll have a few ready-made problems on hand. You must bring your laptop to participate.",
+    "areasOfInterest": [
+      "Agentic AI",
+      "Microsoft & .NET"
+    ],
+    "features": [
+      "Hands-on"
+    ],
+    "isAllDaySession": false,
+    "isReservable": false,
+    "level": "300 - Advanced",
+    "roles": [
+      "DevOps Engineer",
+      "Developer / Engineer"
+    ],
+    "room": "Level 1 | Forum 120 | Content Hub | Builders' Session 1",
+    "services": [
+      "AWS Transform"
+    ],
+    "sessionId": "1780442227105001cOHv",
+    "sessionTime": {
+      "date": "2026-11-30",
+      "length": "60",
+      "time": "09:00"
+    },
+    "speakers": [
+      {
+        "name": "Speaker 33",
+        "jobTitle": "Principal Engineer",
+        "company": "Example Corp"
+      }
+    ],
+    "title": "Bring your tech debt: build a custom transformation that fixes it",
+    "topics": [
+      "Artificial Intelligence",
+      "Developer Tools",
+      "Migration & Modernization"
+    ],
+    "type": "Builders' session",
+    "venue": "Caesars Forum"
+  }
+]

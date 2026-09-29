@@ -569,7 +569,7 @@ describe("documented evidence lenses", () => {
       expect(profiles).toHaveLength(1);
       const resolved = resolveProfile(profiles[0], buildServiceAliasIndex([]));
       const examples = [
-        ["gap-no-dlq", "Dead-letter queues"], ["gap-no-alarms", "Observability"],
+        ["gap-no-dlq", "Dead-letter queues"], ["gap-no-alarms", "Alarms and alerting"],
         ["gap-no-tests", "Automated testing"], ["gap-broad-iam", "Least privilege"],
         ["gap-no-load-tests", "Load testing"], ["gap-no-cost-monitoring", "Cost monitoring"],
         ["gap-no-resource-rightsizing", "Rightsizing"], ["serverless", "Containers"],
