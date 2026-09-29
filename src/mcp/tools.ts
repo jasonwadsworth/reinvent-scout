@@ -3,7 +3,6 @@ import { z } from "zod";
 import { createApiClient, type ApiClient } from "../api/client.js";
 import { createTokenProviderAdapter } from "../auth/provider-adapter.js";
 import { readTokenStore } from "../auth/token-store.js";
-import { toPublicIndexRecord } from "../catalog/index-record.js";
 import { catalogServiceNames } from "../catalog/query.js";
 import { buildServiceAliasIndex } from "../catalog/service-aliases.js";
 import { getCatalogState, readTimezoneAvailability, type CatalogState } from "../catalog/store.js";
@@ -16,9 +15,11 @@ import {
   NotRegisteredError,
   ValidationError,
 } from "../core/errors.js";
-import { matchSessions } from "../match/match.js";
+import { matchSessionsDetailed } from "../match/match.js";
 import { LENSES, type Lens } from "../match/lens.js";
-import { resolveProfile, type ResolvedProfile } from "../profile/profile.js";
+import { resolveProfile } from "../profile/profile.js";
+import { buildValidateReport } from "../profile/report.js";
+import { buildMatchResponse } from "../match/response.js";
 import { favoriteSessions, unfavoriteSession } from "../schedule/favorites.js";
 import { mergeAndSortScheduleEntries, timezoneWarnings, type MergedScheduleEntry } from "../schedule/merge.js";
 import { getSchedule } from "../schedule/schedule.js";
@@ -194,145 +195,6 @@ function resolveProfileAgainstCatalog(rawProfile: unknown, storeRoot: string) {
   return resolveProfile(rawProfile, serviceAliasIndex);
 }
 
-interface CompactResolvedService {
-  name: string;
-  catalogName: string | null;
-}
-
-interface ValidateProfileResponse {
-  services: CompactResolvedService[];
-  patterns: string[];
-  unresolvedServices: string[];
-  counts: { services: number; patterns: number; unresolvedServices: number };
-  truncated: boolean;
-  omitted: number;
-  hint?: string;
-}
-
-/** Builds one services/patterns-count's worth of response -- the one place that decides the shape
- * for a given pair, so the everything-fits attempt and every trial inside both truncation loops
- * below measure the exact same shape the caller will actually receive. `unresolvedServices` is
- * *derived* from `services` here, not passed in separately -- a profile where every service is
- * unresolvable (the realistic worst case, not a contrived one: an agent profiling a repo against
- * the wrong event's catalog would look exactly like this) would otherwise make `unresolvedServices`
- * alone as large as the untruncated `services` list, defeating the truncation entirely. Deriving it
- * from whatever's actually included keeps both lists internally consistent (every name in
- * `unresolvedServices` is also present in `services`) and shrinks them together under the same
- * budget. */
-function buildValidateProfileResponse(
-  services: CompactResolvedService[],
-  patterns: string[],
-  counts: ValidateProfileResponse["counts"],
-  totalServices: number,
-  totalPatterns: number,
-  truncated: boolean,
-): ValidateProfileResponse {
-  const omitted = totalServices - services.length + (totalPatterns - patterns.length);
-  const unresolvedServices = services
-    .filter((service) => service.catalogName === null)
-    .map((service) => service.name);
-  return {
-    services,
-    patterns,
-    unresolvedServices,
-    counts,
-    truncated,
-    omitted,
-    ...(truncated
-      ? {
-          hint:
-            `${omitted} services and/or patterns were left out to fit the response budget -- ` +
-            "counts still reports the true totals, but unresolvedServices only names the ones " +
-            "still present above.",
-        }
-      : {}),
-  };
-}
-
-/** pr-reviewer's finding: echoing the whole resolved profile (every service's `evidence`, `usage`,
- * and every pattern's `note`/`evidence`, plus `repos`) breaks the README's own "every tool holds
- * its response to a 30 KB budget" claim for a profile with many services -- measured at 45,439
- * bytes for a 120-service profile, comfortably over budget, and none of that evidence is data this
- * tool computed anyway: it's the agent's own input echoed back. This reports only what
- * `resolveProfile` actually decided: each service's name and its resolved `catalogName` (or
- * `null`), each pattern's bare name, `unresolvedServices`, and counts.
- *
- * Both `services` (and, derived from it, `unresolvedServices`) *and* `patterns` are enforced at the
- * same 30 KB budget every other tool holds to, the same truncate-in-order way `match_sessions`
- * does -- reviewer's follow-up finding: a first version left `patterns` out of the budget
- * entirely, on the assumption a hackathon-scale profile's own pattern list is small by
- * construction. A profile naming many long patterns (as plausible as many long service names --
- * neither is validated for length, and both are equally the agent's own free text) let `patterns`
- * alone blow the budget regardless of how far `services` got truncated. Services are filled first,
- * in order, then patterns get whatever budget is left, also in order -- a deliberate priority, not
- * an accident of implementation order, matching this tool's existing "services are the primary
- * data" precedent (unresolved services already got their own dedicated field; patterns did not). */
-function toCompactValidateProfileResponse(resolved: ResolvedProfile): ValidateProfileResponse {
-  const services = resolved.services.map((service) => ({
-    name: service.name,
-    catalogName: service.catalogName,
-  }));
-  const patterns = resolved.patterns.map((pattern) => pattern.name);
-  const counts = {
-    services: resolved.services.length,
-    patterns: resolved.patterns.length,
-    unresolvedServices: resolved.unresolvedServices.length,
-  };
-
-  const everything = buildValidateProfileResponse(
-    services,
-    patterns,
-    counts,
-    services.length,
-    patterns.length,
-    false,
-  );
-  if (envelopeBytes(everything) <= RESPONSE_BYTE_BUDGET) {
-    return everything;
-  }
-
-  const includedServices: CompactResolvedService[] = [];
-  for (const service of services) {
-    const trial = buildValidateProfileResponse(
-      [...includedServices, service],
-      [],
-      counts,
-      services.length,
-      patterns.length,
-      true,
-    );
-    if (envelopeBytes(trial) > RESPONSE_BYTE_BUDGET) {
-      break;
-    }
-    includedServices.push(service);
-  }
-
-  const includedPatterns: string[] = [];
-  for (const pattern of patterns) {
-    const trial = buildValidateProfileResponse(
-      includedServices,
-      [...includedPatterns, pattern],
-      counts,
-      services.length,
-      patterns.length,
-      true,
-    );
-    if (envelopeBytes(trial) > RESPONSE_BYTE_BUDGET) {
-      break;
-    }
-    includedPatterns.push(pattern);
-  }
-
-  return buildValidateProfileResponse(
-    includedServices,
-    includedPatterns,
-    counts,
-    services.length,
-    patterns.length,
-    true,
-  );
-}
-
 function registerValidateProfileTool(server: McpServer, deps: McpToolDeps): void {
   server.registerTool(
     "validate_profile",
@@ -347,7 +209,7 @@ function registerValidateProfileTool(server: McpServer, deps: McpToolDeps): void
       const storeRoot = deps.resolveStoreRoot();
       try {
         const resolved = resolveProfileAgainstCatalog(profile, storeRoot);
-        return textResult(toCompactValidateProfileResponse(resolved));
+        return textResult(buildValidateReport(resolved, value => envelopeBytes(value) <= RESPONSE_BYTE_BUDGET));
       } catch (err) {
         return toToolError(err);
       }
@@ -388,34 +250,6 @@ const MatchSessionsInputSchema = z.strictObject({
   limit: z.number().int().positive().optional(),
 });
 
-/** The MCP-facing candidate shape, deliberately leaner than the CLI's own (which reuses the full
- * `toPublicIndexRecord` -- reasonable for a human terminal, too heavy for metered agent context
- * held to a real 30 KB response budget; see the size note above `DEFAULT_MATCH_SESSIONS_LIMIT`).
- * Keeps only what a caller needs to identify, explain and schedule a candidate: `code`/`sessionId`
- * to reference it (e.g. for `favorite_sessions`), `title`/`type`/`levelBand` to describe it,
- * `score`/`reasons` for why it matched, and `offerings` for when and where.
- *
- * `type` was dropped in an earlier revision to fit the size budget by shape-trimming alone, then
- * restored once the budget was enforced on the response instead (see `buildMatchResponse`): a
- * caller that cannot tell a Workshop from a Chalk talk is missing something real for a tool whose
- * whole job is helping choose sessions, and the response-level truncation now pays for it in one
- * fewer candidate when space is actually tight, rather than never having it at all. `services` is
- * not restored alongside it -- it stays redundant with what `reasons` already names explicitly,
- * unlike `type`, which `reasons` says nothing about at all under the `all` lens. */
-function toLeanCandidate(candidate: ReturnType<typeof matchSessions>[number]): Record<string, unknown> {
-  const record = toPublicIndexRecord(candidate.record);
-  return {
-    code: candidate.code,
-    sessionId: record.sessionId,
-    title: record.title,
-    type: record.type,
-    levelBand: record.levelBand,
-    score: candidate.score,
-    reasons: candidate.reasons,
-    offerings: candidate.offerings,
-  };
-}
-
 /**
  * Lead decision, following the size finding above: the 30 KB response budget is a hard guarantee
  * at every limit, including the cap -- a profile naming many services (each producing its own
@@ -427,85 +261,11 @@ function toLeanCandidate(candidate: ReturnType<typeof matchSessions>[number]): R
  */
 const RESPONSE_BYTE_BUDGET = 30 * 1024;
 
-/** Lead's decision, replacing an earlier hint ("ask again with a smaller limit..."): a smaller
- * `limit` cannot reach the omitted candidates at all -- there is no `offset` on `match_sessions`,
- * so asking for fewer just returns fewer of the exact same top-ranked set. Names the real count
- * instead, and only suggests what can actually change which candidates rank highest. */
-function truncationHint(omitted: number): string {
-  return (
-    `${omitted} lower-ranked candidates were omitted to fit the response budget. ` +
-    "A narrower lens or a more specific profile changes what ranks highest."
-  );
-}
-
 /** Mirrors `textResult`'s own envelope shape exactly, so the byte count measured here is the same
  * one a caller (and tests/mcp/tools-catalog.test.ts's size assertions) actually measures on the
  * real `CallToolResult` -- not just the inner JSON text, which undercounts the protocol wrapper. */
 function envelopeBytes(value: unknown): number {
   return Buffer.byteLength(JSON.stringify(textResult(value)), "utf8");
-}
-
-interface MatchSessionsResponse {
-  candidates: Record<string, unknown>[];
-  truncated: boolean;
-  returned: number;
-  requested: number;
-  /** How many of `matchSessions`' own ranked candidates (already capped at `requested`, so this
-   * is never inflated by asking for more than the catalog actually has) were left out purely for
-   * size -- `0` whenever `truncated` is `false`. Deliberately not `requested - returned`: when the
-   * catalog simply has fewer matches than `requested`, that gap is not an omission, and reporting
-   * it as one would tell a caller candidates were dropped for size when none were. */
-  omitted: number;
-  hint?: string;
-}
-
-/** Builds one candidate-count's worth of response. Kept as the one place that decides the shape
- * for a given `candidates`/`truncated` pair, so both call sites below (the initial
- * everything-fits attempt, and every trial inside the truncation loop) measure the exact same
- * shape the caller will actually receive -- never an approximation of it. */
-function buildResponse(
-  candidates: Record<string, unknown>[],
-  requested: number,
-  totalMatched: number,
-  truncated: boolean,
-): MatchSessionsResponse {
-  const omitted = totalMatched - candidates.length;
-  return {
-    candidates,
-    truncated,
-    returned: candidates.length,
-    requested,
-    omitted,
-    ...(truncated ? { hint: truncationHint(omitted) } : {}),
-  };
-}
-
-function buildMatchResponse(
-  leanCandidates: Record<string, unknown>[],
-  requested: number,
-): MatchSessionsResponse {
-  const totalMatched = leanCandidates.length;
-  const everything = buildResponse(leanCandidates, requested, totalMatched, false);
-  if (envelopeBytes(everything) <= RESPONSE_BYTE_BUDGET) {
-    return everything;
-  }
-
-  // Not everything fits -- greedily include candidates in ranked order (the same order
-  // matchSessions already ranked them in; never reordered or re-scored here), each checked as a
-  // whole prospective response against the budget (using the same truncated:true/hint shape the
-  // final response will have, so the check is honest about the overhead that shape itself costs),
-  // stopping before the first one that would push the response over. A candidate is either whole
-  // or left out entirely -- never partially serialized to make room.
-  const included: Record<string, unknown>[] = [];
-  for (const candidate of leanCandidates) {
-    const trial = buildResponse([...included, candidate], requested, totalMatched, true);
-    if (envelopeBytes(trial) > RESPONSE_BYTE_BUDGET) {
-      break;
-    }
-    included.push(candidate);
-  }
-
-  return buildResponse(included, requested, totalMatched, true);
 }
 
 function registerMatchSessionsTool(server: McpServer, deps: McpToolDeps): void {
@@ -524,11 +284,11 @@ function registerMatchSessionsTool(server: McpServer, deps: McpToolDeps): void {
       try {
         const resolved = resolveProfileAgainstCatalog(profile, storeRoot);
         const cappedLimit = Math.min(limit ?? DEFAULT_MATCH_SESSIONS_LIMIT, MAX_MATCH_SESSIONS_LIMIT);
-        const candidates = matchSessions(resolved, { storeRoot }, {
+        const result = matchSessionsDetailed(resolved, { storeRoot }, {
           ...(lens === undefined ? {} : { lens: lens as Lens }),
           limit: cappedLimit,
         });
-        const response = buildMatchResponse(candidates.map(toLeanCandidate), cappedLimit);
+        const response = buildMatchResponse(result, cappedLimit, value => envelopeBytes(value) <= RESPONSE_BYTE_BUDGET);
         return textResult(response);
       } catch (err) {
         return toToolError(err);

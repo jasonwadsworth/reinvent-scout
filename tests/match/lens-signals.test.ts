@@ -82,6 +82,8 @@ describe("Fix signals", () => {
     expect(weight("Systems without any dead-letter queues fail.")).toBe(40);
     expect(weight("Anti-patterns such as dead-letter queues.")).toBe(30);
     expect(weight("We had no idea about many other things, then dead-letter queues.")).toBe(30);
+    expect(weight("Teams that no longer need dead-letter queues can skip this.")).toBe(30);
+    expect(weight("Anti-patterns include no dead-letter queues.")).toBe(40);
   });
   it("lets a matching tag add one strength but only on top of a text hit", () => {
     const r = buildIndexRecord({ sessionId: "x", title: "Deep dive", areasOfInterest: ["Monitoring & Observability"] });

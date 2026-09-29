@@ -232,6 +232,21 @@ describe("scoreSession", () => {
   });
 });
 
+describe("scoreSession supporting services", () => {
+  const lambda = record({ sessionId: "a", title: "Deep dive", services: ["AWS Lambda"] });
+  it("gives a supporting service half the weight of a core one", () => {
+    const core = scoreSession(lambda, query({ services: ["AWS Lambda"] }));
+    const supporting = scoreSession(lambda, query({ supportingServices: ["AWS Lambda"] }));
+    expect(core.reasons[0]).toMatchObject({ kind: "service", weight: 50 });
+    expect(supporting.reasons[0]).toMatchObject({ kind: "service", weight: 25 });
+    expect(supporting.score).toBe(supporting.reasons.reduce((sum, reason) => sum + reason.weight, 0));
+  });
+  it("counts a service once at full weight when it is both core and supporting", () => {
+    const both = scoreSession(lambda, query({ services: ["AWS Lambda"], supportingServices: ["AWS Lambda"] }));
+    expect(both.reasons.filter(reason => reason.kind === "service").map(reason => reason.weight)).toEqual([50]);
+  });
+});
+
 describe("scoreSession with corpus statistics (inverse document frequency)", () => {
   it("weighs an equally-repeated term higher when it's rare across the corpus than when it's common", () => {
     // A term-frequency match alone can't tell a genuinely rare, specific term from a word nearly
