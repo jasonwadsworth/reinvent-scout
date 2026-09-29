@@ -1,4 +1,4 @@
-import { scoreLensSignals } from "./lens-signals.js";
+import { scoreLensSignals, skippedLensRules, type LensHit, type SkippedRule } from "./lens-signals.js";
 import { readRaw, type CatalogStoreDeps } from "../catalog/store.js";
 import { baseSessionCode, requireCurrentIndex } from "../catalog/query.js";
 import type { IndexRecord } from "../catalog/index-record.js";
@@ -44,6 +44,25 @@ export interface MatchCandidate {
   /** Every sitting of this talk, sorted by start time (unscheduled sittings last) -- always at
    * least one element, even for a session with no repeats at all. */
   offerings: MatchOffering[];
+  /** Fix and Next-level only: the source pattern names of every rule that admitted this session. */
+  lensRules?: string[];
+}
+
+export interface MatchResult {
+  candidates: MatchCandidate[];
+  /** Next-level paths the profile evidences but already completed, e.g. "profile already has
+   * agentic" -- always present, empty when nothing was skipped. */
+  skippedRules: SkippedRule[];
+}
+
+/** What interleaving needs from the winning sitting of a lens candidate. */
+interface LensInfo {
+  hits: LensHit[];
+  relevance: number;
+}
+
+interface GroupedCandidate extends MatchCandidate {
+  lens?: LensInfo;
 }
 
 /** Appends `value` to `list` only the first time its case-insensitive form is seen -- used for
@@ -130,6 +149,7 @@ interface ScoredRecord {
   record: IndexRecord;
   score: number;
   reasons: Reason[];
+  lens?: LensInfo;
 }
 
 /** The real catalog marks *some* (not all) repeat sittings' titles with a trailing " [REPEAT]" --
@@ -177,7 +197,7 @@ function compareOfferings(a: MatchOffering, b: MatchOffering): number {
  * still gets a one-element `offerings` list, so a caller never has to special-case "no repeats"
  * separately from "some repeats."
  */
-function groupByCode(scoredRecords: readonly ScoredRecord[]): MatchCandidate[] {
+function groupByCode(scoredRecords: readonly ScoredRecord[]): GroupedCandidate[] {
   const groups = new Map<string, ScoredRecord[]>();
   for (const scored of scoredRecords) {
     const code = baseSessionCode(scored.record);
@@ -189,7 +209,7 @@ function groupByCode(scoredRecords: readonly ScoredRecord[]): MatchCandidate[] {
     }
   }
 
-  const candidates: MatchCandidate[] = [];
+  const candidates: GroupedCandidate[] = [];
   for (const [code, members] of groups) {
     let winner = members[0]!;
     for (const member of members) {
@@ -204,6 +224,7 @@ function groupByCode(scoredRecords: readonly ScoredRecord[]): MatchCandidate[] {
       score: winner.score,
       reasons: winner.reasons,
       offerings,
+      ...(winner.lens === undefined ? {} : { lens: winner.lens }),
     });
   }
   return candidates;
@@ -219,7 +240,7 @@ function roundToTwoDecimals(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-function roundCandidate(candidate: MatchCandidate): MatchCandidate {
+function roundCandidate(candidate: GroupedCandidate): MatchCandidate {
   return {
     code: candidate.code,
     record: candidate.record,
@@ -229,7 +250,63 @@ function roundCandidate(candidate: MatchCandidate): MatchCandidate {
       weight: roundToTwoDecimals(reason.weight),
     })),
     offerings: candidate.offerings,
+    ...(candidate.lens === undefined ? {} : { lensRules: candidate.lens.hits.map((hit) => hit.rule) }),
   };
+}
+
+function compareByScore(a: GroupedCandidate, b: GroupedCandidate): number {
+  if (b.score !== a.score) {
+    return b.score - a.score;
+  }
+  const aScheduled = a.record.startDate !== null;
+  const bScheduled = b.record.startDate !== null;
+  if (aScheduled !== bScheduled) {
+    return aScheduled ? -1 : 1;
+  }
+  return a.code.localeCompare(b.code);
+}
+
+/**
+ * Fix and Next-level ordering: one ranked list per activated rule (signal strength first, then
+ * profile relevance), merged round-robin with rules ordered by their best candidate's score. A
+ * session several rules admitted appears once, at its earliest position. Without this, general
+ * relevance ranks everything after admission and a session that mentions a rule's phrase in
+ * passing (and shares the repo's services) buries the precise one.
+ */
+function interleaveByRule(candidates: readonly GroupedCandidate[]): GroupedCandidate[] {
+  const lists = new Map<string, { candidate: GroupedCandidate; strength: number }[]>();
+  for (const candidate of candidates) {
+    for (const hit of candidate.lens?.hits ?? []) {
+      const list = lists.get(hit.rule) ?? [];
+      list.push({ candidate, strength: hit.strength });
+      lists.set(hit.rule, list);
+    }
+  }
+  const ranked = [...lists.entries()].map(([rule, list]) => ({
+    rule,
+    list: list
+      .sort((a, b) =>
+        b.strength - a.strength
+        || b.candidate.lens!.relevance - a.candidate.lens!.relevance
+        || compareByScore(a.candidate, b.candidate))
+      .map((entry) => entry.candidate),
+  }));
+  ranked.sort((a, b) =>
+    Math.max(...b.list.map((c) => c.score)) - Math.max(...a.list.map((c) => c.score))
+    || a.rule.localeCompare(b.rule));
+
+  const merged: GroupedCandidate[] = [];
+  const emitted = new Set<string>();
+  for (let depth = 0; ranked.some(({ list }) => depth < list.length); depth++) {
+    for (const { list } of ranked) {
+      const candidate = list[depth];
+      if (candidate !== undefined && !emitted.has(candidate.code)) {
+        emitted.add(candidate.code);
+        merged.push(candidate);
+      }
+    }
+  }
+  return merged;
 }
 
 /**
@@ -270,6 +347,15 @@ export function matchSessions(
   deps: CatalogStoreDeps,
   options: MatchOptions = {},
 ): MatchCandidate[] {
+  return matchSessionsDetailed(profile, deps, options).candidates;
+}
+
+/** `matchSessions` plus what the ranking itself decided to skip -- see `MatchResult`. */
+export function matchSessionsDetailed(
+  profile: ResolvedProfile,
+  deps: CatalogStoreDeps,
+  options: MatchOptions = {},
+): MatchResult {
   const lens = options.lens ?? "all";
   const lensProfile = getLensProfile(lens);
   const index = requireCurrentIndex(deps);
@@ -292,9 +378,10 @@ export function matchSessions(
       }
     }
 
-    const base = lens === "fix" || lens === "next-level"
+    const lensBase = lens === "fix" || lens === "next-level"
       ? scoreLensSignals(record, profile, lens, rawById?.get(record.sessionId)?.abstract)
-      : scoreSession(record, query, corpusStats);
+      : undefined;
+    const base = lensBase ?? scoreSession(record, query, corpusStats);
     // Gated on the scorer's own score, before the lens's format bonus is even considered -- a
     // format preference is a tiebreak among sessions that already share a real signal with the
     // profile (a service, a topic, an area of interest, or free-text overlap), never a standalone
@@ -307,10 +394,12 @@ export function matchSessions(
 
     let score = base.score;
     const reasons = [...base.reasons];
-    if (lens === "fix" || lens === "next-level") {
+    let lensInfo: LensInfo | undefined;
+    if (lensBase !== undefined) {
       const relevance = scoreSession(record, query, corpusStats);
       score += relevance.score;
       reasons.push(...relevance.reasons);
+      lensInfo = { hits: lensBase.hits, relevance: relevance.score };
     }
 
     const formatBonus = record.type !== null ? lensProfile.typeWeights.get(record.type) : undefined;
@@ -324,23 +413,17 @@ export function matchSessions(
       score += formatBonus;
     }
 
-    scoredRecords.push({ record, score, reasons });
+    scoredRecords.push({ record, score, reasons, ...(lensInfo === undefined ? {} : { lens: lensInfo }) });
   }
 
   const candidates = groupByCode(scoredRecords);
 
-  candidates.sort((a, b) => {
-    if (b.score !== a.score) {
-      return b.score - a.score;
-    }
-    const aScheduled = a.record.startDate !== null;
-    const bScheduled = b.record.startDate !== null;
-    if (aScheduled !== bScheduled) {
-      return aScheduled ? -1 : 1;
-    }
-    return a.code.localeCompare(b.code);
-  });
+  const isLens = lens === "fix" || lens === "next-level";
+  const ordered = isLens ? interleaveByRule(candidates) : candidates.sort(compareByScore);
 
-  const limited = options.limit === undefined ? candidates : candidates.slice(0, options.limit);
-  return limited.map(roundCandidate);
+  const limited = options.limit === undefined ? ordered : ordered.slice(0, options.limit);
+  return {
+    candidates: limited.map(roundCandidate),
+    skippedRules: isLens ? skippedLensRules(profile, lens) : [],
+  };
 }

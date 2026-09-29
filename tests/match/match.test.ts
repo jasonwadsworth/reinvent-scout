@@ -1044,7 +1044,7 @@ describe("evidence lenses end to end", () => {
   const sessions: Session[] = [
     { sessionId: "source", abbreviation: "SRC100", title: "Lambda serverless basics", services: ["AWS Lambda"], type: "Breakout session", level: "200 - Intermediate" },
     { sessionId: "fix", abbreviation: "FIX400", title: "Queue recovery", abstract: "Explore dead-letter queues and redrive.", level: "400 - Expert" },
-    { sessionId: "next", abbreviation: "NEXT400", title: "Runtime options", topics: ["Containers"], level: "400 - Expert" },
+    { sessionId: "next", abbreviation: "NEXT400", title: "Containers runtime options", topics: ["Containers"], level: "400 - Expert" },
     { sessionId: "alien", abbreviation: "ALIEN100", title: "Quux flibbertigibbet", type: "Breakout session" },
   ];
   const p = (names: string[] = ["gap-no-dlq", "serverless"]) => resolvedProfile({

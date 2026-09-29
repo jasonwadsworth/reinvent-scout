@@ -116,3 +116,29 @@ lens, API311 in hallway's Fix top 5, and no reverse-direction migrations.
 Usage is near the weekly limit: one implementer and one reviewer, one fix round, findings batched.
 Never touch ~/.reinvent-scout except read-only use by the lead; teammates set REINVENT_SCOUT_HOME
 inline to temp directories. No account writes. Commits end with the attribution trailer.
+
+## Implementation notes (regexes tuned against the 2026-09-25 snapshot)
+
+- Admission counts, sessions with strength >= 2 (1,602 sessions after dropping repeat sittings):
+  serverless->containers 110 (6.9%), ecs->eks 77 (4.8%), agentic 392 (24.5%, still broad: title
+  hits rank first and a profile with `agentic` skips the path), alarms 23 (1.4%).
+- Serverless reverse regex: the `MicroVMs?` alternative matched 19 sessions, all Lambda MicroVM or
+  AgentCore sandbox talks (COM303, COM340, SVS207, SVS307, SVS333, SVS336, SVS337, SVS208 and the
+  AgentCore set); none is a move onto containers. The from/replacing/migrating branch as written in
+  Decision 4 matched no real session: COM340 says "replacing always-on containers with MicroVMs",
+  so the branch now allows hyphenated words (`[\w-]+`) and `MicroVMs?` as a target. ECS->EKS
+  reverse matched no real session; kept as a guard.
+- Strength gate: COM303 (Containers tag only), AMZ401 (one "Amazon ECS") and IND3320 (Agentic AI tag
+  only) fall out by strength, not direction. COM340 and SVS207 have one "containers" mention each,
+  so they are excluded by both; unit tests use two-mention abstracts so the reverse regex is what
+  the test exercises.
+- Deviations from the plan, both forced by the acceptance data:
+  1. DLQ rule admits at strength 1 (`minStrength: 1`). API311, SVS322 and CON337 each mention
+     dead-letter queues once; the phrase is 0.3% selective, so one mention is a real signal. Every
+     other rule keeps the gate at 2.
+  2. Fix rules add one strength when the abstract describes the phrase as missing ("missing
+     dead-letter queues", "without ..."). Without it API311 ranks 6th because its record has no
+     services and loses the within-rule relevance tiebreak to service-rich sessions. It is the gap
+     itself, not a passing mention.
+- A tag counts toward the gate only on top of a text hit (COM320 has one "ECS" mention plus the ECS
+  service tag and is admitted; a tag alone never is). A tag adds 1 once, however many match.
