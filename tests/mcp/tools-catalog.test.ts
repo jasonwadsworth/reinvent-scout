@@ -125,6 +125,8 @@ function fakeApiClient(
       throw new Error("not implemented in this fake");
     },
     listAllSessions,
+    reserveSessions: async () => { throw new Error("unused reserveSessions"); },
+    cancelReservation: async () => { throw new Error("unused cancelReservation"); },
     associateFavorites: async () => {
       throw new Error("not implemented in this fake");
     },

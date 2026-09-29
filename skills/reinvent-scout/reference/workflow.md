@@ -282,6 +282,9 @@ human running these directly gets human-formatted terminal output, not JSON):
 - `reinvent-scout schedule show`
 - `reinvent-scout schedule favorite`
 - `reinvent-scout schedule unfavorite`
+- `reinvent-scout schedule plan`
+- `reinvent-scout schedule reserve`
+- `reinvent-scout schedule cancel`
 - `reinvent-scout mcp`
 - `reinvent-scout skill install`
 - `reinvent-scout skill update`
@@ -447,3 +450,73 @@ operational ownership; for ECS → EKS discuss portability/ecosystem versus plat
 These are options, not prescriptions. Open issues are intent to connect to evidence, not proof of
 a gap or permission to migrate. Large cited reasons retain the same whole-candidate MCP budget:
 read `truncated` and `omitted`; citations are not silently clipped to make a candidate fit.
+
+## Reservation workflow
+
+Use actual offering IDs from `match_sessions` or a catalog lookup. These synthetic requests show
+argument shapes; replace `example-offering` with the attendee's shortlist and replace
+`<selected-session-id>` with a `selected[].sessionId` returned by the plan. Optional `event`
+selects an event; the default is `reinvent2026`.
+
+```json
+{"tool":"plan_schedule","arguments":{"sessionIds":["example-offering"]}}
+```
+
+`plan_schedule` is read-only and accepts an ordered list of 0–50 IDs. It checks the full reserved
+and personal schedule, expands repeat alternatives, and chooses the earliest feasible offering
+for each talk in input priority. Favorites do not block. A missing/invalid hard commitment time
+prevents a `conflictFree` claim. It requires a current catalog for the same event and a recognized
+IANA event timezone. Results contain `selected`, `alreadyReserved`, `rejected`, `alternatives`,
+`blockedBy`, `conflictFree`, and `limitations`. MCP adds `omitted` counts if whole presentation
+entries must be removed to fit 30 KiB; the domain still checked every hard commitment. This is a
+greedy time-only plan, not a global optimum, seat promise, or travel-feasibility check.
+
+Present that plan and obtain the attendee's confirmation before writing these exact IDs:
+
+```json
+{"tool":"reserve_sessions","arguments":{"sessionIds":["<selected-session-id>"]}}
+```
+
+`reserve_sessions` accepts 1–50 IDs of 1–128 characters, deduplicates, and sends chunks of at most 10.
+It returns `successful` (newly acknowledged), `alreadyScheduled` (already reserved), `failed`
+(per-ID code/reason and optional resolved `conflictsWith`), `uncertain`, `notAttempted`,
+`verified: {reserved: [...]}` or null, and `mismatch`. Optional `aborted`/`verificationError`
+explain early termination/read-back failure. Unresolved conflicts retain IDs with null titles.
+A partial or uncertain result is marked `isError` but still contains the complete JSON ledger;
+never discard it or blindly rerun the whole request. The CLI similarly returns a failure exit
+status while printing the outcomes. `verified` describes current state, not which request caused
+it. Unknown failure codes remain refusals. Missing/contradictory acknowledgement entries remain
+uncertain. Favorites likewise add `uncertain` IDs to existing failed-request reporting.
+
+Reservations are scheduled to open October 8, 2026; server 409 is authoritative, with no local date
+gate. Stop on 409. Auth, registration, exhausted429, and OAuth failures also stop further chunks.
+POST 500/503, network/timeout failures, and lost acknowledgements are not automatically replayed;
+one 401 refresh and bounded 429 retry remain safe. A later retry requires an explicit new request,
+fresh eligibility checks, and only the still-missing IDs. No command replaces or cancels conflicts.
+
+For an explicitly requested cancellation, use one reserved offering ID:
+
+```json
+{"tool":"cancel_reservation","arguments":{"sessionId":"<selected-session-id>"}}
+```
+
+The result is `{sessionId, outcome, verifiedAbsent}` with optional `error`/`verificationError`.
+Outcome is `cancelled` for 204, `alreadyAbsent` for 404, or `uncertain` after an ambiguous failure.
+A failed read-back does not erase an acknowledged cancellation. Follow with `get_schedule` when
+needed to show current state. Cancel is not silently repeated after 503.
+
+These write operations each have their own 30-unit rolling-minute window plus a 1-second margin:
+reserve/favorite spend one unit per session; cancel/unfavorite one per request. Windows are
+serialized within a process and separated by store root and operation. Separate processes rely
+on API 429 as their backstop. MCP retains every requested ID/state under 30 KiB, marks shortened
+optional descriptions, caps conflict lists with `omittedConflicts`, and says to read the full
+schedule for omitted conflicts. If even the mandatory ledger cannot fit (for example many large
+Unicode IDs), the request is rejected before any write; use a smaller batch.
+
+CLI equivalents accept `--event` and `--json`; plan/reserve also accept a single `-` for stdin IDs:
+
+```sh
+reinvent-scout schedule plan <offering-id> --json
+reinvent-scout schedule reserve <selected-session-id> --json
+reinvent-scout schedule cancel <reserved-session-id> --json
+```

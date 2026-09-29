@@ -44,6 +44,8 @@ function seedFixtureCatalog(storeRoot: string, metaOverrides: Partial<CatalogMet
 }
 
 interface ApiClientOverrides {
+  reserveSessions?: ApiClient["reserveSessions"];
+  cancelReservation?: ApiClient["cancelReservation"];
   getSchedule?: ApiClient["getSchedule"];
   associateFavorites?: ApiClient["associateFavorites"];
   disassociateFavorite?: ApiClient["disassociateFavorite"];
@@ -65,6 +67,8 @@ function fakeApiClient(overrides: ApiClientOverrides = {}): ApiClient {
     listAllSessions: async () => {
       throw new Error("not implemented in this fake");
     },
+    reserveSessions: overrides.reserveSessions ?? (async () => { throw new Error("unused reserveSessions"); }),
+    cancelReservation: overrides.cancelReservation ?? (async () => { throw new Error("unused cancelReservation"); }),
     associateFavorites:
       overrides.associateFavorites ??
       (async (): Promise<BulkResult> => {
@@ -517,5 +521,37 @@ describe("schedule unfavorite", () => {
 
     expect(h.printed.join("\n")).toMatch(/not favorited/i);
     expect(process.exitCode ?? 0).toBe(0);
+  });
+});
+
+describe("reservation CLI flow", () => {
+  let home: TempHome;
+  beforeEach(() => { home = createTempHome(); process.exitCode = 0; });
+  afterEach(() => { home.cleanup(); process.exitCode = 0; });
+  it("plans without writes, reserves the printed offering IDs via stdin, and cancels", async () => {
+    const raw = [{ sessionId: "future", title: "Future", sessionTime: { date: "2099-12-02", time: "10:00", length: "60" } }];
+    writeCatalog({ raw, index: raw.map(buildIndexRecord), meta: sampleMeta({ timezone: "America/Los_Angeles" }) }, { storeRoot: home.path });
+    let writes = 0; let reserved: string[] = [];
+    const h = harness(home.path, { reserveSessions: async (_event, ids) => { writes++; reserved = ids; return { successful: ids, failed: [] }; }, cancelReservation: async () => { reserved = []; }, getSchedule: async () => ({ reserved, favorites: [], personalTime: [] }) });
+    await h.run(["schedule", "plan", "future", "--json"]);
+    expect(writes).toBe(0);
+    const selected = JSON.parse(h.printed[0]!).selected.map((value: { sessionId: string }) => value.sessionId);
+    expect(selected).toEqual(["future"]);
+    await withPipedStdin(selected.join("\n"), () => h.run(["schedule", "reserve", "-", "--json"]));
+    expect(JSON.parse(h.printed[1]!)).toMatchObject({ successful: selected, verified: { reserved: selected } });
+    await h.run(["schedule", "cancel", selected[0]!, "--json"]);
+    expect(JSON.parse(h.printed[2]!)).toMatchObject({ outcome: "cancelled", verifiedAbsent: true });
+  });
+  it("renders uncertain and partial refusals with failure exit status", async () => {
+    const h = harness(home.path, { reserveSessions: async () => { throw new Error("lost response"); }, getSchedule: async () => ({ reserved: ["a"], favorites: [], personalTime: [] }) });
+    await h.run(["schedule", "reserve", "a"]);
+    expect(h.printed.join("\n")).toMatch(/uncertain/i);
+    expect(h.printed.join("\n")).toContain("a"); expect(process.exitCode).toBe(1);
+  });
+  it("rejects oversized reservation lists before network", async () => {
+    let calls = 0;
+    const h = harness(home.path, { reserveSessions: async () => { calls++; return { successful: [], failed: [] }; } });
+    await h.run(["schedule", "reserve", ...Array.from({ length: 51 }, (_, i) => String(i))]);
+    expect(calls).toBe(0); expect(process.exitCode).toBe(1);
   });
 });

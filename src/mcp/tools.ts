@@ -1,3 +1,6 @@
+import { planSchedule } from "../schedule/plan.js";
+import { reserveSessions, cancelReservation, validateSessionIds, reservationNeedsAttention, cancellationNeedsAttention, MAX_RESERVATION_IDS, MAX_SESSION_ID_LENGTH } from "../schedule/reservations.js";
+import { boundedReservationResult, boundedCancelResult, boundedSchedulePlan, shortenDescription } from "./response-budget.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { createApiClient, type ApiClient } from "../api/client.js";
@@ -883,6 +886,7 @@ function registerUnfavoriteSessionTool(server: McpServer, deps: McpToolDeps): vo
       try {
         const outcome = await unfavoriteSession(sessionId, {
           apiClient,
+          storeRoot,
           ...(event === undefined ? {} : { eventId: event }),
         });
         return textResult({ outcome });
@@ -893,10 +897,42 @@ function registerUnfavoriteSessionTool(server: McpServer, deps: McpToolDeps): vo
   );
 }
 
+function registerReservationTools(server: McpServer, deps: McpToolDeps): void {
+  const idSchema = z.string().min(1).refine(id => Array.from(id).length <= MAX_SESSION_ID_LENGTH, `Session IDs must have at most ${MAX_SESSION_ID_LENGTH} characters.`);
+  const buildApiClient = deps.buildApiClient ?? defaultBuildApiClient;
+  for (const name of ["plan_schedule", "reserve_sessions"] as const) {
+    server.registerTool(name, {
+      description: name === "plan_schedule" ? "Read the full schedule and plan up to 50 priority-ordered session IDs with repeat alternatives. No writes; proves time non-overlap only, not seats or travel." : "Reserve up to 50 explicitly confirmed offering IDs. Reports every outcome and uncertainty; never automatically replay an ambiguous write or cancel conflicts.",
+      inputSchema: z.strictObject({ sessionIds: z.array(idSchema).min(name === "plan_schedule" ? 0 : 1).max(MAX_RESERVATION_IDS), event: z.string().min(1).optional() }),
+    }, async ({ sessionIds, event }) => {
+      try {
+        const ids = validateSessionIds(sessionIds, name === "plan_schedule", name === "reserve_sessions");
+        const storeRoot = deps.resolveStoreRoot();
+        const domainDeps = { storeRoot, apiClient: buildApiClient(storeRoot), ...(event ? { eventId: event } : {}), ...(deps.now ? { now: deps.now } : {}) };
+        if (name === "plan_schedule") return textResult(boundedSchedulePlan(await planSchedule(ids, domainDeps)));
+        const result = await reserveSessions(ids, domainDeps);
+        return { ...textResult(boundedReservationResult(result)), ...(reservationNeedsAttention(result) ? { isError: true as const } : {}) };
+      } catch (error) { const result = toToolError(error); result.content[0].text = shortenDescription(result.content[0].text, 512); return result; }
+    });
+  }
+  server.registerTool("cancel_reservation", {
+    description: "Cancel one explicitly confirmed reservation. Reports acknowledged cancellation, already absent404, or uncertainty, plus independent schedule verification.",
+    inputSchema: z.strictObject({ sessionId: idSchema, event: z.string().min(1).optional() }),
+  }, async ({ sessionId, event }) => {
+    try {
+      validateSessionIds([sessionId]);
+      const storeRoot = deps.resolveStoreRoot();
+      const result = await cancelReservation(sessionId, { storeRoot, apiClient: buildApiClient(storeRoot), ...(event ? { eventId: event } : {}) });
+      return { ...textResult(boundedCancelResult(result)), ...(cancellationNeedsAttention(result) ? { isError: true as const } : {}) };
+    } catch (error) { const result = toToolError(error); result.content[0].text = shortenDescription(result.content[0].text, 512); return result; }
+  });
+}
+
 /** Registers every implemented tool: `status`, `catalog_sync`, `validate_profile`,
  * `match_sessions`, `get_schedule`, `favorite_sessions` and `unfavorite_session` -- the seven the
  * skill (task 7) is written against. */
 export function registerTools(server: McpServer, deps: McpToolDeps): void {
+  registerReservationTools(server, deps);
   registerStatusTool(server, deps);
   registerCatalogSyncTool(server, deps);
   registerValidateProfileTool(server, deps);

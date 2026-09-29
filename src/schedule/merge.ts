@@ -47,7 +47,7 @@ export interface MergedScheduleEntry {
  * `endsAt` only) its length isn't known. Never falls back to the host machine's timezone or a
  * hardcoded offset: when `eventTimezone` is `null`, this returns `{ startsAt: null, endsAt: null }`
  * outright rather than guessing. */
-function deriveSessionTimes(
+export function deriveSessionTimes(
   session: ScheduleSession,
   eventTimezone: string | null,
 ): { startsAt: string | null; endsAt: string | null } {

@@ -35,6 +35,8 @@ function fakeApiClient(
       throw new Error("not implemented in this fake");
     },
     listAllSessions,
+    reserveSessions: async () => { throw new Error("unused reserveSessions"); },
+    cancelReservation: async () => { throw new Error("unused cancelReservation"); },
     associateFavorites: async () => {
       throw new Error("not implemented in this fake");
     },
@@ -498,7 +500,9 @@ describe("catalog show command", () => {
         listAllSessions: async () => {
           throw new Error("not implemented in this fake");
         },
-        associateFavorites: async (_eventId: string, sessionIds: string[]) => {
+        reserveSessions: async () => { throw new Error("unused reserveSessions"); },
+    cancelReservation: async () => { throw new Error("unused cancelReservation"); },
+    associateFavorites: async (_eventId: string, sessionIds: string[]) => {
           associateFavoritesCalls.push(sessionIds);
           return { successful: sessionIds, failed: [] };
         },

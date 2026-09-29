@@ -10,7 +10,7 @@ cites itself.
 
 This build includes sign-in, the catalog, agent-authored profiles, matching through `all`,
 `explain`, `fix`, and `next-level`, schedule favorites, the MCP server, and the agent skill.
-Session reservations remain outside this build. Fix maps cited architecture gaps to remediation
+Reservation writes and a time-conflict-free dry-run planner are also available. Fix maps cited architecture gaps to remediation
 sessions; Next-level offers named migration paths with gains and costs.
 
 ## What's here right now
@@ -362,6 +362,54 @@ reinvent-scout schedule unfavorite SESSION-ID
 Removes one session from your favorites. Removing a session that was never favorited (or already
 removed) is reported plainly, not as an error -- there's nothing left to do either way.
 
+### Plan and reserve
+
+Start with offering IDs from a catalog lookup or match result, in your preferred order:
+
+```sh
+reinvent-scout schedule plan <offering-id> [<offering-id> ...] --json
+```
+
+The dry-run planner reads the full schedule and expands repeats, selecting the earliest feasible
+sitting for each talk. Reservations and personal time block overlapping sessions; favorites do
+not. It uses the event's real timezone and refuses to claim `conflictFree` when hard-commitment
+times are unknown. This is greedy time-only planning: no seat guarantee, travel check, or global
+optimization. The local catalog must match the requested event. The plan never writes anything.
+
+Review the plan and confirm the actual `selected[].sessionId` values before reserving:
+
+```sh
+reinvent-scout schedule reserve <selected-session-id> [<selected-session-id> ...] --json
+reinvent-scout schedule show
+```
+
+Plan/reserve accept a single `-` for newline-separated IDs on stdin. All three new commands accept
+`--event <id>` and `--json`. Lists are capped at 50 IDs; reservation IDs are 1–128 characters and
+are deduplicated before 10-ID chunks. Reserve reports every newly successful, already scheduled,
+failed, uncertain, and not-attempted ID, then reconciles against the schedule. Partial/uncertain
+results retain their complete JSON ledger and return failure status. A read-back failure never
+erases acknowledged writes. Observed reservations do not prove an uncertain request created them.
+
+Reservations are scheduled to open October 8, 2026, but API 409 is authoritative: stop when closed.
+There is no automatic replacement of conflicts and no blind replay after an ambiguous POST 500,
+503 or network failure. A later retry needs an explicit request and rechecking still-missing IDs.
+For an explicitly chosen cancellation:
+
+```sh
+reinvent-scout schedule cancel <reserved-session-id> --json
+```
+
+Cancellation distinguishes acknowledged 204, already-absent 404, and uncertainty, with independent
+schedule verification. Reserve/favorite each spend their own 30-session rolling-minute quota;
+cancel/unfavorite each have a separate 30-request quota. A 1-second margin and serialized in-process
+windows help avoid bursts; concurrent processes still rely on API 429 handling.
+
+MCP exposes `plan_schedule`, `reserve_sessions`, and `cancel_reservation` with the same domain
+behavior. Write responses never drop requested IDs/outcomes to fit 30 KiB: optional descriptions
+may be marked shortened, conflict lists carry explicit omitted counts, and oversized mandatory
+ledgers are rejected before writing. See the [complete contracts](skills/reinvent-scout/reference/workflow.md#reservation-workflow).
+
+
 ## Run the MCP server
 
 ```
@@ -504,12 +552,12 @@ one code path responsible for both.
 
 **API surface used today:** `GetEvent` (the event's IANA timezone, for `get_schedule`'s common
 `startsAt`/`endsAt`), `ListSessions` (paginated to build the catalog), `GetSchedule`,
-`AssociateFavorites`, and `DisassociateFavorite`. Not yet used: `ListEvents` (the event id is a
+`AssociateFavorites`, `DisassociateFavorite`, `ReserveSessions`, and `CancelReservation`. Not yet used: `ListEvents` (the event id is a
 CLI/tool argument, defaulting to `reinvent2026`, rather than something this build discovers),
 `GetSession` (a single session lookup -- `catalog show` reads the local index instead), and the
-reservation and personal-time-management operations (`ReserveSessions`, `CancelReservation`,
-`Create`/`Update`/`DeletePersonalTime`) -- reservations open closer to the event and land in a
-later phase.
+personal-time-management operations (`Create`/`Update`/`DeletePersonalTime`). Reservation writes
+are implemented; whether the service accepts them is decided by its current response, not a
+local date gate.
 
 ## Where your data lives
 
