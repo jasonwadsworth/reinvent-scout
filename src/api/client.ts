@@ -1,6 +1,7 @@
 import type { GetAccessTokenOptions } from "../auth/token-provider.js";
 import {
   AuthRequiredError,
+  markRequestNotSent,
   NotFoundError,
   NotRegisteredError,
   OperationUnavailableError,
@@ -46,7 +47,10 @@ export interface ListAllSessionsOptions {
 }
 
 export interface ApiClient {
+  getSession(eventId: string, sessionId: string): Promise<Session>;
   getSchedule(eventId: string): Promise<Schedule>;
+  reserveSessions(eventId: string, sessionIds: string[]): Promise<BulkResult>;
+  cancelReservation(eventId: string, sessionId: string): Promise<void>;
   /** Fetches the event itself (name, dates, timezone, ...), not its sessions. The endpoint does
    * not require attendee sign-in per its OpenAPI description, unlike `getSchedule`, but this
    * client sends the bearer token unconditionally like every other call -- `catalog sync`, the
@@ -138,12 +142,22 @@ async function requestJson<T>(
   path: string,
   deps: ApiClientDeps,
   body?: unknown,
+  retry503 = method === "GET",
 ): Promise<T> {
   const fetchFn = deps.fetchFn ?? fetch;
   const sleep = deps.sleep ?? defaultSleep;
   const baseUrl = deps.baseUrl ?? DEFAULT_BASE_URL;
 
-  let token = await deps.getAccessToken();
+  // A failure here means the request never went out: tagged so a bulk write can report its ids as
+  // not attempted rather than failed.
+  const getToken = async (options?: GetAccessTokenOptions): Promise<string> => {
+    try {
+      return await deps.getAccessToken(options);
+    } catch (error) {
+      throw markRequestNotSent(error);
+    }
+  };
+  let token = await getToken();
   let usedForcedRefresh = false;
   let attempts429 = 0;
   let attempts503 = 0;
@@ -161,7 +175,7 @@ async function requestJson<T>(
 
     if (response.status === 401 && !usedForcedRefresh) {
       usedForcedRefresh = true;
-      token = await deps.getAccessToken({ forceRefresh: true });
+      token = await getToken({ forceRefresh: true });
       continue;
     }
 
@@ -173,7 +187,7 @@ async function requestJson<T>(
       }
     }
 
-    if (response.status === 503) {
+    if (response.status === 503 && retry503) {
       attempts503++;
       if (attempts503 < MAX_ATTEMPTS_503) {
         await sleep(BASE_BACKOFF_MS * 2 ** (attempts503 - 1));
@@ -230,6 +244,22 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
   }
 
   return {
+    async getSession(eventId: string, sessionId: string): Promise<Session> {
+      const body = await requestJson<{ session: Session }>("GET", `/v1/events/${encodeURIComponent(eventId)}/sessions/${encodeURIComponent(sessionId)}`, deps);
+      return body.session;
+    },
+    async reserveSessions(eventId: string, sessionIds: string[]): Promise<BulkResult> {
+      if (sessionIds.length < 1 || sessionIds.length > 10 || new Set(sessionIds).size !== sessionIds.length) {
+        throw new ValidationError("Reservations require 1–10 unique session IDs per request.");
+      }
+      const body = await requestJson<AssociateFavoritesResponseContent>(
+        "POST", `/v1/events/${encodeURIComponent(eventId)}/reservations`, deps, { sessionIds },
+      );
+      return body.result;
+    },
+    async cancelReservation(eventId: string, sessionId: string): Promise<void> {
+      await requestJson<undefined>("DELETE", `/v1/events/${encodeURIComponent(eventId)}/reservations/${encodeURIComponent(sessionId)}`, deps);
+    },
     async getSchedule(eventId: string): Promise<Schedule> {
       const body = await requestJson<GetScheduleResponseContent>(
         "GET",
@@ -264,7 +294,7 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
       await requestJson<undefined>(
         "DELETE",
         `/v1/events/${encodeURIComponent(eventId)}/favorites/${encodeURIComponent(sessionId)}`,
-        deps,
+        deps, undefined, true,
       );
     },
 

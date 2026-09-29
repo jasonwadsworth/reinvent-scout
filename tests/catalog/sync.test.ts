@@ -35,11 +35,14 @@ function fakeApiClient(
     getSchedule: async () => {
       throw new Error("fakeApiClient: getSchedule is not implemented, sync.ts should never call it");
     },
+    getSession: async () => { throw new Error("unused getSession"); },
     getEvent: getEventImpl,
     listSessions: async () => {
       throw new Error("fakeApiClient: listSessions is not implemented, sync.ts should never call it");
     },
     listAllSessions,
+    reserveSessions: async () => { throw new Error("unused reserveSessions"); },
+    cancelReservation: async () => { throw new Error("unused cancelReservation"); },
     associateFavorites: async () => {
       throw new Error("fakeApiClient: associateFavorites is not implemented, sync.ts should never call it");
     },

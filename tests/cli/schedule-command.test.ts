@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
@@ -44,6 +44,8 @@ function seedFixtureCatalog(storeRoot: string, metaOverrides: Partial<CatalogMet
 }
 
 interface ApiClientOverrides {
+  reserveSessions?: ApiClient["reserveSessions"];
+  cancelReservation?: ApiClient["cancelReservation"];
   getSchedule?: ApiClient["getSchedule"];
   associateFavorites?: ApiClient["associateFavorites"];
   disassociateFavorite?: ApiClient["disassociateFavorite"];
@@ -56,6 +58,7 @@ function fakeApiClient(overrides: ApiClientOverrides = {}): ApiClient {
       favorites: [],
       personalTime: [],
     })),
+    getSession: async () => { throw new Error("unused getSession"); },
     getEvent: async () => {
       throw new Error("not implemented in this fake");
     },
@@ -65,6 +68,8 @@ function fakeApiClient(overrides: ApiClientOverrides = {}): ApiClient {
     listAllSessions: async () => {
       throw new Error("not implemented in this fake");
     },
+    reserveSessions: overrides.reserveSessions ?? (async () => { throw new Error("unused reserveSessions"); }),
+    cancelReservation: overrides.cancelReservation ?? (async () => { throw new Error("unused cancelReservation"); }),
     associateFavorites:
       overrides.associateFavorites ??
       (async (): Promise<BulkResult> => {
@@ -517,5 +522,153 @@ describe("schedule unfavorite", () => {
 
     expect(h.printed.join("\n")).toMatch(/not favorited/i);
     expect(process.exitCode ?? 0).toBe(0);
+  });
+});
+
+describe("reservation CLI flow", () => {
+  let home: TempHome;
+  beforeEach(() => { home = createTempHome(); process.exitCode = 0; });
+  afterEach(() => { home.cleanup(); process.exitCode = 0; });
+  it("plans without writes, reserves the printed offering IDs via stdin, and cancels", async () => {
+    const raw = [{ sessionId: "future", title: "Future", sessionTime: { date: "2099-12-02", time: "10:00", length: "60" } }];
+    writeCatalog({ raw, index: raw.map(buildIndexRecord), meta: sampleMeta({ timezone: "America/Los_Angeles" }) }, { storeRoot: home.path });
+    let writes = 0; let reserved: string[] = [];
+    const h = harness(home.path, { reserveSessions: async (_event, ids) => { writes++; reserved = ids; return { successful: ids, failed: [] }; }, cancelReservation: async () => { reserved = []; }, getSchedule: async () => ({ reserved, favorites: [], personalTime: [] }) });
+    await h.run(["schedule", "plan", "future", "--json"]);
+    expect(writes).toBe(0);
+    const selected = JSON.parse(h.printed[0]!).selected.map((value: { sessionId: string }) => value.sessionId);
+    expect(selected).toEqual(["future"]);
+    await withPipedStdin(selected.join("\n"), () => h.run(["schedule", "reserve", "-", "--json"]));
+    expect(JSON.parse(h.printed[1]!)).toMatchObject({ successful: selected, verified: { reserved: selected } });
+    await h.run(["schedule", "cancel", selected[0]!, "--json"]);
+    expect(JSON.parse(h.printed[2]!)).toMatchObject({ outcome: "cancelled", verifiedAbsent: true });
+  });
+  it("renders uncertain and partial refusals with failure exit status", async () => {
+    const h = harness(home.path, { reserveSessions: async () => { throw new Error("lost response"); }, getSchedule: async () => ({ reserved: ["a"], favorites: [], personalTime: [] }) });
+    await h.run(["schedule", "reserve", "a"]);
+    expect(h.printed.join("\n")).toMatch(/uncertain/i);
+    expect(h.printed.join("\n")).toContain("a"); expect(process.exitCode).toBe(1);
+  });
+  it("rejects oversized reservation lists before network", async () => {
+    let calls = 0;
+    const h = harness(home.path, { reserveSessions: async () => { calls++; return { successful: [], failed: [] }; } });
+    await h.run(["schedule", "reserve", ...Array.from({ length: 51 }, (_, i) => String(i))]);
+    expect(calls).toBe(0); expect(process.exitCode).toBe(1);
+  });
+});
+
+
+it("reads and updates on-site config through CLI without account access", async () => {
+  const home = createTempHome();
+  try {
+    const h = harness(home.path);
+    await h.run(["schedule", "onsite-config", "--event", "constructor", "--json"]);
+    expect(JSON.parse(h.printed.pop()!).allowWalkUp).toBe(false);
+    await h.run(["schedule", "onsite-config", "--event", "constructor", "--allow-walk-up", "true", "--json"]);
+    expect(JSON.parse(h.printed.pop()!).allowWalkUp).toBe(true);
+  } finally { home.cleanup(); }
+});
+
+
+describe("on-site commands: errors and local time", () => {
+  let home: TempHome;
+  beforeEach(() => { home = createTempHome(); process.exitCode = 0; });
+  afterEach(() => { home.cleanup(); process.exitCode = 0; });
+  const venue = ["--venue", "MGM Grand", "--confirm-venue"];
+  const notRawZodJson = (text: string) => expect(text.trimStart().startsWith("[")).toBe(false);
+
+  it("prints a field-path message and exits 1 for an invalid nearby option", async () => {
+    seedFixtureCatalog(home.path, { timezone: "America/Los_Angeles" });
+    const h = harness(home.path);
+    await h.run(["schedule", "nearby", ...venue, "--within", "abc"]);
+    expect(h.printed).toHaveLength(1);
+    notRawZodJson(h.printed[0]!);
+    expect(h.printed[0]).toContain("withinMinutes:");
+    expect(process.exitCode).toBe(1);
+  });
+  it("prints the message and exits 1 for a wrong-event catalog and for auth failures", async () => {
+    seedFixtureCatalog(home.path, { timezone: "America/Los_Angeles" });
+    const wrongEvent = harness(home.path);
+    await wrongEvent.run(["schedule", "nearby", ...venue, "--event", "another-event"]);
+    expect(wrongEvent.printed[0]).toMatch(/Sync the catalog for event another-event/);
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
+    const auth = harness(home.path, { getSchedule: async () => { throw new AuthRequiredError(); } });
+    await auth.run(["schedule", "nearby", ...venue]);
+    expect(auth.printed[0]).toBe(new AuthRequiredError().message);
+    expect(process.exitCode).toBe(1);
+  });
+  it.each([
+    [["--allow-walk-up", "yes"], "allowWalkUp:"],
+    [["--file", "PATCH_BAD_TYPE"], "checkInMinutes:"],
+    [["--file", "PATCH_NOT_JSON"], "not valid JSON"],
+    [["--file", "PATCH_MISSING"], "Cannot read"],
+  ])("prints a readable message and exits 1 for onsite-config %j", async (args, expected) => {
+    const files: Record<string, string> = { PATCH_BAD_TYPE: '{"checkInMinutes":"soon"}', PATCH_NOT_JSON: "{oops" };
+    const resolved = args.map(arg => {
+      if (arg === "PATCH_MISSING") return join(home.path, "missing.json");
+      if (arg in files) { const path = join(home.path, `${arg}.json`); writeFileSync(path, files[arg]!); return path; }
+      return arg;
+    });
+    const h = harness(home.path);
+    await h.run(["schedule", "onsite-config", ...resolved]);
+    expect(h.printed).toHaveLength(1);
+    notRawZodJson(h.printed[0]!);
+    expect(h.printed[0]).toContain(expected);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("prints the refusal and exits 1 when the on-site config path is a symlink", async () => {
+    symlinkSync(join(home.path, "elsewhere.json"), join(home.path, "onsite.json"));
+    const h = harness(home.path);
+    await h.run(["schedule", "onsite-config", "--allow-walk-up", "true"]);
+    expect(h.printed).toHaveLength(1);
+    expect(h.printed[0]).toMatch(/symlink/i);
+    expect(process.exitCode).toBe(1);
+  });
+
+  describe("event-local times", () => {
+    const early = { sessionId: "early", title: "Early talk", abbreviation: "EAR100", venue: "MGM Grand", isReservable: true, seatAvailability: "available", sessionTime: { date: "2026-12-02", time: "10:30", length: "30" } } as Session;
+    const seed = () => writeCatalog({ raw: [early], index: [buildIndexRecord(early)], meta: sampleMeta({ timezone: "America/Los_Angeles", count: 1, totalCount: 1 }) }, { storeRoot: home.path });
+    it("shows plan times in the event zone with its abbreviation, not UTC", async () => {
+      seed();
+      const h = harness(home.path);
+      await h.run(["schedule", "plan", "early"]);
+      expect(h.printed[0]).toContain("2026-12-02 10:30 PST to 2026-12-02 11:00 PST");
+      expect(h.printed[0]).not.toContain("18:30:00Z");
+    });
+    it("shows nearby start times in the event zone with its abbreviation, not UTC", async () => {
+      seed();
+      const now = Date.parse("2026-12-02T17:00:00Z");
+      const printed: string[] = [];
+      const program = new Command().exitOverride();
+      registerScheduleCommands(program, { resolveStoreRoot: () => home.path, buildApiClient: () => ({ ...fakeApiClient(), getSession: async () => early }), print: message => { printed.push(message); }, now: () => now });
+      await program.parseAsync(["node", "reinvent-scout", "schedule", "nearby", ...venue, "--within", "120"]);
+      expect(printed[0]).toContain("starts 2026-12-02 10:30 PST");
+      expect(printed[0]).not.toContain("18:30:00Z");
+    });
+  });
+});
+
+describe("padded ids", () => {
+  let home: TempHome;
+  beforeEach(() => { home = createTempHome(); process.exitCode = 0; });
+  afterEach(() => { home.cleanup(); process.exitCode = 0; });
+  it("cancels the trimmed id and reports it", async () => {
+    const deleted: string[] = [];
+    const h = harness(home.path, { cancelReservation: async (_e, id) => { deleted.push(id); }, getSchedule: async () => ({ reserved: [], favorites: [], personalTime: [] }) });
+    await h.run(["schedule", "cancel", " R "]);
+    expect(deleted).toEqual(["R"]);
+    expect(h.printed[0]).toMatch(/^R: cancelled; verified absent: true/);
+  });
+  it("trims favorite ids before sending and refuses a blank one", async () => {
+    const sent: string[][] = [];
+    const h = harness(home.path, { associateFavorites: async (_e, list) => { sent.push(list); return { successful: list, failed: [] }; }, getSchedule: async () => ({ reserved: [], favorites: ["a"], personalTime: [] }) });
+    await h.run(["schedule", "favorite", " a "]);
+    expect(sent).toEqual([["a"]]);
+    const blank = harness(home.path);
+    await blank.run(["schedule", "favorite", "   "]);
+    expect(blank.printed[0]).toMatch(/blank/i);
+    expect(process.exitCode).toBe(1);
   });
 });

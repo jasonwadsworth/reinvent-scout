@@ -54,7 +54,7 @@ describe("createMcpServer", () => {
     home.cleanup();
   });
 
-  it("lists exactly the seven expected tools, by name", async () => {
+  it("lists exactly the thirteen expected tools, by name", async () => {
     const client = await connectedClient({ resolveStoreRoot: () => home.path });
 
     const tools = await client.listTools();
@@ -73,6 +73,12 @@ describe("createMcpServer", () => {
         "get_schedule",
         "favorite_sessions",
         "unfavorite_session",
+        "plan_schedule",
+        "reserve_sessions",
+        "cancel_reservation",
+        "nearby_sessions",
+        "get_onsite_preferences",
+        "set_onsite_preferences",
       ].sort(),
     );
   });

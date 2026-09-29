@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createApiClient } from "../../src/api/client.js";
 import {
   AuthRequiredError,
+  isRequestNotSent,
   NotFoundError,
   NotRegisteredError,
   OperationUnavailableError,
@@ -46,6 +47,14 @@ function fakeSleep(): { sleep: (ms: number) => Promise<void>; durations: number[
 }
 
 describe("createApiClient", () => {
+  it("reads one fresh session using escaped IDs and unwraps its record", async () => {
+    const fake = createFakeFetch([{ status: 200, json: { session: { sessionId: "s/x", title: "Fresh" } } }]);
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: async () => "token" });
+    expect(await client.getSession("e/x", "s/x")).toEqual({ sessionId: "s/x", title: "Fresh" });
+    expect(fake.calls[0]!.url).toContain("/v1/events/e%2Fx/sessions/s%2Fx");
+    expect(fake.calls[0]!.init?.method).toBe("GET");
+  });
+
   it("sends the bearer token and Accept application/json", async () => {
     const fake = createFakeFetch([{ status: 200, json: EMPTY_SCHEDULE_BODY }]);
     const auth = fakeAuth(["token-abc"]);
@@ -360,5 +369,80 @@ describe("createApiClient", () => {
     expect((caught as Error).message).toContain("No session with that id in this event.");
     expect((caught as Error).message).not.toContain(secretToken);
     expect(String(caught)).not.toContain(secretToken);
+  });
+});
+
+describe("reservation endpoints and write retry safety", () => {
+  it("encodes paths, sends unique reservation ids and unwraps BulkResult", async () => {
+    const result = { successful: ["a"], failed: [] };
+    const fake = createFakeFetch([{ json: { result } }, { status: 204 }]);
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: async () => "token" });
+    expect(await client.reserveSessions("event/a", ["a"])).toEqual(result);
+    expect(fake.calls[0]!.url).toContain("/event%2Fa/reservations");
+    expect(fake.calls[0]!.init).toMatchObject({ method: "POST", body: '{"sessionIds":["a"]}' });
+    await client.cancelReservation("event/a", "session/a");
+    expect(fake.calls[1]!.url).toContain("/event%2Fa/reservations/session%2Fa");
+    expect(fake.calls[1]!.init!.method).toBe("DELETE");
+  });
+  it.each([[], ["a", "a"], Array.from({ length: 11 }, (_, i) => String(i))].map(ids => ({ ids })))("rejects invalid reserve request sizes/duplicates before fetch", async ({ ids }) => {
+    const fake = createFakeFetch([{ json: {} }]);
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: async () => "token" });
+    await expect(client.reserveSessions(EVENT_ID, ids)).rejects.toThrow(ValidationError);
+    expect(fake.calls).toHaveLength(0);
+  });
+  it.each(["reserveSessions", "associateFavorites"] as const)("%s does not replay ambiguous POST503 or network errors", async method => {
+    const fake = createFakeFetch([{ status: 503 }, { json: { result: { successful: ["a"], failed: [] } } }]);
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: async () => "token", sleep: async () => {} });
+    await expect(client[method](EVENT_ID, ["a"])).rejects.toThrow(ServiceError);
+    expect(fake.calls).toHaveLength(1);
+    let calls = 0;
+    const broken = createApiClient({ fetchFn: async () => { calls++; throw new Error("connection lost"); }, getAccessToken: async () => "token" });
+    await expect(broken[method](EVENT_ID, ["a"])).rejects.toThrow("connection lost");
+    expect(calls).toBe(1);
+  });
+  it("reserves after one401 refresh and bounded429 retry", async () => {
+    const fake = createFakeFetch([{ status: 401 }, { status: 429, headers: { "Retry-After": "2" } }, { json: { result: { successful: ["a"], failed: [] } } }]);
+    const auth = fakeAuth(["old", "new"]); const sleep = fakeSleep();
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: auth.getAccessToken, sleep: sleep.sleep });
+    expect((await client.reserveSessions(EVENT_ID, ["a"])).successful).toEqual(["a"]);
+    expect(auth.calls).toEqual([{}, { forceRefresh: true }]);
+    expect(sleep.durations).toEqual([2000]); expect(fake.calls).toHaveLength(3);
+  });
+  it.each([[404, NotFoundError], [409, OperationUnavailableError]] as const)("cancel maps %s without repeating", async (status, ErrorClass) => {
+    const fake = createFakeFetch([{ status }]);
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: async () => "token" });
+    await expect(client.cancelReservation(EVENT_ID, "a")).rejects.toThrow(ErrorClass);
+    expect(fake.calls).toHaveLength(1);
+  });
+  it("cancel does not blindly retry503", async () => {
+    const fake = createFakeFetch([{ status: 503 }, { status: 204 }]);
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: async () => "token", sleep: async () => {} });
+    await expect(client.cancelReservation(EVENT_ID, "a")).rejects.toThrow(ServiceError);
+    expect(fake.calls).toHaveLength(1);
+  });
+});
+
+describe("token failures are marked as never sent", () => {
+  it("marks an error thrown by getAccessToken, including on the forced refresh after a 401", async () => {
+    const fake = createFakeFetch([{ status: 200, json: EMPTY_SCHEDULE_BODY }]);
+    const down = new Error("token endpoint down");
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: async () => { throw down; } });
+    const caught = await client.getSchedule(EVENT_ID).catch((error: unknown) => error);
+    expect(caught).toBe(down);
+    expect(isRequestNotSent(caught)).toBe(true);
+    expect(fake.calls).toHaveLength(0);
+
+    const fake401 = createFakeFetch([{ status: 401, json: {} }]);
+    const refreshDown = new Error("refresh down");
+    const client401 = createApiClient({ fetchFn: fake401.fetch, getAccessToken: async options => { if (options?.forceRefresh) throw refreshDown; return "token"; } });
+    const caught401 = await client401.getSchedule(EVENT_ID).catch((error: unknown) => error);
+    expect(isRequestNotSent(caught401)).toBe(true);
+  });
+  it("does not mark an error the server returned", async () => {
+    const fake = createFakeFetch([{ status: 401, json: {} }, { status: 401, json: {} }]);
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: async () => "token" });
+    const caught = await client.getSchedule(EVENT_ID).catch((error: unknown) => error);
+    expect(caught).toBeInstanceOf(AuthRequiredError);
+    expect(isRequestNotSent(caught)).toBe(false);
   });
 });

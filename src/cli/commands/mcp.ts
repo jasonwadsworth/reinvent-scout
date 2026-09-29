@@ -1,6 +1,6 @@
 import type { Command } from "commander";
 import { runStdioServer } from "../../mcp/server.js";
-import { ensureStoreRoot } from "../../core/paths.js";
+import { resolveStoreRoot as resolveRoot } from "../../core/paths.js";
 
 /**
  * This is the one CLI entry point that shares stdout with the MCP protocol stream (JSON-RPC
@@ -12,7 +12,7 @@ import { ensureStoreRoot } from "../../core/paths.js";
  * file (or anything it calls) needs to emit must go through `process.stderr.write` instead.
  */
 export interface McpCommandDeps {
-  /** Defaults to the real store root (`ensureStoreRoot`). Inject a fixed path in tests so
+  /** Defaults to the real store root (`resolveStoreRoot`, without creating it). Inject a fixed path in tests so
    * nothing touches the real home directory. */
   resolveStoreRoot?: () => string;
   /** Defaults to `mcp/server.ts`'s real `runStdioServer`, connecting to the real stdio transport.
@@ -22,7 +22,7 @@ export interface McpCommandDeps {
 
 /** Registers `mcp`, which runs the local MCP server over stdio until the client disconnects. */
 export function registerMcpCommand(program: Command, deps: McpCommandDeps = {}): Command {
-  const resolveStoreRoot = deps.resolveStoreRoot ?? (() => ensureStoreRoot());
+  const resolveStoreRoot = deps.resolveStoreRoot ?? (() => resolveRoot());
   const runServer = deps.runServer ?? runStdioServer;
 
   program

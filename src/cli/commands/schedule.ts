@@ -1,15 +1,23 @@
+import { readFileSync } from "node:fs";
+import { z } from "zod";
+import { recommendNearbySessions, nearbyInputSchema } from "../../onsite/recommend.js";
+import { readOnsiteConfig, updateOnsiteConfig, effectiveOnsitePreferences, onsitePatchSchema, type OnsitePatch } from "../../onsite/config.js";
+import { resolveStoreRoot as resolveRootWithoutCreation } from "../../core/paths.js";
+import { planSchedule, type SchedulePlan } from "../../schedule/plan.js";
+import { reserveSessions, cancelReservation, reservationNeedsAttention, cancellationNeedsAttention, validateSessionIds, type ReserveSessionsResult } from "../../schedule/reservations.js";
 import type { Command } from "commander";
 import { createApiClient, type ApiClient } from "../../api/client.js";
 import { createTokenProviderAdapter } from "../../auth/provider-adapter.js";
 import type { IndexRecord } from "../../catalog/index-record.js";
 import { readIndex, readTimezoneAvailability } from "../../catalog/store.js";
 import { DEFAULT_EVENT_ID } from "../../catalog/sync.js";
-import { AuthRequiredError, NotRegisteredError, ValidationError } from "../../core/errors.js";
+import { AuthRequiredError, CatalogMissingError, CatalogUnusableError, NotRegisteredError, OperationUnavailableError, ValidationError } from "../../core/errors.js";
 import { ensureStoreRoot } from "../../core/paths.js";
 import { favoriteSessions, unfavoriteSession, type FavoriteSessionsResult } from "../../schedule/favorites.js";
 import { mergeAndSortScheduleEntries, timezoneWarnings, type MergedScheduleEntry } from "../../schedule/merge.js";
 import { getSchedule, type ScheduleResult } from "../../schedule/schedule.js";
-import { utcIsoToZonedWallClock } from "../../schedule/timezone.js";
+import { formatEventLocalTime, utcIsoToZonedWallClock } from "../../schedule/timezone.js";
+import { formatZodError } from "../zod-errors.js";
 
 export interface ScheduleCommandDeps {
   /** Defaults to the real store root (`ensureStoreRoot`). Inject a fixed path in tests so
@@ -20,6 +28,7 @@ export interface ScheduleCommandDeps {
   buildApiClient?: (storeRoot: string) => ApiClient;
   /** Where command output goes. Defaults to stdout. */
   print?: (message: string) => void;
+  now?: () => number;
 }
 
 interface ShowCommandOptions {
@@ -72,7 +81,32 @@ async function resolveIds(ids: string[]): Promise<string[]> {
   if (ids.length === 1 && ids[0] === "-") {
     return readIdsFromStdin();
   }
-  return ids;
+  return ids.map((id) => id.trim());
+}
+
+/** Everything a user's input or account state can cause, printed as one readable message with a
+ * non-zero exit instead of a stack trace or raw zod JSON. Anything else is a bug and propagates. */
+function reportCommandError(err: unknown, event: string, print: (message: string) => void, options: { anyError?: boolean } = {}): void {
+  let message: string | undefined;
+  if (err instanceof z.ZodError) message = formatZodError(err);
+  else if (err instanceof NotRegisteredError) {
+    message = `You're signed in, but not registered for ${event}. Signing in again will not help; register for the event first.`;
+  } else if (err instanceof AuthRequiredError || err instanceof ValidationError || err instanceof CatalogMissingError || err instanceof CatalogUnusableError || err instanceof OperationUnavailableError) {
+    message = err.message;
+  } else if (options.anyError === true && err instanceof Error) message = err.message;
+  if (message === undefined) throw err;
+  print(message);
+  process.exitCode = 1;
+}
+
+function readPatchFile(path: string): OnsitePatch {
+  let text: string;
+  try { text = readFileSync(path, "utf8"); }
+  catch (error) { throw new ValidationError(`Cannot read ${path}: ${error instanceof Error ? error.message : String(error)}`); }
+  let json: unknown;
+  try { json = JSON.parse(text); }
+  catch { throw new ValidationError(`${path} is not valid JSON.`); }
+  return onsitePatchSchema.parse(json);
 }
 
 /** Validates the resolved id count against both bounds before the store root or an API client is
@@ -83,6 +117,9 @@ async function resolveIds(ids: string[]): Promise<string[]> {
  * "vacuous success," and a caller with no stored session at all would see "Not signed in" -- true,
  * but not the actual problem, since there's nothing to favorite regardless of sign-in state. */
 function assertValidIdCount(ids: readonly string[]): void {
+  if (ids.some((id) => id.length === 0)) {
+    throw new ValidationError("Session ids must not be blank.");
+  }
   if (ids.length === 0) {
     throw new ValidationError(
       "No session ids given; nothing to favorite. Pass one or more session ids, or pipe them in " +
@@ -267,8 +304,9 @@ function formatFavoriteResultHuman(result: FavoriteSessionsResult, index: IndexR
       lines.push(`  ${resolveSessionDisplay(sessionId, index)}`);
     }
   }
+  if (result.uncertain?.length) lines.push(`Uncertain requests (not automatically retried): ${result.uncertain.join(", ")}. Read-back cannot establish causation.`);
   if (result.failed.length > 0) {
-    lines.push("Refused:");
+    lines.push("Refusals or failed requests (see uncertainty above):");
     for (const failure of result.failed) {
       lines.push(formatFailureLine(failure, index));
     }
@@ -292,6 +330,36 @@ function formatFavoriteResultHuman(result: FavoriteSessionsResult, index: IndexR
   return lines.join("\n");
 }
 
+function formatReservationResult(result: ReserveSessionsResult): string {
+  const lines = [
+    `Reserved: ${result.successful.join(", ") || "none"}.`,
+    `Already reserved: ${result.alreadyScheduled.join(", ") || "none"}.`,
+    ...result.failed.map(failure => `Refused ${failure.sessionId}: ${failure.code}${failure.reason ? ` — ${failure.reason}` : ""}${failure.conflictsWith?.length ? `; conflicts with ${failure.conflictsWith.map(conflict => `${conflict.sessionId}${conflict.title ? ` (${conflict.title})` : ""}`).join(", ")}` : ""}`),
+    `Uncertain (not automatically retried): ${result.uncertain.join(", ") || "none"}.`,
+    `Not attempted: ${result.notAttempted.join(", ") || "none"}.`,
+    result.verified ? `Observed reserved on read-back: ${result.verified.reserved.join(", ") || "none"}. This does not establish which request caused a reservation.` : `Verification unavailable: ${result.verificationError ?? "unknown"}.`,
+  ];
+  if (result.mismatch.length) lines.push(`Missing on read-back: ${result.mismatch.join(", ")}.`);
+  if (result.aborted) lines.push(`Stopped: ${result.aborted.message}`);
+  return lines.join("\n");
+}
+function formatPlan(result: SchedulePlan, timezone: string | null): string {
+  return [
+    result.conflictFree ? "Plan has no new time conflicts." : `Cannot prove a conflict-free plan: ${result.blockedBy.join(", ")}.`,
+    ...result.selected.map(session => `${session.sessionId} — ${session.title} — ${formatEventLocalTime(session.startsAt, timezone)} to ${formatEventLocalTime(session.endsAt, timezone)}`),
+    ...result.alreadyReserved.map(id => `${id}: already reserved`),
+    ...result.alreadyReservedAlternative.map(value => `${value.requested}: not planned; the same talk is already reserved as ${value.reservedSessionId}`),
+    ...result.rejected.map(rejection => `${rejection.sessionId}: ${rejection.reason}${rejection.conflictsWith?.length ? ` (${rejection.conflictsWith.join(", ")})` : ""}`),
+    result.limitations,
+  ].join("\n");
+}
+
+/** The event's timezone when the catalog knows it; `null` (shown as UTC) otherwise. */
+function knownEventTimezone(storeRoot: string): string | null {
+  const availability = readTimezoneAvailability({ storeRoot });
+  return availability?.status === "known" ? availability.timezone : null;
+}
+
 /** Registers `schedule` and its `show`, `favorite` and `unfavorite` subcommands. */
 export function registerScheduleCommands(program: Command, deps: ScheduleCommandDeps = {}): Command {
   const print = deps.print ?? ((message: string) => process.stdout.write(`${message}\n`));
@@ -301,6 +369,40 @@ export function registerScheduleCommands(program: Command, deps: ScheduleCommand
   const schedule = program
     .command("schedule")
     .description("Read your event schedule and manage favorites.");
+
+  schedule.command("onsite-config").description("Read or update local on-site preferences")
+    .option("--event <event>", "Event ID", DEFAULT_EVENT_ID).option("--file <path>", "JSON preference patch")
+    .option("--allow-walk-up <boolean>", "Global default: true or false").option("--json", "JSON output", false)
+    .action((options: { event: string; file?: string; allowWalkUp?: string; json: boolean }) => {
+      try {
+        const storeRoot = (deps.resolveStoreRoot ?? resolveRootWithoutCreation)();
+        const patch = options.file ? readPatchFile(options.file) : {};
+        if (options.allowWalkUp !== undefined) patch.allowWalkUp = z.object({ allowWalkUp: z.enum(["true", "false"]) }).parse({ allowWalkUp: options.allowWalkUp }).allowWalkUp === "true";
+        const config = options.file || options.allowWalkUp !== undefined ? updateOnsiteConfig(options.event, patch, { storeRoot }) : readOnsiteConfig({ storeRoot });
+        print(JSON.stringify(effectiveOnsitePreferences(config, options.event), null, options.json ? undefined : 2));
+      } catch (error) { reportCommandError(error, options.event, print, { anyError: true }); }
+    });
+  schedule.command("nearby").description("Suggest feasible nearby sessions after venue confirmation")
+    .option("--event <event>", "Event ID", DEFAULT_EVENT_ID).option("--venue <venue>", "Current venue")
+    .option("--source <source>", "user, location, or schedule", "user").option("--confirm-venue", "Confirm this venue for this call", false)
+    .option("--skip-session <ids...>", "Ignore these reserved commitments for this calculation only")
+    .option("--within <minutes>", "Start horizon (1–240)", "60").option("--limit <count>", "Maximum results (1–20)", "10").option("--json", "JSON output", false)
+    .action(async (options: { event: string; venue?: string; source: string; confirmVenue: boolean; skipSession?: string[]; within: string; limit: string; json: boolean }) => {
+      try {
+        const input = nearbyInputSchema.parse({ eventId: options.event, ...(options.venue ? { location: { venue: options.venue, source: options.source, confirmed: options.confirmVenue } } : {}), ...(options.skipSession ? { skipSessionIds: options.skipSession } : {}), withinMinutes: Number(options.within), limit: Number(options.limit) });
+        const storeRoot = resolveStoreRoot();
+        const result = await recommendNearbySessions(input, { storeRoot, apiClient: buildApiClient(storeRoot), ...(deps.now ? { now: deps.now } : {}) });
+        if (options.json) print(JSON.stringify(result));
+        else {
+          const timezone = knownEventTimezone(storeRoot);
+          for (const item of result.candidates) print(`${item.sessionId} ${item.title} — ${item.venue}, starts ${formatEventLocalTime(item.startsAt, timezone)} (in ${Math.floor(item.minutesToStart)} min)\n  ${item.outbound.mode}: ${item.outbound.totalMinutes} min + ${item.outbound.checkInMinutes} min check-in (${item.outbound.provenance}); ${item.admission} Band ${item.availability}, ${item.availabilitySource}, age ${item.ageMinutes === null ? "unknown" : `${item.ageMinutes.toFixed(1)} min`}.${item.onward ? ` Onward ${item.onward.totalMinutes} min + ${item.onward.checkInMinutes} min check-in to ${item.nextCommitmentId}.` : ""}`);
+          for (const rejection of result.rejected) print(`Excluded ${rejection.count}: ${rejection.reason}`);
+          for (const warning of result.warnings) print(warning);
+          if (!result.candidates.length) print("No feasible candidates with the current confirmation, travel and admission settings.");
+          print(`${result.limitations} Refreshed ${result.coverage.refreshed}/${result.coverage.eligible}; omitted ${result.coverage.omitted}.`);
+        }
+      } catch (error) { reportCommandError(error, options.event, print); }
+    });
 
   schedule
     .command("show")
@@ -370,7 +472,7 @@ export function registerScheduleCommands(program: Command, deps: ScheduleCommand
             ? JSON.stringify(result)
             : formatFavoriteResultHuman(result, readIndex({ storeRoot })),
         );
-        if (result.failed.length > 0) {
+        if (result.failed.length > 0 || result.uncertain?.length) {
           process.exitCode = 1;
         }
       } catch (err) {
@@ -401,7 +503,7 @@ export function registerScheduleCommands(program: Command, deps: ScheduleCommand
       const apiClient = buildApiClient(storeRoot);
 
       try {
-        const outcome = await unfavoriteSession(id, { apiClient, eventId: options.event });
+        const outcome = await unfavoriteSession(id, { apiClient, storeRoot, eventId: options.event });
         print(
           outcome === "removed"
             ? `Removed ${id} from favorites.`
@@ -423,6 +525,39 @@ export function registerScheduleCommands(program: Command, deps: ScheduleCommand
         }
         throw err;
       }
+    });
+
+  for (const command of ["plan", "reserve"] as const) {
+    schedule.command(command).description(command === "plan" ? "Suggest a time-conflict-free schedule without writing." : "Reserve confirmed session IDs; never automatically replace a reservation.")
+      .argument("<ids...>", "session IDs, or - for newline-delimited stdin")
+      .option("--event <id>", "event ID", DEFAULT_EVENT_ID).option("--json", "machine-readable output")
+      .action(async (ids: string[], options: FavoriteCommandOptions) => {
+        try {
+          const input = validateSessionIds(await resolveIds(ids), command === "plan", command === "reserve");
+          const storeRoot = resolveStoreRoot(); const apiClient = buildApiClient(storeRoot);
+          const domainDeps = { storeRoot, apiClient, eventId: options.event, ...(deps.now ? { now: deps.now } : {}) };
+          if (command === "plan") {
+            const result = await planSchedule(input, domainDeps);
+            print(options.json ? JSON.stringify(result) : formatPlan(result, knownEventTimezone(storeRoot)));
+            if (!result.conflictFree) process.exitCode = 1;
+          } else {
+            const result = await reserveSessions(input, domainDeps);
+            print(options.json ? JSON.stringify(result) : formatReservationResult(result));
+            if (reservationNeedsAttention(result)) process.exitCode = 1;
+          }
+        } catch (error) { print(error instanceof Error ? error.message : String(error)); process.exitCode = 1; }
+      });
+  }
+  schedule.command("cancel").description("Cancel one explicitly chosen reservation.")
+    .argument("<id>", "session ID").option("--event <id>", "event ID", DEFAULT_EVENT_ID).option("--json", "machine-readable output")
+    .action(async (id: string, options: FavoriteCommandOptions) => {
+      try {
+        const [cleanId] = validateSessionIds([id]) as [string];
+        const storeRoot = resolveStoreRoot();
+        const result = await cancelReservation(cleanId, { storeRoot, apiClient: buildApiClient(storeRoot), eventId: options.event });
+        print(options.json ? JSON.stringify(result) : `${result.sessionId}: ${result.outcome}; verified absent: ${result.verifiedAbsent ?? "unknown"}.${result.error ? ` ${result.error}` : ""}${result.verificationError ? ` ${result.verificationError}` : ""}`);
+        if (cancellationNeedsAttention(result)) process.exitCode = 1;
+      } catch (error) { print(error instanceof Error ? error.message : String(error)); process.exitCode = 1; }
     });
 
   return schedule;

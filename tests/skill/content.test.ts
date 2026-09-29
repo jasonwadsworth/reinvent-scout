@@ -107,7 +107,7 @@ function cliCommandMentions(text: string): string[] {
     (match) => match[1]!,
   );
   for (const remainder of inlineSpans) {
-    const pathMatch = /^[a-z]+(?: [a-z]+)?/.exec(remainder);
+    const pathMatch = /^[a-z][a-z-]*(?: [a-z][a-z-]*)?/.exec(remainder);
     paths.push(`reinvent-scout ${pathMatch ? pathMatch[0] : remainder.trim()}`);
   }
 
@@ -117,7 +117,7 @@ function cliCommandMentions(text: string): string[] {
       continue;
     }
     for (const line of fence[2]!.split("\n")) {
-      const lineMatch = /^[\s$]*(?:npx\s+)?reinvent-scout\s+([a-z]+(?: [a-z]+)?)/.exec(line);
+      const lineMatch = /^[\s$]*(?:npx\s+)?reinvent-scout\s+([a-z][a-z-]*(?: [a-z][a-z-]*)?)/.exec(line);
       if (lineMatch) {
         paths.push(`reinvent-scout ${lineMatch[1]!}`);
       }
@@ -634,4 +634,37 @@ describe("lens-quality documentation", () => {
     expect(taxonomyMd).not.toContain("tests/fixtures");
     expect(allSkillText).not.toContain("tests/fixtures");
   });
+});
+
+it("executes the documented plan-confirm-reserve-cancel contracts using plan-returned IDs", async () => {
+  const blocks = [...workflowMd.matchAll(/```json\n([\s\S]*?)```/g)].map(match => JSON.parse(match[1]!) as { tool?: string; arguments?: { sessionIds?: string[]; sessionId?: string } }).filter(value => ["plan_schedule", "reserve_sessions", "cancel_reservation"].includes(value.tool ?? ""));
+  expect(blocks.map(value => value.tool)).toEqual(["plan_schedule", "reserve_sessions", "cancel_reservation"]);
+  const home = createTempHome();
+  try {
+    const { createApiClient } = await import("../../src/api/client.js");
+    let reserved: string[] = []; let writes = 0;
+    const apiClient = createApiClient({ getAccessToken: async () => "fixture-token", fetchFn: async (_url, init) => {
+      if (init?.method === "POST") { writes++; reserved = (JSON.parse(init.body as string) as { sessionIds: string[] }).sessionIds; return new Response(JSON.stringify({ result: { successful: reserved, failed: [] } }), { status: 200 }); }
+      if (init?.method === "DELETE") { reserved = []; return new Response(null, { status: 204 }); }
+      return new Response(JSON.stringify({ schedule: { reserved, favorites: [], personalTime: [] } }), { status: 200 });
+    } });
+    const raw = [{ sessionId: "example-offering", title: "Example", sessionTime: { date: "2099-12-02", time: "10:00", length: "60" } }];
+    writeCatalog({ raw, index: raw.map(buildIndexRecord), meta: { schemaVersion: CURRENT_SCHEMA_VERSION, eventId: DEFAULT_EVENT_ID, syncedAt: 1, count: 1, totalCount: 1, includedAbstracts: true, timezone: "America/Los_Angeles" } }, { storeRoot: home.path });
+    const server = createMcpServer({ resolveStoreRoot: () => home.path, buildApiClient: () => apiClient });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "doc-reservation-test", version: "0.0.1" });
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    const plan = await client.callTool({ name: blocks[0]!.tool!, arguments: blocks[0]!.arguments! });
+    expect(plan.isError).not.toBe(true); expect(writes).toBe(0);
+    const selectedId = JSON.parse((plan.content as Array<{ text: string }>)[0]!.text).selected[0].sessionId as string;
+    for (const step of blocks.slice(1)) {
+      const args = JSON.parse(JSON.stringify(step.arguments).replaceAll("<selected-session-id>", selectedId));
+      const result = await client.callTool({ name: step.tool!, arguments: args });
+      expect(result.isError).not.toBe(true);
+    }
+    expect(writes).toBe(1); expect(reserved).toEqual([]);
+    expect(skillMd).toMatch(/confirmation before.*reserv/i);
+    expect(workflowMd).toContain("uncertain");
+    await client.close(); await server.close();
+  } finally { home.cleanup(); }
 });

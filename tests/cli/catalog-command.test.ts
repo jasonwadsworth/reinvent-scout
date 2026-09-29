@@ -30,11 +30,14 @@ function fakeApiClient(
     // syncCatalog (the real one, not a fake -- see the comment above) calls this for real on
     // every full sync, so unlike the other unused methods it must return a value rather than
     // throw. No timezone: these tests only prove the command's own wiring, not timezone handling.
+    getSession: async () => { throw new Error("unused getSession"); },
     getEvent: async (eventId) => ({ eventId }),
     listSessions: async () => {
       throw new Error("not implemented in this fake");
     },
     listAllSessions,
+    reserveSessions: async () => { throw new Error("unused reserveSessions"); },
+    cancelReservation: async () => { throw new Error("unused cancelReservation"); },
     associateFavorites: async () => {
       throw new Error("not implemented in this fake");
     },
@@ -489,6 +492,7 @@ describe("catalog show command", () => {
       resolveStoreRoot: () => home.path,
       buildApiClient: () => ({
         getSchedule: async () => ({ reserved: [], favorites: [sessionId], personalTime: [] }),
+        getSession: async () => { throw new Error("unused getSession"); },
         getEvent: async () => {
           throw new Error("not implemented in this fake");
         },
@@ -498,7 +502,9 @@ describe("catalog show command", () => {
         listAllSessions: async () => {
           throw new Error("not implemented in this fake");
         },
-        associateFavorites: async (_eventId: string, sessionIds: string[]) => {
+        reserveSessions: async () => { throw new Error("unused reserveSessions"); },
+    cancelReservation: async () => { throw new Error("unused cancelReservation"); },
+    associateFavorites: async (_eventId: string, sessionIds: string[]) => {
           associateFavoritesCalls.push(sessionIds);
           return { successful: sessionIds, failed: [] };
         },

@@ -1,32 +1,15 @@
+import { isDefiniteWriteRejection } from "./reservations.js";
+import { acquireWriteQuota, type WriteQuotaDeps } from "./write-quota.js";
 import type { ApiClient } from "../api/client.js";
 import type { BulkFailureCode } from "../api/types.js";
 import { OAuthError } from "../auth/oauth.js";
 import type { IndexRecord } from "../catalog/index-record.js";
 import { readIndex, type CatalogStoreDeps } from "../catalog/store.js";
 import { DEFAULT_EVENT_ID } from "../catalog/sync.js";
-import { AuthRequiredError, NotFoundError, NotRegisteredError, ThrottledError } from "../core/errors.js";
+import { AuthRequiredError, isRequestNotSent, NotFoundError, NotRegisteredError, OperationUnavailableError, ThrottledError } from "../core/errors.js";
 
 /** The API's own per-request cap on `AssociateFavorites`. */
 const MAX_FAVORITES_PER_REQUEST = 10;
-
-/** The write quota this module paces against: 30 session-units per rolling minute, spending one
- * unit per session id in a chunk (plan decision 8 -- the pacer lives next to its only caller
- * rather than being built speculatively into the API client, since only this write path spends
- * the quota). `GetSchedule`'s own re-read at the end of `favoriteSessions` has a separate rate
- * quota entirely and is never paced against this bucket. */
-const SESSION_UNITS_PER_MINUTE = 30;
-/** The API's own real quota window. */
-const RATE_LIMIT_WINDOW_MS = 60_000;
-/** pr-reviewer-3's finding: entries expire at exactly `>= RATE_LIMIT_WINDOW_MS`, with zero margin
- * at the boundary -- measured over real stdio, a server process sending a 50-id call then a 10-id
- * call spent 30 units at t=0.0 s and 20+10 at t=60.0 s, which is within the real quota by this
- * process's own clock, but any timestamp jitter against the server's own clock (a different
- * process, a slow tick, clock drift) could make the *server* count all sixty as landing within one
- * real 60 s window. `PACE_WINDOW_MS` is what `acquire` actually treats as the trailing window an
- * entry ages out of -- one extra second of margin costs nothing in practice (the pacer already
- * waits in one-minute-ish increments) and removes the boundary case entirely. */
-const PACE_SAFETY_MARGIN_MS = 1_000;
-const PACE_WINDOW_MS = RATE_LIMIT_WINDOW_MS + PACE_SAFETY_MARGIN_MS;
 
 /** Reported instead of throwing when a whole chunk's request fails outright (a thrown error --
  * network trouble, an exhausted retry, a sign-in problem) rather than a per-session refusal
@@ -54,7 +37,8 @@ const NOT_ATTEMPTED_THROTTLED_REASON =
  * directly contradicting `NotRegisteredError`'s own message ("signing in again will not help") --
  * the two need genuinely different remedies, the same way `aborted.reason` itself already
  * distinguishes them. */
-function notAttemptedAuthReason(err: AuthRequiredError | NotRegisteredError): string {
+function notAttemptedAuthReason(err: AuthRequiredError | NotRegisteredError | OperationUnavailableError): string {
+  if (err instanceof OperationUnavailableError) return err.message;
   if (err instanceof AuthRequiredError) {
     return (
       "The session was interrupted before this could be attempted; sign in again " +
@@ -67,91 +51,12 @@ function notAttemptedAuthReason(err: AuthRequiredError | NotRegisteredError): st
   );
 }
 
-function defaultSleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function chunk<T>(items: readonly T[], size: number): T[][] {
   const chunks: T[][] = [];
   for (let i = 0; i < items.length; i += size) {
     chunks.push(items.slice(i, i + size));
   }
   return chunks;
-}
-
-interface RateWindowEntry {
-  at: number;
-  units: number;
-}
-
-/**
- * One rolling-window write-quota tracker per store root, kept alive for the lifetime of this
- * process (module-level state, not per-call) -- reviewer's finding: a bucket created fresh inside
- * every `favoriteSessions` call let two back-to-back calls against the *same* store root (the MCP
- * server's long-lived process is exactly this shape) each spend the full thirty-unit budget
- * immediately, doubling the real quota. Keyed by store root, not global, so an unrelated store
- * (a different test, or a second local user profile) never shares -- or is blocked by -- a
- * window it has nothing to do with.
- *
- * This is in-process only: two separate `reinvent-scout` processes writing against the same store
- * root at once are not coordinated here at all -- there is no cross-process lock or shared file.
- * That case relies entirely on the API's own 429 handling (the client's built-in retry-with-backoff,
- * and this module's own stop-after-exhaustion behavior below) as the actual backstop.
- */
-const rateWindowsByStoreRoot = new Map<string, RateWindowEntry[]>();
-
-function getRateWindow(storeRoot: string): RateWindowEntry[] {
-  let entries = rateWindowsByStoreRoot.get(storeRoot);
-  if (entries === undefined) {
-    entries = [];
-    rateWindowsByStoreRoot.set(storeRoot, entries);
-  }
-  return entries;
-}
-
-/**
- * Spends `cost` session-units from `entries`' rolling 60-second window, sleeping first when
- * sending it now would put more than thirty units' worth of requests in the trailing 60 seconds.
- * A sliding window of individual `(timestamp, units)` entries, not a continuously-refilling token
- * bucket -- reviewer's finding: a bucket that refills continuously as real time passes can let
- * more than the nominal cap out within a rolling window depending on exactly when each request
- * lands relative to the last refill (measured over real stdio: 40 units within the first 20
- * seconds against a nominal 30/minute quota). A sliding window log can't drift that way by
- * construction -- nothing already spent is ever double-counted, and nothing is ever counted as
- * "spent" outside the trailing window it was actually spent in. When the window is full, this
- * waits for exactly as many of its *oldest* entries to age fully out as it takes for `cost` to
- * fit (not a fractional wait computed from a refill rate) -- so, for example, an already-full
- * window doesn't admit ten more units until a full sixty seconds after the oldest ten were spent,
- * not twenty seconds later the way a continuously-refilling bucket would allow. This is computed
- * directly from the entries already on hand -- how many of the oldest must expire, and when the
- * last of those does -- rather than sleeping and re-checking in a loop, so `acquire` calls `sleep`
- * at most once no matter how many entries must expire to make room.
- */
-async function acquire(
-  entries: RateWindowEntry[],
-  cost: number,
-  now: () => number,
-  sleep: (ms: number) => Promise<void>,
-): Promise<void> {
-  const t = now();
-  while (entries.length > 0 && t - entries[0]!.at >= PACE_WINDOW_MS) {
-    entries.shift();
-  }
-
-  let used = entries.reduce((sum, entry) => sum + entry.units, 0);
-  if (used + cost > SESSION_UNITS_PER_MINUTE) {
-    let dropCount = 0;
-    while (used + cost > SESSION_UNITS_PER_MINUTE && dropCount < entries.length) {
-      used -= entries[dropCount]!.units;
-      dropCount++;
-    }
-    const lastToExpire = entries[dropCount - 1]!;
-    const waitMs = Math.max(0, lastToExpire.at + PACE_WINDOW_MS - t);
-    await sleep(waitMs);
-    entries.splice(0, dropCount);
-  }
-
-  entries.push({ at: now(), units: cost });
 }
 
 export interface ResolvedConflict {
@@ -186,6 +91,8 @@ function describeError(err: unknown): string {
 }
 
 export interface FavoriteSessionsResult {
+  /** Ambiguous requests: observed state does not prove this call caused a write. */
+  uncertain?: string[];
   /** Ids the API reported as newly favorited. */
   successful: string[];
   /** Ids the API reported as already favorited -- a non-failure, kept separate from `failed`
@@ -220,7 +127,7 @@ export interface FavoriteSessionsResult {
    * class of bug the original read-back fix (see `verificationError`) closed, just one step
    * earlier. When nothing was written yet, this function still throws instead (see below), since
    * there's nothing real to report. */
-  aborted?: { reason: "authRequired" | "notRegistered"; message: string };
+  aborted?: { reason: "authRequired" | "notRegistered" | "operationUnavailable"; message: string };
 }
 
 export interface FavoriteSessionsDeps extends CatalogStoreDeps {
@@ -300,12 +207,10 @@ export async function favoriteSessions(
   deps: FavoriteSessionsDeps,
 ): Promise<FavoriteSessionsResult> {
   const eventId = deps.eventId ?? DEFAULT_EVENT_ID;
-  const now = deps.now ?? Date.now;
-  const sleep = deps.sleep ?? defaultSleep;
   const index = readIndex({ storeRoot: deps.storeRoot });
 
-  const rateWindow = getRateWindow(deps.storeRoot);
 
+  const uncertain: string[] = [];
   const successful: string[] = [];
   const alreadyFavorited: string[] = [];
   const failed: FavoriteFailure[] = [];
@@ -317,7 +222,7 @@ export async function favoriteSessions(
    * `successful`/`alreadyFavorited`) has genuinely written nothing, so an auth failure right after
    * it still has nothing real to report and should throw, the same as failing on the very first
    * chunk. */
-  const hasWrittenAnything = (): boolean => successful.length > 0 || alreadyFavorited.length > 0;
+  const hasWrittenAnything = (): boolean => successful.length > 0 || alreadyFavorited.length > 0 || uncertain.length > 0;
 
   /** reviewer2's finding on the first version of this fix: rethrowing unconditionally on any
    * chunk's `AuthRequiredError`/`NotRegisteredError` discarded whatever had already been written
@@ -326,18 +231,19 @@ export async function favoriteSessions(
    * already closed one step later. Lead's decision: throw only when nothing has been written yet;
    * otherwise return everything gathered so far, with `aborted` naming why and `verified: null`
    * since the read-back is skipped entirely (it would fail the identical way). */
-  function abortOrThrow(err: AuthRequiredError | NotRegisteredError): FavoriteSessionsResult {
+  function abortOrThrow(err: AuthRequiredError | NotRegisteredError | OperationUnavailableError): FavoriteSessionsResult {
     if (!hasWrittenAnything()) {
       throw err;
     }
     return {
+      ...(uncertain.length ? { uncertain } : {}),
       successful,
       alreadyFavorited,
       failed,
       verified: null,
       mismatch: [],
       aborted: {
-        reason: err instanceof AuthRequiredError ? "authRequired" : "notRegistered",
+        reason: err instanceof AuthRequiredError ? "authRequired" : err instanceof NotRegisteredError ? "notRegistered" : "operationUnavailable",
         message: err.message,
       },
     };
@@ -346,15 +252,21 @@ export async function favoriteSessions(
   const chunks = chunk(sessionIds, MAX_FAVORITES_PER_REQUEST);
   for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
     const idsChunk = chunks[chunkIndex]!;
-    await acquire(rateWindow, idsChunk.length, now, sleep);
+    await acquireWriteQuota("favorite", idsChunk.length, deps);
 
     try {
       const result = await deps.apiClient.associateFavorites(eventId, idsChunk);
-      successful.push(...result.successful);
-      for (const failure of result.failed) {
+      for (const id of idsChunk) {
+        const acknowledged = Array.isArray(result?.successful) ? result.successful.filter(value => value === id).length : 0;
+        const failures = Array.isArray(result?.failed) ? result.failed.filter(value => value?.sessionId === id) : [];
+        if (acknowledged + failures.length !== 1 || (failures[0] && typeof failures[0].code !== "string")) {
+          uncertain.push(id); continue;
+        }
+        if (acknowledged === 1) { successful.push(id); continue; }
+        const failure = failures[0]!;
         if (failure.code === "alreadyFavorited") {
           // Load-bearing for correctness under retry, not just a UX nicety: the API client
-          // retries a chunk's whole request on 429/503 (see api/client.ts), so a request that
+          // retries a chunk's whole request on 429 (see api/client.ts), so a request that
           // actually succeeded server-side on its first attempt can still come back here on a
           // retried attempt -- and the server reports that as `alreadyFavorited`, not a repeat
           // `successful`. Since this is already treated as a non-failure, a retried write
@@ -374,15 +286,18 @@ export async function favoriteSessions(
         });
       }
     } catch (err) {
-      if (err instanceof AuthRequiredError || err instanceof NotRegisteredError) {
+      if (err instanceof AuthRequiredError || err instanceof NotRegisteredError || err instanceof OperationUnavailableError) {
         // This chunk's own ids: a real request really was attempted and really was refused, same
         // as any other requestFailed. Everything strictly after it never got the chance.
         const reason = describeError(err);
+        const notAttemptedReason = notAttemptedAuthReason(err);
         for (const sessionId of idsChunk) {
-          failed.push({ sessionId, code: REQUEST_FAILED_CODE, reason });
+          // A token failure means this chunk's request never left: not attempted, not failed.
+          failed.push(isRequestNotSent(err)
+            ? { sessionId, code: NOT_ATTEMPTED_CODE, reason: notAttemptedReason }
+            : { sessionId, code: REQUEST_FAILED_CODE, reason });
         }
         const notAttempted = chunks.slice(chunkIndex + 1).flat();
-        const notAttemptedReason = notAttemptedAuthReason(err);
         for (const sessionId of notAttempted) {
           failed.push({ sessionId, code: NOT_ATTEMPTED_CODE, reason: notAttemptedReason });
         }
@@ -392,9 +307,15 @@ export async function favoriteSessions(
       // Scoped to this chunk's ids alone -- an independent request failing must not lose every
       // other chunk's result. The underlying error's message rides along as `reason`: a bare
       // "requestFailed" code with nothing else would tell a caller precisely nothing about why.
+      // Each id is listed once: a token failure never sent the request (not attempted), a definite
+      // rejection proves nothing was written (failed), anything else is ambiguous (uncertain).
       const reason = describeError(err);
-      for (const sessionId of idsChunk) {
-        failed.push({ sessionId, code: REQUEST_FAILED_CODE, reason });
+      if (isRequestNotSent(err)) {
+        for (const sessionId of idsChunk) failed.push({ sessionId, code: NOT_ATTEMPTED_CODE, reason });
+      } else if (isDefiniteWriteRejection(err)) {
+        for (const sessionId of idsChunk) failed.push({ sessionId, code: REQUEST_FAILED_CODE, reason });
+      } else {
+        uncertain.push(...idsChunk);
       }
 
       if (err instanceof ThrottledError) {
@@ -436,6 +357,7 @@ export async function favoriteSessions(
     const mismatch = [...claimedFavorited].filter((sessionId) => !verifiedSet.has(sessionId));
 
     return {
+      ...(uncertain.length ? { uncertain } : {}),
       successful,
       alreadyFavorited,
       failed,
@@ -450,10 +372,11 @@ export async function favoriteSessions(
     // are still trustworthy and merely unconfirmed, not that the session itself was interrupted).
     // Every other read-back failure (network trouble, a 5xx) still returns the real write results
     // gathered above instead of losing them.
-    if (err instanceof AuthRequiredError || err instanceof NotRegisteredError) {
+    if (err instanceof AuthRequiredError || err instanceof NotRegisteredError || err instanceof OperationUnavailableError) {
       return abortOrThrow(err);
     }
     return {
+      ...(uncertain.length ? { uncertain } : {}),
       successful,
       alreadyFavorited,
       failed,
@@ -464,7 +387,7 @@ export async function favoriteSessions(
   }
 }
 
-export interface UnfavoriteSessionDeps {
+export interface UnfavoriteSessionDeps extends WriteQuotaDeps {
   apiClient: Pick<ApiClient, "disassociateFavorite">;
   /** Defaults to `DEFAULT_EVENT_ID`. */
   eventId?: string;
@@ -480,7 +403,7 @@ export type UnfavoriteOutcome = "removed" | "notFavorited";
  * propagates unchanged.
  *
  * This is also what makes a retried `DisassociateFavorite` degrade correctly, not just a bare
- * 404: the API client retries the whole request on 429/503 (see `api/client.ts`), so a DELETE
+ * 404: the API client retries this endpoint on 429/503 (see `api/client.ts`), so a DELETE
  * that actually removed the favorite on its first attempt can still come back here as a 404 on
  * the retried attempt -- indistinguishable from "was never favorited" at this layer. Both mean
  * the same thing to the caller (the session is not favorited now, which is what was asked for),
@@ -492,6 +415,7 @@ export async function unfavoriteSession(
   deps: UnfavoriteSessionDeps,
 ): Promise<UnfavoriteOutcome> {
   const eventId = deps.eventId ?? DEFAULT_EVENT_ID;
+  await acquireWriteQuota("unfavorite", 1, deps);
   try {
     await deps.apiClient.disassociateFavorite(eventId, sessionId);
     return "removed";

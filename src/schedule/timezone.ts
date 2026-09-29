@@ -100,3 +100,17 @@ export function utcIsoToZonedWallClock(iso: string, timeZone: string): { date: s
 
   return { date: `${value.year}-${value.month}-${value.day}`, time: `${value.hour}:${value.minute}` };
 }
+
+/** A UTC instant as event-local wall-clock time with its zone abbreviation, e.g.
+ * "2026-12-02 10:30 PST". With no known timezone it is shown in UTC and labeled "UTC" rather than
+ * guessing or using the host's zone. */
+export function formatEventLocalTime(iso: string, timeZone: string | null): string {
+  if (timeZone === null) {
+    const { date, time } = utcIsoToZonedWallClock(iso, "UTC");
+    return `${date} ${time} UTC`;
+  }
+  const { date, time } = utcIsoToZonedWallClock(iso, timeZone);
+  const label = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "short" })
+    .formatToParts(new Date(iso)).find(part => part.type === "timeZoneName")?.value ?? timeZone;
+  return `${date} ${time} ${label}`;
+}

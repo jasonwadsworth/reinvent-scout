@@ -9,7 +9,7 @@ import type { BulkResult, PersonalTime, Schedule, Session } from "../../src/api/
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { CURRENT_SCHEMA_VERSION, writeCatalog, type CatalogMeta } from "../../src/catalog/store.js";
 import { DEFAULT_EVENT_ID } from "../../src/catalog/sync.js";
-import { AuthRequiredError, NotFoundError, NotRegisteredError } from "../../src/core/errors.js";
+import { AuthRequiredError, NotFoundError, NotRegisteredError, OperationUnavailableError } from "../../src/core/errors.js";
 import { createMcpServer } from "../../src/mcp/server.js";
 import type { McpToolDeps } from "../../src/mcp/tools.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
@@ -52,6 +52,8 @@ function seedCatalog(storeRoot: string, sessions: Session[], metaOverrides: Part
 }
 
 interface ApiClientOverrides {
+  reserveSessions?: ApiClient["reserveSessions"];
+  cancelReservation?: ApiClient["cancelReservation"];
   getSchedule?: ApiClient["getSchedule"];
   associateFavorites?: ApiClient["associateFavorites"];
   disassociateFavorite?: ApiClient["disassociateFavorite"];
@@ -64,6 +66,7 @@ function fakeApiClient(overrides: ApiClientOverrides = {}): ApiClient {
       (async (): Promise<Schedule> => ({ reserved: [], favorites: [], personalTime: [] })),
     // get_schedule reads the event timezone from catalog meta.json (seeded per test via
     // seedFixtureCatalog), never by calling the API directly -- so this is never reached.
+    getSession: async () => { throw new Error("unused getSession"); },
     getEvent: async () => {
       throw new Error("not implemented in this fake");
     },
@@ -73,6 +76,8 @@ function fakeApiClient(overrides: ApiClientOverrides = {}): ApiClient {
     listAllSessions: async () => {
       throw new Error("not implemented in this fake");
     },
+    reserveSessions: overrides.reserveSessions ?? (async () => { throw new Error("unused reserveSessions"); }),
+    cancelReservation: overrides.cancelReservation ?? (async () => { throw new Error("unused cancelReservation"); }),
     associateFavorites:
       overrides.associateFavorites ??
       (async (): Promise<BulkResult> => {
@@ -105,7 +110,7 @@ function textOf(result: Awaited<ReturnType<Client["callTool"]>>): string {
   return (result.content as Array<{ type: string; text: string }>)[0]!.text;
 }
 
-describe("the seven registered tools", () => {
+describe("the thirteen registered tools", () => {
   let home: TempHome;
 
   beforeEach(() => {
@@ -116,7 +121,7 @@ describe("the seven registered tools", () => {
     home.cleanup();
   });
 
-  it("lists exactly the seven expected tools, by name", async () => {
+  it("lists exactly the thirteen expected tools, by name", async () => {
     // Asserted as a set, not a count: the plan's own task 5 text still names `profile_repo`,
     // superseded by `validate_profile` in the rescope -- swapping one tool for another leaves the
     // count at seven, so a length-only assertion would pass with the wrong membership.
@@ -133,6 +138,12 @@ describe("the seven registered tools", () => {
         "get_schedule",
         "favorite_sessions",
         "unfavorite_session",
+        "plan_schedule",
+        "reserve_sessions",
+        "cancel_reservation",
+        "nearby_sessions",
+        "get_onsite_preferences",
+        "set_onsite_preferences",
       ].sort(),
     );
   });
@@ -1033,5 +1044,115 @@ describe("unfavorite_session tool", () => {
 
     expect(result.isError).toBe(true);
     expect(textOf(result)).toMatch(/will not help/i);
+  });
+});
+
+describe("reservation MCP tools", () => {
+  let home: TempHome;
+  beforeEach(() => { home = createTempHome(); }); afterEach(() => home.cleanup());
+  it("plans from the full schedule, then reserves returned IDs with intact ledger", async () => {
+    seedCatalog(home.path, [{ sessionId: "future", title: "Future", sessionTime: { date: "2099-12-02", time: "10:00", length: "60" } }], { timezone: "America/Los_Angeles" });
+    let calls = 0; let reserved: string[] = [];
+    const client = await connectedClient(home.path, { reserveSessions: async (_event, ids) => { calls++; reserved = ids; return { successful: ids, failed: [] }; }, cancelReservation: async () => { reserved = []; }, getSchedule: async () => ({ reserved, favorites: [], personalTime: [] }) });
+    const plan = await client.callTool({ name: "plan_schedule", arguments: { sessionIds: ["future"] } });
+    expect(plan.isError).not.toBe(true); expect(calls).toBe(0);
+    const ids = JSON.parse(textOf(plan)).selected.map((value: { sessionId: string }) => value.sessionId);
+    const result = await client.callTool({ name: "reserve_sessions", arguments: { sessionIds: ids } });
+    expect(JSON.parse(textOf(result))).toMatchObject({ successful: ids, verified: { reserved: ids } });
+    expect(result.isError).not.toBe(true);
+    const cancelled = await client.callTool({ name: "cancel_reservation", arguments: { sessionId: ids[0] } });
+    expect(JSON.parse(textOf(cancelled))).toMatchObject({ outcome: "cancelled", verifiedAbsent: true });
+  });
+  it("rejects Unicode mandatory ledgers before write and reports uncertainty as error with intact JSON", async () => {
+    let calls = 0;
+    const client = await connectedClient(home.path, { reserveSessions: async () => { calls++; throw new Error("lost response"); } });
+    const large = await client.callTool({ name: "reserve_sessions", arguments: { sessionIds: Array.from({ length: 50 }, (_, i) => `${i}${"界".repeat(126)}`) } });
+    expect(large.isError).toBe(true); expect(calls).toBe(0);
+    const result = await client.callTool({ name: "reserve_sessions", arguments: { sessionIds: ["constructor"] } });
+    expect(result.isError).toBe(true); expect(JSON.parse(textOf(result)).uncertain).toEqual(["constructor"]);
+    expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(30 * 1024);
+  });
+});
+
+it("bounds a first409 tool error without replaying the operation", async () => {
+  const home = createTempHome(); let calls = 0;
+  try {
+    const client = await connectedClient(home.path, { reserveSessions: async () => { calls++; throw new OperationUnavailableError("closed " + "界".repeat(50000)); } });
+    const result = await client.callTool({ name: "reserve_sessions", arguments: { sessionIds: ["a"] } });
+    expect(result.isError).toBe(true); expect(calls).toBe(1);
+    expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(30 * 1024);
+    expect(textOf(result)).toContain("shortened");
+  } finally { home.cleanup(); }
+});
+
+it("planning does not hide a hard commitment beyond display-page limits", async () => {
+  const home = createTempHome();
+  try {
+    seedCatalog(home.path, [{ sessionId: "future", title: "Future", sessionTime: { date: "2099-12-02", time: "10:00", length: "60" } }], { timezone: "America/Los_Angeles" });
+    const personalTime = Array.from({ length: 101 }, (_, i) => ({ personalTimeId: String(i), title: "Block", description: "", startDateTime: "2099-12-02T15:00:00", endDateTime: "2099-12-02T16:00:00" }));
+    personalTime.push({ personalTimeId: "last", title: "Last block", description: "", startDateTime: "2099-12-02T18:00:00", endDateTime: "2099-12-02T19:00:00" });
+    const client = await connectedClient(home.path, { getSchedule: async () => ({ reserved: [], favorites: [], personalTime }) });
+    const result = await client.callTool({ name: "plan_schedule", arguments: { sessionIds: ["future"] } });
+    expect(JSON.parse(textOf(result)).selected).toEqual([]);
+    expect(JSON.parse(textOf(result)).rejected[0].conflictsWith).toEqual(["last"]);
+  } finally { home.cleanup(); }
+});
+
+
+it("reads and updates event walk-up preferences through MCP without account reads", async () => {
+  const home = createTempHome();
+  try {
+    const client = await connectedClient(home.path);
+    const initial = await client.callTool({ name: "get_onsite_preferences", arguments: { eventId: "constructor" } });
+    expect(JSON.parse(textOf(initial)).allowWalkUp).toBe(false);
+    const updated = await client.callTool({ name: "set_onsite_preferences", arguments: { eventId: "constructor", patch: { allowWalkUp: true, sessionWalkUp: [{ sessionId: "constructor", allowWalkUp: false }] } } });
+    expect(JSON.parse(textOf(updated)).sessionWalkUp).toEqual([{ sessionId: "constructor", allowWalkUp: false }]);
+    const invalid = await client.callTool({ name: "nearby_sessions", arguments: { location: { venue: "alien", source: "user", confirmed: true } } });
+    expect(invalid.isError).toBe(true);
+  } finally { home.cleanup(); }
+});
+
+describe("per-call write cap", () => {
+  let home: TempHome;
+  beforeEach(() => { home = createTempHome(); });
+  afterEach(() => home.cleanup());
+  const ids = (n: number) => Array.from({ length: n }, (_, i) => `s${i}`);
+
+  it.each(["reserve_sessions", "favorite_sessions"])("%s refuses more than thirty ids before any request, so a call never outlasts the MCP timeout", async name => {
+    let calls = 0;
+    const client = await connectedClient(home.path, {
+      reserveSessions: async () => { calls++; return { successful: [], failed: [] }; },
+      associateFavorites: async () => { calls++; return { successful: [], failed: [] }; },
+    });
+    const result = await client.callTool({ name, arguments: { sessionIds: ids(31) } });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toMatch(/30/);
+    expect(calls).toBe(0);
+  });
+  it.each(["reserve_sessions", "favorite_sessions"])("%s accepts exactly thirty ids in one call", async name => {
+    const all = ids(30);
+    const client = await connectedClient(home.path, {
+      reserveSessions: async (_e, list) => ({ successful: list, failed: [] }),
+      associateFavorites: async (_e, list) => ({ successful: list, failed: [] }),
+      getSchedule: async () => ({ reserved: all, favorites: all, personalTime: [] }),
+    });
+    const result = await client.callTool({ name, arguments: { sessionIds: all } });
+    expect(result.isError).not.toBe(true);
+    expect(JSON.parse(textOf(result)).successful).toEqual(all);
+  });
+  it("still lets plan_schedule take fifty, since it never writes", async () => {
+    const client = await connectedClient(home.path, {});
+    const result = await client.callTool({ name: "plan_schedule", arguments: { sessionIds: ids(50) } });
+    expect(textOf(result)).not.toMatch(/Expected 0–50|too_big|at most 30/i);
+  });
+  it.each(["reserve_sessions", "favorite_sessions"])("%s trims padded ids before sending them", async name => {
+    const sent: string[][] = [];
+    const client = await connectedClient(home.path, {
+      reserveSessions: async (_e, list) => { sent.push(list); return { successful: list, failed: [] }; },
+      associateFavorites: async (_e, list) => { sent.push(list); return { successful: list, failed: [] }; },
+      getSchedule: async () => ({ reserved: ["a"], favorites: ["a"], personalTime: [] }),
+    });
+    await client.callTool({ name, arguments: { sessionIds: [" a "] } });
+    expect(sent).toEqual([["a"]]);
   });
 });

@@ -178,7 +178,10 @@ confirmation before favoriting anything.
 
 ## 7. `favorite_sessions`
 
-Arguments: `{ "sessionIds": string[] (1 to 50), "event"?: string }`.
+Arguments: `{ "sessionIds": string[] (1 to 30), "event"?: string }`. The MCP tool takes at most 30 IDs
+per call: writes are paced at 30 per minute, so a larger call would sleep past the MCP client's
+default 60-second timeout and lose its result. Send several calls instead. The CLI has no such
+timeout and keeps its own, larger limit.
 
 ```json
 {
@@ -305,6 +308,9 @@ human running these directly gets human-formatted terminal output, not JSON):
 - `reinvent-scout schedule show`
 - `reinvent-scout schedule favorite`
 - `reinvent-scout schedule unfavorite`
+- `reinvent-scout schedule plan`
+- `reinvent-scout schedule reserve`
+- `reinvent-scout schedule cancel`
 - `reinvent-scout mcp`
 - `reinvent-scout skill install`
 - `reinvent-scout skill update`
@@ -483,3 +489,124 @@ operational ownership; for ECS → EKS discuss portability/ecosystem versus plat
 These are options, not prescriptions. Open issues are intent to connect to evidence, not proof of
 a gap or permission to migrate. Large cited reasons retain the same whole-candidate MCP budget:
 read `truncated` and `omitted`; citations are not silently clipped to make a candidate fit.
+
+## Reservation workflow
+
+Use actual offering IDs from `match_sessions` or a catalog lookup. These synthetic requests show
+argument shapes; replace `example-offering` with the attendee's shortlist and replace
+`<selected-session-id>` with a `selected[].sessionId` returned by the plan. Optional `event`
+selects an event; the default is `reinvent2026`.
+
+```json
+{"tool":"plan_schedule","arguments":{"sessionIds":["example-offering"]}}
+```
+
+`plan_schedule` is read-only and accepts an ordered list of 0–50 IDs. A requested sitting whose talk is
+already reserved as a different sitting is reported in `alreadyReservedAlternative`
+(`{ requested, reservedSessionId }`), never dropped. It checks the full reserved
+and personal schedule, expands repeat alternatives, and chooses the earliest feasible offering
+for each talk in input priority. Favorites do not block. A missing/invalid hard commitment time
+prevents a `conflictFree` claim. It requires a current catalog for the same event and a recognized
+IANA event timezone. Results contain `selected`, `alreadyReserved`, `rejected`, `alternatives`,
+`blockedBy`, `conflictFree`, and `limitations`. MCP adds `omitted` counts if whole presentation
+entries must be removed to fit 30 KiB; the domain still checked every hard commitment. This is a
+greedy time-only plan, not a global optimum, seat promise, or travel-feasibility check.
+
+Present that plan and obtain the attendee's confirmation before writing these exact IDs:
+
+```json
+{"tool":"reserve_sessions","arguments":{"sessionIds":["<selected-session-id>"]}}
+```
+
+`reserve_sessions` accepts 1–30 IDs per MCP call (the CLI accepts up to 50) of 1–128 characters, trims and deduplicates them, and sends chunks of at most 10.
+It returns `successful` (newly acknowledged), `alreadyScheduled` (already reserved), `failed`
+(per-ID code/reason and optional resolved `conflictsWith`), `uncertain`, `notAttempted`,
+`verified: {reserved: [...]}` or null, and `mismatch`. Optional `aborted`/`verificationError`
+explain early termination/read-back failure; a chunk whose sign-in token could not be obtained is
+listed under `notAttempted`, not `failed`, because no request was sent. Unresolved conflicts retain IDs with null titles.
+A partial or uncertain result is marked `isError` but still contains the complete JSON ledger;
+never discard it or blindly rerun the whole request. The CLI similarly returns a failure exit
+status while printing the outcomes. `verified` describes current state, not which request caused
+it. Unknown failure codes remain refusals. Missing/contradictory acknowledgement entries remain
+uncertain. Favorites likewise add `uncertain` IDs to existing failed-request reporting.
+
+Reservations are scheduled to open October 8, 2026; server 409 is authoritative, with no local date
+gate. Stop on 409. Auth, registration, exhausted429, and OAuth failures also stop further chunks.
+POST 500/503, network/timeout failures, and lost acknowledgements are not automatically replayed;
+one 401 refresh and bounded 429 retry remain safe. A later retry requires an explicit new request,
+fresh eligibility checks, and only the still-missing IDs. No command replaces or cancels conflicts.
+
+For an explicitly requested cancellation, use one reserved offering ID:
+
+```json
+{"tool":"cancel_reservation","arguments":{"sessionId":"<selected-session-id>"}}
+```
+
+The result is `{sessionId, outcome, verifiedAbsent}` with optional `error`/`verificationError`.
+Outcome is `cancelled` for 204, `alreadyAbsent` for 404, or `uncertain` after an ambiguous failure.
+A failed read-back does not erase an acknowledged cancellation. Follow with `get_schedule` when
+needed to show current state. Cancel is not silently repeated after 503.
+
+These write operations each have their own 30-unit rolling-minute window plus a 1-second margin:
+reserve/favorite spend one unit per session; cancel/unfavorite one per request. Windows are
+serialized within a process and separated by store root and operation. Separate processes rely
+on API 429 as their backstop. MCP retains every requested ID/state under 30 KiB, marks shortened
+optional descriptions, caps conflict lists with `omittedConflicts`, and says to read the full
+schedule for omitted conflicts. If even the mandatory ledger cannot fit (for example many large
+Unicode IDs), the request is rejected before any write; use a smaller batch.
+
+CLI equivalents accept `--event` and `--json`; plan/reserve also accept a single `-` for stdin IDs:
+
+```sh
+reinvent-scout schedule plan <offering-id> --json
+reinvent-scout schedule reserve <selected-session-id> --json
+reinvent-scout schedule cancel <reserved-session-id> --json
+```
+
+
+## On-site: confirm venue, inspect travel, then choose
+
+Ask the attendee to confirm their current venue for this call. Location context and recent
+reserved-session venues are suggestions, not confirmation. With no confirmed venue the tool
+returns `needsVenueConfirmation` and no candidates. For example, after they confirm MGM Grand:
+
+```json
+{"tool":"get_onsite_preferences","arguments":{}}
+```
+
+Walk-up defaults false. The following local settings update enables it globally while explicitly
+excluding one offering in this event. Replace the example ID with a catalog-returned offering ID;
+use null instead of false to reset that override to the global default. Config reads create no
+files. Settings use atomic local writes and an exclusive lock, with no attendee-account mutation.
+
+```json
+{"tool":"set_onsite_preferences","arguments":{"patch":{"allowWalkUp":true,"sessionWalkUp":[{"sessionId":"example-offering","allowWalkUp":false}]}}}
+```
+
+```json
+{"tool":"nearby_sessions","arguments":{"location":{"venue":"MGM Grand","source":"user","confirmed":true},"withinMinutes":60,"limit":10}}
+```
+
+Read `candidates` IDs, starts/ends, minutes-to-start, outbound/check-in and onward travel,
+`admission`, `availabilitySource`, observation age, and `coverage`. Estimates are conservative
+hand-maintained assumptions, not AWS schedules or live routes; seat bands never promise admission.
+Fresh reads replace cached time/venue/bands. Failed or stale reads are unknown, even if the old
+catalog band looked promising. At most20 locally eligible offerings are refreshed serially; a
+locally excluded offering is not refreshed, so this is not an exhaustive live search. Full reserved
+and personal commitments constrain feasibility before any output budget. Favorites do not block.
+`skipSessionIds` requires an explicit attendee choice and does not cancel reservations.
+
+For a shuttle override, include `shuttleEnabled:true`, `shuttleWindows:[{start:"08:00",end:"18:00"}]`
+and a directed route such as `{from:"MGM Grand",to:"Venetian",mode:"shuttle",minutes:20,waitMinutes:10}`
+in the patch. Windows and peak buffers use the event timezone. Route `windows` and
+`peakBufferMinutes` override global values; no configured window means no shuttle. Walking
+remains the conservative fallback. Per-event `checkInMinutes` defaults10, `freshnessMinutes`5,
+and `peakBufferMinutes`5 during08:00–10:00/16:00–18:00. Routes and window arrays replace prior lists.
+
+Present the actual returned offering ID and obtain confirmation, then pass that ID to
+`reserve_sessions` using the reservation flow above. A nearby suggestion itself never writes.
+CLI equivalents are `reinvent-scout schedule onsite-config --file onsite-patch.json --json` and
+`reinvent-scout schedule nearby --venue "MGM Grand" --confirm-venue --json`; add
+`--skip-session <id>` only after explicit instruction. MCP budgets drop whole candidates or
+preference entries with omission counts. Inspect full settings using
+`reinvent-scout schedule onsite-config --json`; do not change settings just to inspect omissions.
