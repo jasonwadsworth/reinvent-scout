@@ -61,6 +61,30 @@ describe("nearby recommendations", () => {
     updateOnsiteConfig("event", { sessionWalkUp: [{ sessionId: "a", allowWalkUp: false }] }, { storeRoot: home.path });
     expect((await recommendNearbySessions({ eventId: "event", location }, d)).candidates).toEqual([]);
   });
+  describe("freshness after slow reads", () => {
+    // Each read takes 7 minutes; the freshness window is 5. The first session's band is fresh when
+    // it is observed but stale by the time the whole run completes.
+    const slowReads = () => {
+      raw = [session("a", "11:00"), session("b", "11:00")];
+      let clock = now;
+      const d = deps();
+      return { ...d, now: () => clock, apiClient: { getSchedule: async () => schedule, getSession: async (_event: string, id: string) => { clock += 7 * 60_000; reads.push(id); return raw.find(s => s.sessionId === id)!; } } };
+    };
+    it("downgrades a band that went stale during the run and never shows it as available", async () => {
+      const result = await recommendNearbySessions({ eventId: "event", location, withinMinutes: 90 }, slowReads());
+      expect(reads).toEqual(["a", "b"]);
+      expect(result.candidates.map(c => [c.sessionId, c.availability])).toEqual([["b", "available"]]);
+      expect(result.rejected).toContainEqual({ reason: "admissionNotAllowed", count: 1 });
+    });
+    it("keeps the stale candidate as unknown when walk-up is allowed", async () => {
+      updateOnsiteConfig("event", { allowWalkUp: true }, { storeRoot: home.path });
+      const result = await recommendNearbySessions({ eventId: "event", location, withinMinutes: 90 }, slowReads());
+      const a = result.candidates.find(c => c.sessionId === "a")!;
+      expect(a).toMatchObject({ availability: "unknown", admission: "Admission unknown; confirm on site." });
+      expect(a.ageMinutes).toBeGreaterThan(5);
+      expect(result.candidates.find(c => c.sessionId === "b")!.availability).toBe("available");
+    });
+  });
   it("failed recent refresh remains unknown and personal IDs cannot hide a conflict", async () => {
     const d = deps(async () => { throw new Error("offline"); });
     expect((await recommendNearbySessions({ eventId: "event", location }, d)).candidates).toEqual([]);

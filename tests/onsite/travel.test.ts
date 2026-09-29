@@ -19,6 +19,14 @@ describe("conservative travel estimates", () => {
     expect(estimateTravel("MGM Grand", "MGM Grand", Date.parse("2026-12-02T17:00Z"), "America/Los_Angeles", p).totalMinutes).toBe(15);
     expect(estimateTravel("MGM Grand", "MGM Grand", Date.parse("2026-12-02T18:00Z"), "America/Los_Angeles", p).totalMinutes).toBe(10);
   });
+  it("keeps the shuttle off by default even with a route and an open window", () => {
+    const p = prefs(); p.routes = [{ from: "MGM Grand", to: "Venetian", mode: "shuttle", minutes: 12, waitMinutes: 8 }];
+    p.shuttleWindows = [{ start: "11:00", end: "13:00" }];
+    expect(p.shuttleEnabled).toBe(false);
+    expect(estimateTravel("MGM Grand", "Venetian", departure, "America/Los_Angeles", p)).toMatchObject({ mode: "walk", totalMinutes: 55 });
+    p.shuttleEnabled = true;
+    expect(estimateTravel("MGM Grand", "Venetian", departure, "America/Los_Angeles", p)).toMatchObject({ mode: "shuttle", totalMinutes: 20 });
+  });
   it("requires enabled shuttle and configured operating window, includes wait", () => {
     const p = prefs(); p.routes = [{ from: "MGM Grand", to: "Venetian", mode: "shuttle", minutes: 12, waitMinutes: 8 }];
     expect(estimateTravel("MGM Grand", "Venetian", departure, "America/Los_Angeles", p).mode).toBe("walk");
