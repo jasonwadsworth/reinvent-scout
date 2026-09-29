@@ -608,3 +608,26 @@ describe("documented evidence lenses", () => {
     }
   });
 });
+describe("lens-quality documentation", () => {
+  it("lists all eight reason kinds, the lens fields, and that the CLI prints the MCP objects", () => {
+    for (const kind of ["service", "topic", "areaOfInterest", "text", "level", "format", "pillarGap", "migrationPath"]) {
+      expect(workflowMd).toContain(`\`${kind}\``);
+    }
+    for (const field of ["lensRules", "skippedRules", "startDate: null", "profile already has agentic"]) expect(workflowMd).toContain(field);
+    expect(workflowMd).toContain("`reinvent-scout match --json` returns exactly what `match_sessions`");
+    expect(workflowMd).toContain("exactly the `validate_profile`");
+  });
+  it("documents role, the explain lens, partial gaps, and tool-free utility calls in profiling.md", () => {
+    for (const text of ['"role": "supporting"', "The explain lens", "which components lack it", "tag both `agentic` and `genai-single-call`", "fewer than 3% of catalog sessions"]) {
+      expect(profilingMd).toContain(text);
+    }
+  });
+  it("tells the agent Fix picks still need the abstract check", () => {
+    expect(skillMd).toContain("leads, not verdicts");
+    expect(profilingMd).toContain("leads, not verdicts");
+  });
+  it("does not cite repository test fixtures from the skill's own reference", () => {
+    expect(taxonomyMd).not.toContain("tests/fixtures");
+    expect(allSkillText).not.toContain("tests/fixtures");
+  });
+});

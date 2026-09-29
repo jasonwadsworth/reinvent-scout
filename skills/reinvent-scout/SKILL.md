@@ -77,7 +77,10 @@ Catalog signals establish subject coverage, not migration direction. Before pres
 option, inspect its abstract with `reinvent-scout catalog show` and explain whether the session
 explores that direction, the reverse direction, or a comparison.
 Open issues are intent: connect a relevant issue to an already cited gap/path in your presentation; issue
-prose does not establish a gap or authorize a migration. Unsupported patterns produce no
+prose does not establish a gap or authorize a migration. Fix picks are leads, not verdicts: a session can pass the stack and phrase gates while
+mentioning a gap or your services only in passing, so read each pick's abstract (`catalog show`)
+before presenting it and drop the ones that do not really address the gap. When `skippedRules` is
+non-empty, say why that path produced nothing. Unsupported patterns produce no
 candidates under these lenses. Source-service overlap ranks eligible sessions but cannot admit
 one without the actual remediation or destination signal.
 

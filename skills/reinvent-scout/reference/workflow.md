@@ -91,9 +91,13 @@ offending entry -- fix the *profile object* and call `validate_profile` again wi
 Arguments: `{ "profile": <profile object>, "lens"?: "all" | "explain" | "fix" | "next-level", "limit"?: number }`.
 `lens` defaults to `"all"` (no restriction). `limit` defaults to 25 and is silently capped at 50 --
 asking for more never errors, it just gets the largest sensible set. Fix requires an exact supported
-cited gap and a remediation signal; Next-level requires a cited source pattern and destination
-signal. Both have neutral level/format preferences. Unknown patterns or an alien catalog return
-no candidates. Ordinary profile matches rank already eligible sessions only.
+cited gap and a remediation signal; Next-level requires a cited source pattern, a destination
+signal, and a mention of the source side. Both need the session to fit the profile's stack (see
+`reference/profiling.md`) and have neutral level/format preferences. Unknown patterns or an alien
+catalog return no candidates. Ordinary profile matches rank already eligible sessions only. Under
+Fix and Next-level, each activated rule gets its own ranked list and the lists are interleaved, so
+every cited rule with an admitted session appears near the top rather than being buried by general
+relevance.
 
 ```json
 {
@@ -116,7 +120,8 @@ no candidates. Ordinary profile matches rank already eligible sessions only.
   "truncated": false,
   "returned": 1,
   "requested": 25,
-  "omitted": 0
+  "omitted": 0,
+  "skippedRules": []
 }
 ```
 
@@ -140,12 +145,27 @@ twice has two), each with its own date, time, venue and room; use the `sessionId
 offering you mean when calling `favorite_sessions`, not `code`.
 
 Each `reasons` entry is `{ "kind": ..., "detail": string, "weight": number, "evidence": string }`.
-`kind` is one of `service`, `topic`, `areaOfInterest`, `text`, `level`, or `format`. `weight` is
+`kind` is one of `service`, `topic`, `areaOfInterest`, `text`, `level`, `format`, `pillarGap` or
+`migrationPath` (the last two only under the Fix and Next-level lenses, and they also carry
+`profileEvidence`). `weight` is
 that reason's own contribution to `score` (every reason's `weight` sums to `score` exactly).
 `evidence` is the specific catalog value that matched -- a service name, a topic, or the matched
 query terms -- not a file path; when presenting a service reason to the user, the file citation
 comes from the *profile's own* evidence for that service (see `reference/profiling.md`), not from
 this field.
+
+Under `fix` and `next-level`, each candidate also has `lensRules`: the source pattern names
+(`gap-no-dlq`, `serverless`, ...) of every rule that admitted it. `skippedRules` (always present,
+usually `[]`) lists Next-level paths the profile has already taken, as
+`{ "rule": "genai-single-call", "reason": "profile already has agentic" }`; tell the user why a path
+produced nothing instead of reporting an empty result. An offering with `startDate: null` is
+unscheduled: the talk exists but has no time yet, so it cannot go on a schedule.
+
+The CLI prints the same object: `reinvent-scout match --json` returns exactly what `match_sessions`
+returns (the CLI is not size-budgeted, and `--include-abstracts` adds an `abstract` to each
+candidate), and `reinvent-scout profile validate --json` returns exactly the `validate_profile`
+report. Human output shows each candidate's level and rules, then one `Skipped:` line per skipped
+path.
 
 ## 6. Present candidates
 
