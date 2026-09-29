@@ -352,6 +352,17 @@ this original profile object to `match_sessions`, never that report.
           "line": 11
         }
       ]
+    },
+    {
+      "name": "AWS Lambda",
+      "usage": "The example queue consumer.",
+      "evidence": [
+        {
+          "repo": "example",
+          "file": "infra/queue.ts",
+          "line": 14
+        }
+      ]
     }
   ],
   "patterns": [

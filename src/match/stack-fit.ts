@@ -59,8 +59,34 @@ function profileForms(name: string, catalogName: string | null, catalog: readonl
   return [{ text: whole, caseSensitive: catalogName?.toLowerCase() !== whole.toLowerCase() }];
 }
 
+/**
+ * Platform services: what nearly every AWS workload runs on rather than what the product is built
+ * from. Sharing CloudWatch or S3 with a session says nothing about the stack, so they never count
+ * as core here, whatever role the profile gave them. Catalog display names.
+ */
+export const PLATFORM_SERVICES: readonly string[] = [
+  "Amazon CloudWatch",
+  "Amazon Virtual Private Cloud (Amazon VPC)",
+  "Amazon Simple Storage Service (Amazon S3)",
+  "Amazon Route 53",
+  "AWS Certificate Manager (ACM)",
+  "AWS Cloud Development Kit (AWS CDK)",
+  "AWS CloudFormation",
+  "AWS Identity and Access Management (IAM)",
+  "AWS Security Token Service (AWS STS)",
+  "AWS Key Management Service (AWS KMS)",
+  "AWS Secrets Manager",
+  "AWS Systems Manager",
+  "AWS CloudTrail",
+];
+
+function isCore(service: ResolvedProfile["services"][number]): boolean {
+  return service.role !== "supporting"
+    && (service.catalogName === null || !PLATFORM_SERVICES.includes(service.catalogName));
+}
+
 export function hasCoreService(profile: ResolvedProfile): boolean {
-  return profile.services.some(service => service.role !== "supporting");
+  return profile.services.some(isCore);
 }
 
 export interface StackFitOptions {
@@ -76,7 +102,8 @@ export interface StackFitOptions {
 interface CoreService {
   catalogName: string | null;
   named: (text: string) => boolean;
-  /** Fraction of catalog sessions that list it; 0 when unknown or unlisted. */
+  /** Fraction of catalog sessions that list it; 0 when unlisted, 1 when the profile's name did not
+   * resolve, so an unresolved name is never rare. */
   frequency: number;
 }
 
@@ -84,12 +111,13 @@ interface CoreService {
  * Whether a session is about the profile's stack: it lists or names (by catalog name, short name or
  * the profile's own spelling, in its title or abstract) enough of the profile's core services --
  * `minDistinct` of them, or a single one that is rare in the catalog (see `StackFitOptions`).
- * Supporting services never count, since they are not what the product runs on. A profile with no
+ * Supporting and platform services (`PLATFORM_SERVICES`) never count, since they are not what the
+ * product is built from. An unresolved name counts toward `minDistinct` but is never rare. A profile with no
  * core service has no stack to fit against, so nothing fits (see `hasCoreService`); an open gate
  * would admit every session that mentions a gap phrase, on any stack.
  */
 export function buildStackFit(profile: ResolvedProfile, options: StackFitOptions = {}): StackFit {
-  const core = profile.services.filter(service => service.role !== "supporting");
+  const core = profile.services.filter(isCore);
   if (core.length === 0) return () => false;
   const minDistinct = options.minDistinct ?? 1;
   const listedCount = new Map<string, number>();
@@ -114,7 +142,7 @@ export function buildStackFit(profile: ResolvedProfile, options: StackFitOptions
     services.push({
       catalogName: service.catalogName,
       named: text => patterns.some(pattern => pattern.test(text)),
-      frequency: service.catalogName === null || total === 0 ? 0 : (listedCount.get(service.catalogName) ?? 0) / total,
+      frequency: service.catalogName === null ? 1 : total === 0 ? 0 : (listedCount.get(service.catalogName) ?? 0) / total,
     });
   }
   return (record, abstract) => {
