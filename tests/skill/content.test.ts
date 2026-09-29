@@ -622,6 +622,10 @@ describe("lens-quality documentation", () => {
       expect(profilingMd).toContain(text);
     }
   });
+  it("says a profile with no core service admits nothing, and that lens results are not score-ordered", () => {
+    expect(profilingMd).toContain("profile has no core services to check stack fit");
+    expect(workflowMd).toContain("not by score, so\nscores can appear out of order");
+  });
   it("tells the agent Fix picks still need the abstract check", () => {
     expect(skillMd).toContain("leads, not verdicts");
     expect(profilingMd).toContain("leads, not verdicts");

@@ -370,7 +370,10 @@ format.
 
 Two more gates apply to both lenses. Stack fit: a Fix session must list or name at least two of
 your core services, or one core service that fewer than 3% of catalog sessions list; a Next-level
-session needs one. Supporting services never count. Direction and source: a Next-level session must
+session needs one. Supporting services never count. A profile with no core service (none listed, or
+every one marked supporting) has no stack to fit, so both lenses admit nothing and `skippedRules`
+names each activated rule with "profile has no core services to check stack fit": list the
+product's real services before expecting Fix or Next-level results. Direction and source: a Next-level session must
 mention the source side (Lambda, serverless or functions; ECS; a single model call, prompt or
 Bedrock), and a session about the reverse move (containers to Lambda or MicroVMs, EKS to ECS) is
 excluded. A path whose destination pattern the profile already has (`containers`, `eks`,

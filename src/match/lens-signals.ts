@@ -122,6 +122,13 @@ export function skippedLensRules(profile: ResolvedProfile, lens: SignalLens): Sk
     .map(rule => ({ rule: rule.source, reason: `profile already has ${rule.destination}` }));
 }
 
+/** Rules the profile activates under this lens: source pattern cited, destination not yet reached. */
+export function activeLensRules(profile: ResolvedProfile, lens: SignalLens): string[] {
+  return RULES
+    .filter(rule => rule.lens === lens && activeCitations(rule, profile).length > 0)
+    .map(rule => rule.source);
+}
+
 function boosted(rule: SignalRule, record: IndexRecord): boolean {
   return ([
     [record.services, rule.services], [record.topics, rule.topics], [record.areasOfInterest, rule.areas],

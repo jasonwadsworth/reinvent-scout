@@ -154,6 +154,9 @@ query terms -- not a file path; when presenting a service reason to the user, th
 comes from the *profile's own* evidence for that service (see `reference/profiling.md`), not from
 this field.
 
+Fix and Next-level results are ordered by interleaving the rules' ranked lists, not by score, so
+scores can appear out of order.
+
 Under `fix` and `next-level`, each candidate also has `lensRules`: the source pattern names
 (`gap-no-dlq`, `serverless`, ...) of every rule that admitted it. `skippedRules` (always present,
 usually `[]`) lists Next-level paths the profile has already taken, as
@@ -315,7 +318,8 @@ locally-modified file without `--force`.
 
 ## Evidence lens example
 
-This synthetic teaching profile covers all seven gap rules and three migration paths. Replace
+This synthetic teaching profile covers all seven gap rules and three migration paths, and names
+one core service, because Fix and Next-level admit nothing for a profile without one. Replace
 it with evidence from the repositories you actually inspect; these are not claims about this
 project. Save the original JSON as `lens-profile.json`. Validation returns a report, so pass
 this original profile object to `match_sessions`, never that report.
@@ -331,7 +335,19 @@ this original profile object to `match_sessions`, never that report.
       ]
     }
   ],
-  "services": [],
+  "services": [
+    {
+      "name": "Amazon SQS",
+      "usage": "The example queue.",
+      "evidence": [
+        {
+          "repo": "example",
+          "file": "infra/queue.ts",
+          "line": 11
+        }
+      ]
+    }
+  ],
   "patterns": [
     {
       "name": "gap-no-dlq",

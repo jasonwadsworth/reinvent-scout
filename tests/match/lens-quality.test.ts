@@ -76,7 +76,7 @@ describe("lens quality on real abstracts", () => {
     });
     it("without agentic, admits title-level agentic sessions and not a tag-only build talk", () => {
       seed(lensFixture);
-      const result = run(profile(["genai-single-call"]), "next-level");
+      const result = run(profile(["genai-single-call"], ["Amazon Bedrock"]), "next-level");
       const top = codes(result.candidates);
       expect(top).toContain("SVS324");
       expect(top).not.toContain("IND3320");
@@ -134,9 +134,23 @@ describe("lens quality on real abstracts", () => {
       const p = withServices([lambda, service("eventbridge", "Amazon EventBridge"), service("sqs", sqs.catalogName, "supporting")]);
       expect(codes(run(p, "fix").candidates)).toEqual([]);
     });
-    it("is off for a profile with no core service", () => {
+    it.each([
+      ["no services", []],
+      ["only supporting services", [service("lambda", "AWS Lambda", "supporting")]],
+    ] as const)("admits nothing and reports each activated rule for a profile with %s", (_label, services) => {
       seed(raw);
-      expect(codes(run(profile(["gap-no-dlq"]), "fix").candidates)).toHaveLength(4);
+      const reason = "profile has no core services to check stack fit";
+      const fix = run({ ...withServices([...services]), patterns: [{ name: "gap-no-dlq", evidence }, { name: "gap-no-tests", evidence }, { name: "unknown-pattern", evidence }] }, "fix");
+      expect(fix.candidates).toEqual([]);
+      expect(fix.skippedRules).toEqual([{ rule: "gap-no-dlq", reason }, { rule: "gap-no-tests", reason }]);
+      const next = run({ ...withServices([...services]), patterns: [{ name: "serverless", evidence }, { name: "ecs", evidence }, { name: "containers", evidence }] }, "next-level");
+      expect(next.candidates).toEqual([]);
+      expect(next.skippedRules).toEqual([{ rule: "serverless", reason: "profile already has containers" }, { rule: "ecs", reason }]);
+    });
+    it("reports nothing skipped under lenses that do not use the gate", () => {
+      seed(raw);
+      const result = matchSessionsDetailed(withServices([]), { storeRoot: home.path }, { lens: "all" });
+      expect(result.skippedRules).toEqual([]);
     });
   });
 });

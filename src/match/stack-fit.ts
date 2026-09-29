@@ -59,6 +59,10 @@ function profileForms(name: string, catalogName: string | null, catalog: readonl
   return [{ text: whole, caseSensitive: catalogName?.toLowerCase() !== whole.toLowerCase() }];
 }
 
+export function hasCoreService(profile: ResolvedProfile): boolean {
+  return profile.services.some(service => service.role !== "supporting");
+}
+
 export interface StackFitOptions {
   /** Distinct core services a session must share with the profile. Default 1. */
   minDistinct?: number;
@@ -80,13 +84,13 @@ interface CoreService {
  * Whether a session is about the profile's stack: it lists or names (by catalog name, short name or
  * the profile's own spelling, in its title or abstract) enough of the profile's core services --
  * `minDistinct` of them, or a single one that is rare in the catalog (see `StackFitOptions`).
- * Supporting services never count, since they are not what the product runs on. Returns
- * `undefined` when the profile has no core service, leaving nothing to fit against, so the gate is
- * off rather than rejecting everything.
+ * Supporting services never count, since they are not what the product runs on. A profile with no
+ * core service has no stack to fit against, so nothing fits (see `hasCoreService`); an open gate
+ * would admit every session that mentions a gap phrase, on any stack.
  */
-export function buildStackFit(profile: ResolvedProfile, options: StackFitOptions = {}): StackFit | undefined {
+export function buildStackFit(profile: ResolvedProfile, options: StackFitOptions = {}): StackFit {
   const core = profile.services.filter(service => service.role !== "supporting");
-  if (core.length === 0) return undefined;
+  if (core.length === 0) return () => false;
   const minDistinct = options.minDistinct ?? 1;
   const listedCount = new Map<string, number>();
   for (const record of options.catalog ?? []) {

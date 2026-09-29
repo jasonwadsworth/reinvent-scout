@@ -1,5 +1,5 @@
-import { buildStackFit } from "./stack-fit.js";
-import { scoreLensSignals, skippedLensRules, type LensHit, type SkippedRule } from "./lens-signals.js";
+import { buildStackFit, hasCoreService } from "./stack-fit.js";
+import { activeLensRules, scoreLensSignals, skippedLensRules, type LensHit, type SkippedRule } from "./lens-signals.js";
 import { readRaw, type CatalogStoreDeps } from "../catalog/store.js";
 import { baseSessionCode, requireCurrentIndex } from "../catalog/query.js";
 import type { IndexRecord } from "../catalog/index-record.js";
@@ -368,6 +368,21 @@ export function matchSessions(
   return matchSessionsDetailed(profile, deps, options).candidates;
 }
 
+const NO_CORE_SERVICES_REASON = "profile has no core services to check stack fit";
+
+/** Paths already taken, plus -- when the profile has no core service, so the stack gate admits
+ * nothing -- every other activated rule, so an empty result says why. */
+function lensSkippedRules(profile: ResolvedProfile, lens: "fix" | "next-level"): SkippedRule[] {
+  const taken = skippedLensRules(profile, lens);
+  if (hasCoreService(profile)) {
+    return taken;
+  }
+  return [
+    ...taken,
+    ...activeLensRules(profile, lens).map((rule) => ({ rule, reason: NO_CORE_SERVICES_REASON })),
+  ];
+}
+
 /** `matchSessions` plus what the ranking itself decided to skip -- see `MatchResult`. */
 export function matchSessionsDetailed(
   profile: ResolvedProfile,
@@ -447,6 +462,6 @@ export function matchSessionsDetailed(
   const limited = options.limit === undefined ? ordered : ordered.slice(0, options.limit);
   return {
     candidates: limited.map(roundCandidate),
-    skippedRules: isLens ? skippedLensRules(profile, lens) : [],
+    skippedRules: isLens ? lensSkippedRules(profile, lens) : [],
   };
 }
