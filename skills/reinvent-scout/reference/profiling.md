@@ -81,7 +81,7 @@ at all -- it looks verified when it isn't.
 This distinction is JavaScript/TypeScript-specific. `aws-sdk` (v2, a single monolithic package) and
 `@aws-sdk/client-*` (v3, one package per service) are different signals there, not interchangeable
 spellings of "uses the AWS SDK." Note which generation a repository is on when it's relevant --
-it can matter for how current the codebase is, which the Fix lens (a later phase) will use.
+it can matter for how current the codebase is, but the Fix lens does not infer gaps from version numbers.
 
 Python has no equivalent split to track: `boto3` and the AWS CLI (invoked from a script) are
 equivalent evidence of using whatever service they call, with no generation distinction to note.
@@ -185,8 +185,8 @@ rather than scoped to what the code actually needs. These aren't services in the
 applied to the nearest relevant line: cite the resource that *lacks* the thing -- the queue
 declaration with no redrive policy, the stack with no alarm construct, the IAM statement with a
 wildcard resource -- and explain what's absent and why it matters in `note`; there's no line of
-code for an absence itself to point at. Phase 1 doesn't act on this itself, but a later "Fix" lens
-will, and this is where that signal has to come from.
+code for an absence itself to point at. The Fix lens consumes these agent-authored judgments;
+it does not scan repositories or infer an absence from missing service entries.
 
 ## Interests
 
@@ -299,3 +299,87 @@ would silently fail to match the real topic at all.
 
 For a multi-repository profile, add one entry per repository to `repos` and use its `root` as the
 `repo` value in every citation that belongs to it.
+
+## Supporting components and mixed usage
+
+A service entry may carry `"role": "supporting"` (the default is `"core"`). Use it for components the
+product does not run on: deploy templates, example apps, CI-only tooling, and code the product
+generates for users. Supporting services count for half in ranking, never satisfy the Fix and
+Next-level stack-fit gate, and their names stay out of the free-text relevance. Without it, a
+product whose templates deploy Lambda and API Gateway ranks as if it ran on them.
+
+A tool-free utility call inside an agentic app (a one-shot summarize or classify next to the agent
+loop) is not a reason to hide the agent: tag both `agentic` and `genai-single-call`. The path is
+then skipped as already there, which is the correct outcome.
+
+An absence that holds for only some components ("not evident in the cited scope") should say which components lack it
+and which have it; cite the ones you inspected.
+
+## The explain lens
+
+`lens: "explain"` is not evidence-driven. It restricts to level 100 and 200 sessions and favors
+lecture formats (Breakout session, Chalk talk) so a foundational session can be recommended for a
+concept in the profile. It needs no gap or path patterns.
+
+## Supported evidence lenses
+
+Fix is a curated starting vocabulary spanning the [six Well-Architected pillars](https://docs.aws.amazon.com/wellarchitected/latest/framework/the-pillars-of-the-framework.html).
+The pillar names come from AWS; the pattern-to-session mappings below are our own guidance,
+not a complete assessment or a claim that every repository has these gaps.
+
+| Exact pattern | Pillar | Session signal examples |
+| --- | --- | --- |
+| `gap-no-dlq` | Reliability | Dead-letter queues, DLQ, redrive |
+| `gap-no-alarms` | Operational Excellence | Alarms, alerting, anomaly detection (the bare word "observability" does not count) |
+| `gap-no-tests` | Operational Excellence | Unit, integration, automated, end-to-end tests |
+| `gap-broad-iam` | Security | Least privilege, IAM policy scope |
+| `gap-no-load-tests` | Performance Efficiency | Load, performance, stress testing |
+| `gap-no-cost-monitoring` | Cost Optimization | Cost monitoring, allocation, anomalies, AWS Budgets |
+| `gap-no-resource-rightsizing` | Sustainability | Resource rightsizing |
+
+Use “not evident in the cited scope” for an absence. Cite the nearest relevant resource or
+workflow and explain what you inspected in `note`; never infer a system-wide absence from one
+file. Broad IAM is a positive scope concern: cite the permissive statement. An open GitHub issue
+is intent, not proof of an absence; relate it to independently cited evidence in the presentation.
+
+Next-level recognizes exactly these source patterns (case-insensitively):
+
+| Source pattern → destination | Gain to explore | Cost to discuss |
+| --- | --- | --- |
+| `serverless` → containers | runtime control | operational ownership |
+| `ecs` → EKS | Kubernetes portability and ecosystem | cluster/platform complexity |
+| `genai-single-call` → agentic | multi-step tool use | latency, cost, evaluation, control requirements |
+
+These are exploration options, not automatic upgrades. Cite real architecture usage: an SDK
+import, a Bedrock service entry, or an interest in Kubernetes alone cannot establish a source
+pattern. Mixed architectures may have both source and destination patterns. A relevant issue
+helps explain why the option matters, but is not authorization to migrate.
+
+Each lens requires an exact supported source name and an actual remediation/destination signal in
+the session's own title or abstract. Unknown names remain valid profile data but activate no rule;
+no active rule or no matching signal returns zero candidates. Generic source services, interests,
+issue prose and catalog tags never admit a session on their own. Strength comes from the text: the
+phrase in the title is 3, at least twice in the abstract 2, once 1 (a Fix abstract that describes it
+as missing, such as "missing dead-letter queues", adds 1, and so does a matching tag, topic or
+service); admission needs 2, except dead-letter queues, whose phrase is specific enough that one
+mention counts. Each rule adds `20 + 10 x strength` points once, with deduplicated source
+citations in `profileEvidence`; `evidence` remains the matched catalog signal. Rules are ranked
+separately (strength, then profile relevance) and interleaved, and `lensRules` names each admitting
+rule. Titles and abstracts match contiguous whole phrases. Neither lens restricts level or boosts
+format.
+
+Two more gates apply to both lenses. Stack fit: a Fix session must list or name at least two of
+your core services, or one core service that fewer than 3% of catalog sessions list; a Next-level
+session needs one. Supporting services never count. A profile with no core service (none listed, or
+every one marked supporting) has no stack to fit, so both lenses admit nothing and `skippedRules`
+names each activated rule with "profile has no core services to check stack fit": list the
+product's real services before expecting Fix or Next-level results. Direction and source: a Next-level session must
+mention the source side (Lambda, serverless or functions; ECS; a single model call, prompt or
+Bedrock), and a session about the reverse move (containers to Lambda or MicroVMs, EKS to ECS) is
+excluded. A path whose destination pattern the profile already has (`containers`, `eks`,
+`agentic`) is skipped and reported in `skippedRules`.
+
+Fix picks are leads, not verdicts. Even with these gates a session can name your services and a gap
+phrase in passing, so read each pick's abstract before presenting it.
+
+See `workflow.md` for an executable synthetic profile covering every rule.

@@ -84,7 +84,7 @@ function backtickIdentifiers(text: string): string[] {
 /** Language tags treated as a shell example -- content an agent would actually copy and run,
  * unlike a ```json response example. An untagged fence ("```\n...\n```") counts too, since a
  * plain command example is often left untagged. */
-const SHELL_FENCE_LANGS = new Set(["", "sh", "bash", "shell", "console"]);
+const SHELL_FENCE_LANGS = new Set(["", "sh", "bash", "shell", "console", "text"]);
 
 /**
  * Every `reinvent-scout <path>` mention across a document -- both backtick-quoted inline spans
@@ -117,7 +117,7 @@ function cliCommandMentions(text: string): string[] {
       continue;
     }
     for (const line of fence[2]!.split("\n")) {
-      const lineMatch = /^[\s$]*reinvent-scout\s+([a-z]+(?: [a-z]+)?)/.exec(line);
+      const lineMatch = /^[\s$]*(?:npx\s+)?reinvent-scout\s+([a-z]+(?: [a-z]+)?)/.exec(line);
       if (lineMatch) {
         paths.push(`reinvent-scout ${lineMatch[1]!}`);
       }
@@ -319,6 +319,14 @@ describe("skill files CLI command names", () => {
         "reinvent-scout mcp",
       ]),
     );
+  });
+
+  it("extracts text-fenced and npx commands including invalid commands for registry checking", () => {
+    const sample = "```text\n$ npx reinvent-scout match --lens fix\nnpx reinvent-scout catalog invented --json\nreinvent-scout profile validate --help\n```";
+    const extracted = cliCommandMentions(sample);
+    expect(extracted).toEqual(["reinvent-scout match", "reinvent-scout catalog invented", "reinvent-scout profile validate"]);
+    const registered = new Set(collectLeafCommandPaths(buildProgram()).map(path => `reinvent-scout ${path}`));
+    expect(extracted.filter(path => !registered.has(path))).toEqual(["reinvent-scout catalog invented"]);
   });
 
   it("does not extract a command mentioned only inside a non-shell fence, such as a json example", () => {
@@ -540,5 +548,90 @@ describe("workflow.md's validate_profile contract", () => {
     // what gets sent, not validate_profile's report.
     expect(skillMd).toMatch(/match_sessions.*the profile you wrote/i);
     expect(skillMd).not.toMatch(/match_sessions.*validated profile/i);
+  });
+});
+
+describe("documented evidence lenses", () => {
+  it("documents the exact MCP lens enum and executes every example pattern through matching", async () => {
+    const home = createTempHome();
+    try {
+      const server = createMcpServer({ resolveStoreRoot: () => home.path });
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      const client = new Client({ name: "lens-doc-test", version: "0.0.1" });
+      await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+      const { tools } = await client.listTools();
+      const lensSchema = tools.find(tool => tool.name === "match_sessions")!.inputSchema.properties!.lens as { enum: string[] };
+      const declaration = /"lens"\?: ([^,]+)/.exec(workflowMd)![1]!;
+      expect([...declaration.matchAll(/"([a-z-]+)"/g)].map(match => match[1])).toEqual(lensSchema.enum);
+      const profiles = [...workflowMd.matchAll(/```json\n([\s\S]*?)```/g)]
+        .map(match => JSON.parse(match[1]!) as Record<string, unknown>)
+        .filter(value => "schemaVersion" in value && "patterns" in value);
+      expect(profiles).toHaveLength(1);
+      const resolved = resolveProfile(profiles[0], buildServiceAliasIndex([]));
+      const examples = [
+        ["gap-no-dlq", "Dead-letter queues"], ["gap-no-alarms", "Alarms and alerting"],
+        ["gap-no-tests", "Automated testing"], ["gap-broad-iam", "Least privilege"],
+        ["gap-no-load-tests", "Load testing"], ["gap-no-cost-monitoring", "Cost monitoring"],
+        ["gap-no-resource-rightsizing", "Rightsizing"], ["serverless", "Containers"],
+        ["ecs", "Kubernetes"], ["genai-single-call", "Agentic workflows"],
+      ];
+      expect(resolved.patterns.map(pattern => pattern.name).sort()).toEqual(examples.map(example => example[0]).sort());
+      for (const [name, title] of examples) {
+        // The abstract carries what the lenses require beyond the title: a source-side mention and a profile service.
+        const raw = [{ sessionId: "documented", abbreviation: "DOC400", title: title!, abstract: `Lambda ECS one prompt ${resolved.services.map(service => service.name).join(" ")}` }];
+        writeCatalog({ raw, index: raw.map(buildIndexRecord), meta: { schemaVersion: CURRENT_SCHEMA_VERSION, eventId: DEFAULT_EVENT_ID, syncedAt: 1, totalCount: 1, count: 1, includedAbstracts: true, timezone: null } }, { storeRoot: home.path });
+        const pattern = resolved.patterns.find(entry => entry.name === name)!;
+        const input = { ...profiles[0], patterns: [pattern] };
+        const validation = await client.callTool({ name: "validate_profile", arguments: { profile: input } });
+        expect(validation.isError).not.toBe(true);
+        const lens = name!.startsWith("gap-") ? "fix" : "next-level";
+        const result = await client.callTool({ name: "match_sessions", arguments: { profile: input, lens } });
+        expect(result.isError).not.toBe(true);
+        const parsed = JSON.parse((result.content as Array<{ text: string }>)[0]!.text);
+        expect(parsed.candidates).toHaveLength(1);
+        expect(parsed.candidates[0].code).toBe("DOC400");
+        expect(parsed.candidates[0].reasons).toContainEqual(expect.objectContaining({ kind: lens === "fix" ? "pillarGap" : "migrationPath", profileEvidence: pattern.evidence }));
+      }
+      await client.close();
+      await server.close();
+    } finally { home.cleanup(); }
+  });
+  it("states the evidence boundary and migration trade-offs throughout the guidance", () => {
+    for (const text of [skillMd, workflowMd, profilingMd]) {
+      expect(text).toContain("profileEvidence");
+      expect(text).toContain("not evident in the cited scope");
+      expect(text).toContain("genai-single-call");
+      expect(text).not.toMatch(/lenses (?:do not exist|are\s+not available)/);
+    }
+    for (const phrase of ["runtime control", "operational ownership", "portability", "complexity", "multi-step tool use", "latency"]) {
+      expect(profilingMd).toContain(phrase);
+    }
+  });
+});
+describe("lens-quality documentation", () => {
+  it("lists all eight reason kinds, the lens fields, and that the CLI prints the MCP objects", () => {
+    for (const kind of ["service", "topic", "areaOfInterest", "text", "level", "format", "pillarGap", "migrationPath"]) {
+      expect(workflowMd).toContain(`\`${kind}\``);
+    }
+    for (const field of ["lensRules", "skippedRules", "startDate: null", "profile already has agentic"]) expect(workflowMd).toContain(field);
+    expect(workflowMd).toContain("`reinvent-scout match --json` returns exactly what `match_sessions`");
+    expect(workflowMd).toContain("exactly the `validate_profile`");
+  });
+  it("documents role, the explain lens, partial gaps, and tool-free utility calls in profiling.md", () => {
+    for (const text of ['"role": "supporting"', "The explain lens", "which components lack it", "tag both `agentic` and `genai-single-call`", "fewer than 3% of catalog sessions"]) {
+      expect(profilingMd).toContain(text);
+    }
+  });
+  it("says a profile with no core service admits nothing, and that lens results are not score-ordered", () => {
+    expect(profilingMd).toContain("profile has no core services to check stack fit");
+    expect(workflowMd).toContain("not by score, so\nscores can appear out of order");
+  });
+  it("tells the agent Fix picks still need the abstract check", () => {
+    expect(skillMd).toContain("leads, not verdicts");
+    expect(profilingMd).toContain("leads, not verdicts");
+  });
+  it("does not cite repository test fixtures from the skill's own reference", () => {
+    expect(taxonomyMd).not.toContain("tests/fixtures");
+    expect(allSkillText).not.toContain("tests/fixtures");
   });
 });

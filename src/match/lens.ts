@@ -1,10 +1,6 @@
-/**
- * Which lens a match is viewed through. Phase 1 ships only `"explain"` (foundational, conceptual
- * clarity for someone new to a service or architecture) and `"all"` (no lens restriction at all).
- * `Lens` itself, and `LensProfile`'s shape below, are what a later phase's Fix (Well-Architected)
- * and Next-level (migration paths) lenses extend without changing this module's existing cases.
- */
-export type Lens = "explain" | "all";
+/** Shared CLI/MCP lens vocabulary; new evidence lenses have no level or format bias. */
+export const LENSES = ["all", "explain", "fix", "next-level"] as const;
+export type Lens = (typeof LENSES)[number];
 
 export interface LensProfile {
   /** The level bands a session must be in to be included at all under this lens, or `null` when

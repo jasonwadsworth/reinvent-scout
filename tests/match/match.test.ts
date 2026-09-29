@@ -1035,3 +1035,103 @@ describe("matchSessions grouping repeat sessions by base code", () => {
     expect(results.map((r) => r.code)).toEqual(["AAA100", "ZZZ999"]);
   });
 });
+
+describe("evidence lenses end to end", () => {
+  let home: TempHome;
+  beforeEach(() => { home = createTempHome(); });
+  afterEach(() => { home.cleanup(); });
+  const evidence = [{ repo: "repo", file: "stack.ts", line: 12 }];
+  const sessions: Session[] = [
+    { sessionId: "source", abbreviation: "SRC100", title: "Lambda serverless basics", services: ["AWS Lambda"], type: "Breakout session", level: "200 - Intermediate" },
+    { sessionId: "fix", abbreviation: "FIX400", title: "Queue recovery", abstract: "Explore dead-letter queues and redrive for Lambda and SQS consumers.", level: "400 - Expert" },
+    { sessionId: "next", abbreviation: "NEXT400", title: "Containers runtime options", topics: ["Containers"], abstract: "Beyond Lambda.", level: "400 - Expert" },
+    { sessionId: "alien", abbreviation: "ALIEN100", title: "Quux flibbertigibbet", type: "Breakout session" },
+  ];
+  const p = (names: string[] = ["gap-no-dlq", "serverless"]) => resolvedProfile({
+    services: [{ name: "lambda", catalogName: "AWS Lambda", evidence }, { name: "sqs", catalogName: "Amazon Simple Queue Service (Amazon SQS)", evidence }],
+    patterns: names.map(name => ({ name, evidence })),
+    interests: ["Lambda"], intents: [{ kind: "goal", text: "serverless dead-letter containers" }],
+  });
+  function seed(raw = sessions): void {
+    writeCatalog({ raw, index: raw.map(buildIndexRecord), meta: sampleMeta({ count: raw.length, totalCount: raw.length }) }, { storeRoot: home.path });
+  }
+  it.each([ ["fix", "FIX400", "pillarGap"], ["next-level", "NEXT400", "migrationPath"] ] as const)("%s requires remediation/destination signal and carries citations without level filtering", (lens, code, kind) => {
+    seed();
+    const input = p(); delete input.intents; delete input.interests;
+    const results = matchSessions(input, { storeRoot: home.path }, { lens });
+    expect(results.map(result => result.code)).toEqual([code]);
+    expect(results[0]!.score).toBeGreaterThanOrEqual(30);
+    expect(results[0]!.reasons).toContainEqual(expect.objectContaining({ kind, profileEvidence: evidence }));
+    expect(results[0]!.reasons[0]!.evidence).toBe(lens === "fix" ? "dead-letter queues" : "Containers");
+  });
+  it.each(["fix", "next-level"] as const)("%s returns zero for absent/unknown source despite strong services, intent, and interests", lens => {
+    seed();
+    for (const names of [[], ["constructor"], ["gap-invented"], ["unknown-pattern"]]) {
+      expect(matchSessions(p(names), { storeRoot: home.path }, { lens })).toEqual([]);
+    }
+  });
+  it.each(["fix", "next-level"] as const)("%s ranks eligible sessions by actual profile relevance after admission", lens => {
+    const title = lens === "fix" ? "Dead-letter queues" : "Containers";
+    seed([
+      { sessionId: "generic", abbreviation: "AAA100", title, abstract: "Lambda and SQS." },
+      { sessionId: "relevant", abbreviation: "ZZZ100", title, services: ["AWS Lambda"], abstract: "Lambda and SQS." },
+      { sessionId: "source", abbreviation: "SRC100", title: "Lambda basics", services: ["AWS Lambda"] },
+    ]);
+    const results = matchSessions(p(), { storeRoot: home.path }, { lens });
+    expect(results.map(result => result.code)).toEqual(["ZZZ100", "AAA100"]);
+    expect(results[0]!.reasons.some(reason => reason.kind === "service")).toBe(true);
+    expect(results[0]!.score).toBeCloseTo(results[0]!.reasons.reduce((sum, reason) => sum + reason.weight, 0), 1);
+  });
+  it("retains the winning sitting's signals, sources, grouping, limits and deterministic order", () => {
+    seed([
+      { sessionId: "weak", abbreviation: "FIX400-R1", title: "Dead-letter queues [REPEAT]", abstract: "Lambda and SQS." },
+      { sessionId: "strong", abbreviation: "FIX400-R2", title: "Dead-letter queues and alarms [REPEAT]", abstract: "Lambda and SQS." },
+      { sessionId: "other", abbreviation: "FIX401", title: "Dead-letter queues", abstract: "Lambda and SQS." },
+    ]);
+    const result = matchSessions(p(["gap-no-dlq", "GAP-NO-DLQ", "gap-no-alarms"]), { storeRoot: home.path }, { lens: "fix", limit: 1 });
+    expect(result).toHaveLength(1);
+    expect(result[0]!.record.sessionId).toBe("strong");
+    expect(result[0]!.score).toBeGreaterThanOrEqual(60);
+    expect(result[0]!.reasons.filter(reason => reason.kind === "pillarGap").map(reason => reason.evidence)).toEqual(["Dead-letter queues", "alarms"]);
+    expect(result[0]!.reasons.filter(reason => reason.kind === "pillarGap").every(reason => JSON.stringify(reason.profileEvidence) === JSON.stringify(evidence))).toBe(true);
+    expect(result[0]!.offerings.map(offering => offering.sessionId).sort()).toEqual(["strong", "weak"]);
+  });
+  it("leaves all and explain reason/score contracts unchanged", () => {
+    seed(sessions.filter(session => session.sessionId === "source" || session.sessionId === "alien"));
+    const plain = resolvedProfile({ services: [{ name: "lambda", catalogName: "AWS Lambda", evidence }] });
+    const all = matchSessions(plain, { storeRoot: home.path });
+    const explain = matchSessions(plain, { storeRoot: home.path }, { lens: "explain" });
+    expect(all.map(result => [result.code, result.score, result.reasons])).toEqual([["SRC100", 51.11, [{ kind: "service", detail: "Uses AWS Lambda, which this session covers.", weight: 50, evidence: "AWS Lambda" }, { kind: "text", detail: "Text overlap on: lambda.", weight: 1.11, evidence: "lambda" }]]]);
+    expect(explain.map(result => [result.code, result.score, result.reasons])).toEqual([["SRC100", 56.11, [...all[0]!.reasons, { kind: "format", detail: "Breakout session sessions are favored under the explain lens.", weight: 5, evidence: "Breakout session" }]]]);
+  });
+});
+
+describe("matchSessions service roles", () => {
+  let home: TempHome;
+  beforeEach(() => { home = createTempHome(); });
+  afterEach(() => { home.cleanup(); });
+  const raw: Session[] = [{ sessionId: "a", abbreviation: "AAA100", title: "Deep dive", services: ["AWS Lambda"] }];
+  const serviceWeights = (services: ResolvedProfile["services"]) => {
+    writeCatalog({ raw, index: raw.map(buildIndexRecord), meta: sampleMeta({ count: 1, totalCount: 1 }) }, { storeRoot: home.path });
+    return matchSessions(resolvedProfile({ services }), { storeRoot: home.path })[0]!.reasons.filter(reason => reason.kind === "service").map(reason => reason.weight);
+  };
+  const lambda = (extra: object) => ({ name: "lambda", catalogName: "AWS Lambda", evidence: [{ repo: ".", file: "x" }], ...extra });
+  it("halves a supporting service's weight", () => {
+    expect(serviceWeights([lambda({})])).toEqual([50]);
+    expect(serviceWeights([lambda({ role: "core" })])).toEqual([50]);
+    expect(serviceWeights([lambda({ role: "supporting" })])).toEqual([25]);
+  });
+  it("keeps full weight when another entry for the same service is core", () => {
+    expect(serviceWeights([lambda({ role: "supporting" }), lambda({ name: "aws_lambda_function", role: "core" })])).toEqual([50]);
+  });
+  it("keeps a supporting service's name and usage out of the free-text relevance", () => {
+    const text = (services: ResolvedProfile["services"]) => {
+      const sessions: Session[] = [{ sessionId: "b", abbreviation: "BBB100", title: "Gateway deep dive", abstract: "Gatewayzz throttling." }];
+      writeCatalog({ raw: sessions, index: sessions.map(buildIndexRecord), meta: sampleMeta({ count: 1, totalCount: 1 }) }, { storeRoot: home.path });
+      return matchSessions(resolvedProfile({ services }), { storeRoot: home.path }).flatMap(result => result.reasons.filter(reason => reason.kind === "text"));
+    };
+    const gateway = (extra: object) => ({ name: "gateway", usage: "gatewayzz", catalogName: null, evidence: [{ repo: ".", file: "x" }], ...extra });
+    expect(text([gateway({})])).toHaveLength(1);
+    expect(text([gateway({ role: "supporting" })])).toEqual([]);
+  });
+});

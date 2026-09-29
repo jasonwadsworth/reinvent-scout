@@ -29,6 +29,10 @@ const ServiceSchema = z.object({
    * SDK package name, anything. Resolved against the catalog by `resolveProfile`. */
   name: z.string().min(1),
   usage: z.string().optional(),
+  /** `supporting` marks a component the product does not run on (deploy templates, example apps,
+   * CI-only tooling, code it generates for users); it counts for half in matching. Absent means
+   * core. Optional, so the schema version stays 1. */
+  role: z.enum(["core", "supporting"]).optional(),
   evidence: z.array(EvidenceSchema),
 });
 

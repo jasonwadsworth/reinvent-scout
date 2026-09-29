@@ -1,7 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { Command } from "commander";
 import { z } from "zod";
-import { toPublicIndexRecord } from "../../catalog/index-record.js";
 import { catalogServiceNames } from "../../catalog/query.js";
 import { buildServiceAliasIndex } from "../../catalog/service-aliases.js";
 import { readRaw } from "../../catalog/store.js";
@@ -11,8 +10,9 @@ import {
   ValidationError,
 } from "../../core/errors.js";
 import { ensureStoreRoot } from "../../core/paths.js";
-import type { Lens } from "../../match/lens.js";
-import { matchSessions, type MatchCandidate } from "../../match/match.js";
+import { LENSES, type Lens } from "../../match/lens.js";
+import { matchSessionsDetailed, type MatchCandidate, type MatchResult } from "../../match/match.js";
+import { buildMatchResponse, toLeanCandidate } from "../../match/response.js";
 import { resolveProfile } from "../../profile/profile.js";
 import { readProfileFile } from "../../profile/store.js";
 import { formatZodError } from "../zod-errors.js";
@@ -36,7 +36,6 @@ interface MatchCommandOptions {
 const DEFAULT_MATCH_LIMIT = 30;
 const MAX_MATCH_LIMIT = 100;
 const NO_CANDIDATES_MESSAGE = "No matching sessions found.";
-const KNOWN_LENSES: readonly Lens[] = ["explain", "all"];
 
 function parseMatchLimit(raw: string): number {
   const limit = Number(raw);
@@ -50,8 +49,8 @@ function parseMatchLimit(raw: string): number {
 }
 
 function parseLens(raw: string): Lens {
-  if (!KNOWN_LENSES.includes(raw as Lens)) {
-    throw new ValidationError(`--lens must be one of ${KNOWN_LENSES.join(", ")}, got "${raw}".`);
+  if (!LENSES.includes(raw as Lens)) {
+    throw new ValidationError(`--lens must be one of ${LENSES.join(", ")}, got "${raw}".`);
   }
   return raw as Lens;
 }
@@ -87,6 +86,9 @@ function formatCandidateLine(candidate: MatchCandidate): string {
   if (record.type !== null) {
     parts.push(`[${record.type}]`);
   }
+  if (record.level !== null) {
+    parts.push(record.level);
+  }
   parts.push(`(score: ${candidate.score})`);
   return parts.join(" -- ");
 }
@@ -118,13 +120,28 @@ function formatOfferingLine(offering: MatchCandidate["offerings"][number]): stri
  * gets its ordinary line, never invented text. */
 function formatCandidateWithReasons(candidate: MatchCandidate, abstract?: string | null): string {
   const line = formatCandidateLine(candidate);
-  const reasonLines = candidate.reasons.map((reason) => `  - ${reason.detail}`);
+  const reasonLines = candidate.reasons.flatMap((reason) => [
+    `  - ${reason.detail}`,
+    ...(reason.profileEvidence ?? []).map(citation =>
+      `    Source: ${citation.repo}/${citation.file}${citation.line === undefined ? "" : `:${citation.line}`}`),
+  ]);
   const offeringLines = candidate.offerings.map(formatOfferingLine);
-  const parts = [line, ...reasonLines, "  Offerings:", ...offeringLines];
+  const ruleLines = candidate.lensRules === undefined ? [] : [`  Rules: ${candidate.lensRules.join(", ")}`];
+  const parts = [line, ...ruleLines, ...reasonLines, "  Offerings:", ...offeringLines];
   if (abstract !== undefined && abstract !== null && abstract !== "") {
     parts.push(`  ${abstract}`);
   }
   return parts.join("\n");
+}
+
+function formatHumanResult(result: MatchResult, abstracts?: ReadonlyMap<string, string | null>): string {
+  const skipped = result.skippedRules.map((skip) => `Skipped: ${skip.rule} (${skip.reason})`);
+  if (result.candidates.length === 0) {
+    return [NO_CANDIDATES_MESSAGE, ...skipped].join("\n");
+  }
+  const blocks = result.candidates.map((candidate) =>
+    formatCandidateWithReasons(candidate, abstracts?.get(candidate.record.sessionId) ?? null));
+  return [blocks.join("\n\n"), ...skipped].join("\n\n");
 }
 
 /** Registers the `match` command. */
@@ -136,7 +153,7 @@ export function registerMatchCommands(program: Command, deps: MatchCommandDeps =
     .command("match")
     .description("Rank the local catalog against an agent-authored tech profile.")
     .requiredOption("--profile <file|name>", "a profile file path, or a name saved with `profile save`")
-    .option("--lens <lens>", "explain (default level bands and formats) or all", "all")
+    .option("--lens <lens>", `one of ${LENSES.join(", ")}`, "all")
     .option("--limit <n>", "maximum number of candidates", String(DEFAULT_MATCH_LIMIT))
     .option("--include-abstracts", "include each session's abstract in the output")
     .option("--json", "print machine-readable JSON instead of a human-readable table")
@@ -153,47 +170,21 @@ export function registerMatchCommands(program: Command, deps: MatchCommandDeps =
         const serviceAliasIndex = buildServiceAliasIndex(serviceNames);
         const resolvedProfile = resolveProfile(rawProfile, serviceAliasIndex);
 
-        const candidates = matchSessions(resolvedProfile, { storeRoot }, { lens, limit });
+        const result = matchSessionsDetailed(resolvedProfile, { storeRoot }, { lens, limit });
 
-        if (options.includeAbstracts) {
-          const rawBySessionId = new Map((readRaw({ storeRoot }) ?? []).map((s) => [s.sessionId, s]));
-          const abstracts = candidates.map(
-            (candidate) => rawBySessionId.get(candidate.record.sessionId)?.abstract ?? null,
-          );
-          const withAbstracts = candidates.map((candidate, i) => ({
-            code: candidate.code,
-            ...toPublicIndexRecord(candidate.record),
-            score: candidate.score,
-            reasons: candidate.reasons,
-            offerings: candidate.offerings,
-            abstract: abstracts[i],
-          }));
-          print(
-            options.json
-              ? JSON.stringify(withAbstracts)
-              : candidates.length === 0
-                ? NO_CANDIDATES_MESSAGE
-                : candidates
-                    .map((candidate, i) => formatCandidateWithReasons(candidate, abstracts[i]))
-                    .join("\n\n"),
-          );
+        const abstracts = options.includeAbstracts
+          ? new Map((readRaw({ storeRoot }) ?? []).map((s) => [s.sessionId, s.abstract ?? null]))
+          : undefined;
+
+        if (options.json) {
+          const toCandidate = (candidate: MatchCandidate): Record<string, unknown> => ({
+            ...toLeanCandidate(candidate),
+            ...(abstracts === undefined ? {} : { abstract: abstracts.get(candidate.record.sessionId) ?? null }),
+          });
+          print(JSON.stringify(buildMatchResponse(result, limit, undefined, toCandidate)));
           return;
         }
-
-        const withoutAbstracts = candidates.map((candidate) => ({
-          code: candidate.code,
-          ...toPublicIndexRecord(candidate.record),
-          score: candidate.score,
-          reasons: candidate.reasons,
-          offerings: candidate.offerings,
-        }));
-        print(
-          options.json
-            ? JSON.stringify(withoutAbstracts)
-            : candidates.length === 0
-              ? NO_CANDIDATES_MESSAGE
-              : candidates.map((candidate) => formatCandidateWithReasons(candidate)).join("\n\n"),
-        );
+        print(formatHumanResult(result, abstracts));
       } catch (err) {
         if (err instanceof z.ZodError) {
           print(formatZodError(err));

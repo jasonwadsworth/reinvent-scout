@@ -1,10 +1,16 @@
-import type { CatalogStoreDeps } from "../catalog/store.js";
+import { buildStackFit, hasCoreService } from "./stack-fit.js";
+import { activeLensRules, scoreLensSignals, skippedLensRules, type LensHit, type SkippedRule } from "./lens-signals.js";
+import { readRaw, type CatalogStoreDeps } from "../catalog/store.js";
 import { baseSessionCode, requireCurrentIndex } from "../catalog/query.js";
 import type { IndexRecord } from "../catalog/index-record.js";
 import type { Venue } from "../catalog/venue.js";
 import type { ResolvedProfile } from "../profile/profile.js";
 import { getLensProfile, type Lens } from "./lens.js";
 import { buildCorpusStats, scoreSession, type MatchQuery, type Reason } from "./score.js";
+
+/** A core service listed by fewer than this fraction of catalog sessions is distinctive enough to
+ * fit a Fix session on its own. */
+const RARE_SERVICE_FRACTION = 0.03;
 
 export interface MatchOptions {
   /** Defaults to `"all"` -- no level restriction, no format preference. */
@@ -43,6 +49,25 @@ export interface MatchCandidate {
   /** Every sitting of this talk, sorted by start time (unscheduled sittings last) -- always at
    * least one element, even for a session with no repeats at all. */
   offerings: MatchOffering[];
+  /** Fix and Next-level only: the source pattern names of every rule that admitted this session. */
+  lensRules?: string[];
+}
+
+export interface MatchResult {
+  candidates: MatchCandidate[];
+  /** Next-level paths the profile evidences but already completed, e.g. "profile already has
+   * agentic" -- always present, empty when nothing was skipped. */
+  skippedRules: SkippedRule[];
+}
+
+/** What interleaving needs from the winning sitting of a lens candidate. */
+interface LensInfo {
+  hits: LensHit[];
+  relevance: number;
+}
+
+interface GroupedCandidate extends MatchCandidate {
+  lens?: LensInfo;
 }
 
 /** Appends `value` to `list` only the first time its case-insensitive form is seen -- used for
@@ -60,7 +85,9 @@ function pushDeduped(list: string[], seen: Set<string>, value: string): void {
 /**
  * Builds the scorer's query from a resolved, agent-authored profile:
  *
- * - `services`: every *distinct* catalog display name a service resolved to (an unresolved one has
+ * - `supportingServices`: the same, for services marked `role: "supporting"` (scored at half
+ *   weight); a name that is also core is dropped here by `scoreSession`, so it counts once.
+ * - `services`: every *distinct* core catalog display name a service resolved to (an unresolved one has
  *   nothing to exact-match against a session's own `services`, so it's simply absent here -- it
  *   still contributes through `text` below via its own `name`). Deduplicated: resolution is
  *   many-to-one by design (a short key, a display name, and an SDK package name can all resolve to
@@ -85,16 +112,27 @@ function pushDeduped(list: string[], seen: Set<string>, value: string): void {
 function buildMatchQuery(profile: ResolvedProfile): MatchQuery {
   const seenServices = new Set<string>();
   const services: string[] = [];
+  const supportingServices: string[] = [];
   const textParts: string[] = [];
 
   for (const service of profile.services) {
-    if (service.catalogName !== null && !seenServices.has(service.catalogName)) {
+    if (service.catalogName !== null && service.role !== "supporting" && !seenServices.has(service.catalogName)) {
       seenServices.add(service.catalogName);
       services.push(service.catalogName);
     }
-    textParts.push(service.name);
-    if (service.usage !== undefined) {
-      textParts.push(service.usage);
+    if (service.role !== "supporting") {
+      textParts.push(service.name);
+      if (service.usage !== undefined) {
+        textParts.push(service.usage);
+      }
+    }
+  }
+
+  const seenSupporting = new Set<string>();
+  for (const service of profile.services) {
+    if (service.catalogName !== null && service.role === "supporting" && !seenSupporting.has(service.catalogName)) {
+      seenSupporting.add(service.catalogName);
+      supportingServices.push(service.catalogName);
     }
   }
 
@@ -119,7 +157,7 @@ function buildMatchQuery(profile: ResolvedProfile): MatchQuery {
     textParts.push(intent.text);
   }
 
-  return { services, topics, areasOfInterest, text: textParts.join(" ") };
+  return { services, supportingServices, topics, areasOfInterest, text: textParts.join(" ") };
 }
 
 /** A per-record scoring result, before repeat sessions are grouped into a `MatchCandidate` --
@@ -129,6 +167,7 @@ interface ScoredRecord {
   record: IndexRecord;
   score: number;
   reasons: Reason[];
+  lens?: LensInfo;
 }
 
 /** The real catalog marks *some* (not all) repeat sittings' titles with a trailing " [REPEAT]" --
@@ -176,7 +215,7 @@ function compareOfferings(a: MatchOffering, b: MatchOffering): number {
  * still gets a one-element `offerings` list, so a caller never has to special-case "no repeats"
  * separately from "some repeats."
  */
-function groupByCode(scoredRecords: readonly ScoredRecord[]): MatchCandidate[] {
+function groupByCode(scoredRecords: readonly ScoredRecord[]): GroupedCandidate[] {
   const groups = new Map<string, ScoredRecord[]>();
   for (const scored of scoredRecords) {
     const code = baseSessionCode(scored.record);
@@ -188,7 +227,7 @@ function groupByCode(scoredRecords: readonly ScoredRecord[]): MatchCandidate[] {
     }
   }
 
-  const candidates: MatchCandidate[] = [];
+  const candidates: GroupedCandidate[] = [];
   for (const [code, members] of groups) {
     let winner = members[0]!;
     for (const member of members) {
@@ -203,6 +242,7 @@ function groupByCode(scoredRecords: readonly ScoredRecord[]): MatchCandidate[] {
       score: winner.score,
       reasons: winner.reasons,
       offerings,
+      ...(winner.lens === undefined ? {} : { lens: winner.lens }),
     });
   }
   return candidates;
@@ -218,7 +258,7 @@ function roundToTwoDecimals(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-function roundCandidate(candidate: MatchCandidate): MatchCandidate {
+function roundCandidate(candidate: GroupedCandidate): MatchCandidate {
   return {
     code: candidate.code,
     record: candidate.record,
@@ -228,7 +268,63 @@ function roundCandidate(candidate: MatchCandidate): MatchCandidate {
       weight: roundToTwoDecimals(reason.weight),
     })),
     offerings: candidate.offerings,
+    ...(candidate.lens === undefined ? {} : { lensRules: candidate.lens.hits.map((hit) => hit.rule) }),
   };
+}
+
+function compareByScore(a: GroupedCandidate, b: GroupedCandidate): number {
+  if (b.score !== a.score) {
+    return b.score - a.score;
+  }
+  const aScheduled = a.record.startDate !== null;
+  const bScheduled = b.record.startDate !== null;
+  if (aScheduled !== bScheduled) {
+    return aScheduled ? -1 : 1;
+  }
+  return a.code.localeCompare(b.code);
+}
+
+/**
+ * Fix and Next-level ordering: one ranked list per activated rule (signal strength first, then
+ * profile relevance), merged round-robin with rules ordered by their best candidate's score. A
+ * session several rules admitted appears once, at its earliest position. Without this, general
+ * relevance ranks everything after admission and a session that mentions a rule's phrase in
+ * passing (and shares the repo's services) buries the precise one.
+ */
+function interleaveByRule(candidates: readonly GroupedCandidate[]): GroupedCandidate[] {
+  const lists = new Map<string, { candidate: GroupedCandidate; strength: number }[]>();
+  for (const candidate of candidates) {
+    for (const hit of candidate.lens?.hits ?? []) {
+      const list = lists.get(hit.rule) ?? [];
+      list.push({ candidate, strength: hit.strength });
+      lists.set(hit.rule, list);
+    }
+  }
+  const ranked = [...lists.entries()].map(([rule, list]) => ({
+    rule,
+    list: list
+      .sort((a, b) =>
+        b.strength - a.strength
+        || b.candidate.lens!.relevance - a.candidate.lens!.relevance
+        || compareByScore(a.candidate, b.candidate))
+      .map((entry) => entry.candidate),
+  }));
+  ranked.sort((a, b) =>
+    Math.max(...b.list.map((c) => c.score)) - Math.max(...a.list.map((c) => c.score))
+    || a.rule.localeCompare(b.rule));
+
+  const merged: GroupedCandidate[] = [];
+  const emitted = new Set<string>();
+  for (let depth = 0; ranked.some(({ list }) => depth < list.length); depth++) {
+    for (const { list } of ranked) {
+      const candidate = list[depth];
+      if (candidate !== undefined && !emitted.has(candidate.code)) {
+        emitted.add(candidate.code);
+        merged.push(candidate);
+      }
+    }
+  }
+  return merged;
 }
 
 /**
@@ -269,16 +365,48 @@ export function matchSessions(
   deps: CatalogStoreDeps,
   options: MatchOptions = {},
 ): MatchCandidate[] {
+  return matchSessionsDetailed(profile, deps, options).candidates;
+}
+
+const NO_CORE_SERVICES_REASON = "profile has no core services to check stack fit";
+
+/** Paths already taken, plus -- when the profile has no core service, so the stack gate admits
+ * nothing -- every other activated rule, so an empty result says why. */
+function lensSkippedRules(profile: ResolvedProfile, lens: "fix" | "next-level"): SkippedRule[] {
+  const taken = skippedLensRules(profile, lens);
+  if (hasCoreService(profile)) {
+    return taken;
+  }
+  return [
+    ...taken,
+    ...activeLensRules(profile, lens).map((rule) => ({ rule, reason: NO_CORE_SERVICES_REASON })),
+  ];
+}
+
+/** `matchSessions` plus what the ranking itself decided to skip -- see `MatchResult`. */
+export function matchSessionsDetailed(
+  profile: ResolvedProfile,
+  deps: CatalogStoreDeps,
+  options: MatchOptions = {},
+): MatchResult {
   const lens = options.lens ?? "all";
   const lensProfile = getLensProfile(lens);
   const index = requireCurrentIndex(deps);
   const query = buildMatchQuery(profile);
+  const rawById = lens === "fix" || lens === "next-level"
+    ? new Map((readRaw(deps) ?? []).map(session => [session.sessionId, session]))
+    : undefined;
   // Built once, over the whole loaded catalog, and reused for every candidate below -- inverse
   // document frequency is a corpus-wide statistic, not a per-record one; computing it fresh per
   // record would be both wasteful and simply wrong, since it needs to see every document to know
   // how rare a term actually is.
   const corpusStats = buildCorpusStats(index);
 
+  // Fix has to be pickier than Next-level: its phrases (alarms, tests, IAM) appear in talks about any
+  // stack, so one shared near-universal service such as CloudWatch is not evidence of fit.
+  const fitsStack = buildStackFit(profile, lens === "fix"
+    ? { minDistinct: 2, rareBelow: RARE_SERVICE_FRACTION, catalog: index }
+    : {});
   const scoredRecords: ScoredRecord[] = [];
 
   for (const record of index) {
@@ -288,7 +416,10 @@ export function matchSessions(
       }
     }
 
-    const base = scoreSession(record, query, corpusStats);
+    const lensBase = lens === "fix" || lens === "next-level"
+      ? scoreLensSignals(record, profile, lens, rawById?.get(record.sessionId)?.abstract, fitsStack)
+      : undefined;
+    const base = lensBase ?? scoreSession(record, query, corpusStats);
     // Gated on the scorer's own score, before the lens's format bonus is even considered -- a
     // format preference is a tiebreak among sessions that already share a real signal with the
     // profile (a service, a topic, an area of interest, or free-text overlap), never a standalone
@@ -299,8 +430,15 @@ export function matchSessions(
       continue;
     }
 
-    const reasons = [...base.reasons];
     let score = base.score;
+    const reasons = [...base.reasons];
+    let lensInfo: LensInfo | undefined;
+    if (lensBase !== undefined) {
+      const relevance = scoreSession(record, query, corpusStats);
+      score += relevance.score;
+      reasons.push(...relevance.reasons);
+      lensInfo = { hits: lensBase.hits, relevance: relevance.score };
+    }
 
     const formatBonus = record.type !== null ? lensProfile.typeWeights.get(record.type) : undefined;
     if (formatBonus !== undefined) {
@@ -313,23 +451,17 @@ export function matchSessions(
       score += formatBonus;
     }
 
-    scoredRecords.push({ record, score, reasons });
+    scoredRecords.push({ record, score, reasons, ...(lensInfo === undefined ? {} : { lens: lensInfo }) });
   }
 
   const candidates = groupByCode(scoredRecords);
 
-  candidates.sort((a, b) => {
-    if (b.score !== a.score) {
-      return b.score - a.score;
-    }
-    const aScheduled = a.record.startDate !== null;
-    const bScheduled = b.record.startDate !== null;
-    if (aScheduled !== bScheduled) {
-      return aScheduled ? -1 : 1;
-    }
-    return a.code.localeCompare(b.code);
-  });
+  const isLens = lens === "fix" || lens === "next-level";
+  const ordered = isLens ? interleaveByRule(candidates) : candidates.sort(compareByScore);
 
-  const limited = options.limit === undefined ? candidates : candidates.slice(0, options.limit);
-  return limited.map(roundCandidate);
+  const limited = options.limit === undefined ? ordered : ordered.slice(0, options.limit);
+  return {
+    candidates: limited.map(roundCandidate),
+    skippedRules: isLens ? lensSkippedRules(profile, lens) : [],
+  };
 }

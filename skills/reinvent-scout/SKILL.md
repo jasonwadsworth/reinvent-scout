@@ -37,10 +37,10 @@ explained shortlist.
    but it's worth a passing mention to the user.
 5. Call `match_sessions` with **the profile you wrote in step 3** -- never with `validate_profile`'s
    own report, which is a different, smaller shape `match_sessions` doesn't accept. Default to the
-   `"all"` lens unless the user
-   specifically wants foundational, concept-level sessions, in which case use `"explain"`. **Fix and
-   Next-level lenses do not exist in this build** -- never promise a Well-Architected review or a
-   migration-path recommendation; if asked, say those aren't available yet.
+   `"all"` lens unless the user wants foundational sessions (`"explain"`), evidenced gap
+   remediation (`"fix"`), or migration options (`"next-level"`). Fix uses only supported,
+   evidence-bearing gap patterns; Next-level uses `serverless`, `ecs`, or `genai-single-call`.
+   See the exact vocabulary and trade-offs in `reference/profiling.md`.
 6. Present the candidates to the user: title, format and level, every `reasons` entry (why it
    matched) and every `offerings` entry (when and where each sitting happens) -- not just a bare
    title and score. If the response came back `truncated`, say so and offer to narrow the request
@@ -64,16 +64,28 @@ each `isError` message means and how to react to it.
 A candidate's `reasons` field is the whole point of matching from a profile instead of a keyword
 search -- always show it, not just the score. Each reason's own `evidence` field (see
 `reference/workflow.md`) is the matched catalog value (a service or topic name, or matched query
-terms), not a file -- for the file citation, go back to the *profile you wrote* and find the
+terms), not a file. Fix and Next-level reasons also carry `profileEvidence`: show its repo/file/line
+citations alongside the catalog signal. For ordinary service reasons, go back to the *profile you wrote* and find the
 evidence entry you cited for that same service, then mention it
 ("relevant because your API cites `@aws-sdk/client-dynamodb` in `src/handlers/create-order.ts`") --
 that traceability is exactly what agent-authored, evidence-backed profiles buy over a black-box
 score.
 
+Say “not evident in the cited scope” for an absence; this is not proof the whole system lacks it.
+Describe migration paths as options with gains and costs, never automatic upgrades.
+Catalog signals establish subject coverage, not migration direction. Before presenting a migration
+option, inspect its abstract with `reinvent-scout catalog show` and explain whether the session
+explores that direction, the reverse direction, or a comparison.
+Open issues are intent: connect a relevant issue to an already cited gap/path in your presentation; issue
+prose does not establish a gap or authorize a migration. Fix picks are leads, not verdicts: a session can pass the stack and phrase gates while
+mentioning a gap or your services only in passing, so read each pick's abstract (`catalog show`)
+before presenting it and drop the ones that do not really address the gap. When `skippedRules` is
+non-empty, say why that path produced nothing. Unsupported patterns produce no
+candidates under these lenses. Source-service overlap ranks eligible sessions but cannot admit
+one without the actual remediation or destination signal.
+
 ## What this build does not do
 
-- No Fix (Well-Architected) or Next-level (migration path) lens -- only `"all"` and `"explain"`
-  exist. Say so plainly if asked for either.
 - No deterministic repository scanning -- you read the repository and write the profile yourself,
   per `reference/profiling.md`. There is no `profile_repo` tool.
 - Never hold the full catalog, or a large slice of it, in your own context. `match_sessions` and

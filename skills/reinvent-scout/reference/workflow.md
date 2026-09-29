@@ -88,11 +88,16 @@ offending entry -- fix the *profile object* and call `validate_profile` again wi
 
 ## 5. `match_sessions`
 
-Arguments: `{ "profile": <profile object>, "lens"?: "all" | "explain", "limit"?: number }`.
+Arguments: `{ "profile": <profile object>, "lens"?: "all" | "explain" | "fix" | "next-level", "limit"?: number }`.
 `lens` defaults to `"all"` (no restriction). `limit` defaults to 25 and is silently capped at 50 --
-asking for more never errors, it just gets the largest sensible set. **Fix and Next-level lenses are
-not available in this build** -- only `"all"` and `"explain"` are valid; don't promise a Well-
-Architected review or a migration-path lens to the user.
+asking for more never errors, it just gets the largest sensible set. Fix requires an exact supported
+cited gap and a remediation signal; Next-level requires a cited source pattern, a destination
+signal, and a mention of the source side. Both need the session to fit the profile's stack (see
+`reference/profiling.md`) and have neutral level/format preferences. Unknown patterns or an alien
+catalog return no candidates. Ordinary profile matches rank already eligible sessions only. Under
+Fix and Next-level, each activated rule gets its own ranked list and the lists are interleaved, so
+every cited rule with an admitted session appears near the top rather than being buried by general
+relevance.
 
 ```json
 {
@@ -115,7 +120,8 @@ Architected review or a migration-path lens to the user.
   "truncated": false,
   "returned": 1,
   "requested": 25,
-  "omitted": 0
+  "omitted": 0,
+  "skippedRules": []
 }
 ```
 
@@ -139,12 +145,30 @@ twice has two), each with its own date, time, venue and room; use the `sessionId
 offering you mean when calling `favorite_sessions`, not `code`.
 
 Each `reasons` entry is `{ "kind": ..., "detail": string, "weight": number, "evidence": string }`.
-`kind` is one of `service`, `topic`, `areaOfInterest`, `text`, `level`, or `format`. `weight` is
+`kind` is one of `service`, `topic`, `areaOfInterest`, `text`, `level`, `format`, `pillarGap` or
+`migrationPath` (the last two only under the Fix and Next-level lenses, and they also carry
+`profileEvidence`). `weight` is
 that reason's own contribution to `score` (every reason's `weight` sums to `score` exactly).
 `evidence` is the specific catalog value that matched -- a service name, a topic, or the matched
 query terms -- not a file path; when presenting a service reason to the user, the file citation
 comes from the *profile's own* evidence for that service (see `reference/profiling.md`), not from
 this field.
+
+Fix and Next-level results are ordered by interleaving the rules' ranked lists, not by score, so
+scores can appear out of order.
+
+Under `fix` and `next-level`, each candidate also has `lensRules`: the source pattern names
+(`gap-no-dlq`, `serverless`, ...) of every rule that admitted it. `skippedRules` (always present,
+usually `[]`) lists Next-level paths the profile has already taken, as
+`{ "rule": "genai-single-call", "reason": "profile already has agentic" }`; tell the user why a path
+produced nothing instead of reporting an empty result. An offering with `startDate: null` is
+unscheduled: the talk exists but has no time yet, so it cannot go on a schedule.
+
+The CLI prints the same object: `reinvent-scout match --json` returns exactly what `match_sessions`
+returns (the CLI is not size-budgeted, and `--include-abstracts` adds an `abstract` to each
+candidate), and `reinvent-scout profile validate --json` returns exactly the `validate_profile`
+report. Human output shows each candidate's level and rules, then one `Skipped:` line per skipped
+path.
 
 ## 6. Present candidates
 
@@ -291,3 +315,171 @@ human running these directly gets human-formatted terminal output, not JSON):
 stays current -- also not something you run on yourself mid-conversation, though it's fine to
 mention if the user asks how to install or update the skill. `skill update` never overwrites a
 locally-modified file without `--force`.
+
+## Evidence lens example
+
+This synthetic teaching profile covers all seven gap rules and three migration paths, and names
+one core service, because Fix and Next-level admit nothing for a profile without one. Replace
+it with evidence from the repositories you actually inspect; these are not claims about this
+project. Save the original JSON as `lens-profile.json`. Validation returns a report, so pass
+this original profile object to `match_sessions`, never that report.
+
+```json
+{
+  "schemaVersion": 1,
+  "repos": [
+    {
+      "root": "example",
+      "languages": [
+        "typescript"
+      ]
+    }
+  ],
+  "services": [
+    {
+      "name": "Amazon SQS",
+      "usage": "The example queue.",
+      "evidence": [
+        {
+          "repo": "example",
+          "file": "infra/queue.ts",
+          "line": 11
+        }
+      ]
+    }
+  ],
+  "patterns": [
+    {
+      "name": "gap-no-dlq",
+      "note": "Redrive not evident in this queue declaration.",
+      "evidence": [
+        {
+          "repo": "example",
+          "file": "infra/queue.ts",
+          "line": 12
+        }
+      ]
+    },
+    {
+      "name": "gap-no-alarms",
+      "note": "Alarms not evident in the cited deployment scope.",
+      "evidence": [
+        {
+          "repo": "example",
+          "file": "infra/stack.ts",
+          "line": 24
+        }
+      ]
+    },
+    {
+      "name": "gap-no-tests",
+      "note": "Test automation not evident in these scripts; checked associated workflows.",
+      "evidence": [
+        {
+          "repo": "example",
+          "file": "package.json",
+          "line": 8
+        }
+      ]
+    },
+    {
+      "name": "gap-broad-iam",
+      "note": "Wildcard resource scope in the policy statement.",
+      "evidence": [
+        {
+          "repo": "example",
+          "file": "infra/policy.ts",
+          "line": 31
+        }
+      ]
+    },
+    {
+      "name": "gap-no-load-tests",
+      "note": "Load testing not evident in the cited workflow.",
+      "evidence": [
+        {
+          "repo": "example",
+          "file": "ci/test.yml",
+          "line": 16
+        }
+      ]
+    },
+    {
+      "name": "gap-no-cost-monitoring",
+      "note": "Cost monitoring not evident in the inspected infrastructure scope.",
+      "evidence": [
+        {
+          "repo": "example",
+          "file": "infra/budget.ts",
+          "line": 7
+        }
+      ]
+    },
+    {
+      "name": "gap-no-resource-rightsizing",
+      "note": "Rightsizing controls not evident in the inspected workload scope.",
+      "evidence": [
+        {
+          "repo": "example",
+          "file": "infra/service.ts",
+          "line": 20
+        }
+      ]
+    },
+    {
+      "name": "serverless",
+      "note": "Application is deployed as event-driven Lambda handlers.",
+      "evidence": [
+        {
+          "repo": "example",
+          "file": "infra/functions.ts",
+          "line": 15
+        }
+      ]
+    },
+    {
+      "name": "ecs",
+      "note": "Another component runs as an ECS service.",
+      "evidence": [
+        {
+          "repo": "example",
+          "file": "infra/service.ts",
+          "line": 10
+        }
+      ]
+    },
+    {
+      "name": "genai-single-call",
+      "note": "One model call returns a summary; no tool loop in this handler.",
+      "evidence": [
+        {
+          "repo": "example",
+          "file": "src/summarize.ts",
+          "line": 18
+        }
+      ]
+    }
+  ]
+}
+```
+
+```text
+reinvent-scout profile validate lens-profile.json
+reinvent-scout match --profile lens-profile.json --lens fix
+reinvent-scout match --profile lens-profile.json --lens next-level
+```
+
+For MCP, call `validate_profile` with that object, then `match_sessions` with the same object
+and `lens: "fix"` or `lens: "next-level"`. Results depend on your synced catalog; zero is valid.
+Fix reasons use `kind: "pillarGap"`; Next-level reasons use `kind: "migrationPath"`. Both add
+`profileEvidence` containing the original repo/file/line (and any snippet/note), while `evidence`
+contains the actual matched catalog selector. Display both. Source citations are deduplicated;
+ordinary service/text reasons may follow them to explain ranking.
+
+Fix reasons say “not evident in the cited scope” rather than asserting a global absence. For
+`genai-single-call` → agentic, for example, describe multi-step tool use alongside latency, cost,
+evaluation, and control requirements. For serverless → containers discuss runtime control versus
+operational ownership; for ECS → EKS discuss portability/ecosystem versus platform complexity.
+These are options, not prescriptions. Open issues are intent to connect to evidence, not proof of
+a gap or permission to migrate. Large cited reasons retain the same whole-candidate MCP budget:
+read `truncated` and `omitted`; citations are not silently clipped to make a candidate fit.

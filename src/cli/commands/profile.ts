@@ -10,6 +10,7 @@ import {
 } from "../../core/errors.js";
 import { ensureStoreRoot } from "../../core/paths.js";
 import { parseProfile, resolveProfile, type ResolvedProfile } from "../../profile/profile.js";
+import { buildValidateReport } from "../../profile/report.js";
 import { readProfileFile, saveProfileFile } from "../../profile/store.js";
 import { formatZodError } from "../zod-errors.js";
 
@@ -34,6 +35,8 @@ function formatHumanSummary(resolved: ResolvedProfile): string {
   const lines = [
     `${resolved.repos.length} repo(s), ${resolved.services.length} service(s), ` +
       `${resolved.patterns.length} pattern(s).`,
+    ...resolved.services.map((service) => `  ${service.name} -> ${service.catalogName ?? "unresolved"}`),
+    `Patterns: ${resolved.patterns.map((pattern) => pattern.name).join(", ") || "none"}`,
   ];
   if (resolved.unresolvedServices.length > 0) {
     lines.push(
@@ -88,7 +91,7 @@ export function registerProfileCommands(program: Command, deps: ProfileCommandDe
         const serviceAliasIndex = buildServiceAliasIndex(serviceNames);
         const resolved = resolveProfile(rawProfile, serviceAliasIndex);
 
-        print(options.json ? JSON.stringify(resolved) : formatHumanSummary(resolved));
+        print(options.json ? JSON.stringify(buildValidateReport(resolved)) : formatHumanSummary(resolved));
       } catch (err) {
         if (err instanceof z.ZodError) {
           print(formatZodError(err));

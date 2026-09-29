@@ -8,12 +8,10 @@ scoring, schedule writes) lives in the CLI; the one genuinely judgment-heavy ste
 repository and deciding what it's built with -- is left to the agent, backed by file evidence it
 cites itself.
 
-This is phase 1 of the project: sign-in, the catalog, agent-authored profiles, matching, the
-schedule, the MCP server, and the skill that ties them together end to end. It does not yet cover
-session reservations (the write API for those opens closer to the event) or two lenses named in the
-design but not yet built: Fix (Well-Architected gaps) and Next-level (migration paths) -- only `all`
-and `explain` exist today, and the skill is told to say so plainly if asked for either of the
-others.
+This build includes sign-in, the catalog, agent-authored profiles, matching through `all`,
+`explain`, `fix`, and `next-level`, schedule favorites, the MCP server, and the agent skill.
+Session reservations remain outside this build. Fix maps cited architecture gaps to remediation
+sessions; Next-level offers named migration paths with gains and costs.
 
 ## What's here right now
 
@@ -256,8 +254,9 @@ validate` uses. Options:
   (`Breakout session`, `Chalk talk`) -- the shape of session that best suits someone new to a
   service or pattern. A session with no level on record at all is excluded under `explain`, the
   same way `catalog search --level` already treats an unknown level band, since there's no evidence
-  either way that it qualifies. Later phases add a Fix lens (Well-Architected gaps) and a Next-level
-  lens (migration paths) without changing how `explain` or `all` behave.
+  either way that it qualifies. `fix` selects sessions addressing evidenced gaps; `next-level`
+  selects sessions about supported migration destinations. These two lenses have no level or
+  format preference and leave `all`/`explain` behavior unchanged.
 - `--limit <n>` -- cap the number of candidates (default 30, maximum 100).
 - `--include-abstracts` -- include each session's abstract text in the output.
 - `--json` -- machine-readable output: an array of resolved sessions, each with its own `score`
@@ -267,6 +266,47 @@ validate` uses. Options:
 A profile with nothing in common with any session in the catalog returns an empty list, not every
 session at a score of zero -- an empty result is a real, distinguishable outcome from "everything
 matched equally."
+
+
+### Fix and Next-level lenses
+
+```sh
+reinvent-scout match --profile my-profile.json --lens fix
+reinvent-scout match --profile my-profile.json --lens next-level --json
+```
+
+Fix supports `gap-no-dlq` (Reliability), `gap-no-alarms` and `gap-no-tests` (Operational
+Excellence), `gap-broad-iam` (Security), `gap-no-load-tests` (Performance Efficiency),
+`gap-no-cost-monitoring` (Cost Optimization), and `gap-no-resource-rightsizing` (Sustainability).
+These are our curated mappings using the [AWS six-pillar vocabulary](https://docs.aws.amazon.com/wellarchitected/latest/framework/the-pillars-of-the-framework.html),
+not a complete Well-Architected assessment. Cite the nearest relevant code and explain the
+inspected scope; absence means “not evident in the cited scope,” not proven absent everywhere.
+
+Next-level supports three evidence-bearing source patterns:
+
+- `serverless` → containers: runtime control versus operational ownership.
+- `ecs` → EKS: Kubernetes portability/ecosystem versus cluster/platform complexity.
+- `genai-single-call` → agentic: multi-step tool use versus latency, cost, evaluation, and control requirements.
+
+Each is an exploration option. A service dependency or issue requesting a migration is not enough
+to establish the current architecture. Intent, including open issues, can motivate an evidenced
+option but does not prove a gap or authorize a migration. Unknown pattern names remain valid,
+but only exact supported names (case-insensitive) activate a rule. No active rule or no actual
+remediation/destination catalog signal means zero candidates. Source-service overlap only ranks
+sessions after admission. Each distinct rule adds 30 points once; ordinary profile relevance
+adds its own reasons. Repeated patterns and citations cannot inflate a rule's weight.
+
+Catalog signals establish subject coverage, not migration direction: a reverse-direction talk
+can qualify. Inspect the session abstract before treating a result as guidance for a particular path.
+
+New `pillarGap` and `migrationPath` reasons carry optional `profileEvidence` with the original
+repo/file/line, snippet and note, while `evidence` remains the matched catalog signal. The human
+CLI prints source locations. MCP keeps complete reasons and drops whole candidates if necessary
+to honor its existing response budget. Phrase signals use titles and available abstracts; a
+catalog synced without abstracts can miss an abstract-only signal. See the complete synthetic
+[profile and executable examples](skills/reinvent-scout/reference/workflow.md#evidence-lens-example)
+and [profiling guidance](skills/reinvent-scout/reference/profiling.md#supported-evidence-lenses).
+
 
 ## Read your schedule and manage favorites
 

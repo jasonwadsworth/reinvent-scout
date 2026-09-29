@@ -2,9 +2,8 @@
 
 The re:Invent session catalog tags each session with a handful of controlled vocabularies. This is
 what they look like today and how the profile's own vocabulary lines up with them. Every list below
-is checked against `tests/fixtures/catalog-vocabulary.json` (distinct values extracted from a real,
-full catalog pull, not the smaller 61-session fixture the rest of the test suite runs against) and
-must be kept complete -- see that file's own note on provenance. Topic and role matching in
+is the distinct set of values in a real, full catalog pull, checked by this project's tests, and
+must be kept complete. Topic and role matching in
 `match_sessions` is case-insensitive, so exact casing here is a convenience, not a requirement --
 but matching the real spelling makes a profile's `interests` and `patterns.name` entries more
 likely to line up with a session's own tags at all.

@@ -1,3 +1,4 @@
+import type { Evidence } from "../profile/profile.js";
 import { getOwnTermCount, tokenize, type IndexRecord } from "../catalog/index-record.js";
 
 /**
@@ -7,7 +8,7 @@ import { getOwnTermCount, tokenize, type IndexRecord } from "../catalog/index-re
  * touching this module's arithmetic.
  */
 export interface Reason {
-  kind: "service" | "topic" | "areaOfInterest" | "text" | "level" | "format";
+  kind: "service" | "topic" | "areaOfInterest" | "text" | "level" | "format" | "pillarGap" | "migrationPath";
   /** A one-line, human-readable explanation, e.g. `Uses Amazon DynamoDB, which this session
    * covers.` */
   detail: string;
@@ -17,6 +18,8 @@ export interface Reason {
   /** The specific value that matched -- a catalog service name, a topic, or the query terms a
    * text match found -- so the detail can be checked against the session's own real fields. */
   evidence: string;
+  /** Source citations for a pillarGap or migrationPath reason. */
+  profileEvidence?: Evidence[];
 }
 
 export interface MatchQuery {
@@ -24,6 +27,9 @@ export interface MatchQuery {
    * against a session's own `services`. The single strongest signal: a session that literally
    * covers a service the profile actually uses. */
   services: readonly string[];
+  /** Like `services`, at half weight -- components the product does not run on. A service listed
+   * in both is counted once, at full weight. */
+  supportingServices?: readonly string[];
   /** Checked for a case-insensitive exact match against a session's `topics`. */
   topics: readonly string[];
   /** Checked for a case-insensitive exact match against a session's `areasOfInterest`. */
@@ -236,6 +242,17 @@ export function scoreSession(
         kind: "service",
         detail: `Uses ${service}, which this session covers.`,
         weight: SERVICE_MATCH_WEIGHT,
+        evidence: service,
+      });
+    }
+  }
+
+  for (const service of query.supportingServices ?? []) {
+    if (record.services.includes(service) && !query.services.includes(service)) {
+      reasons.push({
+        kind: "service",
+        detail: `Uses ${service} in a supporting role, which this session covers.`,
+        weight: SERVICE_MATCH_WEIGHT / 2,
         evidence: service,
       });
     }
