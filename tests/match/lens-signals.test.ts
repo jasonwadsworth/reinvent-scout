@@ -106,9 +106,11 @@ const paths = [
   ["genai-single-call", "Agentic workflows", "agentic", "multi-step tool use", "latency"],
 ] as const;
 
+const onSource: Record<string, string> = { serverless: "Runs on Lambda today.", ecs: "Runs on ECS today.", "genai-single-call": "Starts from one prompt today." };
+
 describe("Next-level signals", () => {
   it.each(paths)("offers %s to %s with gains and costs", (source, title, destination, gain, cost) => {
-    const result = scoreLensSignals(record(title), profile(source), "next-level");
+    const result = scoreLensSignals(record(title), profile(source), "next-level", onSource[source]);
     expect(result.score).toBe(50);
     expect(result.reasons).toHaveLength(1);
     expect(result.reasons[0]).toMatchObject({ kind: "migrationPath", weight: 50, profileEvidence: [citation] });
@@ -133,11 +135,12 @@ describe("Next-level signals", () => {
   });
   it("uses destination services and areas only as boosters on a text hit", () => {
     const r = buildIndexRecord({ sessionId: "x", title: "Deep dive", services: ["Amazon Elastic Kubernetes Service (Amazon EKS)"], areasOfInterest: ["Kubernetes"] });
-    expect(scoreLensSignals(r, profile("ecs"), "next-level", "Run it on Kubernetes.").reasons[0]?.weight).toBe(40);
+    expect(scoreLensSignals(r, profile("ecs"), "next-level", "Run ECS on Kubernetes.").reasons[0]?.weight).toBe(40);
+    expect(scoreLensSignals(r, profile("ecs"), "next-level", "Run it on Kubernetes.").score).toBe(0);
     expect(scoreLensSignals(r, profile("ecs"), "next-level").score).toBe(0);
   });
   const reverseCases = [
-    ["serverless", "Replacing always-on containers with MicroVMs as per-tenant sandboxes; containers cost more."],
+    ["serverless", "Lambda: replacing always-on containers with MicroVMs as per-tenant sandboxes; containers cost more."],
     ["serverless", "Lambda MicroVMs run containers and containers."],
     ["serverless", "We migrate containers to Lambda functions, containers included."],
     ["ecs", "Move from Amazon EKS clusters to Amazon ECS; Kubernetes and Kubernetes again."],
@@ -151,8 +154,8 @@ describe("Next-level signals", () => {
   it("skips a path whose destination pattern the profile already has, case-insensitively", () => {
     for (const [source, destination] of [["serverless", "Containers"], ["ecs", "EKS"], ["genai-single-call", "AGENTIC"]] as const) {
       const title = source === "serverless" ? "Containers" : source === "ecs" ? "Kubernetes" : "Agentic workflows";
-      expect(scoreLensSignals(record(title), profile(source), "next-level").score).toBe(50);
-      expect(scoreLensSignals(record(title), profile(source, destination), "next-level").score).toBe(0);
+      expect(scoreLensSignals(record(title), profile(source), "next-level", onSource[source]).score).toBe(50);
+      expect(scoreLensSignals(record(title), profile(source, destination), "next-level", onSource[source]).score).toBe(0);
     }
   });
   it("lists skipped paths with the reason", () => {
@@ -178,5 +181,31 @@ describe("rule selectors", () => {
         for (const value of values) expect(known, `${rule.source}: ${value}`).toContain(value);
       }
     }
+  });
+});
+
+describe("Next-level source co-mention", () => {
+  const sourceMention = [
+    ["serverless", "Containers", "Runs on Lambda today.", "Runs on serverless today.", "Split into functions today.", "Amazon Elastic Container Service (Amazon ECS)", "AWS Lambda"],
+    ["ecs", "Kubernetes", "Migrate from ECS.", "Started on Amazon ECS.", "Our ECS clusters.", "Amazon Elastic Kubernetes Service (Amazon EKS)", "Amazon Elastic Container Service (Amazon ECS)"],
+    ["genai-single-call", "Agentic workflows", "Beyond a single model call.", "From one prompt to many.", "Replace InvokeModel loops.", "Amazon Bedrock", "Amazon Bedrock"],
+  ] as const;
+  it.each(sourceMention)("requires %s sessions to mention the source side", (source, title, a, b, c, _destination, sourceService) => {
+    expect(scoreLensSignals(record(title), profile(source), "next-level").score).toBe(0);
+    for (const abstract of [a, b, c]) expect(scoreLensSignals(record(title), profile(source), "next-level", abstract).score).toBe(50);
+    const listed = buildIndexRecord({ sessionId: "x", title, services: [sourceService] });
+    expect(scoreLensSignals(listed, profile(source), "next-level").score).toBe(50);
+  });
+  it("does not apply to Fix", () => {
+    expect(scoreLensSignals(record("Dead-letter queues"), profile("gap-no-dlq"), "fix").score).toBe(50);
+  });
+});
+
+describe("stack gate", () => {
+  it("drops a session the gate rejects, for Fix and Next-level", () => {
+    const never = () => false;
+    expect(scoreLensSignals(record("Dead-letter queues"), profile("gap-no-dlq"), "fix", "", never).score).toBe(0);
+    expect(scoreLensSignals(record("Containers"), profile("serverless"), "next-level", "Lambda", never).score).toBe(0);
+    expect(scoreLensSignals(record("Dead-letter queues"), profile("gap-no-dlq"), "fix", "", () => true).score).toBe(50);
   });
 });

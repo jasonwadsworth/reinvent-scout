@@ -70,7 +70,7 @@ describe("CLI and MCP share one contract", () => {
   });
   it("adds abstracts to each candidate under --include-abstracts", async () => {
     const fix = JSON.parse(await cli(registerMatchCommands, ["match", "--profile", profilePath, "--lens", "fix", "--include-abstracts", "--json"]));
-    expect(fix.candidates[0].abstract).toContain("dead-letter queues");
+    expect(fix.candidates[0].abstract).toMatch(/dead-letter queue/);
   });
   it("shows level, lens rules and skipped paths in human output", async () => {
     const human = await cli(registerMatchCommands, ["match", "--profile", profilePath, "--lens", "fix"]);

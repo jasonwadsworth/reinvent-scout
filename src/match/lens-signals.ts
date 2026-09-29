@@ -1,6 +1,7 @@
 import type { IndexRecord } from "../catalog/index-record.js";
 import type { Evidence, ResolvedProfile } from "../profile/profile.js";
 import type { Reason, ScoredSession } from "./score.js";
+import type { StackFit } from "./stack-fit.js";
 
 type SignalLens = "fix" | "next-level";
 interface SignalRule {
@@ -18,6 +19,10 @@ interface SignalRule {
   reverse?: RegExp;
   /** Next-level only: a profile that already has this pattern has already made the move. */
   destination?: string;
+  /** Next-level only: the session must also mention the source side, in its title or abstract or
+   * as a listed service, or it is about the destination alone. */
+  sourceText?: RegExp;
+  sourceServices?: readonly string[];
   /** Tags, topics and services that add one strength to a text hit but never admit on their own. */
   services?: readonly string[];
   topics?: readonly string[];
@@ -45,6 +50,7 @@ const RULES: readonly SignalRule[] = [
   { source: "gap-no-resource-rightsizing", lens: "fix", detail: "Sustainability: resource rightsizing is not evident in the cited scope.", phrase: /\b(?:right[- ]?sizing|right[- ]?size)\b/i },
   {
     source: "serverless", lens: "next-level", destination: "containers",
+    sourceText: /\b(?:Lambda|serverless|functions?)\b/i, sourceServices: ["AWS Lambda"],
     detail: "serverless → containers is an exploration option: gain runtime control; take on operational ownership.",
     phrase: /\b(?:containers?|containerization|ECS|EKS)\b/i,
     // Tuned on the real catalog: the first branch catches "replacing always-on containers with
@@ -56,6 +62,7 @@ const RULES: readonly SignalRule[] = [
   },
   {
     source: "ecs", lens: "next-level", destination: "eks",
+    sourceText: /\bECS\b/i, sourceServices: ["Amazon Elastic Container Service (Amazon ECS)"],
     detail: "ecs → EKS is an exploration option: gain Kubernetes portability and ecosystem; take on cluster/platform complexity.",
     phrase: /\b(?:Kubernetes|EKS)\b/i,
     reverse: /\bfrom (?:Amazon )?EKS (?:\w+ ){0,3}to (?:Amazon )?ECS\b/i,
@@ -64,6 +71,7 @@ const RULES: readonly SignalRule[] = [
   },
   {
     source: "genai-single-call", lens: "next-level", destination: "agentic",
+    sourceText: /\b(?:single (?:model )?(?:call|invocation)|prompts?|InvokeModel|Bedrock)\b/i, sourceServices: ["Amazon Bedrock"],
     detail: "genai-single-call → agentic is an exploration option: gain multi-step tool use; take on latency, cost, evaluation, and control requirements.",
     phrase: /\b(?:agentic|agents? with tools|tool[- ](?:use|calling)|multi[- ]agent|agent orchestration)\b/i,
     areas: ["Agentic AI"],
@@ -121,6 +129,12 @@ function boosted(rule: SignalRule, record: IndexRecord): boolean {
     values.some(value => allowed?.some(expected => value.toLowerCase() === expected.toLowerCase())));
 }
 
+function mentionsSource(rule: SignalRule, record: IndexRecord, abstract: string): boolean {
+  if (rule.sourceText === undefined) return true;
+  return rule.sourceText.test(record.title) || rule.sourceText.test(abstract)
+    || record.services.some(service => rule.sourceServices?.includes(service) === true);
+}
+
 function countMatches(phrase: RegExp, text: string): number {
   return text.match(new RegExp(phrase.source, phrase.flags.includes("g") ? phrase.flags : `${phrase.flags}g`))?.length ?? 0;
 }
@@ -136,6 +150,7 @@ interface Signal {
  * and abstract are matched separately so a phrase cannot bridge them. */
 function catalogSignal(rule: SignalRule, record: IndexRecord, abstract: string): Signal | undefined {
   if (rule.reverse?.test(record.title) === true || rule.reverse?.test(abstract) === true) return undefined;
+  if (!mentionsSource(rule, record, abstract)) return undefined;
   const titleMatch = rule.phrase.exec(record.title);
   const abstractMatch = rule.phrase.exec(abstract);
   const text = titleMatch !== null
@@ -149,14 +164,17 @@ function catalogSignal(rule: SignalRule, record: IndexRecord, abstract: string):
   return { evidence: (titleMatch ?? abstractMatch)![0], strength };
 }
 
-/** Evidence-bearing exact pattern names activate rules. Intent and ordinary source-service
+/** Evidence-bearing exact pattern names activate rules; `fitsStack` (see `buildStackFit`) rejects
+ * sessions that are not about the profile's stack at all. Intent and ordinary source-service
  * overlap never activate or admit candidates. Each rule contributes once, even across repos. */
 export function scoreLensSignals(
   record: IndexRecord,
   profile: ResolvedProfile,
   lens: SignalLens,
   abstract = "",
+  fitsStack: StackFit = () => true,
 ): LensScored {
+  if (!fitsStack(record, abstract)) return { score: 0, reasons: [], hits: [] };
   const reasons: Reason[] = [];
   const hits: LensHit[] = [];
   for (const rule of RULES) {

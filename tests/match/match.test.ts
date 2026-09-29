@@ -1043,8 +1043,8 @@ describe("evidence lenses end to end", () => {
   const evidence = [{ repo: "repo", file: "stack.ts", line: 12 }];
   const sessions: Session[] = [
     { sessionId: "source", abbreviation: "SRC100", title: "Lambda serverless basics", services: ["AWS Lambda"], type: "Breakout session", level: "200 - Intermediate" },
-    { sessionId: "fix", abbreviation: "FIX400", title: "Queue recovery", abstract: "Explore dead-letter queues and redrive.", level: "400 - Expert" },
-    { sessionId: "next", abbreviation: "NEXT400", title: "Containers runtime options", topics: ["Containers"], level: "400 - Expert" },
+    { sessionId: "fix", abbreviation: "FIX400", title: "Queue recovery", abstract: "Explore dead-letter queues and redrive for Lambda consumers.", level: "400 - Expert" },
+    { sessionId: "next", abbreviation: "NEXT400", title: "Containers runtime options", topics: ["Containers"], abstract: "Beyond Lambda.", level: "400 - Expert" },
     { sessionId: "alien", abbreviation: "ALIEN100", title: "Quux flibbertigibbet", type: "Breakout session" },
   ];
   const p = (names: string[] = ["gap-no-dlq", "serverless"]) => resolvedProfile({
@@ -1073,8 +1073,8 @@ describe("evidence lenses end to end", () => {
   it.each(["fix", "next-level"] as const)("%s ranks eligible sessions by actual profile relevance after admission", lens => {
     const title = lens === "fix" ? "Dead-letter queues" : "Containers";
     seed([
-      { sessionId: "generic", abbreviation: "AAA100", title },
-      { sessionId: "relevant", abbreviation: "ZZZ100", title, services: ["AWS Lambda"] },
+      { sessionId: "generic", abbreviation: "AAA100", title, abstract: "Lambda." },
+      { sessionId: "relevant", abbreviation: "ZZZ100", title, services: ["AWS Lambda"], abstract: "Lambda." },
       { sessionId: "source", abbreviation: "SRC100", title: "Lambda basics", services: ["AWS Lambda"] },
     ]);
     const results = matchSessions(p(), { storeRoot: home.path }, { lens });
@@ -1084,9 +1084,9 @@ describe("evidence lenses end to end", () => {
   });
   it("retains the winning sitting's signals, sources, grouping, limits and deterministic order", () => {
     seed([
-      { sessionId: "weak", abbreviation: "FIX400-R1", title: "Dead-letter queues [REPEAT]" },
-      { sessionId: "strong", abbreviation: "FIX400-R2", title: "Dead-letter queues and alarms [REPEAT]" },
-      { sessionId: "other", abbreviation: "FIX401", title: "Dead-letter queues" },
+      { sessionId: "weak", abbreviation: "FIX400-R1", title: "Dead-letter queues [REPEAT]", abstract: "Lambda." },
+      { sessionId: "strong", abbreviation: "FIX400-R2", title: "Dead-letter queues and alarms [REPEAT]", abstract: "Lambda." },
+      { sessionId: "other", abbreviation: "FIX401", title: "Dead-letter queues", abstract: "Lambda." },
     ]);
     const result = matchSessions(p(["gap-no-dlq", "GAP-NO-DLQ", "gap-no-alarms"]), { storeRoot: home.path }, { lens: "fix", limit: 1 });
     expect(result).toHaveLength(1);
@@ -1097,12 +1097,12 @@ describe("evidence lenses end to end", () => {
     expect(result[0]!.offerings.map(offering => offering.sessionId).sort()).toEqual(["strong", "weak"]);
   });
   it("leaves all and explain reason/score contracts unchanged", () => {
-    seed();
+    seed(sessions.filter(session => session.sessionId === "source" || session.sessionId === "alien"));
     const plain = resolvedProfile({ services: [{ name: "lambda", catalogName: "AWS Lambda", evidence }] });
     const all = matchSessions(plain, { storeRoot: home.path });
     const explain = matchSessions(plain, { storeRoot: home.path }, { lens: "explain" });
-    expect(all.map(result => [result.code, result.score, result.reasons])).toEqual([["SRC100", 51.93, [{ kind: "service", detail: "Uses AWS Lambda, which this session covers.", weight: 50, evidence: "AWS Lambda" }, { kind: "text", detail: "Text overlap on: lambda.", weight: 1.93, evidence: "lambda" }]]]);
-    expect(explain.map(result => [result.code, result.score, result.reasons])).toEqual([["SRC100", 56.93, [...all[0]!.reasons, { kind: "format", detail: "Breakout session sessions are favored under the explain lens.", weight: 5, evidence: "Breakout session" }]]]);
+    expect(all.map(result => [result.code, result.score, result.reasons])).toEqual([["SRC100", 51.11, [{ kind: "service", detail: "Uses AWS Lambda, which this session covers.", weight: 50, evidence: "AWS Lambda" }, { kind: "text", detail: "Text overlap on: lambda.", weight: 1.11, evidence: "lambda" }]]]);
+    expect(explain.map(result => [result.code, result.score, result.reasons])).toEqual([["SRC100", 56.11, [...all[0]!.reasons, { kind: "format", detail: "Breakout session sessions are favored under the explain lens.", weight: 5, evidence: "Breakout session" }]]]);
   });
 });
 
@@ -1123,5 +1123,15 @@ describe("matchSessions service roles", () => {
   });
   it("keeps full weight when another entry for the same service is core", () => {
     expect(serviceWeights([lambda({ role: "supporting" }), lambda({ name: "aws_lambda_function", role: "core" })])).toEqual([50]);
+  });
+  it("keeps a supporting service's name and usage out of the free-text relevance", () => {
+    const text = (services: ResolvedProfile["services"]) => {
+      const sessions: Session[] = [{ sessionId: "b", abbreviation: "BBB100", title: "Gateway deep dive", abstract: "Gatewayzz throttling." }];
+      writeCatalog({ raw: sessions, index: sessions.map(buildIndexRecord), meta: sampleMeta({ count: 1, totalCount: 1 }) }, { storeRoot: home.path });
+      return matchSessions(resolvedProfile({ services }), { storeRoot: home.path }).flatMap(result => result.reasons.filter(reason => reason.kind === "text"));
+    };
+    const gateway = (extra: object) => ({ name: "gateway", usage: "gatewayzz", catalogName: null, evidence: [{ repo: ".", file: "x" }], ...extra });
+    expect(text([gateway({})])).toHaveLength(1);
+    expect(text([gateway({ role: "supporting" })])).toEqual([]);
   });
 });

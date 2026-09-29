@@ -577,7 +577,8 @@ describe("documented evidence lenses", () => {
       ];
       expect(resolved.patterns.map(pattern => pattern.name).sort()).toEqual(examples.map(example => example[0]).sort());
       for (const [name, title] of examples) {
-        const raw = [{ sessionId: "documented", abbreviation: "DOC400", title: title! }];
+        // The abstract carries what the lenses require beyond the title: a source-side mention and a profile service.
+        const raw = [{ sessionId: "documented", abbreviation: "DOC400", title: title!, abstract: `Lambda ECS one prompt ${resolved.services.map(service => service.name).join(" ")}` }];
         writeCatalog({ raw, index: raw.map(buildIndexRecord), meta: { schemaVersion: CURRENT_SCHEMA_VERSION, eventId: DEFAULT_EVENT_ID, syncedAt: 1, totalCount: 1, count: 1, includedAbstracts: true, timezone: null } }, { storeRoot: home.path });
         const pattern = resolved.patterns.find(entry => entry.name === name)!;
         const input = { ...profiles[0], patterns: [pattern] };
