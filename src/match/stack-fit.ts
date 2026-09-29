@@ -1,7 +1,25 @@
 import type { IndexRecord } from "../catalog/index-record.js";
 import type { ResolvedProfile } from "../profile/profile.js";
 
-export type StackFit = (record: IndexRecord, abstract: string) => boolean;
+export interface StackFitQuery {
+  /** Catalog services that do not count toward the fit. */
+  without?: readonly string[];
+  /** Overrides the gate's own minimum of distinct services, and disables the rare-service path. */
+  minDistinct?: number;
+  /** Catalog services that close the gap the caller is looking for. Each one the session lists
+   * counts as one more distinct service alongside the profile's own, and at least one must be
+   * listed: a session about the tools lists the tools. Never opens a profile that has no core
+   * service. */
+  remedy?: readonly string[];
+  /** Catalog services whose own sessions fit when the profile lists the same service in any role
+   * (a session on testing the IaC tool the profile deploys with). Never opens a profile that has
+   * no core service. */
+  tools?: readonly string[];
+}
+
+/** A caller that has to know the session is about the profile's stack beyond one service (a rule's
+ * own source) narrows the gate with `query`. */
+export type StackFit = (record: IndexRecord, abstract: string, query?: StackFitQuery) => boolean;
 
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -59,8 +77,34 @@ function profileForms(name: string, catalogName: string | null, catalog: readonl
   return [{ text: whole, caseSensitive: catalogName?.toLowerCase() !== whole.toLowerCase() }];
 }
 
+/**
+ * Platform services: what nearly every AWS workload runs on rather than what the product is built
+ * from. Sharing CloudWatch or S3 with a session says nothing about the stack, so they never count
+ * as core here, whatever role the profile gave them. Catalog display names.
+ */
+export const PLATFORM_SERVICES: readonly string[] = [
+  "Amazon CloudWatch",
+  "Amazon Virtual Private Cloud (Amazon VPC)",
+  "Amazon Simple Storage Service (Amazon S3)",
+  "Amazon Route 53",
+  "AWS Certificate Manager (ACM)",
+  "AWS Cloud Development Kit (AWS CDK)",
+  "AWS CloudFormation",
+  "AWS Identity and Access Management (IAM)",
+  "AWS Security Token Service (AWS STS)",
+  "AWS Key Management Service (AWS KMS)",
+  "AWS Secrets Manager",
+  "AWS Systems Manager",
+  "AWS CloudTrail",
+];
+
+function isCore(service: ResolvedProfile["services"][number]): boolean {
+  return service.role !== "supporting"
+    && (service.catalogName === null || !PLATFORM_SERVICES.includes(service.catalogName));
+}
+
 export function hasCoreService(profile: ResolvedProfile): boolean {
-  return profile.services.some(service => service.role !== "supporting");
+  return profile.services.some(isCore);
 }
 
 export interface StackFitOptions {
@@ -76,7 +120,8 @@ export interface StackFitOptions {
 interface CoreService {
   catalogName: string | null;
   named: (text: string) => boolean;
-  /** Fraction of catalog sessions that list it; 0 when unknown or unlisted. */
+  /** Fraction of catalog sessions that list it; 0 when unlisted, 1 when the profile's name did not
+   * resolve, so an unresolved name is never rare. */
   frequency: number;
 }
 
@@ -84,14 +129,16 @@ interface CoreService {
  * Whether a session is about the profile's stack: it lists or names (by catalog name, short name or
  * the profile's own spelling, in its title or abstract) enough of the profile's core services --
  * `minDistinct` of them, or a single one that is rare in the catalog (see `StackFitOptions`).
- * Supporting services never count, since they are not what the product runs on. A profile with no
+ * Supporting and platform services (`PLATFORM_SERVICES`) never count, since they are not what the
+ * product is built from. An unresolved name counts toward `minDistinct` but is never rare. A profile with no
  * core service has no stack to fit against, so nothing fits (see `hasCoreService`); an open gate
  * would admit every session that mentions a gap phrase, on any stack.
  */
 export function buildStackFit(profile: ResolvedProfile, options: StackFitOptions = {}): StackFit {
-  const core = profile.services.filter(service => service.role !== "supporting");
+  const core = profile.services.filter(isCore);
   if (core.length === 0) return () => false;
   const minDistinct = options.minDistinct ?? 1;
+  const profileTools = new Set(profile.services.flatMap(service => service.catalogName === null ? [] : [service.catalogName]));
   const listedCount = new Map<string, number>();
   for (const record of options.catalog ?? []) {
     for (const service of new Set(record.services)) listedCount.set(service, (listedCount.get(service) ?? 0) + 1);
@@ -114,14 +161,22 @@ export function buildStackFit(profile: ResolvedProfile, options: StackFitOptions
     services.push({
       catalogName: service.catalogName,
       named: text => patterns.some(pattern => pattern.test(text)),
-      frequency: service.catalogName === null || total === 0 ? 0 : (listedCount.get(service.catalogName) ?? 0) / total,
+      frequency: service.catalogName === null ? 1 : total === 0 ? 0 : (listedCount.get(service.catalogName) ?? 0) / total,
     });
   }
-  return (record, abstract) => {
+  return (record, abstract, query = {}) => {
+    const without = query.without ?? [];
+    if (query.tools?.some(name => profileTools.has(name) && record.services.includes(name)) === true) return true;
     const shared = services.filter(service =>
-      (service.catalogName !== null && record.services.includes(service.catalogName))
-      || service.named(record.title) || service.named(abstract));
-    if (shared.length >= minDistinct) return true;
-    return options.rareBelow !== undefined && shared.length > 0 && shared.every(service => service.frequency < options.rareBelow!);
+      !(service.catalogName !== null && without.includes(service.catalogName))
+      && ((service.catalogName !== null && record.services.includes(service.catalogName))
+        || service.named(record.title) || service.named(abstract)));
+    const needed = query.minDistinct ?? minDistinct;
+    if (shared.length >= needed) return true;
+    const remedies = (query.remedy ?? []).filter(name => record.services.includes(name)
+      && !shared.some(service => service.catalogName === name)).length;
+    if (remedies > 0) return shared.length + remedies >= needed;
+    return query.minDistinct === undefined && options.rareBelow !== undefined && shared.length > 0
+      && shared.every(service => service.frequency < options.rareBelow!);
   };
 }

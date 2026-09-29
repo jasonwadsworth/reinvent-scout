@@ -325,7 +325,8 @@ locally-modified file without `--force`.
 ## Evidence lens example
 
 This synthetic teaching profile covers all seven gap rules and three migration paths, and names
-one core service, because Fix and Next-level admit nothing for a profile without one. Replace
+two core services, because a Fix session must share two and both lenses admit nothing for a
+profile without one. Replace
 it with evidence from the repositories you actually inspect; these are not claims about this
 project. Save the original JSON as `lens-profile.json`. Validation returns a report, so pass
 this original profile object to `match_sessions`, never that report.
@@ -350,6 +351,17 @@ this original profile object to `match_sessions`, never that report.
           "repo": "example",
           "file": "infra/queue.ts",
           "line": 11
+        }
+      ]
+    },
+    {
+      "name": "AWS Lambda",
+      "usage": "The example queue consumer.",
+      "evidence": [
+        {
+          "repo": "example",
+          "file": "infra/queue.ts",
+          "line": 14
         }
       ]
     }

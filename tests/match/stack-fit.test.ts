@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildIndexRecord, type IndexRecord } from "../../src/catalog/index-record.js";
-import { buildStackFit, hasCoreService, PREFIX_REQUIRED_SERVICE_NAMES } from "../../src/match/stack-fit.js";
+import { buildStackFit, hasCoreService, PLATFORM_SERVICES, PREFIX_REQUIRED_SERVICE_NAMES } from "../../src/match/stack-fit.js";
 import type { ResolvedProfile } from "../../src/profile/profile.js";
 
 const evidence = [{ repo: "r", file: "f" }];
@@ -31,9 +31,9 @@ describe("buildStackFit", () => {
     expect(fits(record("Voices"), "Polly the parrot reads text aloud.")).toBe(false);
   });
   it("matches whole words only", () => {
-    const fits = buildStackFit(profile({ name: "s3", catalogName: "Amazon Simple Storage Service (Amazon S3)" }));
-    expect(fits(record("Deep dive"), "The S3rver project.")).toBe(false);
-    expect(fits(record("Deep dive"), "Store it in S3.")).toBe(true);
+    const fits = buildStackFit(profile(sqs));
+    expect(fits(record("Deep dive"), "The SQSrver project.")).toBe(false);
+    expect(fits(record("Deep dive"), "Queue it in SQS.")).toBe(true);
   });
   it("needs the Amazon or AWS prefix for a short name that is an ordinary English word", () => {
     const amplify = buildStackFit(profile({ name: "AWS Amplify", catalogName: "AWS Amplify" }));
@@ -59,11 +59,11 @@ describe("buildStackFit", () => {
     expect(fits(record("Deep dive"), "A lambda expression in Java.")).toBe(false);
   });
   it("matches an acronym short name case-sensitively as a whole word", () => {
-    const fits = buildStackFit(profile({ name: "s3", catalogName: "Amazon Simple Storage Service (Amazon S3)" }));
-    expect(fits(record("Deep dive"), "Store it in S3.")).toBe(true);
-    expect(fits(record("Deep dive"), "Read ./s3/config.json first.")).toBe(false);
-    expect(fits(record("Deep dive"), "Amazon S3 and friends.")).toBe(true);
-    expect(fits(record("Deep dive"), "The S3rver project.")).toBe(false);
+    const fits = buildStackFit(profile(sqs));
+    expect(fits(record("Deep dive"), "Queue it in SQS.")).toBe(true);
+    expect(fits(record("Deep dive"), "Read ./sqs/config.json first.")).toBe(false);
+    expect(fits(record("Deep dive"), "Amazon SQS and friends.")).toBe(true);
+    expect(fits(record("Deep dive"), "The SQSrver project.")).toBe(false);
   });
   it("applies the ordinary-word list to the profile's own spelling", () => {
     const amplify = buildStackFit(profile({ name: "Amplify", catalogName: "AWS Amplify" }));
@@ -101,12 +101,124 @@ describe("buildStackFit", () => {
     expect(hasCoreService(profile({ ...lambda, role: "supporting" }, sqs))).toBe(true);
   });
 
+  describe("excluding services", () => {
+    const bedrock = { name: "bedrock", catalogName: "Amazon Bedrock" };
+    it("ignores the excluded services when deciding fit", () => {
+      const fits = buildStackFit(profile(lambda, bedrock));
+      const both = record("Agents", ["AWS Lambda", "Amazon Bedrock"]);
+      const bedrockOnly = record("Models", ["Amazon Bedrock"]);
+      expect(fits(bedrockOnly, "")).toBe(true);
+      expect(fits(bedrockOnly, "", { without: ["Amazon Bedrock"] })).toBe(false);
+      expect(fits(both, "", { without: ["Amazon Bedrock"] })).toBe(true);
+      expect(fits(record("Models"), "Amazon Bedrock and Bedrock again.", { without: ["Amazon Bedrock"] })).toBe(false);
+    });
+    it("applies the exclusion to the distinct count too", () => {
+      const fits = buildStackFit(profile(lambda, sqs, bedrock), { minDistinct: 2 });
+      const r = record("Agents", ["AWS Lambda", "Amazon Bedrock"]);
+      expect(fits(r, "")).toBe(true);
+      expect(fits(r, "", { without: ["Amazon Bedrock"] })).toBe(false);
+    });
+    it("lets a caller raise the number of distinct services and turns the rare path off", () => {
+      const catalog: IndexRecord[] = [...Array.from({ length: 40 }, (_, i) => record(`Filler ${i}`)), record("Queues", ["Amazon Simple Queue Service (Amazon SQS)"])];
+      const fits = buildStackFit(profile(lambda, sqs), { minDistinct: 1, rareBelow: 0.05, catalog });
+      const one = record("Queues", ["Amazon Simple Queue Service (Amazon SQS)"]);
+      expect(fits(one, "")).toBe(true);
+      expect(fits(one, "", { minDistinct: 2 })).toBe(false);
+      expect(fits(record("Both", ["AWS Lambda", "Amazon Simple Queue Service (Amazon SQS)"]), "", { minDistinct: 2 })).toBe(true);
+    });
+  });
+
+  describe("remedy services", () => {
+    const iam = "AWS Identity and Access Management (IAM)";
+    const analyzer = "AWS IAM Access Analyzer";
+    const billing = "AWS Billing and Cost Management";
+    const fits = buildStackFit(profile(lambda, sqs), { minDistinct: 2 });
+    it("counts each listed remedy service as one more distinct service", () => {
+      const tools = record("Policy tools", [iam, analyzer]);
+      expect(fits(tools, "")).toBe(false);
+      expect(fits(tools, "", { remedy: [iam, analyzer] })).toBe(true);
+      expect(fits(record("Policy tools", ["Amazon Aurora"]), "", { remedy: [iam, analyzer] })).toBe(false);
+    });
+    it("lets one remedy service and one core service fit, but not a remedy service alone", () => {
+      expect(fits(record("Hardening", [iam, "AWS Lambda"]), "", { remedy: [iam, analyzer] })).toBe(true);
+      expect(fits(record("Hardening", [iam]), "", { remedy: [iam, analyzer] })).toBe(false);
+      expect(fits(record("Billing", [billing]), "", { remedy: [billing] })).toBe(false);
+      expect(fits(record("Billing", [billing, "AWS Lambda"]), "", { remedy: [billing] })).toBe(true);
+    });
+    it("counts a remedy service that is also a core service once", () => {
+      const both = buildStackFit(profile(lambda, { name: "billing", catalogName: billing }), { minDistinct: 3 });
+      expect(both(record("Costs", ["AWS Lambda", billing]), "", { remedy: [billing] })).toBe(false);
+    });
+    it("treats an empty remedy list as no remedy", () => {
+      expect(fits(record("Policy tools", [iam]), "", { remedy: [] })).toBe(false);
+    });
+    it("does not open a profile that has no core service", () => {
+      const none = buildStackFit(profile({ ...lambda, role: "supporting" }));
+      expect(none(record("Policy tools", [iam, analyzer]), "", { remedy: [iam, analyzer] })).toBe(false);
+    });
+  });
+
+  describe("the profile's own tools", () => {
+    const cdk = "AWS Cloud Development Kit (AWS CDK)";
+    const cdkService = { name: "cdk", catalogName: cdk, role: "supporting" as const };
+    it("fits a session that lists a tool the profile itself lists, whatever its role", () => {
+      const fits = buildStackFit(profile(lambda, sqs, cdkService), { minDistinct: 2 });
+      expect(fits(record("Test-driven infrastructure", [cdk, "Kiro"]), "")).toBe(false);
+      expect(fits(record("Test-driven infrastructure", [cdk, "Kiro"]), "", { tools: [cdk] })).toBe(true);
+      expect(fits(record("Test-driven infrastructure", ["Kiro"]), "", { tools: [cdk] })).toBe(false);
+    });
+    it("does not fit a tool the profile does not list, nor a profile with no core service", () => {
+      const without = buildStackFit(profile(lambda, sqs), { minDistinct: 2 });
+      expect(without(record("Test-driven infrastructure", [cdk]), "", { tools: [cdk] })).toBe(false);
+      const none = buildStackFit(profile({ ...lambda, role: "supporting" }, cdkService));
+      expect(none(record("Test-driven infrastructure", [cdk]), "", { tools: [cdk] })).toBe(false);
+    });
+  });
+
+  describe("platform services", () => {
+    const cloudwatch = { name: "cloudwatch", catalogName: "Amazon CloudWatch" };
+    const s3 = { name: "s3", catalogName: "Amazon Simple Storage Service (Amazon S3)" };
+    const catalog: IndexRecord[] = [
+      ...Array.from({ length: 40 }, (_, i) => record(`Filler ${i}`, i < 10 ? ["AWS Lambda"] : [])),
+      record("Watching", ["Amazon CloudWatch"]),
+    ];
+    it("names the platform services once", () => {
+      for (const name of ["Amazon CloudWatch", "Amazon Virtual Private Cloud (Amazon VPC)", "Amazon Simple Storage Service (Amazon S3)",
+        "Amazon Route 53", "AWS Certificate Manager (ACM)", "AWS Cloud Development Kit (AWS CDK)", "AWS CloudFormation",
+        "AWS Identity and Access Management (IAM)", "AWS Security Token Service (AWS STS)", "AWS Key Management Service (AWS KMS)",
+        "AWS Secrets Manager", "AWS Systems Manager", "AWS CloudTrail"]) expect(PLATFORM_SERVICES).toContain(name);
+      expect(PLATFORM_SERVICES).not.toContain("AWS Lambda");
+    });
+    it("never counts toward the number of distinct core services", () => {
+      const fits = buildStackFit(profile(lambda, cloudwatch, s3), { minDistinct: 2 });
+      expect(fits(record("Deep dive", ["AWS Lambda", "Amazon CloudWatch", "Amazon Simple Storage Service (Amazon S3)"]), "")).toBe(false);
+      expect(buildStackFit(profile(lambda, sqs, cloudwatch), { minDistinct: 2 })(record("Deep dive", ["AWS Lambda", "Amazon CloudWatch"]), "")).toBe(false);
+      expect(buildStackFit(profile(lambda, sqs, cloudwatch), { minDistinct: 2 })(record("Deep dive", ["AWS Lambda", "Amazon Simple Queue Service (Amazon SQS)"]), "")).toBe(true);
+    });
+    it("never counts as the one rare service", () => {
+      const fits = buildStackFit(profile(lambda, cloudwatch), { minDistinct: 2, rareBelow: 0.03, catalog });
+      expect(fits(record("Watching", ["Amazon CloudWatch"]), "")).toBe(false);
+    });
+    it("leaves a profile with only platform services without a core", () => {
+      expect(hasCoreService(profile(cloudwatch, s3))).toBe(false);
+      expect(hasCoreService(profile(cloudwatch, lambda))).toBe(true);
+      expect(buildStackFit(profile(cloudwatch))(record("Watching", ["Amazon CloudWatch"]), "CloudWatch")).toBe(false);
+    });
+  });
+
   describe("minDistinct and rare services", () => {
     const catalog: IndexRecord[] = [
       ...Array.from({ length: 40 }, (_, i) => record(`Filler ${i}`, i < 10 ? ["AWS Lambda"] : [])),
       record("Voices", ["Amazon Polly"]),
     ];
     const polly = { name: "polly", catalogName: "Amazon Polly" };
+    it("never treats an unresolved service name as rare", () => {
+      const playwright = { name: "Playwright", catalogName: null };
+      const fits = buildStackFit(profile(lambda, playwright), { minDistinct: 2, rareBelow: 0.03, catalog });
+      expect(fits(record("Browser tests"), "Drive Playwright from a script.")).toBe(false);
+      expect(fits(record("Browser tests", ["AWS Lambda"]), "Drive Playwright from a script.")).toBe(true);
+      expect(buildStackFit(profile(playwright))(record("Browser tests"), "Drive Playwright from a script.")).toBe(true);
+    });
     it("needs the requested number of distinct services", () => {
       const fits = buildStackFit(profile(lambda, sqs), { minDistinct: 2 });
       expect(fits(record("Deep dive", ["AWS Lambda"]), "")).toBe(false);

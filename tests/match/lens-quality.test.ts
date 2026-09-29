@@ -76,9 +76,9 @@ describe("lens quality on real abstracts", () => {
     });
     it("without agentic, admits title-level agentic sessions and not a tag-only build talk", () => {
       seed(lensFixture);
-      const result = run(profile(["genai-single-call"], ["Amazon Bedrock"]), "next-level");
+      const result = run(profile(["genai-single-call"], ["Amazon Bedrock", "AWS Lambda", "Amazon EventBridge"]), "next-level");
       const top = codes(result.candidates);
-      expect(top).toContain("SVS324");
+      expect(top).toContain("SVS326");
       expect(top).not.toContain("IND3320");
       expect(result.skippedRules).toEqual([]);
     });
@@ -96,7 +96,7 @@ describe("lens quality on real abstracts", () => {
     });
     it("ranks within a rule by strength before profile relevance", () => {
       const raw: Session[] = [
-        { sessionId: "weak", abbreviation: "WEAK100", title: "Queues", abstract: "Covers dead-letter queues once.", services: ["AWS Lambda", "AWS Step Functions"] },
+        { sessionId: "weak", abbreviation: "WEAK100", title: "Queues", abstract: "Anti-patterns such as missing dead-letter queues.", services: ["AWS Lambda", "AWS Step Functions"] },
         { sessionId: "strong", abbreviation: "STRONG100", title: "Dead-letter queues", abstract: "Lambda and Step Functions consumers." },
       ];
       seed(raw);

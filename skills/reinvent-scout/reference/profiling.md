@@ -93,17 +93,19 @@ Amplify, Kiro), the code or infrastructure actually uses -- not just the service
 or Amplify goes on to provision or call, but the tool itself. It does not include:
 
 - **Ubiquitous plumbing that's implied by everything else**, not a deliberate choice worth
-  surfacing on its own: IAM (used by virtually every AWS repository to grant permissions),
-  CloudFormation *specifically when it's only there because CDK synthesizes to it* -- a hand-
-  written CloudFormation or SAM template the repository deploys directly is a real, deliberate
-  choice and counts as a service, exactly like Terraform would -- STS calls inside a deploy script,
-  and the *default* AWS-managed KMS key. A dedicated (customer-managed) key the code actually uses
+  surfacing on its own: IAM (used by virtually every AWS repository to grant permissions), STS
+  (any use, including runtime AssumeRole), CloudFormation *specifically when it's only there
+  because CDK synthesizes to it*, and the *default* AWS-managed KMS key. A hand-written
+  CloudFormation or SAM template the repository deploys directly is a real, deliberate choice and
+  counts as a service, exactly like Terraform would. A dedicated (customer-managed) key the code actually uses
   to sign or encrypt something is a real choice and counts; only the default key, present whether
   or not anyone thought about it, doesn't. Listing the excluded items as services would swamp a
   profile with noise that's true of almost any AWS repository and therefore matches almost nothing
   distinctive about *this* one. If IAM policies are unusually broad rather than scoped to what the
   code needs, that's still worth recording -- as a `gap-broad-iam` pattern (see "Naming patterns"
-  below), not a service.
+  below), not a service. IAM stays out of `services`: sessions about IAM tooling reach a
+  `gap-broad-iam` profile through the remedy services path (see "Supported evidence lenses"), not
+  through a listed service.
 - **A feature of a service, cited as if it were a separate service.** DynamoDB Streams is DynamoDB,
   not a separate entry; CloudWatch Logs is CloudWatch, not a separate entry. Fold the feature into
   its parent service's own `usage` or evidence instead of listing it twice under two different
@@ -140,7 +142,14 @@ not Ai, Ml, S3 with an inconsistent case, and not spelled out unless that's genu
 A name that doesn't resolve against the current catalog is not an error -- `validate_profile`
 reports it in `unresolvedServices` and keeps it in the profile. Include it anyway if the evidence
 is real; an unresolved name still contributes to text matching even though it can't produce an
-exact-match reason.
+exact-match reason, and it counts toward the number of distinct services a Fix session must share.
+It never counts as rare, so one unresolved name alone never lets a Fix session through.
+
+The catalog has no entry for Amazon SES, Amazon SNS, AWS X-Ray, Amazon CloudWatch RUM, Powertools
+for AWS Lambda or Amazon Bedrock AgentCore, whatever the spelling ("Amazon Simple Email Service"
+does not help): write the name AWS uses and expect it to stay unresolved. Names that do resolve
+include "Amazon SQS", "Amazon ECS" or "ECS", "Amazon EKS" or "EKS", "AWS Lambda", "AWS Step
+Functions", "Amazon EventBridge", "Amazon API Gateway" and "Amazon Bedrock".
 
 ## Skip anything that isn't the project's own code
 
@@ -156,7 +165,7 @@ repositories with the same shape, not a one-off phrase invented per repository (
 and `"event-driven-architecture"` should both just be `event-driven`). A starting vocabulary,
 extend it when a repository's shape genuinely doesn't fit any of these:
 
-`serverless`, `event-driven`, `containers`, `api`, `streaming`, `iac-cdk`, `iac-terraform`,
+`serverless`, `event-driven`, `containers`, `ecs`, `eks`, `api`, `streaming`, `iac-cdk`, `iac-terraform`,
 `iac-cloudformation`, `genai-single-call`, `agentic`, `multi-account`.
 
 The one exception: when a pattern genuinely corresponds to one of `reference/taxonomy.md`'s
@@ -177,7 +186,7 @@ prefix -- it isn't an absence, it's a presence that doesn't count).
 
 ## Say what's missing, too
 
-Note real absences you notice while reading -- no test suite, no alarms or dashboards on the
+Note real absences you notice while reading -- no test suite, no alarm that notifies a person on the
 infrastructure you found, no dead-letter queues on an async pipeline, IAM policies that are broad
 rather than scoped to what the code actually needs. These aren't services in the `services` sense
 (they have nothing to cite a positive line for), so record them as `patterns` entries named with the
@@ -187,6 +196,13 @@ declaration with no redrive policy, the stack with no alarm construct, the IAM s
 wildcard resource -- and explain what's absent and why it matters in `note`; there's no line of
 code for an absence itself to point at. The Fix lens consumes these agent-authored judgments;
 it does not scan repositories or infer an absence from missing service entries.
+
+Record `gap-no-load-tests` and `gap-no-cost-monitoring` only when the repository deploys production
+infrastructure (IaC with a real environment, or a pipeline to one) and has none of the named
+practices; otherwise leave them out, since they are true of almost any repository. A gap may apply
+to a clearly cited part of the system: record it and say which part in the `note`. A wildcard
+permission narrowed by a condition or session policy is still recordable as `gap-broad-iam`, with
+the narrowing mentioned in the `note`.
 
 ## Interests
 
@@ -308,6 +324,20 @@ generates for users. Supporting services count for half in ranking, never satisf
 Next-level stack-fit gate, and their names stay out of the free-text relevance. Without it, a
 product whose templates deploy Lambda and API Gateway ranks as if it ran on them.
 
+Mark platform services `"role": "supporting"` by default: CloudWatch, VPC, S3, Route 53, ACM, CDK,
+CloudFormation, KMS, Secrets Manager, Systems Manager and CloudTrail. IAM and STS are never listed; if
+present they are ignored. Nearly every AWS workload runs on them, so sharing one with a session says nothing about your stack. The stack-fit
+gate ignores them whatever role you give, so a profile whose only services are platform services
+has no stack to fit: list the services the product is actually built from.
+
+Also mark as supporting: a service that is wired in but switched off (a WAF behind a false flag)
+and a service used only at deploy time (Secrets Manager passing values between stacks). The
+repository's own IaC tool (CDK, CloudFormation) is supporting, whether or not it also appears as a
+pattern.
+
+`genai-single-call` applies to any model API, not only Bedrock: Gemini, OpenAI, Anthropic, or
+Bedrock InvokeModel and Converse.
+
 A tool-free utility call inside an agentic app (a one-shot summarize or classify next to the agent
 loop) is not a reason to hide the agent: tag both `agentic` and `genai-single-call`. The path is
 then skipped as already there, which is the correct outcome.
@@ -330,12 +360,15 @@ not a complete assessment or a claim that every repository has these gaps.
 | Exact pattern | Pillar | Session signal examples |
 | --- | --- | --- |
 | `gap-no-dlq` | Reliability | Dead-letter queues, DLQ, redrive |
-| `gap-no-alarms` | Operational Excellence | Alarms, alerting, anomaly detection (the bare word "observability" does not count) |
-| `gap-no-tests` | Operational Excellence | Unit, integration, automated, end-to-end tests |
+| `gap-no-alarms` | Operational Excellence | CloudWatch alarms, alarms on or for a metric, alerting strategy, on-call, paging, SLO/SLI alerting (bare "alerts", "alarms" and "observability" do not count) |
+| `gap-no-tests` | Operational Excellence | Unit, integration, automated, end-to-end tests; test-driven, test coverage, testing infrastructure |
 | `gap-broad-iam` | Security | Least privilege, IAM policy scope |
 | `gap-no-load-tests` | Performance Efficiency | Load, performance, stress testing |
 | `gap-no-cost-monitoring` | Cost Optimization | Cost monitoring, allocation, anomalies, AWS Budgets |
 | `gap-no-resource-rightsizing` | Sustainability | Resource rightsizing |
+
+`gap-no-alarms` means no alarm that notifies a person. An alarm that only drives automation
+(scaling, rollback) does not count as one, so an application with only those still has the gap.
 
 Use “not evident in the cited scope” for an absence. Cite the nearest relevant resource or
 workflow and explain what you inspected in `note`; never infer a system-wide absence from one
@@ -360,9 +393,12 @@ the session's own title or abstract. Unknown names remain valid profile data but
 no active rule or no matching signal returns zero candidates. Generic source services, interests,
 issue prose and catalog tags never admit a session on their own. Strength comes from the text: the
 phrase in the title is 3, at least twice in the abstract 2, once 1 (a Fix abstract that describes it
-as missing, such as "missing dead-letter queues", adds 1, and so does a matching tag, topic or
-service); admission needs 2, except dead-letter queues, whose phrase is specific enough that one
-mention counts. Each rule adds `20 + 10 x strength` points once, with deduplicated source
+as missing, without, lacking, absent or forgotten, such as "missing dead-letter queues", adds 1, and
+so does a matching tag, topic or service; a bare "no" is not a cue); admission needs 2, so a phrase
+named once in passing, such as a dead-letter queue as one scenario among many, is not enough. The
+`genai-single-call` path needs 2 from the text alone, so a tag never lifts a single "agentic"
+mention. A phrase that sits inside an enumeration of three or more names ("Lambda, EC2, ECS and
+EKS") counts for nothing, whatever it names. Each rule adds `20 + 10 x strength` points once, with deduplicated source
 citations in `profileEvidence`; `evidence` remains the matched catalog signal. Rules are ranked
 separately (strength, then profile relevance) and interleaved, and `lensRules` names each admitting
 rule. Titles and abstracts match contiguous whole phrases. Neither lens restricts level or boosts
@@ -370,13 +406,23 @@ format.
 
 Two more gates apply to both lenses. Stack fit: a Fix session must list or name at least two of
 your core services, or one core service that fewer than 3% of catalog sessions list; a Next-level
-session needs one. Supporting services never count. A profile with no core service (none listed, or
+session needs one. Supporting and platform services never count. A session whose title names
+`gap-broad-iam` or `gap-no-cost-monitoring`'s phrase (or whose abstract does so twice) and that
+lists that rule's remedy services (IAM and IAM Access Analyzer; AWS Billing and Cost Management,
+which covers Budgets and Cost Explorer) needs fewer of your services: each remedy service it lists
+counts as one of the two, so IAM alone, which is on almost every security talk, is not enough, but
+IAM with Access Analyzer, or IAM with one of your core services, is. A session about the fix is not
+about the stack the gap sits in. A `gap-no-tests` session about testing infrastructure code with a
+tool your profile lists (CDK, even as a supporting service) fits the same way. A profile with no core service (none listed, or
 every one marked supporting) has no stack to fit, so both lenses admit nothing and `skippedRules`
 names each activated rule with "profile has no core services to check stack fit": list the
 product's real services before expecting Fix or Next-level results. Direction and source: a Next-level session must
-mention the source side (Lambda, serverless or functions; ECS; a single model call, prompt or
-Bedrock), and a session about the reverse move (containers to Lambda or MicroVMs, EKS to ECS) is
-excluded. A path whose destination pattern the profile already has (`containers`, `eks`,
+mention the source side in its own title or abstract, outside an enumeration of three or more names
+(Lambda, serverless or functions; ECS; for a single call: single-shot or basic prompting, a
+baseline chatbot or RAG app, InvokeModel or Converse, or a move from a GenAI baseline to agents; a
+listed service tag or Bedrock and prompts alone do not count, but a session about agents built on
+two of your other core services does), and a session about the reverse move (containers to Lambda
+or MicroVMs, Kubernetes or EKS to serverless or AgentCore, EKS to ECS) is excluded. A path whose destination pattern the profile already has (`containers`, `eks`,
 `agentic`) is skipped and reported in `skippedRules`.
 
 Fix picks are leads, not verdicts. Even with these gates a session can name your services and a gap

@@ -1,3 +1,4 @@
+import { PLATFORM_SERVICES } from "../../src/match/stack-fit.js";
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -569,7 +570,7 @@ describe("documented evidence lenses", () => {
       expect(profiles).toHaveLength(1);
       const resolved = resolveProfile(profiles[0], buildServiceAliasIndex([]));
       const examples = [
-        ["gap-no-dlq", "Dead-letter queues"], ["gap-no-alarms", "Alarms and alerting"],
+        ["gap-no-dlq", "Dead-letter queues"], ["gap-no-alarms", "CloudWatch alarms and alerting strategy"],
         ["gap-no-tests", "Automated testing"], ["gap-broad-iam", "Least privilege"],
         ["gap-no-load-tests", "Load testing"], ["gap-no-cost-monitoring", "Cost monitoring"],
         ["gap-no-resource-rightsizing", "Rightsizing"], ["serverless", "Containers"],
@@ -578,7 +579,7 @@ describe("documented evidence lenses", () => {
       expect(resolved.patterns.map(pattern => pattern.name).sort()).toEqual(examples.map(example => example[0]).sort());
       for (const [name, title] of examples) {
         // The abstract carries what the lenses require beyond the title: a source-side mention and a profile service.
-        const raw = [{ sessionId: "documented", abbreviation: "DOC400", title: title!, abstract: `Lambda ECS one prompt ${resolved.services.map(service => service.name).join(" ")}` }];
+        const raw = [{ sessionId: "documented", abbreviation: "DOC400", title: title!, abstract: `Lambda ECS basic prompting ${resolved.services.map(service => service.name).join(" ")}` }];
         writeCatalog({ raw, index: raw.map(buildIndexRecord), meta: { schemaVersion: CURRENT_SCHEMA_VERSION, eventId: DEFAULT_EVENT_ID, syncedAt: 1, totalCount: 1, count: 1, includedAbstracts: true, timezone: null } }, { storeRoot: home.path });
         const pattern = resolved.patterns.find(entry => entry.name === name)!;
         const input = { ...profiles[0], patterns: [pattern] };
@@ -633,6 +634,60 @@ describe("lens-quality documentation", () => {
   it("does not cite repository test fixtures from the skill's own reference", () => {
     expect(taxonomyMd).not.toContain("tests/fixtures");
     expect(allSkillText).not.toContain("tests/fixtures");
+  });
+});
+
+describe("lens-precision guidance in profiling.md", () => {
+  const collapsed = profilingMd.replace(/\s+/g, " ");
+  it("marks platform services supporting by default and names them, from the exported list", () => {
+    expect(collapsed).toContain("Mark platform services `\"role\": \"supporting\"` by default");
+    const shortName = (name: string): string => {
+      const inner = /\(([^)]+)\)\s*$/.exec(name)?.[1] ?? name;
+      return inner.replace(/^(?:Amazon|AWS)\s+/, "");
+    };
+    const never = new Set(["IAM", "STS"]);
+    const listed = PLATFORM_SERVICES.map(shortName);
+    expect(listed).toEqual(expect.arrayContaining(["IAM", "STS"]));
+    for (const name of listed) {
+      if (never.has(name)) continue;
+      expect(collapsed, name).toMatch(new RegExp(`Mark platform services[^.]*\\b${name}\\b`));
+    }
+    expect(collapsed).toContain("IAM and STS are never listed; if present they are ignored.");
+    expect(collapsed).toContain("no alarm that notifies a person on the infrastructure you found");
+    expect(collapsed).not.toMatch(/Mark platform services[^.]*\bIAM\b/);
+  });
+  it("adds ecs and eks to the starting vocabulary", () => {
+    expect(collapsed).toMatch(/starting vocabulary[^]*`containers`, `ecs`, `eks`/);
+  });
+  it("says an unresolved name is fine, is never rare, and lists the names the catalog lacks", () => {
+    expect(collapsed).toContain("never counts as rare");
+    for (const name of ["Amazon SES", "Amazon SNS", "AWS X-Ray", "Powertools for AWS Lambda"]) expect(collapsed).toContain(name);
+    expect(collapsed).toContain("Amazon Bedrock AgentCore");
+  });
+  it("defines gap-no-alarms as an alarm that notifies a person", () => {
+    expect(collapsed).toContain("no alarm that notifies a person");
+    expect(collapsed).toContain("only drives automation");
+  });
+  it("keeps IAM out of services and points broad-IAM sessions at the remedy path", () => {
+    expect(collapsed).toContain("IAM stays out of `services`");
+    expect(collapsed).toContain("remedy services");
+  });
+  it("covers core versus supporting, gap consistency, any model API and partial scope", () => {
+    expect(collapsed).toContain("The repository's own IaC tool (CDK, CloudFormation) is supporting");
+    expect(collapsed).toContain("wired in but switched off");
+    expect(collapsed).toContain("used only at deploy time");
+    expect(collapsed).toContain("STS (any use, including runtime AssumeRole)");
+    expect(collapsed).toContain("Record `gap-no-load-tests` and `gap-no-cost-monitoring` only when the repository deploys production infrastructure");
+    expect(collapsed).toContain("any model API, not only Bedrock");
+    for (const name of ["Gemini", "OpenAI", "Anthropic"]) expect(collapsed).toContain(name);
+    expect(collapsed).toContain("say which part in the `note`");
+    expect(collapsed).toContain("narrowed by a condition or session policy is still recordable as `gap-broad-iam`");
+  });
+  it("describes the enumeration rule, the single-call source and the reverse move", () => {
+    expect(collapsed).toContain("enumeration of three or more names");
+    expect(collapsed).toContain("agents built on two of your other core services");
+    expect(collapsed).toContain("Kubernetes or EKS to serverless or AgentCore");
+    expect(collapsed).not.toContain("whose phrase is specific enough that one mention counts");
   });
 });
 
