@@ -169,3 +169,24 @@ inline to temp directories. No account writes. Commits end with the attribution 
   IND354, NET406, STG352) or Lambda in passing (DAT301). Options for the lead: ignore services whose
   catalog frequency is high when gating, or require two distinct core services unless the title names
   one, or have profiles mark platform services (CloudWatch, S3, CloudFront, CDK) as `supporting`.
+
+### Final ranking attempt: Fix needs two core services, or one rare one
+
+- Fix stack gate: a session must share at least two distinct core services (listed, or named in the
+  title or abstract; each service counts once however it is spelled), or exactly one core service
+  that fewer than 3% of catalog sessions list (`RARE_SERVICE_FRACTION`, computed from the loaded
+  index, not a fixed list). Next-level keeps the one-service gate.
+- Result on the real snapshot, saved profiles, built CLI (limit 12):
+  - hallway Fix admits 9 sessions, down from 12+: COP306 and IND354 (CloudWatch only) and NET406
+    are gone. API311 is still first. Genuine: API311, SVS329, SVS314, SVS322, COM326, CON337 (6 of
+    9, up from 6 of 10 with the noise removed); still off-stack: DAT301 (names Lambda and
+    CloudWatch in passing), ARC330 (Amplify), and STG352 (S3 monitoring, two core services named).
+  - KiroCrew Fix admits 7: API311, COM326, SVS322, CON337 genuine; DAT301, STG352 and COP309 are
+    not. About 4 of 7.
+  - hallway Next-level is unchanged: CON337, SVS320, COM320 in the top 6.
+- Kept (it does not make Fix worse and API311 stays first). The 8-of-10 target is still not met:
+  the catalog holds few talks that match a given gap phrase and the whole stack, so the list is
+  short and its remaining errors are talks that name two ubiquitous services (Lambda, CloudWatch,
+  S3) in passing.
+- Remaining limitation: Fix candidates are leads, not verdicts. The agent must read each abstract
+  before presenting a pick (SKILL.md already requires it), and the docs say so.

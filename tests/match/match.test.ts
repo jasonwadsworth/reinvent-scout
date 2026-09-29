@@ -1043,12 +1043,12 @@ describe("evidence lenses end to end", () => {
   const evidence = [{ repo: "repo", file: "stack.ts", line: 12 }];
   const sessions: Session[] = [
     { sessionId: "source", abbreviation: "SRC100", title: "Lambda serverless basics", services: ["AWS Lambda"], type: "Breakout session", level: "200 - Intermediate" },
-    { sessionId: "fix", abbreviation: "FIX400", title: "Queue recovery", abstract: "Explore dead-letter queues and redrive for Lambda consumers.", level: "400 - Expert" },
+    { sessionId: "fix", abbreviation: "FIX400", title: "Queue recovery", abstract: "Explore dead-letter queues and redrive for Lambda and SQS consumers.", level: "400 - Expert" },
     { sessionId: "next", abbreviation: "NEXT400", title: "Containers runtime options", topics: ["Containers"], abstract: "Beyond Lambda.", level: "400 - Expert" },
     { sessionId: "alien", abbreviation: "ALIEN100", title: "Quux flibbertigibbet", type: "Breakout session" },
   ];
   const p = (names: string[] = ["gap-no-dlq", "serverless"]) => resolvedProfile({
-    services: [{ name: "lambda", catalogName: "AWS Lambda", evidence }],
+    services: [{ name: "lambda", catalogName: "AWS Lambda", evidence }, { name: "sqs", catalogName: "Amazon Simple Queue Service (Amazon SQS)", evidence }],
     patterns: names.map(name => ({ name, evidence })),
     interests: ["Lambda"], intents: [{ kind: "goal", text: "serverless dead-letter containers" }],
   });
@@ -1073,8 +1073,8 @@ describe("evidence lenses end to end", () => {
   it.each(["fix", "next-level"] as const)("%s ranks eligible sessions by actual profile relevance after admission", lens => {
     const title = lens === "fix" ? "Dead-letter queues" : "Containers";
     seed([
-      { sessionId: "generic", abbreviation: "AAA100", title, abstract: "Lambda." },
-      { sessionId: "relevant", abbreviation: "ZZZ100", title, services: ["AWS Lambda"], abstract: "Lambda." },
+      { sessionId: "generic", abbreviation: "AAA100", title, abstract: "Lambda and SQS." },
+      { sessionId: "relevant", abbreviation: "ZZZ100", title, services: ["AWS Lambda"], abstract: "Lambda and SQS." },
       { sessionId: "source", abbreviation: "SRC100", title: "Lambda basics", services: ["AWS Lambda"] },
     ]);
     const results = matchSessions(p(), { storeRoot: home.path }, { lens });
@@ -1084,9 +1084,9 @@ describe("evidence lenses end to end", () => {
   });
   it("retains the winning sitting's signals, sources, grouping, limits and deterministic order", () => {
     seed([
-      { sessionId: "weak", abbreviation: "FIX400-R1", title: "Dead-letter queues [REPEAT]", abstract: "Lambda." },
-      { sessionId: "strong", abbreviation: "FIX400-R2", title: "Dead-letter queues and alarms [REPEAT]", abstract: "Lambda." },
-      { sessionId: "other", abbreviation: "FIX401", title: "Dead-letter queues", abstract: "Lambda." },
+      { sessionId: "weak", abbreviation: "FIX400-R1", title: "Dead-letter queues [REPEAT]", abstract: "Lambda and SQS." },
+      { sessionId: "strong", abbreviation: "FIX400-R2", title: "Dead-letter queues and alarms [REPEAT]", abstract: "Lambda and SQS." },
+      { sessionId: "other", abbreviation: "FIX401", title: "Dead-letter queues", abstract: "Lambda and SQS." },
     ]);
     const result = matchSessions(p(["gap-no-dlq", "GAP-NO-DLQ", "gap-no-alarms"]), { storeRoot: home.path }, { lens: "fix", limit: 1 });
     expect(result).toHaveLength(1);

@@ -18,21 +18,60 @@ function nameForms(name: string): string[] {
     .filter(form => form.length >= 2);
 }
 
+export interface StackFitOptions {
+  /** Distinct core services a session must share with the profile. Default 1. */
+  minDistinct?: number;
+  /** With `catalog`: a session sharing just one core service still fits when that service is listed
+   * by fewer than this fraction of catalog sessions, so a distinctive service is enough on its own
+   * while a near-universal one (CloudWatch, S3) is not. */
+  rareBelow?: number;
+  catalog?: readonly IndexRecord[];
+}
+
+interface CoreService {
+  catalogName: string | null;
+  named: RegExp;
+  /** Fraction of catalog sessions that list it; 0 when unknown or unlisted. */
+  frequency: number;
+}
+
 /**
- * Whether a session is about the profile's stack: it lists one of the profile's core (not
- * supporting) resolved services, or its title or abstract names one of them, by catalog name, short
- * name or the profile's own spelling. Supporting services never admit, since they are not what the
- * product runs on. Returns `undefined` when the profile has no core service, leaving nothing to fit
- * against, so the gate is off rather than rejecting everything.
+ * Whether a session is about the profile's stack: it lists or names (by catalog name, short name or
+ * the profile's own spelling, in its title or abstract) enough of the profile's core services --
+ * `minDistinct` of them, or a single one that is rare in the catalog (see `StackFitOptions`).
+ * Supporting services never count, since they are not what the product runs on. Returns
+ * `undefined` when the profile has no core service, leaving nothing to fit against, so the gate is
+ * off rather than rejecting everything.
  */
-export function buildStackFit(profile: ResolvedProfile): StackFit | undefined {
+export function buildStackFit(profile: ResolvedProfile, options: StackFitOptions = {}): StackFit | undefined {
   const core = profile.services.filter(service => service.role !== "supporting");
   if (core.length === 0) return undefined;
-  const listed = new Set(core.flatMap(service => service.catalogName === null ? [] : [service.catalogName]));
-  const terms = [...new Set(core.flatMap(service => [
-    ...(service.catalogName === null ? [] : nameForms(service.catalogName)), ...nameForms(service.name),
-  ].map(term => term.toLowerCase())))];
-  const named = new RegExp(`(?<![\\w-])(?:${terms.map(escapeRegExp).join("|")})(?![\\w-])`, "i");
-  return (record, abstract) =>
-    record.services.some(service => listed.has(service)) || named.test(record.title) || named.test(abstract);
+  const minDistinct = options.minDistinct ?? 1;
+  const listedCount = new Map<string, number>();
+  for (const record of options.catalog ?? []) {
+    for (const service of new Set(record.services)) listedCount.set(service, (listedCount.get(service) ?? 0) + 1);
+  }
+  const total = options.catalog?.length ?? 0;
+  const services: CoreService[] = [];
+  const seen = new Set<string>();
+  for (const service of core) {
+    const key = service.catalogName ?? service.name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const terms = [...new Set([
+      ...(service.catalogName === null ? [] : nameForms(service.catalogName)), ...nameForms(service.name),
+    ].map(term => term.toLowerCase()))];
+    services.push({
+      catalogName: service.catalogName,
+      named: new RegExp(`(?<![\\w-])(?:${terms.map(escapeRegExp).join("|")})(?![\\w-])`, "i"),
+      frequency: service.catalogName === null || total === 0 ? 0 : (listedCount.get(service.catalogName) ?? 0) / total,
+    });
+  }
+  return (record, abstract) => {
+    const shared = services.filter(service =>
+      (service.catalogName !== null && record.services.includes(service.catalogName))
+      || service.named.test(record.title) || service.named.test(abstract));
+    if (shared.length >= minDistinct) return true;
+    return options.rareBelow !== undefined && shared.length > 0 && shared.every(service => service.frequency < options.rareBelow!);
+  };
 }
