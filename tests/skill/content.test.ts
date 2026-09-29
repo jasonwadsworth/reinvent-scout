@@ -660,6 +660,17 @@ describe("lens-precision guidance in profiling.md", () => {
     expect(collapsed).toContain("IAM stays out of `services`");
     expect(collapsed).toContain("remedy services");
   });
+  it("covers core versus supporting, gap consistency, any model API and partial scope", () => {
+    expect(collapsed).toContain("The repository's own IaC tool (CDK, CloudFormation) is supporting");
+    expect(collapsed).toContain("wired in but switched off");
+    expect(collapsed).toContain("used only at deploy time");
+    expect(collapsed).toContain("STS is never listed, including runtime AssumeRole");
+    expect(collapsed).toContain("Record `gap-no-load-tests` and `gap-no-cost-monitoring` only when the repository deploys production infrastructure");
+    expect(collapsed).toContain("any model API, not only Bedrock");
+    for (const name of ["Gemini", "OpenAI", "Anthropic"]) expect(collapsed).toContain(name);
+    expect(collapsed).toContain("say which part in the `note`");
+    expect(collapsed).toContain("narrowed by a condition or session policy is still recordable as `gap-broad-iam`");
+  });
   it("describes the enumeration rule, the single-call source and the reverse move", () => {
     expect(collapsed).toContain("enumeration of three or more names");
     expect(collapsed).toContain("agents built on two of your other core services");

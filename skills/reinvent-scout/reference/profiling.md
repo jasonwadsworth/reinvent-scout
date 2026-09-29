@@ -96,7 +96,7 @@ or Amplify goes on to provision or call, but the tool itself. It does not includ
   surfacing on its own: IAM (used by virtually every AWS repository to grant permissions),
   CloudFormation *specifically when it's only there because CDK synthesizes to it* -- a hand-
   written CloudFormation or SAM template the repository deploys directly is a real, deliberate
-  choice and counts as a service, exactly like Terraform would -- STS calls inside a deploy script,
+  choice and counts as a service, exactly like Terraform would -- STS (any use, including runtime AssumeRole; STS is never listed),
   and the *default* AWS-managed KMS key. A dedicated (customer-managed) key the code actually uses
   to sign or encrypt something is a real choice and counts; only the default key, present whether
   or not anyone thought about it, doesn't. Listing the excluded items as services would swamp a
@@ -196,6 +196,13 @@ declaration with no redrive policy, the stack with no alarm construct, the IAM s
 wildcard resource -- and explain what's absent and why it matters in `note`; there's no line of
 code for an absence itself to point at. The Fix lens consumes these agent-authored judgments;
 it does not scan repositories or infer an absence from missing service entries.
+
+Record `gap-no-load-tests` and `gap-no-cost-monitoring` only when the repository deploys production
+infrastructure (IaC with a real environment, or a pipeline to one) and has none of the named
+practices; otherwise leave them out, since they are true of almost any repository. A gap may apply
+to a clearly cited part of the system: record it and say which part in the `note`. A wildcard
+permission narrowed by a condition or session policy is still recordable as `gap-broad-iam`, with
+the narrowing mentioned in the `note`.
 
 ## Interests
 
@@ -321,9 +328,15 @@ Mark platform services `"role": "supporting"` by default: CloudWatch, VPC, S3, R
 CloudFormation, IAM, STS, KMS, Secrets Manager, Systems Manager and CloudTrail. Nearly every AWS
 workload runs on them, so sharing one with a session says nothing about your stack. The stack-fit
 gate ignores them whatever role you give, so a profile whose only services are platform services
-has no stack to fit: list the services the product is actually built from. Keep the repository's
-own IaC tool supporting too, and a service that is optional or used only at deploy time
-(Secrets Manager passing values between stacks, WAF switched off).
+has no stack to fit: list the services the product is actually built from.
+
+Also mark as supporting: a service that is wired in but switched off (a WAF behind a false flag)
+and a service used only at deploy time (Secrets Manager passing values between stacks). The
+repository's own IaC tool (CDK, CloudFormation) is supporting, whether or not it also appears as a
+pattern. STS is never listed, including runtime AssumeRole.
+
+`genai-single-call` applies to any model API, not only Bedrock: Gemini, OpenAI, Anthropic, or
+Bedrock InvokeModel and Converse.
 
 A tool-free utility call inside an agentic app (a one-shot summarize or classify next to the agent
 loop) is not a reason to hide the agent: tag both `agentic` and `genai-single-call`. The path is
