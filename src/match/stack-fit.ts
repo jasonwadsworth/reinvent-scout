@@ -6,6 +6,9 @@ export interface StackFitQuery {
   without?: readonly string[];
   /** Overrides the gate's own minimum of distinct services, and disables the rare-service path. */
   minDistinct?: number;
+  /** Catalog services that fit a session in place of the profile's own, when it lists one. Never
+   * opens a profile that has no core service. */
+  remedy?: readonly string[];
 }
 
 /** A caller that has to know the session is about the profile's stack beyond one service (a rule's
@@ -156,6 +159,7 @@ export function buildStackFit(profile: ResolvedProfile, options: StackFitOptions
   }
   return (record, abstract, query = {}) => {
     const without = query.without ?? [];
+    if (query.remedy?.some(name => record.services.includes(name)) === true) return true;
     const shared = services.filter(service =>
       !(service.catalogName !== null && without.includes(service.catalogName))
       && ((service.catalogName !== null && record.services.includes(service.catalogName))

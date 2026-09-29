@@ -128,6 +128,21 @@ describe("buildStackFit", () => {
     });
   });
 
+  describe("remedy services", () => {
+    const iam = "AWS Identity and Access Management (IAM)";
+    it("fits a session that lists a remedy service in place of the profile's services", () => {
+      const fits = buildStackFit(profile(lambda, sqs), { minDistinct: 2 });
+      const remedy = record("Policy tools", [iam]);
+      expect(fits(remedy, "")).toBe(false);
+      expect(fits(remedy, "", { remedy: [iam] })).toBe(true);
+      expect(fits(record("Policy tools", ["Amazon Aurora"]), "", { remedy: [iam] })).toBe(false);
+    });
+    it("does not open a profile that has no core service", () => {
+      const fits = buildStackFit(profile({ ...lambda, role: "supporting" }));
+      expect(fits(record("Policy tools", [iam]), "", { remedy: [iam] })).toBe(false);
+    });
+  });
+
   describe("platform services", () => {
     const cloudwatch = { name: "cloudwatch", catalogName: "Amazon CloudWatch" };
     const s3 = { name: "s3", catalogName: "Amazon Simple Storage Service (Amazon S3)" };

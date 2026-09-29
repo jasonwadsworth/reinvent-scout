@@ -29,6 +29,10 @@ interface SignalRule {
    * about the move, so a session with no starting-point text still satisfies the source side when
    * it is about at least `SOURCE_STACK_SERVICES` of the profile's other core services. */
   sourceService?: string;
+  /** Fix only: the services that close this rule's gap. When the phrase is in the title or twice in
+   * the abstract, a session listing one of them fits the stack gate in place of the profile's own
+   * services: a session about the fix is not about the stack the gap sits in. */
+  remedyServices?: readonly string[];
   /** Tags, topics and services that add one strength to a text hit but never admit on their own. */
   services?: readonly string[];
   topics?: readonly string[];
@@ -53,9 +57,9 @@ const RULES: readonly SignalRule[] = [
   // Operational alarm or alerting language only: bare "alerts" or "alarms" is telecom NOCs, dashboards and agent talks.
   { source: "gap-no-alarms", lens: "fix", detail: "Operational Excellence: alarms are not evident in the cited scope.", phrase: /\b(?:CloudWatch alarms?|alarms? (?:on|for) (?:the |your |each |every |a )?[\w-]+|alerting strateg(?:y|ies)|on-call|paging|(?:SLO|SLI)s?(?: (?:and|or))? alerting|(?:SLO|SLI)[- ]based alert(?:s|ing)|alerting on (?:SLO|SLI)s?)\b/i },
   { source: "gap-no-tests", lens: "fix", detail: "Operational Excellence: automated tests are not evident in the cited scope.", phrase: /\b(?:(?:unit|integration|automated|end[- ]to[- ]end) test(?:s|ing)?|test[- ]driven|test coverage|testing infrastructure)\b/i },
-  { source: "gap-broad-iam", lens: "fix", detail: "Security: broad IAM permissions are an evidenced scope concern; explore tighter policies.", phrase: /\b(?:least[- ]privilege|IAM polic(?:y|ies)|policy scoping)\b/i },
+  { source: "gap-broad-iam", lens: "fix", detail: "Security: broad IAM permissions are an evidenced scope concern; explore tighter policies.", phrase: /\b(?:least[- ]privilege|IAM polic(?:y|ies)|policy scoping)\b/i, remedyServices: ["AWS Identity and Access Management (IAM)", "AWS IAM Access Analyzer"] },
   { source: "gap-no-load-tests", lens: "fix", detail: "Performance Efficiency: load tests are not evident in the cited scope.", phrase: /\b(?:load|performance|stress) test(?:s|ing)?\b/i },
-  { source: "gap-no-cost-monitoring", lens: "fix", detail: "Cost Optimization: cost monitoring is not evident in the cited scope.", phrase: /\b(?:cost (?:monitoring|allocation|anomal(?:y|ies)|visibility)|AWS Budgets)\b/i },
+  { source: "gap-no-cost-monitoring", lens: "fix", detail: "Cost Optimization: cost monitoring is not evident in the cited scope.", phrase: /\b(?:cost (?:monitoring|allocation|anomal(?:y|ies)|visibility)|AWS Budgets)\b/i, remedyServices: ["AWS Billing and Cost Management"] },
   { source: "gap-no-resource-rightsizing", lens: "fix", detail: "Sustainability: resource rightsizing is not evident in the cited scope.", phrase: /\b(?:right[- ]?sizing|right[- ]?size)\b/i },
   {
     source: "serverless", lens: "next-level", destination: "containers",
@@ -164,7 +168,7 @@ interface Signal {
  * abstract = 2, once = 1; a gap cue before the phrase and a matching tag, topic or service each add
  * 1, but a text hit is required. Title
  * and abstract are matched separately so a phrase cannot bridge them. */
-function catalogSignal(rule: SignalRule, record: IndexRecord, abstract: string, fitsStack: StackFit): Signal | undefined {
+function catalogSignal(rule: SignalRule, record: IndexRecord, abstract: string, fitsStack: StackFit, onStack: boolean): Signal | undefined {
   if (rule.reverse?.test(record.title) === true || rule.reverse?.test(abstract) === true) return undefined;
   if (!mentionsSource(rule, record, abstract, fitsStack)) return undefined;
   const titleMatch = unlistedMatches(rule.phrase, record.title)[0];
@@ -174,6 +178,8 @@ function catalogSignal(rule: SignalRule, record: IndexRecord, abstract: string, 
     ? TITLE_STRENGTH
     : Math.min(abstractMatches.length, 2);
   if (text === 0 || text < (rule.minTextStrength ?? 1)) return undefined;
+  if (!onStack && !(rule.remedyServices !== undefined && text >= 2
+    && fitsStack(record, abstract, { remedy: rule.remedyServices }))) return undefined;
   const cued = rule.lens === "fix" && titleMatch === undefined && abstractMatch !== undefined
     && GAP_CUE.test(abstract.slice(Math.max(0, abstractMatch.index - GAP_CUE_WINDOW), abstractMatch.index));
   const strength = text + (cued ? 1 : 0) + (boosted(rule, record) ? 1 : 0);
@@ -191,14 +197,14 @@ export function scoreLensSignals(
   abstract = "",
   fitsStack: StackFit = (_record, _abstract, query) => query === undefined,
 ): LensScored {
-  if (!fitsStack(record, abstract)) return { score: 0, reasons: [], hits: [] };
+  const onStack = fitsStack(record, abstract);
   const reasons: Reason[] = [];
   const hits: LensHit[] = [];
   for (const rule of RULES) {
     if (rule.lens !== lens) continue;
     const citations = activeCitations(rule, profile);
     if (citations.length === 0) continue;
-    const signal = catalogSignal(rule, record, abstract, fitsStack);
+    const signal = catalogSignal(rule, record, abstract, fitsStack, onStack);
     if (signal === undefined) continue;
     const unique = new Map<string, Evidence>();
     for (const citation of citations) {

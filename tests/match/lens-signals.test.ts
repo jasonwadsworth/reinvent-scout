@@ -326,6 +326,37 @@ describe("genai-single-call source on the profile's own stack", () => {
   });
 });
 
+describe("remediation-tool gate path", () => {
+  const iam = "AWS Identity and Access Management (IAM)";
+  const stacked = {
+    ...profile("gap-broad-iam", "gap-no-cost-monitoring", "gap-no-dlq"),
+    services: ["AWS Lambda", "Amazon Simple Queue Service (Amazon SQS)"].map(name => ({ name, catalogName: name, evidence: [citation] })),
+  };
+  const fits = buildStackFit(stacked, { minDistinct: 2 });
+  const score = (title: string, abstract: string, services: string[], p: ResolvedProfile = stacked) =>
+    scoreLensSignals(buildIndexRecord({ sessionId: "x", title, services }), p, "fix", abstract, fits).score;
+  it("admits a remedy-service session whose title names the phrase, without the profile's services", () => {
+    expect(score("Least privilege IAM policies in CI", "", [iam])).toBe(50);
+    expect(score("Least privilege in CI", "", ["AWS IAM Access Analyzer"])).toBe(50);
+    expect(score("Cost monitoring and cost allocation", "", ["AWS Billing and Cost Management"])).toBe(50);
+  });
+  it("admits it when the abstract names the phrase twice, not once", () => {
+    expect(score("Ship faster", "We cover least privilege. Then least privilege again.", [iam])).toBe(40);
+    expect(score("Ship faster", "We cover least privilege once.", [iam])).toBe(0);
+    expect(score("Ship faster", "We were missing least privilege.", [iam])).toBe(0);
+  });
+  it("needs the remedy service on the session and a rule that names remedy services", () => {
+    expect(score("Least privilege IAM policies in CI", "", ["Amazon Aurora"])).toBe(0);
+    expect(score("Dead-letter queues", "", [iam])).toBe(0);
+    expect(score("Cost monitoring", "", [iam])).toBe(0);
+  });
+  it("does not admit a profile with no core service", () => {
+    const bare = { ...stacked, services: [] };
+    const r = buildIndexRecord({ sessionId: "x", title: "Least privilege IAM policies in CI", services: [iam] });
+    expect(scoreLensSignals(r, bare, "fix", "", buildStackFit(bare, { minDistinct: 2 })).score).toBe(0);
+  });
+});
+
 describe("stack gate", () => {
   it("drops a session the gate rejects, for Fix and Next-level", () => {
     const never = () => false;
