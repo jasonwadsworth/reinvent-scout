@@ -2,7 +2,7 @@ import type { ApiClient } from "../api/client.js";
 import { OAuthError } from "../auth/oauth.js";
 import { readIndex } from "../catalog/store.js";
 import { DEFAULT_EVENT_ID } from "../catalog/sync.js";
-import { AuthRequiredError, NotFoundError, NotRegisteredError, OperationUnavailableError, ThrottledError, ValidationError } from "../core/errors.js";
+import { AuthRequiredError, isRequestNotSent, NotFoundError, NotRegisteredError, OperationUnavailableError, ThrottledError, ValidationError } from "../core/errors.js";
 import type { FavoriteFailure } from "./favorites.js";
 import { acquireWriteQuota, type WriteQuotaDeps } from "./write-quota.js";
 
@@ -13,10 +13,12 @@ export const RESPONSE_BUDGET_BYTES = 30 * 1024;
 /** Bounds mandatory per-ID ledgers before any write. JSON-in-text escaping and UTF8 both count.
  * Reserve room for per-ID states and envelope fields; optional descriptions can be shortened. */
 export function validateSessionIds(input: readonly string[], allowEmpty = false, writeLedger = true): string[] {
-  if ((!allowEmpty && input.length === 0) || input.length > MAX_RESERVATION_IDS || input.some(id => typeof id !== "string" || id.trim().length === 0 || Array.from(id).length > MAX_SESSION_ID_LENGTH)) {
+  // Trim first: a padded ID would otherwise pass the checks and be sent to the API as-is.
+  const trimmed = input.map(id => typeof id === "string" ? id.trim() : id);
+  if ((!allowEmpty && trimmed.length === 0) || trimmed.length > MAX_RESERVATION_IDS || trimmed.some(id => typeof id !== "string" || id.length === 0 || Array.from(id).length > MAX_SESSION_ID_LENGTH)) {
     throw new ValidationError(`Expected ${allowEmpty ? "0" : "1"}–${MAX_RESERVATION_IDS} session IDs, each 1–${MAX_SESSION_ID_LENGTH} characters.`);
   }
-  const ids = [...new Set(input)];
+  const ids = [...new Set(trimmed)];
   if (writeLedger && Buffer.byteLength(JSON.stringify(JSON.stringify(ids)), "utf8") * 2 + 8192 > RESPONSE_BUDGET_BYTES) {
     throw new ValidationError("These IDs cannot fit the mandatory outcome ledger; submit a smaller batch before any write.");
   }
@@ -78,7 +80,9 @@ export async function reserveSessions(input: readonly string[], deps: Reservatio
       }
     } catch (error) {
       if (offset === 0 && (error instanceof AuthRequiredError || error instanceof NotRegisteredError || error instanceof OperationUnavailableError)) throw error;
-      if (isDefiniteWriteRejection(error)) result.failed.push(...chunk.map(sessionId => ({ sessionId, code: "requestFailed", reason: message(error) })));
+      // A token failure means the request never left: nothing was sent, so nothing failed.
+      if (isRequestNotSent(error)) result.notAttempted.push(...chunk);
+      else if (isDefiniteWriteRejection(error)) result.failed.push(...chunk.map(sessionId => ({ sessionId, code: "requestFailed", reason: message(error) })));
       else result.uncertain.push(...chunk);
       if (mustStop(error)) {
         result.notAttempted.push(...ids.slice(offset + chunk.length));

@@ -102,3 +102,16 @@ export class ServiceError extends Error {
     this.name = "ServiceError";
   }
 }
+
+const requestNotSent = new WeakSet<object>();
+
+/** Tags an error raised before a request left the process (the token provider failed), so a caller
+ * can report the affected ids as not attempted rather than failed. Returns the same error. */
+export function markRequestNotSent<T>(error: T): T {
+  if (typeof error === "object" && error !== null) requestNotSent.add(error);
+  return error;
+}
+
+export function isRequestNotSent(error: unknown): boolean {
+  return typeof error === "object" && error !== null && requestNotSent.has(error);
+}

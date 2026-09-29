@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { BulkResult, Schedule } from "../../src/api/types.js";
-import { AuthRequiredError, NotRegisteredError, NotFoundError, OperationUnavailableError, ServiceError, ThrottledError } from "../../src/core/errors.js";
+import { markRequestNotSent, AuthRequiredError, NotRegisteredError, NotFoundError, OperationUnavailableError, ServiceError, ThrottledError } from "../../src/core/errors.js";
 import { OAuthError } from "../../src/auth/oauth.js";
 import { cancelReservation, reserveSessions } from "../../src/schedule/reservations.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
@@ -31,7 +31,7 @@ describe("reservation outcomes", () => {
     expect(result.failed).toEqual([failed[0], { ...failed[1], conflictsWith: [{ sessionId: "constructor", title: null }] }, failed[2]]);
     expect(result.mismatch).toEqual(["a"]);
   });
-  it.each([new AuthRequiredError(), new NotRegisteredError(), new OperationUnavailableError("Reservations open October8")])("throws a first definite session-wide refusal: $name", async error => {
+  it.each([new AuthRequiredError(), new NotRegisteredError(), new OperationUnavailableError("Reservations open October 8")])("throws a first definite session-wide refusal: $name", async error => {
     await expect(reserveSessions(["a"], { storeRoot: home.path, apiClient: client(async () => { throw error; }) })).rejects.toThrow(error);
   });
   it.each([new AuthRequiredError(), new NotRegisteredError(), new OperationUnavailableError("closed"), new ThrottledError(), new OAuthError("server_error", "down")])("retains earlier outcomes and stops following chunks on $name", async error => {
@@ -42,7 +42,7 @@ describe("reservation outcomes", () => {
     expect(result.notAttempted).toEqual(["s20"]); expect(result.aborted).toBeDefined();
     expect(result.verified).toBeNull(); expect(result.verificationError).toBe("read failed");
   });
-  it("retains uncertain503 through later auth and failed reconciliation without replay", async () => {
+  it("retains uncertain 503 through later auth and failed reconciliation without replay", async () => {
     let calls = 0;
     const result = await reserveSessions(ids(21), { storeRoot: home.path, apiClient: client(async () => { if (++calls === 1) throw new ServiceError("lost acknowledgement"); throw new AuthRequiredError(); }, async () => { throw new AuthRequiredError(); }) });
     expect(calls).toBe(2); expect(result.uncertain).toEqual(ids(10)); expect(result.successful).toEqual([]);
@@ -94,4 +94,38 @@ it("resolves conflict titles from the local index", async () => {
     const result = await reserveSessions(["a"], { storeRoot: home.path, apiClient: { reserveSessions: async () => ({ successful: [], failed: [{ sessionId: "a", code: "scheduleConflict", conflictsWith: ["blocked"] }] }), getSchedule: async () => schedule(["blocked"]) } });
     expect(result.failed[0]!.conflictsWith).toEqual([{ sessionId: "blocked", title: "Reserved talk" }]);
   } finally { home.cleanup(); }
+});
+
+describe("reservation review fixes", () => {
+  let home: TempHome;
+  beforeEach(() => { home = createTempHome(); }); afterEach(() => home.cleanup());
+  const client = (reserve: (list: string[]) => Promise<BulkResult>) => ({ reserveSessions: async (_event: string, list: string[]) => reserve(list), getSchedule: async () => schedule() });
+  it("trims IDs before validation and sends the trimmed value, deduplicating after the trim", async () => {
+    const sent: string[][] = [];
+    await reserveSessions([" a ", "a", "\tb\n"], { storeRoot: home.path, apiClient: client(async list => { sent.push(list); return { successful: list, failed: [] }; }) });
+    expect(sent).toEqual([["a", "b"]]);
+    await expect(reserveSessions(["   "], { storeRoot: home.path, apiClient: client(async () => ({ successful: [], failed: [] })) })).rejects.toThrow();
+  });
+  it("reports a chunk whose token could not be obtained as not attempted, not failed", async () => {
+    let calls = 0;
+    const result = await reserveSessions(ids(21), { storeRoot: home.path, apiClient: client(async list => {
+      if (++calls === 1) return { successful: list, failed: [] };
+      throw markRequestNotSent(new OAuthError("server_error", "token endpoint down"));
+    }) });
+    expect(calls).toBe(2);
+    expect(result.successful).toEqual(ids(10));
+    expect(result.failed).toEqual([]);
+    expect(result.uncertain).toEqual([]);
+    expect(result.notAttempted).toEqual(ids(21).slice(10));
+    expect(result.aborted).toBeDefined();
+  });
+  it("still reports a server-side rejection of that chunk as failed", async () => {
+    let calls = 0;
+    const result = await reserveSessions(ids(21), { storeRoot: home.path, apiClient: client(async list => {
+      if (++calls === 1) return { successful: list, failed: [] };
+      throw new OAuthError("server_error", "rejected");
+    }) });
+    expect(result.failed.map(f => f.sessionId)).toEqual(ids(21).slice(10, 20));
+    expect(result.notAttempted).toEqual(["s20"]);
+  });
 });

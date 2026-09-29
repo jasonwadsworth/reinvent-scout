@@ -178,7 +178,10 @@ confirmation before favoriting anything.
 
 ## 7. `favorite_sessions`
 
-Arguments: `{ "sessionIds": string[] (1 to 50), "event"?: string }`.
+Arguments: `{ "sessionIds": string[] (1 to 30), "event"?: string }`. The MCP tool takes at most 30 IDs
+per call: writes are paced at 30 per minute, so a larger call would sleep past the MCP client's
+default 60-second timeout and lose its result. Send several calls instead. The CLI has no such
+timeout and keeps its own, larger limit.
 
 ```json
 {
@@ -498,7 +501,9 @@ selects an event; the default is `reinvent2026`.
 {"tool":"plan_schedule","arguments":{"sessionIds":["example-offering"]}}
 ```
 
-`plan_schedule` is read-only and accepts an ordered list of 0–50 IDs. It checks the full reserved
+`plan_schedule` is read-only and accepts an ordered list of 0–50 IDs. A requested sitting whose talk is
+already reserved as a different sitting is reported in `alreadyReservedAlternative`
+(`{ requested, reservedSessionId }`), never dropped. It checks the full reserved
 and personal schedule, expands repeat alternatives, and chooses the earliest feasible offering
 for each talk in input priority. Favorites do not block. A missing/invalid hard commitment time
 prevents a `conflictFree` claim. It requires a current catalog for the same event and a recognized
@@ -513,11 +518,12 @@ Present that plan and obtain the attendee's confirmation before writing these ex
 {"tool":"reserve_sessions","arguments":{"sessionIds":["<selected-session-id>"]}}
 ```
 
-`reserve_sessions` accepts 1–50 IDs of 1–128 characters, deduplicates, and sends chunks of at most 10.
+`reserve_sessions` accepts 1–30 IDs per MCP call (the CLI accepts up to 50) of 1–128 characters, trims and deduplicates them, and sends chunks of at most 10.
 It returns `successful` (newly acknowledged), `alreadyScheduled` (already reserved), `failed`
 (per-ID code/reason and optional resolved `conflictsWith`), `uncertain`, `notAttempted`,
 `verified: {reserved: [...]}` or null, and `mismatch`. Optional `aborted`/`verificationError`
-explain early termination/read-back failure. Unresolved conflicts retain IDs with null titles.
+explain early termination/read-back failure; a chunk whose sign-in token could not be obtained is
+listed under `notAttempted`, not `failed`, because no request was sent. Unresolved conflicts retain IDs with null titles.
 A partial or uncertain result is marked `isError` but still contains the complete JSON ledger;
 never discard it or blindly rerun the whole request. The CLI similarly returns a failure exit
 status while printing the outcomes. `verified` describes current state, not which request caused

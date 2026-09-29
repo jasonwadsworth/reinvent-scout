@@ -12,7 +12,7 @@ import {
   type CatalogMeta,
 } from "../../src/catalog/store.js";
 import { DEFAULT_EVENT_ID } from "../../src/catalog/sync.js";
-import { AuthRequiredError, NotFoundError, NotRegisteredError, OperationUnavailableError, ValidationError, ServiceError, ThrottledError } from "../../src/core/errors.js";
+import { markRequestNotSent, AuthRequiredError, NotFoundError, NotRegisteredError, OperationUnavailableError, ValidationError, ServiceError, ThrottledError } from "../../src/core/errors.js";
 import { favoriteSessions, unfavoriteSession } from "../../src/schedule/favorites.js";
 import { createFakeFetch } from "../helpers/fake-fetch.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
@@ -262,7 +262,7 @@ describe("favoriteSessions", () => {
       associateFavorites: async (_eventId, sessionIds) => {
         callCount++;
         if (callCount === 1) {
-          throw new ServiceError("The server exploded.");
+          throw new ValidationError("The server exploded.");
         }
         return { successful: sessionIds, failed: [] };
       },
@@ -960,7 +960,7 @@ describe("favorite uncertainty", () => {
 });
 
 describe("favorite rejection certainty", () => {
-  it("does not call400 rejection uncertain", async () => {
+  it("does not call 400 rejection uncertain", async () => {
     const home = createTempHome();
     try {
       const result = await favoriteSessions(["a"], { storeRoot: home.path, apiClient: { associateFavorites: async () => { throw new ValidationError("invalid"); }, getSchedule: async () => ({ reserved: [], favorites: [], personalTime: [] }) } });
@@ -968,7 +968,7 @@ describe("favorite rejection certainty", () => {
       expect(result.failed[0]!.code).toBe("requestFailed");
     } finally { home.cleanup(); }
   });
-  it("stops409 immediately", async () => {
+  it("stops 409 immediately", async () => {
     const home = createTempHome(); let calls = 0;
     try {
       await expect(favoriteSessions(Array.from({ length: 11 }, (_, i) => String(i)), { storeRoot: home.path, apiClient: { associateFavorites: async () => { calls++; throw new OperationUnavailableError("closed"); }, getSchedule: async () => ({ reserved: [], favorites: [], personalTime: [] }) } })).rejects.toThrow("closed");
@@ -990,4 +990,37 @@ it("unfavorite charges its own per-request rolling window", async () => {
     for (let i = 0; i < 31; i++) await unfavoriteSession(String(i), { storeRoot: home.path, ...clock, apiClient: { disassociateFavorite: async () => {} } });
     expect(clock.durations).toEqual([61000]);
   } finally { home.cleanup(); }
+});
+
+describe("favorite review fixes", () => {
+  const empty = async () => ({ reserved: [], favorites: [], personalTime: [] });
+  const twenty = Array.from({ length: 21 }, (_, i) => `f${i}`);
+  it("lists an ambiguous chunk once, as uncertain, and not also as failed", async () => {
+    const home = createTempHome();
+    try {
+      const result = await favoriteSessions(["a", "b"], { storeRoot: home.path, apiClient: { associateFavorites: async () => { throw new ServiceError("lost response"); }, getSchedule: empty } });
+      expect(result.uncertain).toEqual(["a", "b"]);
+      expect(result.failed).toEqual([]);
+    } finally { home.cleanup(); }
+  });
+  it("still lists a definite rejection only as failed", async () => {
+    const home = createTempHome();
+    try {
+      const result = await favoriteSessions(["a"], { storeRoot: home.path, apiClient: { associateFavorites: async () => { throw new ValidationError("invalid"); }, getSchedule: empty } });
+      expect(result.uncertain ?? []).toEqual([]);
+      expect(result.failed.map(f => f.sessionId)).toEqual(["a"]);
+    } finally { home.cleanup(); }
+  });
+  it.each([
+    ["an OAuth token failure", () => markRequestNotSent(new OAuthError("server_error", "token endpoint down"))],
+    ["a sign-in loss", () => markRequestNotSent(new AuthRequiredError())],
+  ])("reports a chunk whose token could not be obtained (%s) as not attempted, not requestFailed", async (_label, makeError) => {
+    const home = createTempHome(); let calls = 0;
+    try {
+      const result = await favoriteSessions(twenty, { storeRoot: home.path, apiClient: { associateFavorites: async (_event: string, list: string[]) => { if (++calls === 1) return { successful: list, failed: [] }; throw makeError(); }, getSchedule: empty } });
+      expect(result.successful).toEqual(twenty.slice(0, 10));
+      expect(result.failed.filter(f => f.code === "requestFailed")).toEqual([]);
+      expect(result.failed.filter(f => f.code === "notAttempted").map(f => f.sessionId)).toEqual(twenty.slice(10));
+    } finally { home.cleanup(); }
+  });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addMinutesToIso, utcIsoToZonedWallClock, zonedWallClockToUtcIso } from "../../src/schedule/timezone.js";
+import { addMinutesToIso, formatEventLocalTime, utcIsoToZonedWallClock, zonedWallClockToUtcIso } from "../../src/schedule/timezone.js";
 
 describe("zonedWallClockToUtcIso", () => {
   it("converts a Pacific Standard Time wall clock to its correct UTC instant", () => {
@@ -108,5 +108,16 @@ describe("utcIsoToZonedWallClock", () => {
       date: "2026-12-01",
       time: "10:30",
     });
+  });
+});
+
+describe("formatEventLocalTime", () => {
+  it("renders an instant as event-local wall-clock time labeled with the zone abbreviation", () => {
+    expect(formatEventLocalTime("2026-12-02T18:30:00Z", "America/Los_Angeles")).toBe("2026-12-02 10:30 PST");
+    expect(formatEventLocalTime("2026-06-02T18:30:00Z", "America/Los_Angeles")).toBe("2026-06-02 11:30 PDT");
+    expect(formatEventLocalTime("2026-12-03T07:59:00Z", "America/Los_Angeles")).toBe("2026-12-02 23:59 PST");
+  });
+  it("falls back to UTC, labeled UTC, when the timezone is unknown", () => {
+    expect(formatEventLocalTime("2026-12-02T18:30:00Z", null)).toBe("2026-12-02 18:30 UTC");
   });
 });

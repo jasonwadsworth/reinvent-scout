@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
@@ -567,4 +567,101 @@ it("reads and updates on-site config through CLI without account access", async 
     await h.run(["schedule", "onsite-config", "--event", "constructor", "--allow-walk-up", "true", "--json"]);
     expect(JSON.parse(h.printed.pop()!).allowWalkUp).toBe(true);
   } finally { home.cleanup(); }
+});
+
+
+describe("on-site commands: errors and local time", () => {
+  let home: TempHome;
+  beforeEach(() => { home = createTempHome(); process.exitCode = 0; });
+  afterEach(() => { home.cleanup(); process.exitCode = 0; });
+  const venue = ["--venue", "MGM Grand", "--confirm-venue"];
+  const notRawZodJson = (text: string) => expect(text.trimStart().startsWith("[")).toBe(false);
+
+  it("prints a field-path message and exits 1 for an invalid nearby option", async () => {
+    seedFixtureCatalog(home.path, { timezone: "America/Los_Angeles" });
+    const h = harness(home.path);
+    await h.run(["schedule", "nearby", ...venue, "--within", "abc"]);
+    expect(h.printed).toHaveLength(1);
+    notRawZodJson(h.printed[0]!);
+    expect(h.printed[0]).toContain("withinMinutes:");
+    expect(process.exitCode).toBe(1);
+  });
+  it("prints the message and exits 1 for a wrong-event catalog and for auth failures", async () => {
+    seedFixtureCatalog(home.path, { timezone: "America/Los_Angeles" });
+    const wrongEvent = harness(home.path);
+    await wrongEvent.run(["schedule", "nearby", ...venue, "--event", "another-event"]);
+    expect(wrongEvent.printed[0]).toMatch(/Sync the catalog for event another-event/);
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
+    const auth = harness(home.path, { getSchedule: async () => { throw new AuthRequiredError(); } });
+    await auth.run(["schedule", "nearby", ...venue]);
+    expect(auth.printed[0]).toBe(new AuthRequiredError().message);
+    expect(process.exitCode).toBe(1);
+  });
+  it.each([
+    [["--allow-walk-up", "yes"], "allowWalkUp:"],
+    [["--file", "PATCH_BAD_TYPE"], "checkInMinutes:"],
+    [["--file", "PATCH_NOT_JSON"], "not valid JSON"],
+    [["--file", "PATCH_MISSING"], "Cannot read"],
+  ])("prints a readable message and exits 1 for onsite-config %j", async (args, expected) => {
+    const files: Record<string, string> = { PATCH_BAD_TYPE: '{"checkInMinutes":"soon"}', PATCH_NOT_JSON: "{oops" };
+    const resolved = args.map(arg => {
+      if (arg === "PATCH_MISSING") return join(home.path, "missing.json");
+      if (arg in files) { const path = join(home.path, `${arg}.json`); writeFileSync(path, files[arg]!); return path; }
+      return arg;
+    });
+    const h = harness(home.path);
+    await h.run(["schedule", "onsite-config", ...resolved]);
+    expect(h.printed).toHaveLength(1);
+    notRawZodJson(h.printed[0]!);
+    expect(h.printed[0]).toContain(expected);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("prints the refusal and exits 1 when the on-site config path is a symlink", async () => {
+    symlinkSync(join(home.path, "elsewhere.json"), join(home.path, "onsite.json"));
+    const h = harness(home.path);
+    await h.run(["schedule", "onsite-config", "--allow-walk-up", "true"]);
+    expect(h.printed).toHaveLength(1);
+    expect(h.printed[0]).toMatch(/symlink/i);
+    expect(process.exitCode).toBe(1);
+  });
+
+  describe("event-local times", () => {
+    const early = { sessionId: "early", title: "Early talk", abbreviation: "EAR100", venue: "MGM Grand", isReservable: true, seatAvailability: "available", sessionTime: { date: "2026-12-02", time: "10:30", length: "30" } } as Session;
+    const seed = () => writeCatalog({ raw: [early], index: [buildIndexRecord(early)], meta: sampleMeta({ timezone: "America/Los_Angeles", count: 1, totalCount: 1 }) }, { storeRoot: home.path });
+    it("shows plan times in the event zone with its abbreviation, not UTC", async () => {
+      seed();
+      const h = harness(home.path);
+      await h.run(["schedule", "plan", "early"]);
+      expect(h.printed[0]).toContain("2026-12-02 10:30 PST to 2026-12-02 11:00 PST");
+      expect(h.printed[0]).not.toContain("18:30:00Z");
+    });
+    it("shows nearby start times in the event zone with its abbreviation, not UTC", async () => {
+      seed();
+      const now = Date.parse("2026-12-02T17:00:00Z");
+      const printed: string[] = [];
+      const program = new Command().exitOverride();
+      registerScheduleCommands(program, { resolveStoreRoot: () => home.path, buildApiClient: () => ({ ...fakeApiClient(), getSession: async () => early }), print: message => { printed.push(message); }, now: () => now });
+      await program.parseAsync(["node", "reinvent-scout", "schedule", "nearby", ...venue, "--within", "120"]);
+      expect(printed[0]).toContain("starts 2026-12-02 10:30 PST");
+      expect(printed[0]).not.toContain("18:30:00Z");
+    });
+  });
+});
+
+describe("padded ids", () => {
+  let home: TempHome;
+  beforeEach(() => { home = createTempHome(); process.exitCode = 0; });
+  afterEach(() => { home.cleanup(); process.exitCode = 0; });
+  it("trims favorite ids before sending and refuses a blank one", async () => {
+    const sent: string[][] = [];
+    const h = harness(home.path, { associateFavorites: async (_e, list) => { sent.push(list); return { successful: list, failed: [] }; }, getSchedule: async () => ({ reserved: [], favorites: ["a"], personalTime: [] }) });
+    await h.run(["schedule", "favorite", " a "]);
+    expect(sent).toEqual([["a"]]);
+    const blank = harness(home.path);
+    await blank.run(["schedule", "favorite", "   "]);
+    expect(blank.printed[0]).toMatch(/blank/i);
+    expect(process.exitCode).toBe(1);
+  });
 });

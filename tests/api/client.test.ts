@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createApiClient } from "../../src/api/client.js";
 import {
   AuthRequiredError,
+  isRequestNotSent,
   NotFoundError,
   NotRegisteredError,
   OperationUnavailableError,
@@ -418,5 +419,30 @@ describe("reservation endpoints and write retry safety", () => {
     const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: async () => "token", sleep: async () => {} });
     await expect(client.cancelReservation(EVENT_ID, "a")).rejects.toThrow(ServiceError);
     expect(fake.calls).toHaveLength(1);
+  });
+});
+
+describe("token failures are marked as never sent", () => {
+  it("marks an error thrown by getAccessToken, including on the forced refresh after a 401", async () => {
+    const fake = createFakeFetch([{ status: 200, json: EMPTY_SCHEDULE_BODY }]);
+    const down = new Error("token endpoint down");
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: async () => { throw down; } });
+    const caught = await client.getSchedule(EVENT_ID).catch((error: unknown) => error);
+    expect(caught).toBe(down);
+    expect(isRequestNotSent(caught)).toBe(true);
+    expect(fake.calls).toHaveLength(0);
+
+    const fake401 = createFakeFetch([{ status: 401, json: {} }]);
+    const refreshDown = new Error("refresh down");
+    const client401 = createApiClient({ fetchFn: fake401.fetch, getAccessToken: async options => { if (options?.forceRefresh) throw refreshDown; return "token"; } });
+    const caught401 = await client401.getSchedule(EVENT_ID).catch((error: unknown) => error);
+    expect(isRequestNotSent(caught401)).toBe(true);
+  });
+  it("does not mark an error the server returned", async () => {
+    const fake = createFakeFetch([{ status: 401, json: {} }, { status: 401, json: {} }]);
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: async () => "token" });
+    const caught = await client.getSchedule(EVENT_ID).catch((error: unknown) => error);
+    expect(caught).toBeInstanceOf(AuthRequiredError);
+    expect(isRequestNotSent(caught)).toBe(false);
   });
 });

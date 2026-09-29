@@ -592,8 +592,13 @@ function registerGetScheduleTool(server: McpServer, deps: McpToolDeps): void {
  * whose own cap is 50). `.min(1)` is what makes an empty list a schema-level rejection -- the SDK
  * turns that into `isError` before the handler (and so `favoriteSessions`, and so any network
  * call) ever runs. */
+/** Writes are paced at thirty session-units per rolling minute, so a call with more would sleep
+ * through the MCP client's default 60 s request timeout and lose its ledger on the client side.
+ * Larger batches take several calls; the CLI, which has no such timeout, keeps its own limits. */
+const MCP_MAX_WRITE_IDS = 30;
+
 const FavoriteSessionsInputSchema = z.strictObject({
-  sessionIds: z.array(z.string().min(1)).min(1).max(50),
+  sessionIds: z.array(z.string().trim().min(1)).min(1).max(MCP_MAX_WRITE_IDS),
   event: z.string().min(1).optional(),
 });
 
@@ -604,7 +609,8 @@ function registerFavoriteSessionsTool(server: McpServer, deps: McpToolDeps): voi
     "favorite_sessions",
     {
       description:
-        "Favorite up to fifty sessions by session id, chunked and paced automatically. Reports " +
+        "Favorite up to thirty sessions by session id per call (larger batches would outlast the " +
+        "MCP request timeout; make several calls), chunked and paced automatically. Reports " +
         "every outcome -- successes, already-favorited ids (not a failure), and refusals with " +
         "resolved conflict titles where applicable -- plus a post-write verification against the " +
         "real schedule. A 200 response carrying a refusal is never reported as a plain success.",
@@ -662,12 +668,12 @@ function registerUnfavoriteSessionTool(server: McpServer, deps: McpToolDeps): vo
 }
 
 function registerReservationTools(server: McpServer, deps: McpToolDeps): void {
-  const idSchema = z.string().min(1).refine(id => Array.from(id).length <= MAX_SESSION_ID_LENGTH, `Session IDs must have at most ${MAX_SESSION_ID_LENGTH} characters.`);
+  const idSchema = z.string().trim().min(1).refine(id => Array.from(id).length <= MAX_SESSION_ID_LENGTH, `Session IDs must have at most ${MAX_SESSION_ID_LENGTH} characters.`);
   const buildApiClient = deps.buildApiClient ?? defaultBuildApiClient;
   for (const name of ["plan_schedule", "reserve_sessions"] as const) {
     server.registerTool(name, {
-      description: name === "plan_schedule" ? "Read the full schedule and plan up to 50 priority-ordered session IDs with repeat alternatives. No writes; proves time non-overlap only, not seats or travel." : "Reserve up to 50 explicitly confirmed offering IDs. Reports every outcome and uncertainty; never automatically replay an ambiguous write or cancel conflicts.",
-      inputSchema: z.strictObject({ sessionIds: z.array(idSchema).min(name === "plan_schedule" ? 0 : 1).max(MAX_RESERVATION_IDS), event: z.string().min(1).optional() }),
+      description: name === "plan_schedule" ? "Read the full schedule and plan up to 50 priority-ordered session IDs with repeat alternatives. No writes; proves time non-overlap only, not seats or travel." : "Reserve up to 30 explicitly confirmed offering IDs per call (larger batches would outlast the MCP request timeout; make several calls). Reports every outcome and uncertainty; never automatically replay an ambiguous write or cancel conflicts.",
+      inputSchema: z.strictObject({ sessionIds: z.array(idSchema).min(name === "plan_schedule" ? 0 : 1).max(name === "plan_schedule" ? MAX_RESERVATION_IDS : MCP_MAX_WRITE_IDS), event: z.string().min(1).optional() }),
     }, async ({ sessionIds, event }) => {
       try {
         const ids = validateSessionIds(sessionIds, name === "plan_schedule", name === "reserve_sessions");
@@ -680,7 +686,7 @@ function registerReservationTools(server: McpServer, deps: McpToolDeps): void {
     });
   }
   server.registerTool("cancel_reservation", {
-    description: "Cancel one explicitly confirmed reservation. Reports acknowledged cancellation, already absent404, or uncertainty, plus independent schedule verification.",
+    description: "Cancel one explicitly confirmed reservation. Reports acknowledged cancellation, already absent (404), or uncertainty, plus independent schedule verification.",
     inputSchema: z.strictObject({ sessionId: idSchema, event: z.string().min(1).optional() }),
   }, async ({ sessionId, event }) => {
     try {
@@ -710,7 +716,7 @@ export function registerTools(server: McpServer, deps: McpToolDeps): void {
 function registerOnsiteTools(server: McpServer, deps: McpToolDeps): void {
   const eventIdSchema = z.string().min(1).max(128).optional();
   const fail = (err: unknown) => { const result = toToolError(err); result.content[0].text = shortenDescription(result.content[0].text, 512); return result; };
-  server.registerTool("nearby_sessions", { description: "Read-only nearby suggestions after confirming your current venue for this call. Uses full hard schedule, conservative travel, fresh bands and at most20 serial session reads. Skipping does not cancel reservations.", inputSchema: nearbyInputSchema }, async input => {
+  server.registerTool("nearby_sessions", { description: "Read-only nearby suggestions after confirming your current venue for this call. Uses full hard schedule, conservative travel, fresh bands and at most 20 serial session reads. Skipping does not cancel reservations.", inputSchema: nearbyInputSchema }, async input => {
     try { const storeRoot = deps.resolveStoreRoot(); return textResult(boundedNearbyResult(await recommendNearbySessions(input, { storeRoot, apiClient: (deps.buildApiClient ?? defaultBuildApiClient)(storeRoot), ...(deps.now ? { now: deps.now } : {}) }))); }
     catch (err) { return fail(err); }
   });

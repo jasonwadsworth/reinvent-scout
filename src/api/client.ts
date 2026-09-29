@@ -1,6 +1,7 @@
 import type { GetAccessTokenOptions } from "../auth/token-provider.js";
 import {
   AuthRequiredError,
+  markRequestNotSent,
   NotFoundError,
   NotRegisteredError,
   OperationUnavailableError,
@@ -147,7 +148,16 @@ async function requestJson<T>(
   const sleep = deps.sleep ?? defaultSleep;
   const baseUrl = deps.baseUrl ?? DEFAULT_BASE_URL;
 
-  let token = await deps.getAccessToken();
+  // A failure here means the request never went out: tagged so a bulk write can report its ids as
+  // not attempted rather than failed.
+  const getToken = async (options?: GetAccessTokenOptions): Promise<string> => {
+    try {
+      return await deps.getAccessToken(options);
+    } catch (error) {
+      throw markRequestNotSent(error);
+    }
+  };
+  let token = await getToken();
   let usedForcedRefresh = false;
   let attempts429 = 0;
   let attempts503 = 0;
@@ -165,7 +175,7 @@ async function requestJson<T>(
 
     if (response.status === 401 && !usedForcedRefresh) {
       usedForcedRefresh = true;
-      token = await deps.getAccessToken({ forceRefresh: true });
+      token = await getToken({ forceRefresh: true });
       continue;
     }
 

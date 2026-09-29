@@ -6,7 +6,7 @@ import { OAuthError } from "../auth/oauth.js";
 import type { IndexRecord } from "../catalog/index-record.js";
 import { readIndex, type CatalogStoreDeps } from "../catalog/store.js";
 import { DEFAULT_EVENT_ID } from "../catalog/sync.js";
-import { AuthRequiredError, NotFoundError, NotRegisteredError, OperationUnavailableError, ThrottledError } from "../core/errors.js";
+import { AuthRequiredError, isRequestNotSent, NotFoundError, NotRegisteredError, OperationUnavailableError, ThrottledError } from "../core/errors.js";
 
 /** The API's own per-request cap on `AssociateFavorites`. */
 const MAX_FAVORITES_PER_REQUEST = 10;
@@ -290,25 +290,32 @@ export async function favoriteSessions(
         // This chunk's own ids: a real request really was attempted and really was refused, same
         // as any other requestFailed. Everything strictly after it never got the chance.
         const reason = describeError(err);
+        const notAttemptedReason = notAttemptedAuthReason(err);
         for (const sessionId of idsChunk) {
-          failed.push({ sessionId, code: REQUEST_FAILED_CODE, reason });
+          // A token failure means this chunk's request never left: not attempted, not failed.
+          failed.push(isRequestNotSent(err)
+            ? { sessionId, code: NOT_ATTEMPTED_CODE, reason: notAttemptedReason }
+            : { sessionId, code: REQUEST_FAILED_CODE, reason });
         }
         const notAttempted = chunks.slice(chunkIndex + 1).flat();
-        const notAttemptedReason = notAttemptedAuthReason(err);
         for (const sessionId of notAttempted) {
           failed.push({ sessionId, code: NOT_ATTEMPTED_CODE, reason: notAttemptedReason });
         }
         return abortOrThrow(err);
       }
 
-      if (!isDefiniteWriteRejection(err)) uncertain.push(...idsChunk);
-
       // Scoped to this chunk's ids alone -- an independent request failing must not lose every
       // other chunk's result. The underlying error's message rides along as `reason`: a bare
       // "requestFailed" code with nothing else would tell a caller precisely nothing about why.
+      // Each id is listed once: a token failure never sent the request (not attempted), a definite
+      // rejection proves nothing was written (failed), anything else is ambiguous (uncertain).
       const reason = describeError(err);
-      for (const sessionId of idsChunk) {
-        failed.push({ sessionId, code: REQUEST_FAILED_CODE, reason });
+      if (isRequestNotSent(err)) {
+        for (const sessionId of idsChunk) failed.push({ sessionId, code: NOT_ATTEMPTED_CODE, reason });
+      } else if (isDefiniteWriteRejection(err)) {
+        for (const sessionId of idsChunk) failed.push({ sessionId, code: REQUEST_FAILED_CODE, reason });
+      } else {
+        uncertain.push(...idsChunk);
       }
 
       if (err instanceof ThrottledError) {

@@ -14,6 +14,9 @@ export interface PlanRejection { sessionId: string; reason: string; conflictsWit
 export interface SchedulePlan {
   selected: PlanSelection[];
   alreadyReserved: string[];
+  /** A requested sitting whose talk is already reserved as a different sitting: the request is
+   * not dropped, it is answered by that reservation. */
+  alreadyReservedAlternative: Array<{ requested: string; reservedSessionId: string }>;
   rejected: PlanRejection[];
   alternatives: Array<{ requestedId: string; sessionIds: string[] }>;
   blockedBy: string[];
@@ -45,7 +48,7 @@ export function overlaps(a: TimeInterval, b: TimeInterval): boolean {
  * Existing commitments are not moved, cancelled, or attributed to this invocation. */
 export function buildSchedulePlan(input: readonly string[], context: PlanContext): SchedulePlan {
   const ids = validateSessionIds(input, true, false);
-  const result: SchedulePlan = { selected: [], alreadyReserved: [], rejected: [], alternatives: [], blockedBy: [], conflictFree: true, limitations: "Time non-overlap only; no seat or travel guarantee. Recheck the schedule before reserving." };
+  const result: SchedulePlan = { selected: [], alreadyReserved: [], alreadyReservedAlternative: [], rejected: [], alternatives: [], blockedBy: [], conflictFree: true, limitations: "Time non-overlap only; no seat or travel guarantee. Recheck the schedule before reserving." };
   if (ids.length === 0) return result;
   const now = (context.now ?? Date.now)();
   const byId = new Map(context.index.map(record => [record.sessionId, record]));
@@ -75,7 +78,13 @@ export function buildSchedulePlan(input: readonly string[], context: PlanContext
     if (!requested) { result.rejected.push({ sessionId: requestedId, reason: "notInCatalog" }); continue; }
     const code = baseSessionCode(requested);
     const reserved = reservedTalks.get(code);
-    if (reserved) { for (const id of reserved) if (!result.alreadyReserved.includes(id)) result.alreadyReserved.push(id); continue; }
+    if (reserved) {
+      for (const id of reserved) {
+        if (!result.alreadyReserved.includes(id)) result.alreadyReserved.push(id);
+        if (id !== requestedId) result.alreadyReservedAlternative.push({ requested: requestedId, reservedSessionId: id });
+      }
+      continue;
+    }
     if (selectedTalks.has(code)) { result.rejected.push({ sessionId: requestedId, reason: "duplicateTalk" }); continue; }
     const alternatives = context.index.filter(record => baseSessionCode(record) === code)
       .map(record => ({ record, interval: sessionInterval(record, context.eventTimezone) }))

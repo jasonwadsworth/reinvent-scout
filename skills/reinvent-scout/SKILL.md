@@ -51,7 +51,7 @@ explained shortlist.
    Present its selected offerings, alternatives, refusals and time-only limits. Ask for confirmation before reserving
    those exact returned IDs with `reserve_sessions`. A plan never reserves seats or proves travel
    feasibility. Report every failed, uncertain and not-attempted ID, even when the tool marks the
-   result as an error. A409 means reservations are closed: stop. Never automatically replay an
+   result as an error. A 409 means reservations are closed: stop. Never automatically replay an
    uncertain write; use its schedule read-back, explain that observed state is not proof of what
    caused it, and ask before any later retry. Use `cancel_reservation` only for an explicitly
    chosen cancellation; never cancel conflicts automatically.
@@ -130,7 +130,7 @@ one without the actual remediation or destination signal.
 
 For on-site requests, confirm the attendee's current venue on every call, including location or
 schedule-derived suggestions. Use `nearby_sessions` only after that confirmation. It reads the
-full hard schedule and at most20 fresh session records; travel is estimated and seat bands are
+full hard schedule and at most 20 fresh session records; travel is estimated and seat bands are
 not guarantees. Present both travel legs, admission uncertainty and refresh coverage. An explicit
 skip does not cancel a reservation. Walk-up defaults false; `set_onsite_preferences` changes local
 settings, with event-scoped session false overrides and null resets. Follow the on-site examples

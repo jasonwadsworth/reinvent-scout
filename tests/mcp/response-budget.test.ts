@@ -17,11 +17,19 @@ describe("mandatory reservation ledgers", () => {
   });
   it("bounds planning output by whole entries with honest counts", () => {
     const selected = Array.from({ length: 50 }, (_, i) => ({ sessionId: String(i), requestedId: String(i), title: "界".repeat(10000), code: "a", startsAt: "2026-12-02T18:00:00Z", endsAt: "2026-12-02T19:00:00Z" }));
-    const result = boundedSchedulePlan({ selected, alreadyReserved: [], rejected: [], alternatives: [], blockedBy: [], conflictFree: true, limitations: "Time only" });
+    const result = boundedSchedulePlan({ selected, alreadyReserved: [], alreadyReservedAlternative: [], rejected: [], alternatives: [], blockedBy: [], conflictFree: true, limitations: "Time only" });
     expect(responseBytes(result)).toBeLessThan(RESPONSE_BUDGET_BYTES);
     expect(result.selected.length + result.omitted.selected).toBe(50);
     expect(result.omitted.selected).toBeGreaterThan(0);
   });
+});
+
+it("bounds already-reserved alternatives by whole entries with honest counts", () => {
+  const alreadyReservedAlternative = Array.from({ length: 50 }, (_, i) => ({ requested: `${i}${"界".repeat(10000)}`, reservedSessionId: "r" }));
+  const result = boundedSchedulePlan({ selected: [], alreadyReserved: [], alreadyReservedAlternative, rejected: [], alternatives: [], blockedBy: [], conflictFree: true, limitations: "Time only" });
+  expect(responseBytes(result)).toBeLessThan(RESPONSE_BUDGET_BYTES);
+  expect(result.alreadyReservedAlternative.length + result.omitted.alreadyReservedAlternative).toBe(50);
+  expect(result.omitted.alreadyReservedAlternative).toBeGreaterThan(0);
 });
 
 it("bounds mixed Unicode refusal codes and read-back IDs without dropping any state", () => {

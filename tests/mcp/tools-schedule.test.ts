@@ -1111,3 +1111,48 @@ it("reads and updates event walk-up preferences through MCP without account read
     expect(invalid.isError).toBe(true);
   } finally { home.cleanup(); }
 });
+
+describe("per-call write cap", () => {
+  let home: TempHome;
+  beforeEach(() => { home = createTempHome(); });
+  afterEach(() => home.cleanup());
+  const ids = (n: number) => Array.from({ length: n }, (_, i) => `s${i}`);
+
+  it.each(["reserve_sessions", "favorite_sessions"])("%s refuses more than thirty ids before any request, so a call never outlasts the MCP timeout", async name => {
+    let calls = 0;
+    const client = await connectedClient(home.path, {
+      reserveSessions: async () => { calls++; return { successful: [], failed: [] }; },
+      associateFavorites: async () => { calls++; return { successful: [], failed: [] }; },
+    });
+    const result = await client.callTool({ name, arguments: { sessionIds: ids(31) } });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toMatch(/30/);
+    expect(calls).toBe(0);
+  });
+  it.each(["reserve_sessions", "favorite_sessions"])("%s accepts exactly thirty ids in one call", async name => {
+    const all = ids(30);
+    const client = await connectedClient(home.path, {
+      reserveSessions: async (_e, list) => ({ successful: list, failed: [] }),
+      associateFavorites: async (_e, list) => ({ successful: list, failed: [] }),
+      getSchedule: async () => ({ reserved: all, favorites: all, personalTime: [] }),
+    });
+    const result = await client.callTool({ name, arguments: { sessionIds: all } });
+    expect(result.isError).not.toBe(true);
+    expect(JSON.parse(textOf(result)).successful).toEqual(all);
+  });
+  it("still lets plan_schedule take fifty, since it never writes", async () => {
+    const client = await connectedClient(home.path, {});
+    const result = await client.callTool({ name: "plan_schedule", arguments: { sessionIds: ids(50) } });
+    expect(textOf(result)).not.toMatch(/Expected 0–50|too_big|at most 30/i);
+  });
+  it.each(["reserve_sessions", "favorite_sessions"])("%s trims padded ids before sending them", async name => {
+    const sent: string[][] = [];
+    const client = await connectedClient(home.path, {
+      reserveSessions: async (_e, list) => { sent.push(list); return { successful: list, failed: [] }; },
+      associateFavorites: async (_e, list) => { sent.push(list); return { successful: list, failed: [] }; },
+      getSchedule: async () => ({ reserved: ["a"], favorites: ["a"], personalTime: [] }),
+    });
+    await client.callTool({ name, arguments: { sessionIds: [" a "] } });
+    expect(sent).toEqual([["a"]]);
+  });
+});

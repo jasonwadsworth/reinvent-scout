@@ -49,8 +49,8 @@ export function boundedCancelResult(raw: CancelReservationResult) {
 }
 /** Domain has already examined every hard commitment. Only the read presentation is bounded. */
 export function boundedSchedulePlan(raw: SchedulePlan) {
-  const result = { ...raw, selected: [...raw.selected], rejected: [...raw.rejected], alternatives: [...raw.alternatives], blockedBy: [...raw.blockedBy], alreadyReserved: [...raw.alreadyReserved], omitted: { selected: 0, rejected: 0, alternatives: 0, blockedBy: 0, alreadyReserved: 0 } };
-  for (const key of ["alternatives", "rejected", "selected", "blockedBy", "alreadyReserved"] as const) {
+  const result = { ...raw, selected: [...raw.selected], rejected: [...raw.rejected], alternatives: [...raw.alternatives], blockedBy: [...raw.blockedBy], alreadyReserved: [...raw.alreadyReserved], alreadyReservedAlternative: [...raw.alreadyReservedAlternative], omitted: { selected: 0, rejected: 0, alternatives: 0, blockedBy: 0, alreadyReserved: 0, alreadyReservedAlternative: 0 } };
+  for (const key of ["alternatives", "rejected", "selected", "blockedBy", "alreadyReserved", "alreadyReservedAlternative"] as const) {
     while (responseBytes(result) >= RESPONSE_BUDGET_BYTES && result[key].length) {
       result[key].pop(); result.omitted[key]++;
     }

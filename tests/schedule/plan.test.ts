@@ -31,6 +31,20 @@ describe("conflict-free plan", () => {
     const plan = buildSchedulePlan(["r"], ctx);
     expect(plan.selected).toEqual([]); expect(plan.alreadyReserved).toEqual(["r1"]);
   });
+  it("reports a requested sitting whose talk is reserved in another sitting instead of dropping it", () => {
+    const ctx = context([session("r", "10:00", "ARC325-R"), session("r1", "11:00", "ARC325-R1"), session("other", "13:00", "OTH100")]); ctx.schedule.reserved = ["r1"];
+    const plan = buildSchedulePlan(["r", "other"], ctx);
+    expect(plan.alreadyReservedAlternative).toEqual([{ requested: "r", reservedSessionId: "r1" }]);
+    expect(plan.alreadyReserved).toEqual(["r1"]);
+    expect(plan.selected.map(value => value.sessionId)).toEqual(["other"]);
+    expect(plan.rejected).toEqual([]);
+  });
+  it("does not report an alternative when the requested sitting itself is the reserved one", () => {
+    const ctx = context([session("r", "10:00", "ARC325-R"), session("r1", "11:00", "ARC325-R1")]); ctx.schedule.reserved = ["r1"];
+    const plan = buildSchedulePlan(["r1"], ctx);
+    expect(plan.alreadyReservedAlternative).toEqual([]);
+    expect(plan.alreadyReserved).toEqual(["r1"]);
+  });
   it("uses real event instants for cross-midnight personal commitments", () => {
     const ctx = context([session("night", "23:30", "N100", "2026-12-02"), session("later", "00:30", "N200", "2026-12-03")]);
     ctx.schedule.personalTime = [{ personalTimeId: "personal", title: "Dinner", description: "", startDateTime: "2026-12-03T07:45:00", endDateTime: "2026-12-03T08:30:00" }];
