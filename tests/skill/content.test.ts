@@ -1,3 +1,4 @@
+import { PLATFORM_SERVICES } from "../../src/match/stack-fit.js";
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -638,11 +639,21 @@ describe("lens-quality documentation", () => {
 
 describe("lens-precision guidance in profiling.md", () => {
   const collapsed = profilingMd.replace(/\s+/g, " ");
-  it("marks platform services supporting by default and names them", () => {
+  it("marks platform services supporting by default and names them, from the exported list", () => {
     expect(collapsed).toContain("Mark platform services `\"role\": \"supporting\"` by default");
-    for (const name of ["CloudWatch", "VPC", "S3", "Route 53", "ACM", "CDK", "CloudFormation", "IAM", "STS", "KMS", "Secrets Manager", "Systems Manager", "CloudTrail"]) {
-      expect(collapsed).toMatch(new RegExp(`Mark platform services[^.]*\\b${name}\\b`));
+    const shortName = (name: string): string => {
+      const inner = /\(([^)]+)\)\s*$/.exec(name)?.[1] ?? name;
+      return inner.replace(/^(?:Amazon|AWS)\s+/, "");
+    };
+    const never = new Set(["IAM", "STS"]);
+    const listed = PLATFORM_SERVICES.map(shortName);
+    expect(listed).toEqual(expect.arrayContaining(["IAM", "STS"]));
+    for (const name of listed) {
+      if (never.has(name)) continue;
+      expect(collapsed, name).toMatch(new RegExp(`Mark platform services[^.]*\\b${name}\\b`));
     }
+    expect(collapsed).toContain("IAM and STS are not on this list because they are never listed at all");
+    expect(collapsed).not.toMatch(/Mark platform services[^.]*\bIAM\b/);
   });
   it("adds ecs and eks to the starting vocabulary", () => {
     expect(collapsed).toMatch(/starting vocabulary[^]*`containers`, `ecs`, `eks`/);

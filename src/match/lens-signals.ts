@@ -2,7 +2,7 @@ import type { IndexRecord } from "../catalog/index-record.js";
 import type { Evidence, ResolvedProfile } from "../profile/profile.js";
 import type { Reason, ScoredSession } from "./score.js";
 import type { StackFit } from "./stack-fit.js";
-import { unlistedMatches } from "./listing.js";
+import { onlyListed, unlistedMatches } from "./listing.js";
 
 type SignalLens = "fix" | "next-level";
 interface SignalRule {
@@ -33,6 +33,9 @@ interface SignalRule {
    * the abstract, a session listing one of them fits the stack gate in place of the profile's own
    * services: a session about the fix is not about the stack the gap sits in. */
   remedyServices?: readonly string[];
+  /** Fix only: tools whose own sessions this rule takes when the profile uses the tool too, on the
+   * same terms as `remedyServices` (phrase in the title or twice in the abstract). */
+  toolServices?: readonly string[];
   /** Tags, topics and services that add one strength to a text hit but never admit on their own. */
   services?: readonly string[];
   topics?: readonly string[];
@@ -55,11 +58,11 @@ const RULES: readonly SignalRule[] = [
   // Two mentions, a title hit or a "missing" cue: a DLQ named once is usually one scenario among many.
   { source: "gap-no-dlq", lens: "fix", detail: "Reliability: dead-letter handling is not evident in the cited scope.", phrase: /\b(?:dead[- ]letter queues?|DLQs?|redrive)\b/i },
   // Operational alarm or alerting language only: bare "alerts" or "alarms" is telecom NOCs, dashboards and agent talks.
-  { source: "gap-no-alarms", lens: "fix", detail: "Operational Excellence: alarms are not evident in the cited scope.", phrase: /\b(?:CloudWatch alarms?|alarms? (?:on|for) (?:the |your |each |every |a )?[\w-]+|alerting strateg(?:y|ies)|on-call|paging|(?:SLO|SLI)s?(?: (?:and|or))? alerting|(?:SLO|SLI)[- ]based alert(?:s|ing)|alerting on (?:SLO|SLI)s?)\b/i },
-  { source: "gap-no-tests", lens: "fix", detail: "Operational Excellence: automated tests are not evident in the cited scope.", phrase: /\b(?:(?:unit|integration|automated|end[- ]to[- ]end) test(?:s|ing)?|test[- ]driven|test coverage|testing infrastructure)\b/i },
+  { source: "gap-no-alarms", lens: "fix", detail: "Operational Excellence: alarms are not evident in the cited scope.", phrase: /\b(?:CloudWatch alarms?|alarms? (?:on|for) (?:the |your |each |every |a )?[\w-]+|alerting strateg(?:y|ies)|(?:on-call|paging|pager) (?:alerts?|alarms?|alerting)|(?:alarms?|alerts?|alerting) (?:\w+ ){0,3}(?:on-call|paging|pager)|(?:SLO|SLI)s?(?: (?:and|or))? alerting|(?:SLO|SLI)[- ]based alert(?:s|ing)|alerting on (?:SLO|SLI)s?)\b/i },
+  { source: "gap-no-tests", lens: "fix", detail: "Operational Excellence: automated tests are not evident in the cited scope.", phrase: /\b(?:(?:unit|integration|automated|end[- ]to[- ]end) test(?:s|ing)?|test[- ]driven|test coverage|testing infrastructure)\b/i, toolServices: ["AWS Cloud Development Kit (AWS CDK)"] },
   { source: "gap-broad-iam", lens: "fix", detail: "Security: broad IAM permissions are an evidenced scope concern; explore tighter policies.", phrase: /\b(?:least[- ]privilege|IAM polic(?:y|ies)|policy scoping)\b/i, remedyServices: ["AWS Identity and Access Management (IAM)", "AWS IAM Access Analyzer"] },
   { source: "gap-no-load-tests", lens: "fix", detail: "Performance Efficiency: load tests are not evident in the cited scope.", phrase: /\b(?:load|performance|stress) test(?:s|ing)?\b/i },
-  { source: "gap-no-cost-monitoring", lens: "fix", detail: "Cost Optimization: cost monitoring is not evident in the cited scope.", phrase: /\b(?:cost (?:monitoring|allocation|anomal(?:y|ies)|visibility)|AWS Budgets)\b/i, remedyServices: ["AWS Billing and Cost Management"] },
+  { source: "gap-no-cost-monitoring", lens: "fix", detail: "Cost Optimization: cost monitoring is not evident in the cited scope.", phrase: /\b(?:cost[- ](?:monitoring|allocation|anomal(?:y|ies)|visibility)|(?:AWS|cost) budgets?|budgets? (?:and|for) (?:\w+ )?costs?)\b/i, remedyServices: ["AWS Billing and Cost Management"] },
   { source: "gap-no-resource-rightsizing", lens: "fix", detail: "Sustainability: resource rightsizing is not evident in the cited scope.", phrase: /\b(?:right[- ]?sizing|right[- ]?size)\b/i },
   {
     source: "serverless", lens: "next-level", destination: "containers",
@@ -154,9 +157,17 @@ function boosted(rule: SignalRule, record: IndexRecord): boolean {
     values.some(value => allowed?.some(expected => value.toLowerCase() === expected.toLowerCase())));
 }
 
+/** A Next-level rule's own terms, so a list of them in lowercase is still a list of names. */
+function ruleVocabulary(rule: SignalRule): RegExp | undefined {
+  if (rule.lens !== "next-level") return undefined;
+  const sources = [rule.phrase, ...(rule.sourceText === undefined ? [] : [rule.sourceText])].map(pattern => `(?:${pattern.source})`);
+  return new RegExp(sources.join("|"), "i");
+}
+
 function mentionsSource(rule: SignalRule, record: IndexRecord, abstract: string, fitsStack: StackFit): boolean {
   if (rule.sourceText === undefined) return true;
-  return unlistedMatches(rule.sourceText, record.title).length > 0 || unlistedMatches(rule.sourceText, abstract).length > 0
+  const vocabulary = ruleVocabulary(rule);
+  return unlistedMatches(rule.sourceText, record.title, vocabulary).length > 0 || unlistedMatches(rule.sourceText, abstract, vocabulary).length > 0
     || (rule.sourceService !== undefined && fitsStack(record, abstract, { without: [rule.sourceService], minDistinct: SOURCE_STACK_SERVICES }));
 }
 
@@ -172,15 +183,21 @@ interface Signal {
 function catalogSignal(rule: SignalRule, record: IndexRecord, abstract: string, fitsStack: StackFit, onStack: boolean): Signal | undefined {
   if (rule.reverse?.test(record.title) === true || rule.reverse?.test(abstract) === true) return undefined;
   if (!mentionsSource(rule, record, abstract, fitsStack)) return undefined;
-  const titleMatch = unlistedMatches(rule.phrase, record.title)[0];
-  const abstractMatches = unlistedMatches(rule.phrase, abstract);
+  const vocabulary = ruleVocabulary(rule);
+  // A title that lists the phrase among other names is about the whole set, not a move to it.
+  if (onlyListed(rule.phrase, record.title, vocabulary)) return undefined;
+  const titleMatch = unlistedMatches(rule.phrase, record.title, vocabulary)[0];
+  const abstractMatches = unlistedMatches(rule.phrase, abstract, vocabulary);
   const abstractMatch = abstractMatches[0];
   const text = titleMatch !== undefined
     ? TITLE_STRENGTH
     : Math.min(abstractMatches.length, 2);
   if (text === 0 || text < (rule.minTextStrength ?? 1)) return undefined;
-  if (!onStack && !(rule.remedyServices !== undefined && text >= 2
-    && fitsStack(record, abstract, { remedy: rule.remedyServices }))) return undefined;
+  if (!onStack && !(text >= 2 && (rule.remedyServices !== undefined || rule.toolServices !== undefined)
+    && fitsStack(record, abstract, {
+      ...(rule.remedyServices === undefined ? {} : { remedy: rule.remedyServices }),
+      ...(rule.toolServices === undefined ? {} : { tools: rule.toolServices }),
+    }))) return undefined;
   const cued = rule.lens === "fix" && titleMatch === undefined && abstractMatch !== undefined
     && GAP_CUE.test(abstract.slice(Math.max(0, abstractMatch.index - GAP_CUE_WINDOW), abstractMatch.index));
   const strength = text + (cued ? 1 : 0) + (boosted(rule, record) ? 1 : 0);

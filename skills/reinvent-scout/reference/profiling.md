@@ -325,15 +325,15 @@ Next-level stack-fit gate, and their names stay out of the free-text relevance. 
 product whose templates deploy Lambda and API Gateway ranks as if it ran on them.
 
 Mark platform services `"role": "supporting"` by default: CloudWatch, VPC, S3, Route 53, ACM, CDK,
-CloudFormation, IAM, STS, KMS, Secrets Manager, Systems Manager and CloudTrail. Nearly every AWS
-workload runs on them, so sharing one with a session says nothing about your stack. The stack-fit
+CloudFormation, KMS, Secrets Manager, Systems Manager and CloudTrail. IAM and STS are not on this
+list because they are never listed at all. Nearly every AWS workload runs on them, so sharing one with a session says nothing about your stack. The stack-fit
 gate ignores them whatever role you give, so a profile whose only services are platform services
 has no stack to fit: list the services the product is actually built from.
 
 Also mark as supporting: a service that is wired in but switched off (a WAF behind a false flag)
 and a service used only at deploy time (Secrets Manager passing values between stacks). The
 repository's own IaC tool (CDK, CloudFormation) is supporting, whether or not it also appears as a
-pattern. STS is never listed, including runtime AssumeRole.
+pattern. STS is never listed, including runtime AssumeRole, and neither is IAM.
 
 `genai-single-call` applies to any model API, not only Bedrock: Gemini, OpenAI, Anthropic, or
 Bedrock InvokeModel and Converse.
@@ -412,7 +412,8 @@ lists that rule's remedy services (IAM and IAM Access Analyzer; AWS Billing and 
 which covers Budgets and Cost Explorer) needs fewer of your services: each remedy service it lists
 counts as one of the two, so IAM alone, which is on almost every security talk, is not enough, but
 IAM with Access Analyzer, or IAM with one of your core services, is. A session about the fix is not
-about the stack the gap sits in. A profile with no core service (none listed, or
+about the stack the gap sits in. A `gap-no-tests` session about testing infrastructure code with a
+tool your profile lists (CDK, even as a supporting service) fits the same way. A profile with no core service (none listed, or
 every one marked supporting) has no stack to fit, so both lenses admit nothing and `skippedRules`
 names each activated rule with "profile has no core services to check stack fit": list the
 product's real services before expecting Fix or Next-level results. Direction and source: a Next-level session must

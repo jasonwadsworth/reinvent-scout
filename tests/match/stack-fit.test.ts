@@ -158,6 +158,23 @@ describe("buildStackFit", () => {
     });
   });
 
+  describe("the profile's own tools", () => {
+    const cdk = "AWS Cloud Development Kit (AWS CDK)";
+    const cdkService = { name: "cdk", catalogName: cdk, role: "supporting" as const };
+    it("fits a session that lists a tool the profile itself lists, whatever its role", () => {
+      const fits = buildStackFit(profile(lambda, sqs, cdkService), { minDistinct: 2 });
+      expect(fits(record("Test-driven infrastructure", [cdk, "Kiro"]), "")).toBe(false);
+      expect(fits(record("Test-driven infrastructure", [cdk, "Kiro"]), "", { tools: [cdk] })).toBe(true);
+      expect(fits(record("Test-driven infrastructure", ["Kiro"]), "", { tools: [cdk] })).toBe(false);
+    });
+    it("does not fit a tool the profile does not list, nor a profile with no core service", () => {
+      const without = buildStackFit(profile(lambda, sqs), { minDistinct: 2 });
+      expect(without(record("Test-driven infrastructure", [cdk]), "", { tools: [cdk] })).toBe(false);
+      const none = buildStackFit(profile({ ...lambda, role: "supporting" }, cdkService));
+      expect(none(record("Test-driven infrastructure", [cdk]), "", { tools: [cdk] })).toBe(false);
+    });
+  });
+
   describe("platform services", () => {
     const cloudwatch = { name: "cloudwatch", catalogName: "Amazon CloudWatch" };
     const s3 = { name: "s3", catalogName: "Amazon Simple Storage Service (Amazon S3)" };

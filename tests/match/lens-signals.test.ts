@@ -27,12 +27,35 @@ describe("gap-no-alarms phrase", () => {
   const score = (title: string, abstract = "") => scoreLensSignals(record(title), profile("gap-no-alarms"), "fix", abstract).score;
   it.each([
     "CloudWatch alarms in practice", "Alarms on queue depth", "Alarm for error rate", "Building an alerting strategy",
-    "On-call rotations that work", "Paging the right person", "SLO alerting at scale", "SLI and alerting design",
+    "On-call alerts that work", "Paging alerts for the right person", "Alarms that page the on-call engineer", "SLO alerting at scale", "SLI and alerting design",
   ])("matches operational alarm or alerting language: %s", title => expect(score(title)).toBe(50));
   it.each([
     "Bare alerts and alarms", "Handling alerts", "Intelligent alerts", "Alarms", "Anomaly detection with alerts",
     "Telecom network alarms", "Alerting", "A dashboard of alarms",
+    "AI on-call agents that resolve incidents", "Paging through large result sets", "On-call", "Paging",
   ])("does not match bare alerts or alarms: %s", title => expect(score(title, `${title}. Again: ${title}.`)).toBe(0));
+});
+
+describe("gap-no-cost-monitoring phrase", () => {
+  const score = (title: string, abstract = "") => scoreLensSignals(record(title), profile("gap-no-cost-monitoring"), "fix", abstract).score;
+  it.each(["Cost-allocation tags at scale", "Cost allocation for teams", "AWS Budgets in practice", "Cost budgets that work", "Setting budgets for cost control"])("matches %s", title => {
+    expect(score(title)).toBe(50);
+  });
+  it.each(["Budgets", "Budget your time", "Team budgets and plans"])("does not match %s", title => {
+    expect(score(title, `${title}. ${title}.`)).toBe(0);
+  });
+});
+
+describe("list detector counts names, not concept words", () => {
+  const fix = (name: string, title: string) => scoreLensSignals(record(title), profile(name), "fix").score;
+  it("keeps the Fix phrase in a title that lists plain concepts", () => {
+    expect(fix("gap-no-dlq", "DLQs, retries, and idempotency")).toBe(50);
+    expect(fix("gap-broad-iam", "Least-privilege, encryption, and auditing")).toBe(50);
+    expect(fix("gap-no-tests", "Unit tests, mocks, and fixtures")).toBe(50);
+  });
+  it("still treats a list of capitalized names as a listing", () => {
+    expect(fix("gap-no-dlq", "Lambda, SQS, DLQs and EventBridge")).toBe(0);
+  });
 });
 
 describe("Fix phrases and gap cue", () => {
@@ -264,7 +287,11 @@ describe("Next-level list co-mentions", () => {
     expect(score("Deep dive", "Runs on Lambda today. Covers ECS and EKS. Then containers.")).toBe(40);
   });
   it("does not count a destination in a title enumeration", () => {
+    expect(score("Shared storage for Containers, Serverless, and Lambda", "Runs on Lambda today.")).toBe(0);
     expect(score("Shared storage for containers, serverless, and Lambda", "Runs on Lambda today.")).toBe(0);
+    expect(score("Shared storage for containers, serverless, and Lambda", "Runs on Lambda today. Containers matter. We use ECS. Also EKS.")).toBe(0);
+    expect(score("Storage tips", "Runs on Lambda today. Containers matter. We use ECS. Also EKS.")).toBe(40);
+    expect(score("Shared storage for containers, encryption, and auditing", "Runs on Lambda today.")).toBe(50);
   });
   it("does not let a listing satisfy the source side", () => {
     expect(score("Containers deep dive", "Works on Lambda, EC2 and ECS.")).toBe(0);
@@ -374,6 +401,23 @@ describe("remediation-tool gate path", () => {
     const bare = { ...stacked, services: [] };
     const r = buildIndexRecord({ sessionId: "x", title: "Least privilege IAM policies in CI", services: iamTools });
     expect(scoreLensSignals(r, bare, "fix", "", buildStackFit(bare, { minDistinct: 2 })).score).toBe(0);
+  });
+});
+
+describe("testing the profile's own tool", () => {
+  const cdk = "AWS Cloud Development Kit (AWS CDK)";
+  const service = (name: string, extra = {}) => ({ name, catalogName: name, evidence: [citation], ...extra });
+  const withCdk = { ...profile("gap-no-tests", "gap-no-dlq"), services: [service("AWS Lambda"), service("Amazon Simple Queue Service (Amazon SQS)"), service(cdk, { role: "supporting" })] };
+  const without = { ...withCdk, services: withCdk.services.slice(0, 2) };
+  const score = (p: ResolvedProfile, title: string, services: string[]) =>
+    scoreLensSignals(buildIndexRecord({ sessionId: "x", title, services }), p, "fix", "", buildStackFit(p, { minDistinct: 2 })).score;
+  it("admits a test-driven infrastructure session for a profile that uses that tool", () => {
+    expect(score(withCdk, "Test-driven infrastructure", [cdk, "Kiro"])).toBe(50);
+  });
+  it("does not admit it for a profile that does not use the tool, or another rule", () => {
+    expect(score(without, "Test-driven infrastructure", [cdk, "Kiro"])).toBe(0);
+    expect(score(withCdk, "Dead-letter queues", [cdk, "Kiro"])).toBe(0);
+    expect(score(withCdk, "Test-driven infrastructure", ["Kiro"])).toBe(0);
   });
 });
 

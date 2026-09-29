@@ -11,6 +11,10 @@ export interface StackFitQuery {
    * listed: a session about the tools lists the tools. Never opens a profile that has no core
    * service. */
   remedy?: readonly string[];
+  /** Catalog services whose own sessions fit when the profile lists the same service in any role
+   * (a session on testing the IaC tool the profile deploys with). Never opens a profile that has
+   * no core service. */
+  tools?: readonly string[];
 }
 
 /** A caller that has to know the session is about the profile's stack beyond one service (a rule's
@@ -134,6 +138,7 @@ export function buildStackFit(profile: ResolvedProfile, options: StackFitOptions
   const core = profile.services.filter(isCore);
   if (core.length === 0) return () => false;
   const minDistinct = options.minDistinct ?? 1;
+  const profileTools = new Set(profile.services.flatMap(service => service.catalogName === null ? [] : [service.catalogName]));
   const listedCount = new Map<string, number>();
   for (const record of options.catalog ?? []) {
     for (const service of new Set(record.services)) listedCount.set(service, (listedCount.get(service) ?? 0) + 1);
@@ -161,6 +166,7 @@ export function buildStackFit(profile: ResolvedProfile, options: StackFitOptions
   }
   return (record, abstract, query = {}) => {
     const without = query.without ?? [];
+    if (query.tools?.some(name => profileTools.has(name) && record.services.includes(name)) === true) return true;
     const shared = services.filter(service =>
       !(service.catalogName !== null && without.includes(service.catalogName))
       && ((service.catalogName !== null && record.services.includes(service.catalogName))

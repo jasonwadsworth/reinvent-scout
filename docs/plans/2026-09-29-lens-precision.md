@@ -96,12 +96,12 @@ Measured with the built CLI against `lens-home` (2043 index records), `--limit 1
 
 | Set | Lens | Before | After |
 |---|---|---|---|
-| Tuning (hallway, kirocrew, adaptative-http, policy-tracker, career-ops) | Fix | 8 / 37 = 22% | 12 / 14 = 86% (+2 W) |
+| Tuning (hallway, kirocrew, adaptative-http, policy-tracker, career-ops) | Fix | 8 / 37 = 22% | 14 / 16 = 88% (+2 W) |
 | Tuning | Next-level | 13 / 110+ = 12% (policy-tracker capped at 100) | 13 / 18 = 72% (+2 W) |
-| Holdout (conformity, tracking) | Fix | 1 / 10 = 10% | 3 / 3 = 100% |
+| Holdout (conformity, tracking) | Fix | 1 / 10 = 10% | 4 / 4 = 100% |
 | Holdout | Next-level | 6 / 13 = 46% | 6 / 6 = 100% |
 
-Per profile after: hallway Fix 4/4, Next-level 3/3; kirocrew Fix 1/1, Next-level 0 (both paths skipped); adaptative-http Fix 4/4, Next-level 0/1; policy-tracker Fix 3/5 (+2 W), Next-level 10/14 (+2 W); career-ops 0 and 0; conformity Fix 3/3, Next-level 3/3; tracking Fix 0, Next-level 3/3.
+Per profile after: hallway Fix 5/5, Next-level 3/3; kirocrew Fix 1/1, Next-level 0 (both paths skipped); adaptative-http Fix 5/5, Next-level 0/1; policy-tracker Fix 3/5 (+2 W), Next-level 10/14 (+2 W); career-ops 0 and 0; conformity Fix 4/4, Next-level 3/3; tracking Fix 0, Next-level 3/3.
 
 The holdout was looked at once after tasks 1 to 7 were done and before the final gate change (a remedy service counts as one of the two distinct services, instead of standing in for the whole gate). That change was motivated by the tuning set (Fix precision was exactly 60% there, with SEC424 and SEC429 as the noise) and by SVS314 dropping out; it also lifted the holdout from 60% to 100%.
 
@@ -164,6 +164,16 @@ Each was applied to the new mechanism alone, the suite run, and the named tests 
 - **Booster (task 1).** A tag booster only ever applies on top of an unlisted text hit, so a listing cannot reach it. Fix rules no longer have a booster: the Monitoring tag was removed from gap-no-alarms instead of gated.
 - **gap-no-dlq (task 4)** now needs strength 2 (title, two mentions, or a missing/without/lacking cue), which drops SVS322 and CON337 as the plan intends.
 - **Test and doc fixtures** that relied on one unresolved service being "rare", on "one prompt" as the single-call source, or on the alarms phrase were updated; the executable example profile in `workflow.md` gains a second core service (AWS Lambda).
+
+### PR review round
+
+- **List detector (S1).** An item is now up to four capitalized words; a lowercase concept word is not an item, so "DLQs, retries, and idempotency" and "Least-privilege, encryption, and auditing" keep their Fix phrase. Next-level rules also treat their own terms (destination phrase and source side) as names in any case, so "containers, serverless, and Lambda" is still a listing. Because the abstract of STG309 lists containers only in prose, a title that names the phrase only inside a listing now rejects the session for that rule (the title is about the whole set). Numbers did not move from this: STG309 stays out.
+- **ARC313 (S2).** Admitted. gap-no-tests takes a `toolServices` path: a session with the phrase in the title (or twice in the abstract) that lists a tool the profile also lists, in any role, fits the stack gate. For gap-no-tests the tool is CDK, so ARC313 ("Test-driven infrastructure", CDK and Kiro) now appears for hallway, adaptative-http and conformity, all graded G. CDK is a platform service and so never core, which is why it needed its own path; a profile without CDK does not admit it. Across the whole catalog only ARC313 lists CDK and matches the tests phrase, so the path adds no other candidate. Fix tuning went from 12/14 to 14/16; holdout from 3/3 to 4/4.
+- **Cost phrase.** Also matches `cost-allocation`, `cost budgets`, `AWS Budgets` and `budgets for cost`. AIM455 is still not admitted: it lists no service, so no profile's stack gate passes it. No precision change.
+- **Alarm phrase.** Bare `paging` and `on-call` removed; they match only next to alarm or alert wording ("on-call alerts", "alarms that page the on-call"). No candidate moved.
+- **Profiling guide.** IAM and STS are never listed and are no longer in the "mark supporting" list; the content test derives the platform list from `PLATFORM_SERVICES`.
+
+Sabotage, this round: plain-word list items restored (concept-list test red); `paging`/`on-call` bare restored (4 red); hyphenated cost and budgets forms removed (3 red); vocabulary masking removed (title enumeration test red); title-listed rejection removed (title enumeration test red); tool path without the profile requirement, without the session requirement, or with the rule's `toolServices` removed (2, 2 and 1 red); IAM put back in the supporting list (platform-services docs test red).
 
 ### Commits
 
