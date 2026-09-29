@@ -300,6 +300,27 @@ would silently fail to match the real topic at all.
 For a multi-repository profile, add one entry per repository to `repos` and use its `root` as the
 `repo` value in every citation that belongs to it.
 
+## Supporting components and mixed usage
+
+A service entry may carry `"role": "supporting"` (the default is `"core"`). Use it for components the
+product does not run on: deploy templates, example apps, CI-only tooling, and code the product
+generates for users. Supporting services count for half in ranking, never satisfy the Fix and
+Next-level stack-fit gate, and their names stay out of the free-text relevance. Without it, a
+product whose templates deploy Lambda and API Gateway ranks as if it ran on them.
+
+A tool-free utility call inside an agentic app (a one-shot summarize or classify next to the agent
+loop) is not a reason to hide the agent: tag both `agentic` and `genai-single-call`. The path is
+then skipped as already there, which is the correct outcome.
+
+An absence that holds for only some components ("not evident in the cited scope") should say which components lack it
+and which have it; cite the ones you inspected.
+
+## The explain lens
+
+`lens: "explain"` is not evidence-driven. It restricts to level 100 and 200 sessions and favors
+lecture formats (Breakout session, Chalk talk) so a foundational session can be recommended for a
+concept in the profile. It needs no gap or path patterns.
+
 ## Supported evidence lenses
 
 Fix is a curated starting vocabulary spanning the [six Well-Architected pillars](https://docs.aws.amazon.com/wellarchitected/latest/framework/the-pillars-of-the-framework.html).
@@ -309,7 +330,7 @@ not a complete assessment or a claim that every repository has these gaps.
 | Exact pattern | Pillar | Session signal examples |
 | --- | --- | --- |
 | `gap-no-dlq` | Reliability | Dead-letter queues, DLQ, redrive |
-| `gap-no-alarms` | Operational Excellence | Alarms, observability |
+| `gap-no-alarms` | Operational Excellence | Alarms, alerting, anomaly detection (the bare word "observability" does not count) |
 | `gap-no-tests` | Operational Excellence | Unit, integration, automated, end-to-end tests |
 | `gap-broad-iam` | Security | Least privilege, IAM policy scope |
 | `gap-no-load-tests` | Performance Efficiency | Load, performance, stress testing |
@@ -334,11 +355,28 @@ import, a Bedrock service entry, or an interest in Kubernetes alone cannot estab
 pattern. Mixed architectures may have both source and destination patterns. A relevant issue
 helps explain why the option matters, but is not authorization to migrate.
 
-Each lens requires an exact supported source name and an actual remediation/destination catalog
-signal. Unknown names remain valid profile data but activate no rule; no active rule or no matching
-catalog signal returns zero candidates. Generic source services, interests, and issue prose never
-admit a session. Once admitted, ordinary profile relevance ranks sessions. Each distinct rule adds
-30 points once, with deduplicated source citations in `profileEvidence`; `evidence` remains the
-matched catalog signal. Titles and available abstracts match contiguous whole phrases; narrow
-exact taxonomy/service selectors also apply. Neither lens restricts level or boosts format.
+Each lens requires an exact supported source name and an actual remediation/destination signal in
+the session's own title or abstract. Unknown names remain valid profile data but activate no rule;
+no active rule or no matching signal returns zero candidates. Generic source services, interests,
+issue prose and catalog tags never admit a session on their own. Strength comes from the text: the
+phrase in the title is 3, at least twice in the abstract 2, once 1 (a Fix abstract that describes it
+as missing, such as "missing dead-letter queues", adds 1, and so does a matching tag, topic or
+service); admission needs 2, except dead-letter queues, whose phrase is specific enough that one
+mention counts. Each rule adds `20 + 10 x strength` points once, with deduplicated source
+citations in `profileEvidence`; `evidence` remains the matched catalog signal. Rules are ranked
+separately (strength, then profile relevance) and interleaved, and `lensRules` names each admitting
+rule. Titles and abstracts match contiguous whole phrases. Neither lens restricts level or boosts
+format.
+
+Two more gates apply to both lenses. Stack fit: a Fix session must list or name at least two of
+your core services, or one core service that fewer than 3% of catalog sessions list; a Next-level
+session needs one. Supporting services never count. Direction and source: a Next-level session must
+mention the source side (Lambda, serverless or functions; ECS; a single model call, prompt or
+Bedrock), and a session about the reverse move (containers to Lambda or MicroVMs, EKS to ECS) is
+excluded. A path whose destination pattern the profile already has (`containers`, `eks`,
+`agentic`) is skipped and reported in `skippedRules`.
+
+Fix picks are leads, not verdicts. Even with these gates a session can name your services and a gap
+phrase in passing, so read each pick's abstract before presenting it.
+
 See `workflow.md` for an executable synthetic profile covering every rule.
