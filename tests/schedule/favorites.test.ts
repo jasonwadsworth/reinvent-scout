@@ -12,7 +12,7 @@ import {
   type CatalogMeta,
 } from "../../src/catalog/store.js";
 import { DEFAULT_EVENT_ID } from "../../src/catalog/sync.js";
-import { AuthRequiredError, NotFoundError, NotRegisteredError, ServiceError, ThrottledError } from "../../src/core/errors.js";
+import { AuthRequiredError, NotFoundError, NotRegisteredError, OperationUnavailableError, ValidationError, ServiceError, ThrottledError } from "../../src/core/errors.js";
 import { favoriteSessions, unfavoriteSession } from "../../src/schedule/favorites.js";
 import { createFakeFetch } from "../helpers/fake-fetch.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
@@ -36,24 +36,22 @@ function sampleMeta(overrides: Partial<CatalogMeta> = {}): CatalogMeta {
   };
 }
 
+let fixedNow = 0;
 function fakeSleep(): { sleep: (ms: number) => Promise<void>; durations: number[] } {
   const durations: number[] = [];
   return {
     sleep: async (ms: number) => {
       durations.push(ms);
+      fixedNow += ms;
     },
     durations,
   };
 }
 
-/** A fixed clock -- favoriteSessions never needs wall time to advance on its own; only `sleep`
- * being called (or not) is what these tests assert. Safe whenever a single call needs at most one
- * pacer wait -- `acquire` computes its own wait analytically from the entries on hand and never
- * re-checks `now()` mid-wait, so a clock that never advances still produces the correct duration.
- * Only a scenario that needs *more than one* wait within the same run of calls (see `stepClock`
- * below) actually depends on `now()` reflecting real elapsed time. */
+/** Fake clock paired with fakeSleep; quota rechecks observed time after every wait. */
 function fixedClock(at: number): () => number {
-  return () => at;
+  fixedNow = at;
+  return () => fixedNow;
 }
 
 /** A clock whose `sleep` advances its own `now()` by exactly the duration slept, so a scenario
@@ -398,14 +396,9 @@ describe("favoriteSessions", () => {
   });
 
   it("treats alreadyFavorited from a retried AssociateFavorites as a non-failure, not a mismatch", async () => {
-    // The mirror image of the DisassociateFavorite retry case: uses the REAL api client so the
-    // client's own 503 retry actually runs. The first POST favorites "a" server-side but its
-    // response is lost as a 503; the client retries the identical request, and the server reports
-    // the retried attempt's session as alreadyFavorited rather than a repeat success -- already
-    // treated as a non-failure, so a retried write that genuinely succeeded degrades correctly
-    // instead of surfacing as a reported failure or a verification mismatch.
+    // A rejected429 is safe to retry; an ambiguous503 is not.
     const fake = createFakeFetch([
-      { status: 503, json: { message: "Unavailable" } },
+      { status: 429, json: { message: "Unavailable" } },
       { status: 200, json: { result: { successful: [], failed: [{ sessionId: "a", code: "alreadyFavorited" }] } } },
       { status: 200, json: { schedule: { reserved: [], favorites: ["a"], personalTime: [] } } },
     ]);
@@ -887,6 +880,9 @@ describe("favoriteSessions", () => {
 });
 
 describe("unfavoriteSession", () => {
+  let home: TempHome;
+  beforeEach(() => { home = createTempHome(); });
+  afterEach(() => { home.cleanup(); });
   it("removes a single favorite and treats a 204 as success", async () => {
     let called: { eventId: string; sessionId: string } | undefined;
     const apiClient: Pick<ApiClient, "disassociateFavorite"> = {
@@ -895,7 +891,7 @@ describe("unfavoriteSession", () => {
       },
     };
 
-    const outcome = await unfavoriteSession("s1", { apiClient });
+    const outcome = await unfavoriteSession("s1", { apiClient, storeRoot: home.path });
 
     expect(outcome).toBe("removed");
     expect(called).toEqual({ eventId: DEFAULT_EVENT_ID, sessionId: "s1" });
@@ -908,7 +904,7 @@ describe("unfavoriteSession", () => {
       },
     };
 
-    const outcome = await unfavoriteSession("s1", { apiClient });
+    const outcome = await unfavoriteSession("s1", { apiClient, storeRoot: home.path });
 
     expect(outcome).toBe("notFavorited");
   });
@@ -920,7 +916,7 @@ describe("unfavoriteSession", () => {
       },
     };
 
-    await expect(unfavoriteSession("s1", { apiClient })).rejects.toBeInstanceOf(ServiceError);
+    await expect(unfavoriteSession("s1", { apiClient, storeRoot: home.path })).rejects.toBeInstanceOf(ServiceError);
   });
 
   it("treats a 404 from a retried DisassociateFavorite as notFavorited, not an error", async () => {
@@ -941,9 +937,57 @@ describe("unfavoriteSession", () => {
       sleep: fakeSleep().sleep,
     });
 
-    const outcome = await unfavoriteSession("s1", { apiClient });
+    const outcome = await unfavoriteSession("s1", { apiClient, storeRoot: home.path });
 
     expect(outcome).toBe("notFavorited");
     expect(fake.calls).toHaveLength(2);
   });
+});
+
+describe("favorite uncertainty", () => {
+  it("retains an ambiguous write when the next chunk loses auth", async () => {
+    const home = createTempHome(); let calls = 0;
+    try {
+      const result = await favoriteSessions(Array.from({ length: 11 }, (_, i) => String(i)), {
+        storeRoot: home.path,
+        apiClient: { associateFavorites: async () => { if (++calls === 1) throw new ServiceError("lost response"); throw new AuthRequiredError(); }, getSchedule: async () => { throw new AuthRequiredError(); } },
+      });
+      expect(result.uncertain).toEqual(Array.from({ length: 10 }, (_, i) => String(i)));
+      expect(result.successful).toEqual([]);
+      expect(result.aborted?.reason).toBe("authRequired");
+    } finally { home.cleanup(); }
+  });
+});
+
+describe("favorite rejection certainty", () => {
+  it("does not call400 rejection uncertain", async () => {
+    const home = createTempHome();
+    try {
+      const result = await favoriteSessions(["a"], { storeRoot: home.path, apiClient: { associateFavorites: async () => { throw new ValidationError("invalid"); }, getSchedule: async () => ({ reserved: [], favorites: [], personalTime: [] }) } });
+      expect(result.uncertain ?? []).toEqual([]);
+      expect(result.failed[0]!.code).toBe("requestFailed");
+    } finally { home.cleanup(); }
+  });
+  it("stops409 immediately", async () => {
+    const home = createTempHome(); let calls = 0;
+    try {
+      await expect(favoriteSessions(Array.from({ length: 11 }, (_, i) => String(i)), { storeRoot: home.path, apiClient: { associateFavorites: async () => { calls++; throw new OperationUnavailableError("closed"); }, getSchedule: async () => ({ reserved: [], favorites: [], personalTime: [] }) } })).rejects.toThrow("closed");
+      expect(calls).toBe(1);
+    } finally { home.cleanup(); }
+  });
+  it("missing and duplicate acknowledgements remain uncertain and unsolicited ids never become successes", async () => {
+    const home = createTempHome();
+    try {
+      const result = await favoriteSessions(["a", "b"], { storeRoot: home.path, apiClient: { associateFavorites: async () => ({ successful: ["a", "a", "unsolicited"], failed: [] }), getSchedule: async () => ({ reserved: [], favorites: [], personalTime: [] }) } });
+      expect(result.successful).toEqual([]); expect(result.uncertain).toEqual(["a", "b"]);
+    } finally { home.cleanup(); }
+  });
+});
+
+it("unfavorite charges its own per-request rolling window", async () => {
+  const home = createTempHome(); const clock = stepClock();
+  try {
+    for (let i = 0; i < 31; i++) await unfavoriteSession(String(i), { storeRoot: home.path, ...clock, apiClient: { disassociateFavorite: async () => {} } });
+    expect(clock.durations).toEqual([61000]);
+  } finally { home.cleanup(); }
 });

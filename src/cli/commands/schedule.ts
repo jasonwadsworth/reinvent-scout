@@ -1,3 +1,5 @@
+import { planSchedule, type SchedulePlan } from "../../schedule/plan.js";
+import { reserveSessions, cancelReservation, reservationNeedsAttention, cancellationNeedsAttention, validateSessionIds, type ReserveSessionsResult } from "../../schedule/reservations.js";
 import type { Command } from "commander";
 import { createApiClient, type ApiClient } from "../../api/client.js";
 import { createTokenProviderAdapter } from "../../auth/provider-adapter.js";
@@ -20,6 +22,7 @@ export interface ScheduleCommandDeps {
   buildApiClient?: (storeRoot: string) => ApiClient;
   /** Where command output goes. Defaults to stdout. */
   print?: (message: string) => void;
+  now?: () => number;
 }
 
 interface ShowCommandOptions {
@@ -267,8 +270,9 @@ function formatFavoriteResultHuman(result: FavoriteSessionsResult, index: IndexR
       lines.push(`  ${resolveSessionDisplay(sessionId, index)}`);
     }
   }
+  if (result.uncertain?.length) lines.push(`Uncertain requests (not automatically retried): ${result.uncertain.join(", ")}. Read-back cannot establish causation.`);
   if (result.failed.length > 0) {
-    lines.push("Refused:");
+    lines.push("Refusals or failed requests (see uncertainty above):");
     for (const failure of result.failed) {
       lines.push(formatFailureLine(failure, index));
     }
@@ -290,6 +294,29 @@ function formatFavoriteResultHuman(result: FavoriteSessionsResult, index: IndexR
     );
   }
   return lines.join("\n");
+}
+
+function formatReservationResult(result: ReserveSessionsResult): string {
+  const lines = [
+    `Reserved: ${result.successful.join(", ") || "none"}.`,
+    `Already reserved: ${result.alreadyScheduled.join(", ") || "none"}.`,
+    ...result.failed.map(failure => `Refused ${failure.sessionId}: ${failure.code}${failure.reason ? ` — ${failure.reason}` : ""}${failure.conflictsWith?.length ? `; conflicts with ${failure.conflictsWith.map(conflict => `${conflict.sessionId}${conflict.title ? ` (${conflict.title})` : ""}`).join(", ")}` : ""}`),
+    `Uncertain (not automatically retried): ${result.uncertain.join(", ") || "none"}.`,
+    `Not attempted: ${result.notAttempted.join(", ") || "none"}.`,
+    result.verified ? `Observed reserved on read-back: ${result.verified.reserved.join(", ") || "none"}. This does not establish which request caused a reservation.` : `Verification unavailable: ${result.verificationError ?? "unknown"}.`,
+  ];
+  if (result.mismatch.length) lines.push(`Missing on read-back: ${result.mismatch.join(", ")}.`);
+  if (result.aborted) lines.push(`Stopped: ${result.aborted.message}`);
+  return lines.join("\n");
+}
+function formatPlan(result: SchedulePlan): string {
+  return [
+    result.conflictFree ? "Plan has no new time conflicts." : `Cannot prove a conflict-free plan: ${result.blockedBy.join(", ")}.`,
+    ...result.selected.map(session => `${session.sessionId} — ${session.title} — ${session.startsAt} to ${session.endsAt}`),
+    ...result.alreadyReserved.map(id => `${id}: already reserved`),
+    ...result.rejected.map(rejection => `${rejection.sessionId}: ${rejection.reason}${rejection.conflictsWith?.length ? ` (${rejection.conflictsWith.join(", ")})` : ""}`),
+    result.limitations,
+  ].join("\n");
 }
 
 /** Registers `schedule` and its `show`, `favorite` and `unfavorite` subcommands. */
@@ -370,7 +397,7 @@ export function registerScheduleCommands(program: Command, deps: ScheduleCommand
             ? JSON.stringify(result)
             : formatFavoriteResultHuman(result, readIndex({ storeRoot })),
         );
-        if (result.failed.length > 0) {
+        if (result.failed.length > 0 || result.uncertain?.length) {
           process.exitCode = 1;
         }
       } catch (err) {
@@ -401,7 +428,7 @@ export function registerScheduleCommands(program: Command, deps: ScheduleCommand
       const apiClient = buildApiClient(storeRoot);
 
       try {
-        const outcome = await unfavoriteSession(id, { apiClient, eventId: options.event });
+        const outcome = await unfavoriteSession(id, { apiClient, storeRoot, eventId: options.event });
         print(
           outcome === "removed"
             ? `Removed ${id} from favorites.`
@@ -423,6 +450,39 @@ export function registerScheduleCommands(program: Command, deps: ScheduleCommand
         }
         throw err;
       }
+    });
+
+  for (const command of ["plan", "reserve"] as const) {
+    schedule.command(command).description(command === "plan" ? "Suggest a time-conflict-free schedule without writing." : "Reserve confirmed session IDs; never automatically replace a reservation.")
+      .argument("<ids...>", "session IDs, or - for newline-delimited stdin")
+      .option("--event <id>", "event ID", DEFAULT_EVENT_ID).option("--json", "machine-readable output")
+      .action(async (ids: string[], options: FavoriteCommandOptions) => {
+        try {
+          const input = validateSessionIds(await resolveIds(ids), command === "plan", command === "reserve");
+          const storeRoot = resolveStoreRoot(); const apiClient = buildApiClient(storeRoot);
+          const domainDeps = { storeRoot, apiClient, eventId: options.event, ...(deps.now ? { now: deps.now } : {}) };
+          if (command === "plan") {
+            const result = await planSchedule(input, domainDeps);
+            print(options.json ? JSON.stringify(result) : formatPlan(result));
+            if (!result.conflictFree) process.exitCode = 1;
+          } else {
+            const result = await reserveSessions(input, domainDeps);
+            print(options.json ? JSON.stringify(result) : formatReservationResult(result));
+            if (reservationNeedsAttention(result)) process.exitCode = 1;
+          }
+        } catch (error) { print(error instanceof Error ? error.message : String(error)); process.exitCode = 1; }
+      });
+  }
+  schedule.command("cancel").description("Cancel one explicitly chosen reservation.")
+    .argument("<id>", "session ID").option("--event <id>", "event ID", DEFAULT_EVENT_ID).option("--json", "machine-readable output")
+    .action(async (id: string, options: FavoriteCommandOptions) => {
+      try {
+        validateSessionIds([id]);
+        const storeRoot = resolveStoreRoot();
+        const result = await cancelReservation(id, { storeRoot, apiClient: buildApiClient(storeRoot), eventId: options.event });
+        print(options.json ? JSON.stringify(result) : `${id}: ${result.outcome}; verified absent: ${result.verifiedAbsent ?? "unknown"}.${result.error ? ` ${result.error}` : ""}${result.verificationError ? ` ${result.verificationError}` : ""}`);
+        if (cancellationNeedsAttention(result)) process.exitCode = 1;
+      } catch (error) { print(error instanceof Error ? error.message : String(error)); process.exitCode = 1; }
     });
 
   return schedule;

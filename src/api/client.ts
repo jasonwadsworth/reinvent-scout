@@ -47,6 +47,8 @@ export interface ListAllSessionsOptions {
 
 export interface ApiClient {
   getSchedule(eventId: string): Promise<Schedule>;
+  reserveSessions(eventId: string, sessionIds: string[]): Promise<BulkResult>;
+  cancelReservation(eventId: string, sessionId: string): Promise<void>;
   /** Fetches the event itself (name, dates, timezone, ...), not its sessions. The endpoint does
    * not require attendee sign-in per its OpenAPI description, unlike `getSchedule`, but this
    * client sends the bearer token unconditionally like every other call -- `catalog sync`, the
@@ -138,6 +140,7 @@ async function requestJson<T>(
   path: string,
   deps: ApiClientDeps,
   body?: unknown,
+  retry503 = method === "GET",
 ): Promise<T> {
   const fetchFn = deps.fetchFn ?? fetch;
   const sleep = deps.sleep ?? defaultSleep;
@@ -173,7 +176,7 @@ async function requestJson<T>(
       }
     }
 
-    if (response.status === 503) {
+    if (response.status === 503 && retry503) {
       attempts503++;
       if (attempts503 < MAX_ATTEMPTS_503) {
         await sleep(BASE_BACKOFF_MS * 2 ** (attempts503 - 1));
@@ -230,6 +233,18 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
   }
 
   return {
+    async reserveSessions(eventId: string, sessionIds: string[]): Promise<BulkResult> {
+      if (sessionIds.length < 1 || sessionIds.length > 10 || new Set(sessionIds).size !== sessionIds.length) {
+        throw new ValidationError("Reservations require 1–10 unique session IDs per request.");
+      }
+      const body = await requestJson<AssociateFavoritesResponseContent>(
+        "POST", `/v1/events/${encodeURIComponent(eventId)}/reservations`, deps, { sessionIds },
+      );
+      return body.result;
+    },
+    async cancelReservation(eventId: string, sessionId: string): Promise<void> {
+      await requestJson<undefined>("DELETE", `/v1/events/${encodeURIComponent(eventId)}/reservations/${encodeURIComponent(sessionId)}`, deps);
+    },
     async getSchedule(eventId: string): Promise<Schedule> {
       const body = await requestJson<GetScheduleResponseContent>(
         "GET",
@@ -264,7 +279,7 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
       await requestJson<undefined>(
         "DELETE",
         `/v1/events/${encodeURIComponent(eventId)}/favorites/${encodeURIComponent(sessionId)}`,
-        deps,
+        deps, undefined, true,
       );
     },
 

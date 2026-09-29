@@ -47,12 +47,20 @@ explained shortlist.
    (a narrower lens or a more specific profile -- **not** a smaller `limit`, which only returns
    fewer of the exact same top-ranked candidates and can never reach the ones already omitted)
    rather than silently showing a partial list as if it were everything.
-7. Ask for confirmation before favoriting anything. On confirmation, call `favorite_sessions` with
+7. For reservations, call `plan_schedule` with a priority-ordered shortlist of offering IDs.
+   Present its selected offerings, alternatives, refusals and time-only limits. Ask for confirmation before reserving
+   those exact returned IDs with `reserve_sessions`. A plan never reserves seats or proves travel
+   feasibility. Report every failed, uncertain and not-attempted ID, even when the tool marks the
+   result as an error. A409 means reservations are closed: stop. Never automatically replay an
+   uncertain write; use its schedule read-back, explain that observed state is not proof of what
+   caused it, and ask before any later retry. Use `cancel_reservation` only for an explicitly
+   chosen cancellation; never cancel conflicts automatically.
+8. Ask for confirmation before favoriting anything. On confirmation, call `favorite_sessions` with
    the chosen session ids. Report every outcome plainly: a `failed` entry is a real refusal (most
    often a schedule conflict, named with the conflicting session's own title) and must be reported
    as one, never smoothed over as a success; a non-empty `mismatch` means the write didn't fully
    stick and is worth telling the user about too.
-8. Call `get_schedule` to confirm what's actually on the schedule now, and show the user the
+9. Call `get_schedule` to confirm what's actually on the schedule now, and show the user the
    relevant entries. Use `unfavorite_session` if the user wants something removed, and confirm with
    another `get_schedule` (or by checking its outcome) if it matters to them.
 
@@ -101,6 +109,9 @@ one without the actual remediation or destination signal.
 - `get_schedule`
 - `favorite_sessions`
 - `unfavorite_session`
+- `plan_schedule`
+- `reserve_sessions`
+- `cancel_reservation`
 
 ## Reference files
 

@@ -362,3 +362,53 @@ describe("createApiClient", () => {
     expect(String(caught)).not.toContain(secretToken);
   });
 });
+
+describe("reservation endpoints and write retry safety", () => {
+  it("encodes paths, sends unique reservation ids and unwraps BulkResult", async () => {
+    const result = { successful: ["a"], failed: [] };
+    const fake = createFakeFetch([{ json: { result } }, { status: 204 }]);
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: async () => "token" });
+    expect(await client.reserveSessions("event/a", ["a"])).toEqual(result);
+    expect(fake.calls[0]!.url).toContain("/event%2Fa/reservations");
+    expect(fake.calls[0]!.init).toMatchObject({ method: "POST", body: '{"sessionIds":["a"]}' });
+    await client.cancelReservation("event/a", "session/a");
+    expect(fake.calls[1]!.url).toContain("/event%2Fa/reservations/session%2Fa");
+    expect(fake.calls[1]!.init!.method).toBe("DELETE");
+  });
+  it.each([[], ["a", "a"], Array.from({ length: 11 }, (_, i) => String(i))].map(ids => ({ ids })))("rejects invalid reserve request sizes/duplicates before fetch", async ({ ids }) => {
+    const fake = createFakeFetch([{ json: {} }]);
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: async () => "token" });
+    await expect(client.reserveSessions(EVENT_ID, ids)).rejects.toThrow(ValidationError);
+    expect(fake.calls).toHaveLength(0);
+  });
+  it.each(["reserveSessions", "associateFavorites"] as const)("%s does not replay ambiguous POST503 or network errors", async method => {
+    const fake = createFakeFetch([{ status: 503 }, { json: { result: { successful: ["a"], failed: [] } } }]);
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: async () => "token", sleep: async () => {} });
+    await expect(client[method](EVENT_ID, ["a"])).rejects.toThrow(ServiceError);
+    expect(fake.calls).toHaveLength(1);
+    let calls = 0;
+    const broken = createApiClient({ fetchFn: async () => { calls++; throw new Error("connection lost"); }, getAccessToken: async () => "token" });
+    await expect(broken[method](EVENT_ID, ["a"])).rejects.toThrow("connection lost");
+    expect(calls).toBe(1);
+  });
+  it("reserves after one401 refresh and bounded429 retry", async () => {
+    const fake = createFakeFetch([{ status: 401 }, { status: 429, headers: { "Retry-After": "2" } }, { json: { result: { successful: ["a"], failed: [] } } }]);
+    const auth = fakeAuth(["old", "new"]); const sleep = fakeSleep();
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: auth.getAccessToken, sleep: sleep.sleep });
+    expect((await client.reserveSessions(EVENT_ID, ["a"])).successful).toEqual(["a"]);
+    expect(auth.calls).toEqual([{}, { forceRefresh: true }]);
+    expect(sleep.durations).toEqual([2000]); expect(fake.calls).toHaveLength(3);
+  });
+  it.each([[404, NotFoundError], [409, OperationUnavailableError]] as const)("cancel maps %s without repeating", async (status, ErrorClass) => {
+    const fake = createFakeFetch([{ status }]);
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: async () => "token" });
+    await expect(client.cancelReservation(EVENT_ID, "a")).rejects.toThrow(ErrorClass);
+    expect(fake.calls).toHaveLength(1);
+  });
+  it("cancel does not blindly retry503", async () => {
+    const fake = createFakeFetch([{ status: 503 }, { status: 204 }]);
+    const client = createApiClient({ fetchFn: fake.fetch, getAccessToken: async () => "token", sleep: async () => {} });
+    await expect(client.cancelReservation(EVENT_ID, "a")).rejects.toThrow(ServiceError);
+    expect(fake.calls).toHaveLength(1);
+  });
+});
