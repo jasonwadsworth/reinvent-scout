@@ -65,10 +65,25 @@ describe("buildStackFit", () => {
     expect(fits(record("Deep dive"), "Amazon S3 and friends.")).toBe(true);
     expect(fits(record("Deep dive"), "The S3rver project.")).toBe(false);
   });
-  it("keeps the profile's own spelling of an unresolved service in any case", () => {
-    const fits = buildStackFit(profile(sqs, { name: "Kiro", catalogName: null }))!;
-    expect(fits(record("Queues"), "Poll SQS queues.")).toBe(true);
-    expect(fits(record("Editor"), "The kiro editor.")).toBe(true);
+  it("applies the ordinary-word list to the profile's own spelling", () => {
+    const amplify = buildStackFit(profile({ name: "Amplify", catalogName: "AWS Amplify" }))!;
+    expect(amplify(record("Deep dive"), "Agents amplify all of them.")).toBe(false);
+    expect(amplify(record("Deep dive"), "Amplify your reach.")).toBe(false);
+    expect(amplify(record("Deep dive"), "Host it on AWS Amplify.")).toBe(true);
+    const connect = buildStackFit(profile({ name: "Connect", catalogName: "Amazon Connect" }))!;
+    expect(connect(record("Deep dive"), "Connect your agents to tools.")).toBe(false);
+    expect(connect(record("Deep dive"), "Route calls with Amazon Connect.")).toBe(true);
+    const unresolved = buildStackFit(profile({ name: "Glue", catalogName: null }))!;
+    expect(unresolved(record("Deep dive"), "Glue code everywhere.")).toBe(false);
+    expect(unresolved(record("Deep dive"), "Run AWS Glue jobs.")).toBe(true);
+  });
+  it("matches other profile spellings as written unless they equal the catalog name or are covered by its cased short name", () => {
+    const resolved = buildStackFit(profile({ name: "kiro", catalogName: "Kiro" }))!;
+    expect(resolved(record("Editor"), "The kiro editor.")).toBe(true);
+    const unresolved = buildStackFit(profile({ name: "Kiro", catalogName: null }))!;
+    expect(unresolved(record("Editor"), "The Kiro editor.")).toBe(true);
+    expect(unresolved(record("Editor"), "The kiro editor.")).toBe(false);
+    expect(buildStackFit(profile(sqs))!(record("Queues"), "Poll SQS queues.")).toBe(true);
   });
   it("ignores supporting services", () => {
     const fits = buildStackFit(profile(lambda, { name: "apigateway", catalogName: "Amazon API Gateway", role: "supporting" }))!;
