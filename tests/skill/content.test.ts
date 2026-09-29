@@ -652,7 +652,8 @@ describe("lens-precision guidance in profiling.md", () => {
       if (never.has(name)) continue;
       expect(collapsed, name).toMatch(new RegExp(`Mark platform services[^.]*\\b${name}\\b`));
     }
-    expect(collapsed).toContain("IAM and STS are not on this list because they are never listed at all");
+    expect(collapsed).toContain("IAM and STS are never listed; if present they are ignored.");
+    expect(collapsed).toContain("no alarm that notifies a person on the infrastructure you found");
     expect(collapsed).not.toMatch(/Mark platform services[^.]*\bIAM\b/);
   });
   it("adds ecs and eks to the starting vocabulary", () => {
@@ -675,7 +676,7 @@ describe("lens-precision guidance in profiling.md", () => {
     expect(collapsed).toContain("The repository's own IaC tool (CDK, CloudFormation) is supporting");
     expect(collapsed).toContain("wired in but switched off");
     expect(collapsed).toContain("used only at deploy time");
-    expect(collapsed).toContain("STS is never listed, including runtime AssumeRole");
+    expect(collapsed).toContain("STS (any use, including runtime AssumeRole)");
     expect(collapsed).toContain("Record `gap-no-load-tests` and `gap-no-cost-monitoring` only when the repository deploys production infrastructure");
     expect(collapsed).toContain("any model API, not only Bedrock");
     for (const name of ["Gemini", "OpenAI", "Anthropic"]) expect(collapsed).toContain(name);

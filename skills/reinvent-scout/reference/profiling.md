@@ -93,11 +93,11 @@ Amplify, Kiro), the code or infrastructure actually uses -- not just the service
 or Amplify goes on to provision or call, but the tool itself. It does not include:
 
 - **Ubiquitous plumbing that's implied by everything else**, not a deliberate choice worth
-  surfacing on its own: IAM (used by virtually every AWS repository to grant permissions),
-  CloudFormation *specifically when it's only there because CDK synthesizes to it* -- a hand-
-  written CloudFormation or SAM template the repository deploys directly is a real, deliberate
-  choice and counts as a service, exactly like Terraform would -- STS (any use, including runtime AssumeRole; STS is never listed),
-  and the *default* AWS-managed KMS key. A dedicated (customer-managed) key the code actually uses
+  surfacing on its own: IAM (used by virtually every AWS repository to grant permissions), STS
+  (any use, including runtime AssumeRole), CloudFormation *specifically when it's only there
+  because CDK synthesizes to it*, and the *default* AWS-managed KMS key. A hand-written
+  CloudFormation or SAM template the repository deploys directly is a real, deliberate choice and
+  counts as a service, exactly like Terraform would. A dedicated (customer-managed) key the code actually uses
   to sign or encrypt something is a real choice and counts; only the default key, present whether
   or not anyone thought about it, doesn't. Listing the excluded items as services would swamp a
   profile with noise that's true of almost any AWS repository and therefore matches almost nothing
@@ -186,7 +186,7 @@ prefix -- it isn't an absence, it's a presence that doesn't count).
 
 ## Say what's missing, too
 
-Note real absences you notice while reading -- no test suite, no alarms or dashboards on the
+Note real absences you notice while reading -- no test suite, no alarm that notifies a person on the
 infrastructure you found, no dead-letter queues on an async pipeline, IAM policies that are broad
 rather than scoped to what the code actually needs. These aren't services in the `services` sense
 (they have nothing to cite a positive line for), so record them as `patterns` entries named with the
@@ -325,15 +325,15 @@ Next-level stack-fit gate, and their names stay out of the free-text relevance. 
 product whose templates deploy Lambda and API Gateway ranks as if it ran on them.
 
 Mark platform services `"role": "supporting"` by default: CloudWatch, VPC, S3, Route 53, ACM, CDK,
-CloudFormation, KMS, Secrets Manager, Systems Manager and CloudTrail. IAM and STS are not on this
-list because they are never listed at all. Nearly every AWS workload runs on them, so sharing one with a session says nothing about your stack. The stack-fit
+CloudFormation, KMS, Secrets Manager, Systems Manager and CloudTrail. IAM and STS are never listed; if
+present they are ignored. Nearly every AWS workload runs on them, so sharing one with a session says nothing about your stack. The stack-fit
 gate ignores them whatever role you give, so a profile whose only services are platform services
 has no stack to fit: list the services the product is actually built from.
 
 Also mark as supporting: a service that is wired in but switched off (a WAF behind a false flag)
 and a service used only at deploy time (Secrets Manager passing values between stacks). The
 repository's own IaC tool (CDK, CloudFormation) is supporting, whether or not it also appears as a
-pattern. STS is never listed, including runtime AssumeRole, and neither is IAM.
+pattern.
 
 `genai-single-call` applies to any model API, not only Bedrock: Gemini, OpenAI, Anthropic, or
 Bedrock InvokeModel and Converse.
