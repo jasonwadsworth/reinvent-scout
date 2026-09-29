@@ -388,8 +388,8 @@ export function matchSessionsDetailed(
   const corpusStats = buildCorpusStats(index);
 
   // Fix has to be pickier than Next-level: its phrases (alarms, tests, IAM) appear in talks about any
-// stack, so one shared near-universal service such as CloudWatch is not evidence of fit.
-const fitsStack = buildStackFit(profile, lens === "fix"
+  // stack, so one shared near-universal service such as CloudWatch is not evidence of fit.
+  const fitsStack = buildStackFit(profile, lens === "fix"
     ? { minDistinct: 2, rareBelow: RARE_SERVICE_FRACTION, catalog: index }
     : {});
   const scoredRecords: ScoredRecord[] = [];
