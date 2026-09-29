@@ -520,3 +520,51 @@ reinvent-scout schedule plan <offering-id> --json
 reinvent-scout schedule reserve <selected-session-id> --json
 reinvent-scout schedule cancel <reserved-session-id> --json
 ```
+
+
+## On-site: confirm venue, inspect travel, then choose
+
+Ask the attendee to confirm their current venue for this call. Location context and recent
+reserved-session venues are suggestions, not confirmation. With no confirmed venue the tool
+returns `needsVenueConfirmation` and no candidates. For example, after they confirm MGM Grand:
+
+```json
+{"tool":"get_onsite_preferences","arguments":{}}
+```
+
+Walk-up defaults false. The following local settings update enables it globally while explicitly
+excluding one offering in this event. Replace the example ID with a catalog-returned offering ID;
+use null instead of false to reset that override to the global default. Config reads create no
+files. Settings use atomic local writes and an exclusive lock, with no attendee-account mutation.
+
+```json
+{"tool":"set_onsite_preferences","arguments":{"patch":{"allowWalkUp":true,"sessionWalkUp":[{"sessionId":"example-offering","allowWalkUp":false}]}}}
+```
+
+```json
+{"tool":"nearby_sessions","arguments":{"location":{"venue":"MGM Grand","source":"user","confirmed":true},"withinMinutes":60,"limit":10}}
+```
+
+Read `candidates` IDs, starts/ends, minutes-to-start, outbound/check-in and onward travel,
+`admission`, `availabilitySource`, observation age, and `coverage`. Estimates are conservative
+hand-maintained assumptions, not AWS schedules or live routes; seat bands never promise admission.
+Fresh reads replace cached time/venue/bands. Failed or stale reads are unknown, even if the old
+catalog band looked promising. At most20 locally eligible offerings are refreshed serially; a
+locally excluded offering is not refreshed, so this is not an exhaustive live search. Full reserved
+and personal commitments constrain feasibility before any output budget. Favorites do not block.
+`skipSessionIds` requires an explicit attendee choice and does not cancel reservations.
+
+For a shuttle override, include `shuttleEnabled:true`, `shuttleWindows:[{start:"08:00",end:"18:00"}]`
+and a directed route such as `{from:"MGM Grand",to:"Venetian",mode:"shuttle",minutes:20,waitMinutes:10}`
+in the patch. Windows and peak buffers use the event timezone. Route `windows` and
+`peakBufferMinutes` override global values; no configured window means no shuttle. Walking
+remains the conservative fallback. Per-event `checkInMinutes` defaults10, `freshnessMinutes`5,
+and `peakBufferMinutes`5 during08:00–10:00/16:00–18:00. Routes and window arrays replace prior lists.
+
+Present the actual returned offering ID and obtain confirmation, then pass that ID to
+`reserve_sessions` using the reservation flow above. A nearby suggestion itself never writes.
+CLI equivalents are `reinvent-scout schedule onsite-config --file onsite-patch.json --json` and
+`reinvent-scout schedule nearby --venue "MGM Grand" --confirm-venue --json`; add
+`--skip-session <id>` only after explicit instruction. MCP budgets drop whole candidates or
+preference entries with omission counts. Inspect full settings using
+`reinvent-scout schedule onsite-config --json`; do not change settings just to inspect omissions.

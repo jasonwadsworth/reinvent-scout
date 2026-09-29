@@ -30,6 +30,7 @@ function fakeApiClient(
     // syncCatalog (the real one, not a fake -- see the comment above) calls this for real on
     // every full sync, so unlike the other unused methods it must return a value rather than
     // throw. No timezone: these tests only prove the command's own wiring, not timezone handling.
+    getSession: async () => { throw new Error("unused getSession"); },
     getEvent: async (eventId) => ({ eventId }),
     listSessions: async () => {
       throw new Error("not implemented in this fake");
@@ -491,6 +492,7 @@ describe("catalog show command", () => {
       resolveStoreRoot: () => home.path,
       buildApiClient: () => ({
         getSchedule: async () => ({ reserved: [], favorites: [sessionId], personalTime: [] }),
+        getSession: async () => { throw new Error("unused getSession"); },
         getEvent: async () => {
           throw new Error("not implemented in this fake");
         },

@@ -29,6 +29,7 @@ const EXPIRED_TOKENS: StoredTokens = {
 function fakeApiClient(getSchedule: ApiClient["getSchedule"]): ApiClient {
   return {
     getSchedule,
+    getSession: async () => { throw new Error("unused getSession"); },
     getEvent: async () => {
       throw new Error("not implemented in this fake");
     },

@@ -66,6 +66,7 @@ function fakeApiClient(overrides: ApiClientOverrides = {}): ApiClient {
       (async (): Promise<Schedule> => ({ reserved: [], favorites: [], personalTime: [] })),
     // get_schedule reads the event timezone from catalog meta.json (seeded per test via
     // seedFixtureCatalog), never by calling the API directly -- so this is never reached.
+    getSession: async () => { throw new Error("unused getSession"); },
     getEvent: async () => {
       throw new Error("not implemented in this fake");
     },
@@ -109,7 +110,7 @@ function textOf(result: Awaited<ReturnType<Client["callTool"]>>): string {
   return (result.content as Array<{ type: string; text: string }>)[0]!.text;
 }
 
-describe("the ten registered tools", () => {
+describe("the thirteen registered tools", () => {
   let home: TempHome;
 
   beforeEach(() => {
@@ -120,7 +121,7 @@ describe("the ten registered tools", () => {
     home.cleanup();
   });
 
-  it("lists exactly the ten expected tools, by name", async () => {
+  it("lists exactly the thirteen expected tools, by name", async () => {
     // Asserted as a set, not a count: the plan's own task 5 text still names `profile_repo`,
     // superseded by `validate_profile` in the rescope -- swapping one tool for another leaves the
     // count at seven, so a length-only assertion would pass with the wrong membership.
@@ -140,6 +141,9 @@ describe("the ten registered tools", () => {
         "plan_schedule",
         "reserve_sessions",
         "cancel_reservation",
+        "nearby_sessions",
+        "get_onsite_preferences",
+        "set_onsite_preferences",
       ].sort(),
     );
   });
@@ -1091,5 +1095,19 @@ it("planning does not hide a hard commitment beyond display-page limits", async 
     const result = await client.callTool({ name: "plan_schedule", arguments: { sessionIds: ["future"] } });
     expect(JSON.parse(textOf(result)).selected).toEqual([]);
     expect(JSON.parse(textOf(result)).rejected[0].conflictsWith).toEqual(["last"]);
+  } finally { home.cleanup(); }
+});
+
+
+it("reads and updates event walk-up preferences through MCP without account reads", async () => {
+  const home = createTempHome();
+  try {
+    const client = await connectedClient(home.path);
+    const initial = await client.callTool({ name: "get_onsite_preferences", arguments: { eventId: "constructor" } });
+    expect(JSON.parse(textOf(initial)).allowWalkUp).toBe(false);
+    const updated = await client.callTool({ name: "set_onsite_preferences", arguments: { eventId: "constructor", patch: { allowWalkUp: true, sessionWalkUp: [{ sessionId: "constructor", allowWalkUp: false }] } } });
+    expect(JSON.parse(textOf(updated)).sessionWalkUp).toEqual([{ sessionId: "constructor", allowWalkUp: false }]);
+    const invalid = await client.callTool({ name: "nearby_sessions", arguments: { location: { venue: "alien", source: "user", confirmed: true } } });
+    expect(invalid.isError).toBe(true);
   } finally { home.cleanup(); }
 });

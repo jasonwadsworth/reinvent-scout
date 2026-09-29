@@ -5,15 +5,9 @@
  * venue showing up as an unrecognized string is exactly the "return null" case below, not a
  * silent type-widening.
  */
-export type Venue = "MGM Grand" | "Caesars Forum" | "Venetian" | "Wynn/Encore" | "Caesars Palace";
-
-const KNOWN_VENUES: ReadonlySet<string> = new Set<Venue>([
-  "MGM Grand",
-  "Caesars Forum",
-  "Venetian",
-  "Wynn/Encore",
-  "Caesars Palace",
-]);
+export const VENUES = ["MGM Grand", "Caesars Forum", "Venetian", "Wynn/Encore", "Caesars Palace"] as const;
+export type Venue = typeof VENUES[number];
+const KNOWN_VENUES: ReadonlySet<string> = new Set(VENUES);
 
 /** Exported so callers taking a venue as a raw string (the `catalog search --venue` CLI flag)
  * can validate it against the same closed set this module treats as authoritative. */

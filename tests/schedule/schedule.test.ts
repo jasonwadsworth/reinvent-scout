@@ -40,6 +40,7 @@ function sampleMeta(overrides: Partial<CatalogMeta> = {}): CatalogMeta {
 function fakeApiClient(getScheduleImpl: (eventId: string) => Promise<Schedule>): ApiClient {
   return {
     getSchedule: getScheduleImpl,
+    getSession: async () => { throw new Error("unused getSession"); },
     getEvent: async () => {
       throw new Error("fakeApiClient: getEvent is not implemented, schedule.ts should never call it");
     },

@@ -572,3 +572,50 @@ environment variable, which every command and test respects). Inside:
 - `profiles/` -- profiles saved with `profile save`, one file per name, at mode `0600`.
 
 Nothing here is ever sent anywhere except to AWS's own event API and OAuth endpoints.
+
+
+### Nearby sessions on site
+
+Confirm your current venue for **each call**, whether you named it, supplied location context,
+or inferred it from a recent reservation. A schedule venue is only a suggestion of where you are.
+
+```sh
+reinvent-scout schedule onsite-config --json
+reinvent-scout schedule nearby --venue "MGM Grand" --confirm-venue --json
+```
+
+Nearby reads the complete reserved/personal schedule, checks outbound travel plus check-in and
+travel to the next hard commitment, and refreshes at most 20 locally eligible sessions serially.
+`--skip-session <id>` ignores that reservation for this calculation; it does not cancel it.
+Favorites do not block. Unknown timing or the next commitment's unknown venue prevents a
+feasibility claim. Started, unscheduled and all-day sessions are excluded. This is a conservative
+shortlist, not exhaustive live routing: travel values are hand-maintained assumptions, with
+nonzero same-venue movement, not AWS published journey times. Fresh records replace cached time,
+venue, reservability and bands. Bands are not seat counts or admission guarantees. Failed/stale
+observations remain unknown; results include age, refresh coverage and omissions.
+
+Walk-up defaults to false. Local preferences can enable it globally, override it per session in
+one event, or reset an override with null. Save a JSON patch as `onsite-patch.json`, then apply it:
+
+```json
+{"allowWalkUp":true,"sessionWalkUp":[{"sessionId":"<offering-id>","allowWalkUp":false}]}
+```
+
+```sh
+reinvent-scout schedule onsite-config --file onsite-patch.json --json
+```
+
+Set that session's `allowWalkUp` to `null` to inherit again. Unknown admission appears only when
+walk-up is allowed, labeled uncertain. A reserved session can still be recommended when its band
+is unavailable. An unreserved unavailable session cannot.
+
+Route patches replace `routes` and use `{from,to,mode,minutes,waitMinutes?,windows?,peakBufferMinutes?}`.
+Routes are directed; the reverse retains its own estimate. `shuttleEnabled:true` also requires
+configured `shuttleWindows` (or route `windows`); no shuttle schedule is inferred. Windows use
+`{start:"HH:MM",end:"HH:MM"}` in event-local time and can cross midnight. Defaults are 10 minutes
+check-in and a 5-minute peak buffer during 08:00–10:00 and 16:00–18:00. Override with
+`checkInMinutes`, `peakWindows`, `peakBufferMinutes`; route peak buffers override the global value.
+`freshnessMinutes` defaults to 5. Local settings use guarded atomic writes and an exclusive lock;
+config reads do not create files. MCP tools are `nearby_sessions`, `get_onsite_preferences`, and
+`set_onsite_preferences`; bounded replies omit whole entries with counts. A nearby result never
+reserves anything: present its actual offering ID and obtain confirmation before `reserve_sessions`.

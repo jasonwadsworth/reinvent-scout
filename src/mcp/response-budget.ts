@@ -57,3 +57,18 @@ export function boundedSchedulePlan(raw: SchedulePlan) {
   }
   return result;
 }
+
+export function boundedNearbyResult(raw: import("../onsite/recommend.js").NearbyResult) {
+  const result = { ...raw, candidates: [...raw.candidates], coverage: { ...raw.coverage } };
+  while (responseBytes(result) >= RESPONSE_BUDGET_BYTES && result.candidates.length) {
+    result.candidates.pop(); result.coverage.omitted++;
+  }
+  return result;
+}
+export function boundedOnsitePreferences(raw: import("../onsite/config.js").OnsitePreferences) {
+  const result = { ...raw, sessionWalkUp: [...raw.sessionWalkUp], routes: [...raw.routes], omitted: { sessionWalkUp: 0, routes: 0 } };
+  for (const key of ["sessionWalkUp", "routes"] as const) {
+    while (responseBytes(result) >= RESPONSE_BUDGET_BYTES && result[key].length) { result[key].pop(); result.omitted[key]++; }
+  }
+  return result;
+}

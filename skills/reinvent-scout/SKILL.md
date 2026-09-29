@@ -64,6 +64,10 @@ explained shortlist.
    relevant entries. Use `unfavorite_session` if the user wants something removed, and confirm with
    another `get_schedule` (or by checking its outcome) if it matters to them.
 
+10. For on-site choices, read `get_onsite_preferences`; use `set_onsite_preferences` for requested
+    local changes. Confirm the current venue on this call, then call `nearby_sessions`. Present
+    both travel legs, admission uncertainty and refresh coverage before any reservation.
+
 `reference/workflow.md` has the exact argument and output shape for every tool above, plus what
 each `isError` message means and how to react to it.
 
@@ -109,6 +113,9 @@ one without the actual remediation or destination signal.
 - `plan_schedule`
 - `reserve_sessions`
 - `cancel_reservation`
+- `nearby_sessions`
+- `get_onsite_preferences`
+- `set_onsite_preferences`
 
 ## Reference files
 
@@ -116,3 +123,13 @@ one without the actual remediation or destination signal.
 - `reference/taxonomy.md` -- the catalog's topic, role, level and session-type vocabulary.
 - `reference/workflow.md` -- exact tool argument/output contracts, error handling, and the CLI
   command reference.
+
+
+For on-site requests, confirm the attendee's current venue on every call, including location or
+schedule-derived suggestions. Use `nearby_sessions` only after that confirmation. It reads the
+full hard schedule and at most20 fresh session records; travel is estimated and seat bands are
+not guarantees. Present both travel legs, admission uncertainty and refresh coverage. An explicit
+skip does not cancel a reservation. Walk-up defaults false; `set_onsite_preferences` changes local
+settings, with event-scoped session false overrides and null resets. Follow the on-site examples
+in [reference/workflow.md](reference/workflow.md). Ask for confirmation before reserving a returned
+ID; nearby never writes to the attendee account.

@@ -120,6 +120,7 @@ function fakeApiClient(
     getSchedule: async () => {
       throw new Error("not implemented in this fake");
     },
+    getSession: async () => { throw new Error("unused getSession"); },
     getEvent: async (eventId) => ({ eventId }),
     listSessions: async () => {
       throw new Error("not implemented in this fake");
