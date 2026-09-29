@@ -636,6 +636,38 @@ describe("lens-quality documentation", () => {
   });
 });
 
+describe("lens-precision guidance in profiling.md", () => {
+  const collapsed = profilingMd.replace(/\s+/g, " ");
+  it("marks platform services supporting by default and names them", () => {
+    expect(collapsed).toContain("Mark platform services `\"role\": \"supporting\"` by default");
+    for (const name of ["CloudWatch", "VPC", "S3", "Route 53", "ACM", "CDK", "CloudFormation", "IAM", "STS", "KMS", "Secrets Manager", "Systems Manager", "CloudTrail"]) {
+      expect(collapsed).toMatch(new RegExp(`Mark platform services[^.]*\\b${name}\\b`));
+    }
+  });
+  it("adds ecs and eks to the starting vocabulary", () => {
+    expect(collapsed).toMatch(/starting vocabulary[^]*`containers`, `ecs`, `eks`/);
+  });
+  it("says an unresolved name is fine, is never rare, and lists the names the catalog lacks", () => {
+    expect(collapsed).toContain("never counts as rare");
+    for (const name of ["Amazon SES", "Amazon SNS", "AWS X-Ray", "Powertools for AWS Lambda"]) expect(collapsed).toContain(name);
+    expect(collapsed).toContain("Amazon Bedrock AgentCore");
+  });
+  it("defines gap-no-alarms as an alarm that notifies a person", () => {
+    expect(collapsed).toContain("no alarm that notifies a person");
+    expect(collapsed).toContain("only drives automation");
+  });
+  it("keeps IAM out of services and points broad-IAM sessions at the remedy path", () => {
+    expect(collapsed).toContain("IAM stays out of `services`");
+    expect(collapsed).toContain("remedy services");
+  });
+  it("describes the enumeration rule, the single-call source and the reverse move", () => {
+    expect(collapsed).toContain("enumeration of three or more names");
+    expect(collapsed).toContain("agents built on two of your other core services");
+    expect(collapsed).toContain("Kubernetes or EKS to serverless or AgentCore");
+    expect(collapsed).not.toContain("whose phrase is specific enough that one mention counts");
+  });
+});
+
 it("executes the documented plan-confirm-reserve-cancel contracts using plan-returned IDs", async () => {
   const blocks = [...workflowMd.matchAll(/```json\n([\s\S]*?)```/g)].map(match => JSON.parse(match[1]!) as { tool?: string; arguments?: { sessionIds?: string[]; sessionId?: string } }).filter(value => ["plan_schedule", "reserve_sessions", "cancel_reservation"].includes(value.tool ?? ""));
   expect(blocks.map(value => value.tool)).toEqual(["plan_schedule", "reserve_sessions", "cancel_reservation"]);
