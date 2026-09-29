@@ -66,6 +66,11 @@ function manyLambdaSessions(n: number): Session[] {
   }));
 }
 
+/** `match --json` prints the same object as the MCP tool; these tests care about its candidates. */
+function candidatesOf<T = Array<Record<string, unknown>>>(text: string): T {
+  return (JSON.parse(text) as { candidates: T }).candidates;
+}
+
 interface Harness {
   run: (args: string[]) => Promise<void>;
   printed: string[];
@@ -113,9 +118,9 @@ describe("match command", () => {
     writeCatalog({ raw, index: raw.map(buildIndexRecord), meta: sampleMeta() }, { storeRoot: home.path });
     const json = harness(home.path);
     await json.run(["match", "--profile", profileFilePath, "--lens", lens!, "--json"]);
-    const results = JSON.parse(json.printed[0]!);
+    const results = candidatesOf<Array<{ code: string; reasons: unknown[] }>>(json.printed[0]!);
     expect(results.map((result: { code: string }) => result.code)).toEqual(["LENS400"]);
-    expect(results[0].reasons).toContainEqual(expect.objectContaining({ kind, profileEvidence: evidence }));
+    expect(results[0]!.reasons).toContainEqual(expect.objectContaining({ kind, profileEvidence: evidence }));
     const human = harness(home.path);
     await human.run(["match", "--profile", profileFilePath, "--lens", lens!]);
     expect(human.printed.join("\n")).toContain("repo/src/agent.ts:17");
@@ -135,8 +140,8 @@ describe("match command", () => {
     await h.run(["match", "--profile", profileFilePath, "--json"]);
 
     expect(h.printed).toHaveLength(1);
-    const results = JSON.parse(h.printed[0]!) as Array<Record<string, unknown>>;
-    expect(results.some((r) => r.abbreviation === "API318")).toBe(true);
+    const results = candidatesOf(h.printed[0]!) as Array<Record<string, unknown>>;
+    expect(results.some((r) => r.code === "API318")).toBe(true);
     for (const result of results) {
       expect(result).toHaveProperty("score");
       expect(result).toHaveProperty("reasons");
@@ -154,8 +159,8 @@ describe("match command", () => {
     await h.run(["match", "--profile", "my-lambda-profile", "--json"]);
 
     expect(h.printed).toHaveLength(1);
-    const results = JSON.parse(h.printed[0]!) as Array<Record<string, unknown>>;
-    expect(results.some((r) => r.abbreviation === "API318")).toBe(true);
+    const results = candidatesOf(h.printed[0]!) as Array<Record<string, unknown>>;
+    expect(results.some((r) => r.code === "API318")).toBe(true);
   });
 
   it("rejects a --profile name that isn't a single safe path segment, even though no such file exists", async () => {
@@ -180,8 +185,8 @@ describe("match command", () => {
 
     await h.run(["match", "--profile", profileFilePath, "--json"]);
 
-    const results = JSON.parse(h.printed[0]!) as Array<Record<string, unknown>>;
-    const ant301 = results.find((r) => r.abbreviation === "ANT301");
+    const results = candidatesOf(h.printed[0]!) as Array<Record<string, unknown>>;
+    const ant301 = results.find((r) => r.code === "ANT301");
     expect(ant301).toBeDefined();
     expect(ant301).not.toHaveProperty("abstract");
   });
@@ -193,8 +198,8 @@ describe("match command", () => {
 
     await h.run(["match", "--profile", profileFilePath, "--json", "--include-abstracts"]);
 
-    const results = JSON.parse(h.printed[0]!) as Array<Record<string, unknown>>;
-    const ant301 = results.find((r) => r.abbreviation === "ANT301");
+    const results = candidatesOf(h.printed[0]!) as Array<Record<string, unknown>>;
+    const ant301 = results.find((r) => r.code === "ANT301");
     expect(ant301?.abstract).toBe(fixture.find((s) => s.abbreviation === "ANT301")!.abstract);
   });
 
@@ -240,12 +245,12 @@ describe("match command", () => {
     const h = harness(home.path);
 
     await h.run(["match", "--profile", profileFilePath, "--json"]);
-    const defaultResults = JSON.parse(h.printed[0]!) as unknown[];
+    const defaultResults = candidatesOf(h.printed[0]!) as unknown[];
     expect(defaultResults).toHaveLength(30);
 
     const h2 = harness(home.path);
     await h2.run(["match", "--profile", profileFilePath, "--json", "--limit", "5"]);
-    const limitedResults = JSON.parse(h2.printed[0]!) as unknown[];
+    const limitedResults = candidatesOf(h2.printed[0]!) as unknown[];
     expect(limitedResults).toHaveLength(5);
   });
 
@@ -290,14 +295,14 @@ describe("match command", () => {
 
     await h.run(["match", "--profile", profileFilePath, "--json", "--lens", "explain"]);
 
-    const results = JSON.parse(h.printed[0]!) as Array<{ levelBand: number | null }>;
+    const results = candidatesOf(h.printed[0]!) as Array<{ levelBand: number | null }>;
     for (const result of results) {
       expect([100, 200]).toContain(result.levelBand);
     }
     // COM320 (Lambda, level band 300) exists in the fixture and must be excluded under this lens.
     expect(
-      (JSON.parse(h.printed[0]!) as Array<{ abbreviation: string }>).some(
-        (r) => r.abbreviation === "COM320",
+      (candidatesOf(h.printed[0]!) as Array<{ code: string }>).some(
+        (r) => r.code === "COM320",
       ),
     ).toBe(false);
   });
@@ -345,7 +350,7 @@ describe("match command", () => {
 
     await h.run(["match", "--profile", profileFilePath, "--json"]);
 
-    const results = JSON.parse(h.printed[0]!) as Array<{
+    const results = candidatesOf(h.printed[0]!) as Array<{
       code: string;
       abbreviation: string | null;
       offerings: Array<{ abbreviation: string | null; startDate: string | null }>;

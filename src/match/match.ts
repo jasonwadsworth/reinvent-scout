@@ -80,7 +80,9 @@ function pushDeduped(list: string[], seen: Set<string>, value: string): void {
 /**
  * Builds the scorer's query from a resolved, agent-authored profile:
  *
- * - `services`: every *distinct* catalog display name a service resolved to (an unresolved one has
+ * - `supportingServices`: the same, for services marked `role: "supporting"` (scored at half
+ *   weight); a name that is also core is dropped here by `scoreSession`, so it counts once.
+ * - `services`: every *distinct* core catalog display name a service resolved to (an unresolved one has
  *   nothing to exact-match against a session's own `services`, so it's simply absent here -- it
  *   still contributes through `text` below via its own `name`). Deduplicated: resolution is
  *   many-to-one by design (a short key, a display name, and an SDK package name can all resolve to
@@ -105,16 +107,25 @@ function pushDeduped(list: string[], seen: Set<string>, value: string): void {
 function buildMatchQuery(profile: ResolvedProfile): MatchQuery {
   const seenServices = new Set<string>();
   const services: string[] = [];
+  const supportingServices: string[] = [];
   const textParts: string[] = [];
 
   for (const service of profile.services) {
-    if (service.catalogName !== null && !seenServices.has(service.catalogName)) {
+    if (service.catalogName !== null && service.role !== "supporting" && !seenServices.has(service.catalogName)) {
       seenServices.add(service.catalogName);
       services.push(service.catalogName);
     }
     textParts.push(service.name);
     if (service.usage !== undefined) {
       textParts.push(service.usage);
+    }
+  }
+
+  const seenSupporting = new Set<string>();
+  for (const service of profile.services) {
+    if (service.catalogName !== null && service.role === "supporting" && !seenSupporting.has(service.catalogName)) {
+      seenSupporting.add(service.catalogName);
+      supportingServices.push(service.catalogName);
     }
   }
 
@@ -139,7 +150,7 @@ function buildMatchQuery(profile: ResolvedProfile): MatchQuery {
     textParts.push(intent.text);
   }
 
-  return { services, topics, areasOfInterest, text: textParts.join(" ") };
+  return { services, supportingServices, topics, areasOfInterest, text: textParts.join(" ") };
 }
 
 /** A per-record scoring result, before repeat sessions are grouped into a `MatchCandidate` --

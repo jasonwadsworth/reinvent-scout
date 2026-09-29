@@ -1105,3 +1105,23 @@ describe("evidence lenses end to end", () => {
     expect(explain.map(result => [result.code, result.score, result.reasons])).toEqual([["SRC100", 56.93, [...all[0]!.reasons, { kind: "format", detail: "Breakout session sessions are favored under the explain lens.", weight: 5, evidence: "Breakout session" }]]]);
   });
 });
+
+describe("matchSessions service roles", () => {
+  let home: TempHome;
+  beforeEach(() => { home = createTempHome(); });
+  afterEach(() => { home.cleanup(); });
+  const raw: Session[] = [{ sessionId: "a", abbreviation: "AAA100", title: "Deep dive", services: ["AWS Lambda"] }];
+  const serviceWeights = (services: ResolvedProfile["services"]) => {
+    writeCatalog({ raw, index: raw.map(buildIndexRecord), meta: sampleMeta({ count: 1, totalCount: 1 }) }, { storeRoot: home.path });
+    return matchSessions(resolvedProfile({ services }), { storeRoot: home.path })[0]!.reasons.filter(reason => reason.kind === "service").map(reason => reason.weight);
+  };
+  const lambda = (extra: object) => ({ name: "lambda", catalogName: "AWS Lambda", evidence: [{ repo: ".", file: "x" }], ...extra });
+  it("halves a supporting service's weight", () => {
+    expect(serviceWeights([lambda({})])).toEqual([50]);
+    expect(serviceWeights([lambda({ role: "core" })])).toEqual([50]);
+    expect(serviceWeights([lambda({ role: "supporting" })])).toEqual([25]);
+  });
+  it("keeps full weight when another entry for the same service is core", () => {
+    expect(serviceWeights([lambda({ role: "supporting" }), lambda({ name: "aws_lambda_function", role: "core" })])).toEqual([50]);
+  });
+});

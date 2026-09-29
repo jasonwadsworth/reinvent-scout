@@ -271,3 +271,20 @@ describe("parseProfile", () => {
     expect(roundTripped).toEqual(parsed);
   });
 });
+
+describe("service role", () => {
+  const withRole = (role: unknown): unknown => {
+    const raw = validRawProfile() as { services: Array<Record<string, unknown>> };
+    raw.services[0]!.role = role;
+    return raw;
+  };
+  it("accepts core and supporting and keeps the role through parse and resolve", () => {
+    expect(parseProfile(withRole("supporting")).services[0]?.role).toBe("supporting");
+    expect(parseProfile(withRole("core")).services[0]?.role).toBe("core");
+    expect(resolveProfile(withRole("supporting"), testAliasIndex()).services[0]?.role).toBe("supporting");
+    expect(parseProfile(validRawProfile()).services[0]?.role).toBeUndefined();
+  });
+  it("rejects any other role", () => {
+    expect(() => parseProfile(withRole("primary"))).toThrow();
+  });
+});

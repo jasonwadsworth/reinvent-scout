@@ -28,7 +28,7 @@ const TITLE_STRENGTH = 3;
 /** A Fix rule's phrase described as absent ("missing dead-letter queues") is the gap itself, not a
  * passing mention, so it earns one more strength than the same phrase without the cue. Looks only
  * at the few words before the first abstract match. */
-const GAP_CUE = /\b(?:missing|without|lack(?:s|ing)?|no|absent|forgotten)\b(?: [\w-]+){0,2} $/i;
+const GAP_CUE = /(?:\b(?:missing|without|lack(?:s|ing)?|absent|forgotten)\b(?: [\w-]+){0,2}|\bno) $/i;
 const GAP_CUE_WINDOW = 30;
 const BASE_WEIGHT = 20;
 const STRENGTH_WEIGHT = 10;
