@@ -690,9 +690,9 @@ function registerReservationTools(server: McpServer, deps: McpToolDeps): void {
     inputSchema: z.strictObject({ sessionId: idSchema, event: z.string().min(1).optional() }),
   }, async ({ sessionId, event }) => {
     try {
-      validateSessionIds([sessionId]);
+      const [cleanId] = validateSessionIds([sessionId]) as [string];
       const storeRoot = deps.resolveStoreRoot();
-      const result = await cancelReservation(sessionId, { storeRoot, apiClient: buildApiClient(storeRoot), ...(event ? { eventId: event } : {}) });
+      const result = await cancelReservation(cleanId, { storeRoot, apiClient: buildApiClient(storeRoot), ...(event ? { eventId: event } : {}) });
       return { ...textResult(boundedCancelResult(result)), ...(cancellationNeedsAttention(result) ? { isError: true as const } : {}) };
     } catch (error) { const result = toToolError(error); result.content[0].text = shortenDescription(result.content[0].text, 512); return result; }
   });

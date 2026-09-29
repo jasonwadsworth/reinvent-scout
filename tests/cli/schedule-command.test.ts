@@ -654,6 +654,13 @@ describe("padded ids", () => {
   let home: TempHome;
   beforeEach(() => { home = createTempHome(); process.exitCode = 0; });
   afterEach(() => { home.cleanup(); process.exitCode = 0; });
+  it("cancels the trimmed id and reports it", async () => {
+    const deleted: string[] = [];
+    const h = harness(home.path, { cancelReservation: async (_e, id) => { deleted.push(id); }, getSchedule: async () => ({ reserved: [], favorites: [], personalTime: [] }) });
+    await h.run(["schedule", "cancel", " R "]);
+    expect(deleted).toEqual(["R"]);
+    expect(h.printed[0]).toMatch(/^R: cancelled; verified absent: true/);
+  });
   it("trims favorite ids before sending and refuses a blank one", async () => {
     const sent: string[][] = [];
     const h = harness(home.path, { associateFavorites: async (_e, list) => { sent.push(list); return { successful: list, failed: [] }; }, getSchedule: async () => ({ reserved: [], favorites: ["a"], personalTime: [] }) });

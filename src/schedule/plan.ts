@@ -106,13 +106,13 @@ export function buildSchedulePlan(input: readonly string[], context: PlanContext
 
 /** Catalog event validation precedes the full schedule read. Neither adapter may use a display page. */
 export async function planSchedule(ids: readonly string[], deps: CatalogStoreDeps & { apiClient: Pick<ApiClient, "getSchedule">; eventId?: string; now?: () => number }): Promise<SchedulePlan> {
-  validateSessionIds(ids, true, false);
-  if (!ids.length) return buildSchedulePlan([], { index: [], schedule: { reserved: [], favorites: [], personalTime: [] }, eventTimezone: null });
+  const trimmed = validateSessionIds(ids, true, false);
+  if (!trimmed.length) return buildSchedulePlan([], { index: [], schedule: { reserved: [], favorites: [], personalTime: [] }, eventTimezone: null });
   const index = requireCurrentIndex(deps);
   const eventId = deps.eventId ?? DEFAULT_EVENT_ID;
   if (readMeta(deps)?.eventId !== eventId) throw new ValidationError(`Sync the catalog for event ${eventId} before planning its schedule.`);
   const timezone = readTimezoneAvailability(deps);
   if (timezone?.status !== "known") throw new ValidationError("Planning requires the event's recognized IANA timezone; sync the event catalog first.");
   const schedule = await deps.apiClient.getSchedule(eventId);
-  return buildSchedulePlan(ids, { index, schedule, eventTimezone: timezone.timezone, ...(deps.now ? { now: deps.now } : {}) });
+  return buildSchedulePlan(trimmed, { index, schedule, eventTimezone: timezone.timezone, ...(deps.now ? { now: deps.now } : {}) });
 }

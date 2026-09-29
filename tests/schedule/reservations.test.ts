@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { BulkResult, Schedule } from "../../src/api/types.js";
 import { markRequestNotSent, AuthRequiredError, NotRegisteredError, NotFoundError, OperationUnavailableError, ServiceError, ThrottledError } from "../../src/core/errors.js";
 import { OAuthError } from "../../src/auth/oauth.js";
+import { createApiClient } from "../../src/api/client.js";
+import { createFakeFetch } from "../helpers/fake-fetch.js";
 import { cancelReservation, reserveSessions } from "../../src/schedule/reservations.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
 
@@ -127,5 +129,23 @@ describe("reservation review fixes", () => {
     }) });
     expect(result.failed.map(f => f.sessionId)).toEqual(ids(21).slice(10, 20));
     expect(result.notAttempted).toEqual(["s20"]);
+  });
+});
+
+describe("cancel uses the trimmed id everywhere", () => {
+  let home: TempHome;
+  beforeEach(() => { home = createTempHome(); }); afterEach(() => home.cleanup());
+  it("sends the DELETE and reads back for the trimmed id, so a padded id cannot report a false absence", async () => {
+    const fake = createFakeFetch([{ status: 204 }, { status: 200, json: { schedule: { reserved: ["R"], favorites: [], personalTime: [] } } }]);
+    const apiClient = createApiClient({ fetchFn: fake.fetch, getAccessToken: async () => "token" });
+    const result = await cancelReservation(" R ", { storeRoot: home.path, apiClient });
+    expect(fake.calls[0]!.init?.method).toBe("DELETE");
+    expect(fake.calls[0]!.url).toMatch(/\/reservations\/R$/);
+    expect(result).toMatchObject({ sessionId: "R", outcome: "cancelled", verifiedAbsent: false });
+  });
+  it("still refuses a blank id before any request", async () => {
+    let calls = 0;
+    await expect(cancelReservation("  ", { storeRoot: home.path, apiClient: { cancelReservation: async () => { calls++; }, getSchedule: async () => schedule() } })).rejects.toThrow();
+    expect(calls).toBe(0);
   });
 });

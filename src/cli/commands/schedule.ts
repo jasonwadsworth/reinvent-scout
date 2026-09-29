@@ -552,10 +552,10 @@ export function registerScheduleCommands(program: Command, deps: ScheduleCommand
     .argument("<id>", "session ID").option("--event <id>", "event ID", DEFAULT_EVENT_ID).option("--json", "machine-readable output")
     .action(async (id: string, options: FavoriteCommandOptions) => {
       try {
-        validateSessionIds([id]);
+        const [cleanId] = validateSessionIds([id]) as [string];
         const storeRoot = resolveStoreRoot();
-        const result = await cancelReservation(id, { storeRoot, apiClient: buildApiClient(storeRoot), eventId: options.event });
-        print(options.json ? JSON.stringify(result) : `${id}: ${result.outcome}; verified absent: ${result.verifiedAbsent ?? "unknown"}.${result.error ? ` ${result.error}` : ""}${result.verificationError ? ` ${result.verificationError}` : ""}`);
+        const result = await cancelReservation(cleanId, { storeRoot, apiClient: buildApiClient(storeRoot), eventId: options.event });
+        print(options.json ? JSON.stringify(result) : `${result.sessionId}: ${result.outcome}; verified absent: ${result.verifiedAbsent ?? "unknown"}.${result.error ? ` ${result.error}` : ""}${result.verificationError ? ` ${result.verificationError}` : ""}`);
         if (cancellationNeedsAttention(result)) process.exitCode = 1;
       } catch (error) { print(error instanceof Error ? error.message : String(error)); process.exitCode = 1; }
     });

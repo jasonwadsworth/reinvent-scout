@@ -106,8 +106,9 @@ export interface CancelReservationResult {
   error?: string;
   verificationError?: string;
 }
-export async function cancelReservation(sessionId: string, deps: WriteQuotaDeps & { apiClient: Pick<ApiClient, "cancelReservation" | "getSchedule">; eventId?: string }): Promise<CancelReservationResult> {
-  validateSessionIds([sessionId]);
+export async function cancelReservation(requestedId: string, deps: WriteQuotaDeps & { apiClient: Pick<ApiClient, "cancelReservation" | "getSchedule">; eventId?: string }): Promise<CancelReservationResult> {
+  // The trimmed id is the one sent, read back and reported: a padded id would 404 and look absent.
+  const [sessionId] = validateSessionIds([requestedId]) as [string];
   const event = deps.eventId ?? DEFAULT_EVENT_ID;
   await acquireWriteQuota("cancel", 1, deps);
   const result: CancelReservationResult = { sessionId, outcome: "cancelled", verifiedAbsent: null };
