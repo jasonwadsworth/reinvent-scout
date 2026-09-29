@@ -1,3 +1,4 @@
+import { buildStackFit } from "./stack-fit.js";
 import { scoreLensSignals, skippedLensRules, type LensHit, type SkippedRule } from "./lens-signals.js";
 import { readRaw, type CatalogStoreDeps } from "../catalog/store.js";
 import { baseSessionCode, requireCurrentIndex } from "../catalog/query.js";
@@ -115,9 +116,11 @@ function buildMatchQuery(profile: ResolvedProfile): MatchQuery {
       seenServices.add(service.catalogName);
       services.push(service.catalogName);
     }
-    textParts.push(service.name);
-    if (service.usage !== undefined) {
-      textParts.push(service.usage);
+    if (service.role !== "supporting") {
+      textParts.push(service.name);
+      if (service.usage !== undefined) {
+        textParts.push(service.usage);
+      }
     }
   }
 
@@ -380,6 +383,7 @@ export function matchSessionsDetailed(
   // how rare a term actually is.
   const corpusStats = buildCorpusStats(index);
 
+  const fitsStack = buildStackFit(profile);
   const scoredRecords: ScoredRecord[] = [];
 
   for (const record of index) {
@@ -390,7 +394,7 @@ export function matchSessionsDetailed(
     }
 
     const lensBase = lens === "fix" || lens === "next-level"
-      ? scoreLensSignals(record, profile, lens, rawById?.get(record.sessionId)?.abstract)
+      ? scoreLensSignals(record, profile, lens, rawById?.get(record.sessionId)?.abstract, fitsStack)
       : undefined;
     const base = lensBase ?? scoreSession(record, query, corpusStats);
     // Gated on the scorer's own score, before the lens's format bonus is even considered -- a

@@ -114,7 +114,7 @@ describe("match command", () => {
   ])("renders %s cited reasons in JSON and human output", async (lens, pattern, title, kind, wording) => {
     const evidence = [{ repo: "repo", file: "src/agent.ts", line: 17, note: "Inspected handler" }];
     writeFileSync(profileFilePath, JSON.stringify({ schemaVersion: 1, repos: [{ root: "repo", languages: [] }], services: [], patterns: [{ name: pattern, evidence }] }));
-    const raw = [{ sessionId: "lens", abbreviation: "LENS400", title: title! }];
+    const raw = [{ sessionId: "lens", abbreviation: "LENS400", title: title!, abstract: "Starts from one prompt today." }];
     writeCatalog({ raw, index: raw.map(buildIndexRecord), meta: sampleMeta() }, { storeRoot: home.path });
     const json = harness(home.path);
     await json.run(["match", "--profile", profileFilePath, "--lens", lens!, "--json"]);

@@ -142,3 +142,30 @@ inline to temp directories. No account writes. Commits end with the attribution 
      itself, not a passing mention.
 - A tag counts toward the gate only on top of a text hit (COM320 has one "ECS" mention plus the ECS
   service tag and is admitted; a tag alone never is). A tag adds 1 once, however many match.
+
+## Ranking round (lead decision after the first real-catalog acceptance run)
+
+- Stack-fit gate (`src/match/stack-fit.ts`): Fix and Next-level admit a session only if it lists a
+  resolved core service or names one in its title or abstract (catalog name, name without the
+  Amazon/AWS prefix, parenthesized short name such as SQS, or the profile's own spelling). Supporting
+  services never count. A profile with no core service turns the gate off.
+- Next-level source co-mention: serverless needs Lambda, serverless or functions (or the Lambda
+  service); ecs needs ECS (or the ECS service); genai-single-call needs a single model call, prompt,
+  InvokeModel or Bedrock (or the Bedrock service). Title, abstract or listed service all count.
+- SVS319 ("Automating Serverless migrations at scale with AWS Transform") matches none of the
+  serverless, ecs or genai rules' phrases (no container, ECS or EKS wording; the one "agentic" is a
+  single mention with no tag), so it is not admitted on any path and no reverse change was needed.
+- Measured on the real snapshot with the saved profiles, limit 12, built CLI:
+  - hallway Next-level: CON337, SVS320, COM320 all in the top 6 (only 6 candidates admitted:
+    CON337, SVS320, OPN201-S, STG309, COM320, COM328). No reverse migrations.
+  - hallway Fix top 10: API311 first; SVS329, SVS314, SVS322, CON337 and COM326 genuine; COP306
+    (Kubernetes observability), IND354 (AgentCore cost), ARC330 (SaaS agents), DAT301 (Aurora
+    DBOps) are off-stack talks that still pass the gate. About 6 of 10 genuine: target not met.
+  - KiroCrew Fix top 10: about 4 to 5 of 10 genuine (COP306, DAT301, STG352, COP309, COP349, SEC421
+    and COP319 are generic observability or agent talks). Target not met. Next-level is skipped for
+    serverless (profile has containers) and genai-single-call (profile has agentic).
+- Why the gate cannot go further as specified: the profiles list Amazon CloudWatch, S3 and other
+  near-universal services as core, and the off-stack talks admitted above all name CloudWatch (COP306,
+  IND354, NET406, STG352) or Lambda in passing (DAT301). Options for the lead: ignore services whose
+  catalog frequency is high when gating, or require two distinct core services unless the title names
+  one, or have profiles mark platform services (CloudWatch, S3, CloudFront, CDK) as `supporting`.
