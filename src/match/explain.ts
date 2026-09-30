@@ -245,24 +245,7 @@ export function buildConcepts(profile: ResolvedProfile, catalogServices: readonl
   return { concepts, uncovered };
 }
 
-/** Where `concept` is named in `text` outside an enumeration, each place once even when two of its
- * spellings overlap ("Amazon DynamoDB" and "DynamoDB"). */
-function mentions(concept: ExplainConcept, text: string): RegExpExecArray[] {
-  // "Lambda, DynamoDB & SQS" is an enumeration like the "and" form.
-  const spoken = text.replace(/ & /g, " and ");
-  const all = concept.matchers.flatMap(matcher => unlistedMatches(matcher, spoken, PATTERN_VOCABULARY));
-  all.sort((a, b) => a.index - b.index || b[0].length - a[0].length);
-  const distinct: RegExpExecArray[] = [];
-  let end = 0;
-  for (const match of all) {
-    if (match.index < end) continue;
-    distinct.push(match);
-    end = match.index + match[0].length;
-  }
-  return distinct;
-}
-
-/** `mentions` reads " & " as " and " (two characters longer); this maps a match offset in that
+/** `mentionsOf` reads " & " as " and " (two characters longer); this maps a match offset in that
  * reading back to the original text, so a quote is cut from what the session actually says. */
 function originalIndex(text: string, spokenIndex: number): number {
   let shift = 0;
@@ -271,6 +254,27 @@ function originalIndex(text: string, spokenIndex: number): number {
     shift += 2;
   }
   return spokenIndex - shift;
+}
+
+/** Where any of `matchers` names something in `text` outside an enumeration, each place once even
+ * when two of its spellings overlap ("Amazon DynamoDB" and "DynamoDB"), at offsets in `text` itself. */
+export function mentionsOf(matchers: readonly RegExp[], text: string): RegExpExecArray[] {
+  // "Lambda, DynamoDB & SQS" is an enumeration like the "and" form.
+  const spoken = text.replace(/ & /g, " and ");
+  const all = matchers.flatMap(matcher => unlistedMatches(matcher, spoken, PATTERN_VOCABULARY));
+  all.sort((a, b) => a.index - b.index || b[0].length - a[0].length);
+  const distinct: RegExpExecArray[] = [];
+  let end = 0;
+  for (const match of all) {
+    if (match.index < end) continue;
+    distinct.push(match);
+    end = match.index + match[0].length;
+  }
+  return distinct.map(match => Object.assign(match, { index: originalIndex(text, match.index) }));
+}
+
+function mentions(concept: ExplainConcept, text: string): RegExpExecArray[] {
+  return mentionsOf(concept.matchers, text);
 }
 
 function isBoosted(concept: ExplainConcept, record: IndexRecord): boolean {
@@ -298,7 +302,7 @@ export function matchConcepts(concepts: readonly ExplainConcept[], record: Index
     matches.push({
       concept, strength: inTitle === undefined ? ABSTRACT_STRENGTH : TITLE_STRENGTH,
       phrase: admitted[0], boosted,
-      site: { inTitle: inTitle !== undefined, index: inTitle !== undefined ? inTitle.index : originalIndex(abstract, admitted.index), length: admitted[0].length },
+      site: { inTitle: inTitle !== undefined, index: admitted.index, length: admitted[0].length },
     });
   }
   return matches;

@@ -252,6 +252,12 @@ describe("the why block", () => {
       expect(why.sessionSays).toBe("Then AWS Lambda gets a deep dive.");
     });
 
+    it("treats an ampersand list of names as an enumeration, not a mention", () => {
+      const p = profileOf([], [lambda, service("Amazon DynamoDB")]);
+      const listed = session("LST100", "Scaling lessons: Lambda, DynamoDB & SQS", { services: ["AWS Lambda", "Amazon DynamoDB"] });
+      expect("sessionSays" in run(p, [listed], "all").candidates[0]!.why).toBe(false);
+    });
+
     it("prefers the title over an earlier-reading abstract sentence", () => {
       const why = run(profileOf([], [lambda]), [talk({ abstract: "AWS Lambda first. Then more." })], "all").candidates[0]!.why;
       expect(why.sessionSays).toBe("Building on AWS Lambda");

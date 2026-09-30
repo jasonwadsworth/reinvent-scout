@@ -1,7 +1,6 @@
 import type { Evidence, ResolvedProfile } from "../profile/profile.js";
-import { patternPhrase, type ConceptMatch } from "./explain.js";
+import { mentionsOf, patternPhrase, type ConceptMatch } from "./explain.js";
 import { lensRuleDetail, type LensHit } from "./lens-signals.js";
-import { unlistedMatches } from "./listing.js";
 import type { Reason } from "./score.js";
 import { serviceNamePatterns } from "./stack-fit.js";
 
@@ -239,7 +238,7 @@ function otherConcepts(profile: ResolvedProfile): NamedConcept[] {
 /** The first place a concept is named outside an enumeration: in the title if there, else the abstract. */
 function siteOf(matchers: readonly RegExp[], text: SessionText): MatchSite | undefined {
   for (const [inTitle, where] of [[true, text.title], [false, text.abstract]] as const) {
-    const first = matchers.flatMap(matcher => unlistedMatches(matcher, where)).sort((a, b) => a.index - b.index)[0];
+    const first = mentionsOf(matchers, where)[0];
     if (first !== undefined) return { inTitle, index: first.index, length: first[0].length };
   }
   return undefined;
