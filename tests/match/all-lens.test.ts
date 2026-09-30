@@ -111,6 +111,32 @@ describe("the all lens", () => {
     expect(result.candidates[1]!.demoted).toBe("customer story");
   });
 
+  it("does not demote a session about agents when the profile's interest names them", () => {
+    const sessions = [session("AGT300", "Agents on Lambda"), session("LAM300", "Lambda in practice")];
+    const interested = run({ ...profile(["AWS Lambda"]), interests: ["Agentic AI"] }, sessions);
+    expect(interested.candidates.map(candidate => candidate.demoted)).toEqual([undefined, undefined]);
+    expect(run(profile(["AWS Lambda"]), sessions).candidates.map(candidate => candidate.demoted)).toContain("about agents, which this code does not use");
+  });
+
+  it("does not match a pattern through a service's name", () => {
+    const sessions = [session("GWY300", "API Gateway unleashed"), session("API300", "REST API design")];
+    expect(codes(run(profile([], ["api"]), sessions))).toEqual(["API300"]);
+    expect(codes(run(profile(["Amazon API Gateway"], ["api"]), sessions)).sort()).toEqual(["API300", "GWY300"]);
+  });
+
+  it("does not take a title about how a service works for a customer story", () => {
+    const result = run(profile(["Kiro"]), [session("KIR300", "How Kiro learns your code"), session("CUS300", "How Acme scaled Kiro")]);
+    expect(Object.fromEntries(result.candidates.map(candidate => [candidate.code, candidate.demoted]))).toEqual({ KIR300: undefined, CUS300: "customer story" });
+  });
+
+  it("demotes an industry session that names its industry in a build title, using the catalog's industry names", () => {
+    const result = run(profile(["AWS Lambda"]), [
+      session("GOV300", "Build government data planes on Lambda", { industries: ["Government"] }),
+      session("RET300", "Build a flash-sale control plane on Lambda", { industries: ["Retail & Consumer Goods"] }),
+    ]);
+    expect(Object.fromEntries(result.candidates.map(candidate => [candidate.code, candidate.demoted]))).toEqual({ GOV300: "industry session", RET300: undefined });
+  });
+
   it("ranks a session about the code's central concept above one about a rare concept", () => {
     const p = profile(["AWS Lambda", "Amazon Cognito"]);
     p.services[0]!.evidence = [cite("a.ts"), cite("b.ts"), cite("c.ts")];

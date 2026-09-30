@@ -1,7 +1,7 @@
 import type { IndexRecord } from "../catalog/index-record.js";
 import {
-  admitConcepts, CERTIFICATION, CUSTOMER_STORY, EXPLAINER, MODERNIZATION, NAMED_STORY, NEWS, PARTNER, SPONSORED, STORY, usedAt,
-  TITLE_STRENGTH, type AbsentTopic, type Admission, type ConceptMatch, type ProfileConcept,
+  admitConcepts, BUILD_CUE, CERTIFICATION, EXPLAINER, mentionsOf, namedStorySubjects, NEWS, PARTNER, SPONSORED, STORY, TITLE_STRENGTH, usedAt,
+  type AbsentTopic, type Admission, type ConceptMatch, type ProfileConcept,
 } from "./concepts.js";
 import type { Reason } from "./score.js";
 
@@ -15,13 +15,26 @@ function excluded(record: IndexRecord): boolean {
   return record.type === "Exam prep" || [PARTNER, CERTIFICATION].some(pattern => pattern.test(record.title));
 }
 
+/** The services of the profile the session names, anywhere and in a list or not. */
+function namedProfileServices(concepts: readonly ProfileConcept[], record: IndexRecord, abstract: string): ProfileConcept[] {
+  return concepts.filter(concept => concept.kind === "service"
+    && [record.title, abstract].some(text => mentionsOf(concept.matchers, text).length + mentionsOf(concept.matchers, text, true).length > 0));
+}
+
 /** The concepts a session is about, none when it cannot be attended as such. */
 export function matchAllConcepts(concepts: readonly ProfileConcept[], record: IndexRecord, abstract: string): ConceptMatch[] {
   if (excluded(record)) return [];
   const matches = admitConcepts(concepts, record, abstract, ALL_ADMISSION);
-  // A broad topic (agents, generative AI) is too widespread to make a session about the code on its own: it
-  // adds to a session that names something else the profile has, and never admits one alone.
-  if (matches.every(match => match.concept.titleOnly)) return [];
+  // A broad topic (agents, generative AI) is too widespread to make a session about the code on its own: alone,
+  // the title must also say how to build or design it (as in the Explain lens), or the session must name a service
+  // of the profile (even in a list), which is what ties the topic to this code. That service then counts as named.
+  if (matches.length > 0 && matches.every(match => match.concept.titleOnly)) {
+    const named = namedProfileServices(concepts, record, abstract);
+    if (!BUILD_CUE.test(record.title) && named.length === 0) return [];
+    return [...matches, ...named.map((concept): ConceptMatch => ({
+      concept, strength: 1, phrase: concept.name, boosted: false, site: { inTitle: false, index: -1, length: 0 },
+    }))];
+  }
   // Patterns are words a session uses about anything ("serverless", "event-driven"): with no service of the
   // profile among them, one must be named in the title to make the session about it.
   const onlyPatterns = matches.every(match => match.concept.kind === "pattern");
@@ -30,18 +43,58 @@ export function matchAllConcepts(concepts: readonly ProfileConcept[], record: In
 
 /** A sponsored code ends in "-S" (and, for a repeat, a number). */
 const SPONSORED_CODE = /-S\d*$/;
+/** A customer the catalog marks in the abstract. The abstract's own "how customers ..." is description, not a story. */
+const CUSTOMER_MARKER = /\[customer\]/i;
+/** Tooling and programs that move code onto a technology. A technical talk about modernizing one does not count. */
+const MIGRATION_PROGRAM = /\bAWS Transform\b|\b(?:migration|modernization) (?:acceleration|program|factory|hub|tooling|assessment)\b/i;
+const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** What decides which sessions are demoted, beyond the session itself. */
+export interface DemotionContext {
+  /** Broad topics the profile does not use. */
+  absent?: readonly AbsentTopic[];
+  /** Short names of the services of the catalog and the profile ("Kiro", "Lambda"): a session that says how one works,
+   * or one that "built" something, is about the service and not a customer. */
+  services?: readonly string[];
+  /** Words the catalog's industry names are made of (see `industryTerms`). */
+  industries?: readonly string[];
+}
+
+/** The words of the catalog's industry names ("Media & Entertainment" gives media and entertainment). */
+export function industryTerms(records: readonly IndexRecord[]): string[] {
+  const words = records.flatMap(record => record.industries).flatMap(name => name.toLowerCase().split(/[^a-z]+/));
+  return [...new Set(words.filter(word => word.length >= 5 && !["services", "goods"].includes(word)))];
+}
+
+function namesService(text: string, services: readonly string[]): boolean {
+  return services.some(service => new RegExp(`^${escapeRegExp(service)}\\b`, "i").test(text));
+}
+
+/** The title frames the session as a story ("How Deutsche Bahn made ..."), unless it is a how-to or says how a service works. */
+function titleStory(title: string, services: readonly string[]): boolean {
+  if (!STORY.test(title) || EXPLAINER.test(title)) return false;
+  const after = /(?:^|[:\-–—]\s+)how\s+(.*)$/i.exec(title)?.[1] ?? "";
+  return !namesService(after, services);
+}
 
 /** Why a session ranks after every other: a vendor's pitch, a news or launch talk, what one customer built,
- * tooling that moves code onto the concept, a session made for an industry, or a talk about a broad
- * topic (agents, generative AI) the code does not use. Still worth listing for someone who has the basics. */
-export function demotionReason(record: IndexRecord, abstract: string, absent: readonly AbsentTopic[] = []): string | undefined {
+ * migration tooling, a session made for an industry, or a talk about a broad topic (agents, generative AI) the
+ * code does not use. Still worth listing for someone who has the basics. */
+export function demotionReason(record: IndexRecord, abstract: string, context: DemotionContext = {}): string | undefined {
+  const { absent = [], services = [], industries = [] } = context;
   const about = absent.find(topic => topic.phrase.test(record.title));
+  // An industry session applies technology to a vertical's problem: the title names the vertical, or does not say it is about building
+  // or designing the technology (as "Build a flash-sale control plane with CloudFront" does).
+  const industry = record.industries.length > 0
+    && (!BUILD_CUE.test(record.title) || industries.some(word => new RegExp(`\\b${escapeRegExp(word)}`, "i").test(record.title)));
+  const story = titleStory(record.title, services) || CUSTOMER_MARKER.test(abstract)
+    || namedStorySubjects(abstract).some(subject => !namesService(subject, services));
   const reasons = [
     SPONSORED.test(record.title) || SPONSORED_CODE.test(record.abbreviation ?? "") ? "sponsored session" : undefined,
     NEWS.test(record.title) ? "news or launch session" : undefined,
-    (STORY.test(record.title) && !EXPLAINER.test(record.title)) || CUSTOMER_STORY.test(abstract) || NAMED_STORY.test(abstract) ? "customer story" : undefined,
-    MODERNIZATION.test(record.title) ? "modernization or migration session" : undefined,
-    record.industries.length > 0 ? "industry session" : undefined,
+    story ? "customer story" : undefined,
+    MIGRATION_PROGRAM.test(record.title) ? "modernization or migration session" : undefined,
+    industry ? "industry session" : undefined,
     about === undefined ? undefined : `about ${about.label}, which this code does not use`,
   ].filter((reason): reason is string => reason !== undefined);
   return reasons.length === 0 ? undefined : reasons.join(" and ");

@@ -20,7 +20,7 @@ const dlqTalk: Session = {
   abstract: "Opening. Recover from failed deliveries using dead-letter queues and redrive. Redrive again with dead-letter queues.",
 };
 
-describe("match --lens fix: the why block in the terminal", () => {
+describe("match: the why block in the terminal", () => {
   let home: TempHome;
   beforeEach(() => { home = createTempHome(); });
   afterEach(() => { home.cleanup(); });
@@ -73,19 +73,16 @@ describe("match --lens fix: the why block in the terminal", () => {
     expect(verbose).toContain("Uses AWS Lambda, which this session covers.");
   });
 
-  it("shows Why, Your code and Session for an all candidate, and says when it is demoted", async () => {
+  it("shows Why, Your code and Session for an all candidate, and says it once when it is demoted", async () => {
     const pitch: Session = { ...dlqTalk, sessionId: "s2", abbreviation: "LAM302-S", title: "Run Lambda faster (sponsored by Acme)", abstract: "Nothing more." };
     const text = await run([cite("rules.ts", 179)], ["--lens", "all"], [pitch]);
     const lines = text.split("\n");
     expect(lines[1]).toBe("  Why: Matches your AWS Lambda; ranked lower: sponsored session.");
     expect(lines[2]).toBe("  Your code: tracker/fn.ts:1");
     expect(lines[3]).toBe('  Session: "Run Lambda faster (sponsored by Acme)"');
-    expect(lines[4]).toBe("  Demoted: sponsored session");
-  });
-
-  it("prints no Demoted line for an all candidate that is not demoted", async () => {
-    const plain: Session = { ...dlqTalk, title: "Run Lambda faster" };
-    expect(await run([cite("rules.ts", 179)], ["--lens", "all"], [plain])).not.toContain("Demoted:");
+    expect(lines[4]).toBe("  Offerings:");
+    expect(text).not.toContain("Demoted:");
+    expect(text.match(/sponsored session/g)).toHaveLength(1);
   });
 
   it("does not change --json with --verbose, and JSON always keeps the ranking reasons", async () => {

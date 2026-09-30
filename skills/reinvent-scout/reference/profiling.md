@@ -247,13 +247,14 @@ service or pattern you already recorded elsewhere.
 For each interest, look for the nearest match in `reference/taxonomy.md`'s "Areas of interest" list
 and spell it exactly as the catalog does -- `"Event-Driven Architecture"`, `"Kubernetes"`, `"Cost
 Optimization"`, not a paraphrase of any of them. This matters mechanically, not just stylistically:
-`match_sessions` only produces an `areaOfInterest` reason for an exact tag match; anything else in
-`interests` still counts toward the free-text score, but only an exact tag earns that specific,
-strongest reason. "Exact" here means spelling and punctuation, not case -- the comparison itself is
-case-insensitive (`"kubernetes"` and `"Kubernetes"` match equally well), so there's no need to worry
-about matching the catalog's own capitalization exactly, only its wording. Keep an interest as free
-text only when nothing in the real list is actually a good fit -- don't force a weak match just to
-get the stronger reason type.
+under the `all` lens an interest is a concept of its own (centrality 1, no code cited). A session whose title
+names it, or that carries a topic or area-of-interest tag equal to it, is returned with a `matchesConcept`
+reason "Matches your interest in X"; an interest spelled any other way is admitted only by a title that names it.
+"Exact" here means spelling and punctuation, not case -- the comparison is case-insensitive -- so there's no
+need to match the catalog's capitalization, only its wording. Sessions about an interest rank after sessions
+about the services and patterns you evidenced. An interest that names a broad topic ("Agentic AI") also stops
+sessions about it being ranked lower as off-topic. Shared wording and `intents` only break ties. Keep an
+interest as free text only when nothing in the real list is a good fit -- a title mention still admits it.
 
 ## Fold in issues and other context
 
@@ -441,7 +442,8 @@ migration session, a session made for an industry, and a session titled about ag
 your profile has no `agentic` or `genai-single-call` pattern are returned after every other session, each
 with a `demoted` reason, because an experienced reader may still want them.
 
-**Order.** A title that names a concept comes before an abstract that only does; then the summed centrality of
+**Order.** A title that names a concept comes before an abstract that only does; a session about your evidenced
+concepts comes before one about only a stated interest; then the summed centrality of
 the concepts (the distinct files you cited, so cite the files that really use each one), then the number of
 concepts, then relevance to the whole profile. No concept is the main subject of more than three of the first ten
 while four or more concepts have sessions; what that holds back follows the ten in order. Each candidate's

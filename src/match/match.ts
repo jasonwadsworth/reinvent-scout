@@ -1,6 +1,6 @@
 import { buildStackFit, hasCoreService, PREFIX_REQUIRED_SERVICE_NAMES } from "./stack-fit.js";
-import { absentBroadTopics, buildConcepts, interestConcepts, type ConceptMatch, type UncoveredConcept } from "./concepts.js";
-import { allReason, demotionReason, matchAllConcepts, rankAll } from "./all.js";
+import { absentBroadTopics, buildConcepts, interestConcepts, serviceTails, type ConceptMatch, type UncoveredConcept } from "./concepts.js";
+import { allReason, demotionReason, industryTerms, matchAllConcepts, rankAll } from "./all.js";
 import { explainReason, matchConcepts, selectExplain } from "./explain.js";
 import { activeLensRules, scoreLensSignals, skippedLensRules, type LensHit, type SkippedRule } from "./lens-signals.js";
 import { readRaw, type CatalogStoreDeps } from "../catalog/store.js";
@@ -472,15 +472,16 @@ function matchAll(
   limit: number | undefined,
   abstractOf: AbstractOf,
 ): MatchResult {
-  const { concepts: evidenced } = buildConcepts(profile, knownServices(profile, index));
+  const services = knownServices(profile, index);
+  const { concepts: evidenced } = buildConcepts(profile, services, { architecturePhrases: true });
   const concepts = [...evidenced, ...interestConcepts(profile, evidenced)];
-  const absent = absentBroadTopics(concepts);
+  const context = { absent: absentBroadTopics(concepts), services: serviceTails(services), industries: industryTerms(index) };
   const scored: ScoredRecord[] = [];
   for (const record of index) {
     const abstract = rawById.get(record.sessionId)?.abstract ?? "";
     const matches = matchAllConcepts(concepts, record, abstract);
     if (matches.length === 0) continue;
-    const demoted = demotionReason(record, abstract, absent);
+    const demoted = demotionReason(record, abstract, context);
     scored.push({ record, score: scoreSession(record, query, corpusStats).score, reasons: [], explain: matches, ...(demoted === undefined ? {} : { demoted }) });
   }
   const groups = groupByCode(scored);

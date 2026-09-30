@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Session } from "../../src/api/types.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { absentBroadTopics, admitConcepts, buildConcepts, interestConcepts, type ConceptMatch, type ProfileConcept } from "../../src/match/concepts.js";
-import { allReason, demotionReason, matchAllConcepts, rankAll, type AllSession } from "../../src/match/all.js";
+import { allReason, demotionReason, industryTerms, matchAllConcepts, rankAll, type AllSession, type DemotionContext } from "../../src/match/all.js";
 import type { ResolvedProfile } from "../../src/profile/profile.js";
 
 const cite = (file: string) => ({ repo: "repo", file, line: 1 });
@@ -28,7 +28,6 @@ const conceptsOf = (services: Parameters<typeof profile>[0], patterns: Parameter
 describe("matchAllConcepts", () => {
   const dynamo = conceptsOf([{ name: "Amazon DynamoDB" }]);
   const serverless = conceptsOf([], [{ name: "serverless" }]);
-  const agentic = conceptsOf([], [{ name: "agentic" }]);
   const shape = (concepts: ProfileConcept[], session: Parameters<typeof record>[0], abstract = "") =>
     matchAllConcepts(concepts, record(session), abstract).map(match => [match.concept.name, match.strength]);
 
@@ -58,13 +57,51 @@ describe("matchAllConcepts", () => {
     expect(shape(dynamo, { title: "Storage options", services: ["Amazon DynamoDB"] }, abstract)).toEqual([]);
   });
 
-  it("admits a broad term only by a title that names it, and only beside another concept of the profile", () => {
+  it("admits a broad term only by a title that names it; alone it also needs a build or design cue", () => {
     const both = conceptsOf([{ name: "AWS Lambda" }], [{ name: "agentic" }]);
     const abstract = "An agent plans. The agent acts. Agents everywhere.";
     expect(shape(both, { title: "Platform engineering", topics: ["Agentic AI"] }, abstract)).toEqual([]);
     expect(shape(both, { title: "Agents in the wild" })).toEqual([]);
+    expect(shape(both, { title: "Building agents in the wild" })).toEqual([["agentic", 3]]);
+    expect(shape(both, { title: "Best practices for agent orchestration" })).toEqual([["agentic", 3]]);
     expect(shape(both, { title: "Agents on Lambda" })).toEqual([["agentic", 3], ["AWS Lambda", 3]]);
-    expect(shape(agentic, { title: "Agents on Lambda" })).toEqual([]);
+  });
+
+  it("admits a broad term alone when the session names a service of the profile, even in a list, and counts that service as named", () => {
+    const tools = buildConcepts(profile([{ name: "Claude Code" }], [{ name: "agentic" }])).concepts;
+    const listed = "It coordinates Kiro CLI, Claude Code, and Codex as a team.";
+    expect(shape(tools, { title: "Agent orchestrator for developer CLIs" }, listed)).toEqual([["agentic", 3], ["Claude Code", 1]]);
+    expect(shape(tools, { title: "Agent orchestrator for developer CLIs" }, "It coordinates other tools.")).toEqual([]);
+    expect(shape(tools, { title: "Orchestrator for developer CLIs" }, listed)).toEqual([]);
+  });
+
+  it("admits a session matched only through patterns when a pattern is named in its title", () => {
+    const both = conceptsOf([{ name: "AWS Lambda" }], [{ name: "serverless" }, { name: "event-driven" }]);
+    const abstract = "A serverless design. Serverless again. Event-driven flows too. Event-driven again.";
+    expect(shape(both, { title: "Platforms" }, abstract)).toEqual([]);
+    expect(shape(both, { title: "Serverless platforms" }, abstract)).toEqual([["event-driven", 2], ["serverless", 3]]);
+  });
+
+  it("lets a service concept admit a session without a title mention, patterns or not", () => {
+    const both = conceptsOf([{ name: "AWS Lambda" }], [{ name: "serverless" }]);
+    const abstract = "A serverless design. Serverless again. AWS Lambda here. Lambda again.";
+    expect(shape(both, { title: "Platforms" }, abstract).map(([name]) => name).sort()).toEqual(["AWS Lambda", "serverless"]);
+  });
+
+  it("matches a pattern by the architecture it names, never by a service's name", () => {
+    const patterns = [{ name: "api" }, { name: "streaming" }, { name: "iac-cdk" }, { name: "multi-account" }];
+    const concepts = buildConcepts(profile([], patterns), [], { architecturePhrases: true }).concepts;
+    for (const title of ["API Gateway unleashed", "Kinesis in depth", "Kafka at scale", "Getting started with AWS CDK", "Organizing with AWS Organizations", "Control Tower basics"]) {
+      expect(shape(concepts, { title }), title).toEqual([]);
+    }
+    for (const title of ["REST API design", "GraphQL APIs", "Real-time streaming pipelines", "Infrastructure as code patterns", "A multi-account strategy"]) {
+      expect(shape(concepts, { title }).length, title).toBe(1);
+    }
+  });
+
+  it("still matches a service by its own name when the profile uses the service", () => {
+    const concepts = buildConcepts(profile([{ name: "Amazon API Gateway" }], [{ name: "api" }]), [], { architecturePhrases: true }).concepts;
+    expect(shape(concepts, { title: "API Gateway unleashed" }).map(([name]) => name)).toEqual(["Amazon API Gateway"]);
   });
 
   it("skips an AWS Partner bootcamp, a certification session and exam prep, whatever they name", () => {
@@ -86,7 +123,7 @@ describe("matchAllConcepts", () => {
 });
 
 describe("demotionReason", () => {
-  const reason = (session: Parameters<typeof record>[0], abstract = "", absent: ReturnType<typeof absentBroadTopics> = []) => demotionReason(record(session), abstract, absent);
+  const reason = (session: Parameters<typeof record>[0], abstract = "", context: DemotionContext = {}) => demotionReason(record(session), abstract, context);
 
   it("names a sponsored session by its title or by its -S code", () => {
     expect(reason({ title: "Scale it (sponsored by Acme)" })).toBe("sponsored session");
@@ -102,10 +139,27 @@ describe("demotionReason", () => {
     expect(reason({ title: "Lambda launches in review" })).toBe("news or launch session");
   });
 
-  it("names a customer story, told in the title or the abstract, but not a how-to", () => {
+  it("names a customer story told in the title, but not a how-to", () => {
     expect(reason({ title: "Acme: How we scaled to 1M RPS" })).toBe("customer story");
-    expect(reason({ title: "Scaling", type: "Breakout session" }, "See how a customer moved to the cloud.")).toBe("customer story");
     expect(reason({ title: "Acme: How to scale on Lambda" })).toBeUndefined();
+    expect(reason({ title: "Scaling", type: "Breakout session" }, "The [Customer] moved to the cloud.")).toBe("customer story");
+  });
+
+  it("does not take the abstract's description of how customers work for a story", () => {
+    expect(reason({ title: "Databases on EC2" }, "See how customers in databases approach design. Learn how a customer deploys agents.")).toBeUndefined();
+  });
+
+  it("does not take a title that says how a service of the catalog or the profile works for a story", () => {
+    const services = ["Kiro", "Lambda"];
+    expect(reason({ title: "How Kiro learns: an AI coding agent" }, "", { services })).toBeUndefined();
+    expect(reason({ title: "Trusted intent: How Kiro proves your specs" }, "", { services })).toBeUndefined();
+    expect(reason({ title: "How Deutsche Bahn made cloud pay off" }, "", { services })).toBe("customer story");
+    expect(reason({ title: "How Kiro learns" }, "", {})).toBe("customer story");
+  });
+
+  it("does not take a service of the catalog or the profile for the company of a story", () => {
+    expect(reason({ title: "Specs" }, "Kiro built a spec engine. Kiro Crew moved on.", { services: ["Kiro"] })).toBeUndefined();
+    expect(reason({ title: "Specs" }, "Kiro built a spec engine. Acme moved on.", { services: ["Kiro"] })).toBe("customer story");
   });
 
   it("names a customer story told in the abstract about a named company, whatever the title", () => {
@@ -121,23 +175,34 @@ describe("demotionReason", () => {
     }
   });
 
-  it("names a modernization or migration session", () => {
-    expect(reason({ title: "Modernizing .NET to Serverless" })).toBe("modernization or migration session");
-    expect(reason({ title: "Automating migrations at scale" })).toBe("modernization or migration session");
+  it("names migration or modernization tooling and programs, not a technical talk about modernizing", () => {
+    expect(reason({ title: "Automating migrations at scale with AWS Transform" })).toBe("modernization or migration session");
+    expect(reason({ title: "Migration acceleration for mainframes" })).toBe("modernization or migration session");
+    expect(reason({ title: "Modernization program office" })).toBe("modernization or migration session");
+    expect(reason({ title: "Modernizing .NET to Serverless: Native AOT and SnapStart" })).toBeUndefined();
+    expect(reason({ title: "Transform your SaaS for the agentic AI era on Amazon ECS" })).toBeUndefined();
   });
 
-  it("names a session made for an industry", () => {
-    expect(reason({ title: "Automate dispute resolution", industries: ["Financial Services"] })).toBe("industry session");
-    expect(reason({ title: "Automate dispute resolution", industries: [] })).toBeUndefined();
+  it("names an industry-tagged session whose title names the industry or has no build or design cue", () => {
+    const context = { industries: industryTerms([record({ title: "x", industries: ["Government", "Financial Services"] })]) };
+    expect(reason({ title: "Build hybrid data planes for government pipelines", industries: ["Government"] }, "", context)).toBe("industry session");
+    expect(reason({ title: "Automate dispute resolution with Bedrock", industries: ["Financial Services"] }, "", context)).toBe("industry session");
+    expect(reason({ title: "Build a flash-sale control plane with CloudFront", industries: ["Retail & Consumer Goods"] }, "", context)).toBeUndefined();
+    expect(reason({ title: "Automate dispute resolution with Bedrock", industries: [] }, "", context)).toBeUndefined();
+  });
+
+  it("takes the words of the industry names, not their filler", () => {
+    const terms = industryTerms([record({ title: "x", industries: ["Media & Entertainment", "Financial Services", "Retail & Consumer Goods"] })]);
+    expect(terms).toEqual(["media", "entertainment", "financial", "retail", "consumer"]);
   });
 
   it("names a title about a broad topic the profile does not use, and no other", () => {
     const absent = absentBroadTopics(conceptsOf([{ name: "AWS Lambda" }], [{ name: "genai-single-call" }]));
-    expect(reason({ title: "Building agentic apps on Lambda" }, "", absent)).toBe("about agents, which this code does not use");
-    expect(reason({ title: "Multi-agent systems" }, "", absent)).toBe("about agents, which this code does not use");
-    expect(reason({ title: "LLM apps on Lambda" }, "", absent)).toBeUndefined();
-    expect(reason({ title: "Lambda in practice" }, "Agents are everywhere.", absent)).toBeUndefined();
-    expect(reason({ title: "Building agentic apps on Lambda" }, "", [])).toBeUndefined();
+    expect(reason({ title: "Building agentic apps on Lambda" }, "", { absent })).toBe("about agents, which this code does not use");
+    expect(reason({ title: "Multi-agent systems" }, "", { absent })).toBe("about agents, which this code does not use");
+    expect(reason({ title: "LLM apps on Lambda" }, "", { absent })).toBeUndefined();
+    expect(reason({ title: "Lambda in practice" }, "Agents are everywhere.", { absent })).toBeUndefined();
+    expect(reason({ title: "Building agentic apps on Lambda" }, "", { absent: [] })).toBeUndefined();
   });
 
   it("joins every reason that applies, sponsored first", () => {
@@ -150,6 +215,14 @@ describe("absentBroadTopics", () => {
     expect(absentBroadTopics(conceptsOf([{ name: "AWS Lambda" }], [])).map(topic => topic.label)).toEqual(["agents", "generative AI"]);
     expect(absentBroadTopics(conceptsOf([], [{ name: "agentic" }])).map(topic => topic.label)).toEqual(["generative AI"]);
     expect(absentBroadTopics(conceptsOf([], [{ name: "agentic" }, { name: "genai-single-call" }]))).toEqual([]);
+  });
+
+  it("counts an interest that names the topic as the profile having it", () => {
+    const p = { ...profile([{ name: "AWS Lambda" }]), interests: ["Agentic AI"] };
+    const evidenced = buildConcepts(p).concepts;
+    const concepts = [...evidenced, ...interestConcepts(p, evidenced)];
+    expect(absentBroadTopics(concepts).map(topic => topic.label)).toEqual(["generative AI"]);
+    expect(absentBroadTopics(evidenced).map(topic => topic.label)).toEqual(["agents", "generative AI"]);
   });
 
   it("does not count a service of the same name as the pattern", () => {

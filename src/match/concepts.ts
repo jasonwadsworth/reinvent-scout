@@ -28,7 +28,12 @@ export interface ProfileConcept {
 
 /** A named company's story told in the abstract ("Honeycomb spends ...", "Nordstrom built ..."): a capitalized
  * subject that is not an ordinary sentence opener or a plural, and a verb of what one team did. */
-export const NAMED_STORY = /(?:^|[.!?]\s+)(?!(?:AWS|Amazon|In|You|We|Learn|Join|Explore|Discover|This|These|Hear|See|Dive|Come|Attend|Through|Using|With|Whether|As|When|Many|Most|Every|Today|Then|They|Maybe|Customers|Developers|Organizations|Teams|Companies|Enterprises)\b)[A-Z][A-Za-z0-9&]{2,}(?: [A-Z][A-Za-z0-9&]+)?(?<![a-z]s) (?:spends?|spent|migrated|scaled|built|rebuilt|moved|reduced|cut|saved|outgrew|adopted|replaced)\b/;
+const NAMED_STORY = /(?:^|[.!?]\s+)(?!(?:AWS|Amazon|In|You|We|Learn|Join|Explore|Discover|This|These|Hear|See|Dive|Come|Attend|Through|Using|With|Whether|As|When|Many|Most|Every|Today|Then|They|Maybe|Customers|Developers|Organizations|Teams|Companies|Enterprises)\b)([A-Z][A-Za-z0-9&]{2,}(?: [A-Z][A-Za-z0-9&]+)?)(?<![a-z]s) (?:spends?|spent|migrated|scaled|built|rebuilt|moved|reduced|cut|saved|outgrew|adopted|replaced)\b/g;
+
+/** The subjects of the abstract's sentences that tell what a named company did. */
+export function namedStorySubjects(abstract: string): string[] {
+  return [...abstract.matchAll(NAMED_STORY)].map(match => match[1]!);
+}
 
 export interface UncoveredConcept {
   concept: string;
@@ -86,6 +91,9 @@ interface PatternEntry {
   broad?: boolean;
   /** What a session about a broad term is about, for a profile that has no such pattern. */
   label?: string;
+  /** How a session words the pattern's architecture, when `phrase` also names services ("API Gateway", "Kinesis"):
+   * a service counts only as that service's own concept, and only when the profile uses it. */
+  architecture?: RegExp;
 }
 
 /**
@@ -96,16 +104,16 @@ interface PatternEntry {
 const PATTERN_PHRASES: ReadonlyMap<string, PatternEntry> = new Map([
   ["serverless", { phrase: /\bserverless\b/i, tags: ["Serverless", "Lambda-Based Applications"] }],
   ["event-driven", { phrase: /\bevent[- ](?:driven|based)\b/i, tags: ["Event-Driven Architecture"] }],
-  ["api", { phrase: /\b(?:REST|HTTP|GraphQL|WebSocket)\s+APIs?\b|\bAPI (?:design|development|management|first|Gateway)\b|\bbuilding APIs\b/i, tags: [] }],
+  ["api", { phrase: /\b(?:REST|HTTP|GraphQL|WebSocket)\s+APIs?\b|\bAPI (?:design|development|management|first|Gateway)\b|\bbuilding APIs\b/i, tags: [], architecture: /\b(?:REST|HTTP|GraphQL|WebSocket)\s+APIs?\b|\bAPI (?:design|development|management|first)\b|\bbuilding APIs\b/i }],
   ["multi-tenant", { phrase: /\bmulti[- ]tenan(?:t|cy)\b|\bSaaS\b/i, tags: ["SaaS"] }],
-  ["multi-account", { phrase: /\bmulti[- ]account\b|\bAWS Organizations\b|\bControl Tower\b|\blanding zones?\b/i, tags: [] }],
-  ["iac-cdk", { phrase: /\b(?:CDK|Cloud Development Kit|infrastructure[- ]as[- ]code|IaC)\b/i, tags: [] }],
+  ["multi-account", { phrase: /\bmulti[- ]account\b|\bAWS Organizations\b|\bControl Tower\b|\blanding zones?\b/i, tags: [], architecture: /\bmulti[- ]account\b|\blanding zones?\b/i }],
+  ["iac-cdk", { phrase: /\b(?:CDK|Cloud Development Kit|infrastructure[- ]as[- ]code|IaC)\b/i, tags: [], architecture: /\b(?:infrastructure[- ]as[- ]code|IaC)\b/i }],
   ["containers", { phrase: /\bcontainer(?:s|ized|ization)?\b/i, tags: ["Containers"] }],
   ["ecs", { phrase: /\bECS\b|\bElastic Container Service\b/i, tags: ["Containers"] }],
   ["eks", { phrase: /\bEKS\b|\bKubernetes\b|\bElastic Kubernetes Service\b/i, tags: ["Kubernetes", "Containers"] }],
   ["agentic", { phrase: /\bagentic\b|\b(?:AI )?agents?\b|\bmulti[- ]agent\b/i, tags: ["Agentic AI"], broad: true, label: "agents" }],
   ["genai-single-call", { phrase: /\bgenerative AI\b|\bGenAI\b|\bLLMs?\b|\bfoundation models?\b/i, tags: ["Generative AI"], broad: true, label: "generative AI" }],
-  ["streaming", { phrase: /\bstreaming\b|\bKinesis\b|\bKafka\b/i, tags: [] }],
+  ["streaming", { phrase: /\bstreaming\b|\bKinesis\b|\bKafka\b/i, tags: [], architecture: /\bstreaming\b/i }],
   ["data-lake", { phrase: /\bdata lakes?\b|\blakehouse\b/i, tags: [] }],
 ]);
 
@@ -128,8 +136,10 @@ export interface AbsentTopic {
  * topic, not about the code. */
 export function absentBroadTopics(concepts: readonly ProfileConcept[]): AbsentTopic[] {
   const evidenced = new Set(concepts.filter(concept => concept.kind === "pattern").map(concept => concept.name.toLowerCase()));
+  const interests = concepts.filter(concept => concept.kind === "interest").map(concept => concept.name);
   return [...PATTERN_PHRASES.entries()].flatMap(([name, entry]) =>
-    entry.broad === true && entry.label !== undefined && !evidenced.has(name) ? [{ label: entry.label, phrase: entry.phrase }] : []);
+    entry.broad === true && entry.label !== undefined && !evidenced.has(name) && !interests.some(interest => entry.phrase.test(interest))
+      ? [{ label: entry.label, phrase: entry.phrase }] : []);
 }
 
 const NO_PHRASE_REASON = "no session phrase is defined for this pattern, so no session can be matched to it";
@@ -168,7 +178,7 @@ function serviceMatchers(name: string, catalogName: string | null, tails: readon
 }
 
 /** Short names of catalog services ("Polly", "SQS"): the display name and its parenthesized form, unprefixed. */
-function serviceTails(catalogServices: readonly string[]): string[] {
+export function serviceTails(catalogServices: readonly string[]): string[] {
   const tails = new Set<string>();
   for (const service of catalogServices) {
     const parenthesized = /\(([^)]+)\)\s*$/.exec(service)?.[1];
@@ -220,7 +230,7 @@ export function interestConcepts(profile: ResolvedProfile, existing: readonly Pr
 
 /** The profile's concepts, most central first, and the patterns that cannot be matched at all. A
  * platform service, a gap pattern and dead code are not something the code is built from. */
-export function buildConcepts(profile: ResolvedProfile, catalogServices: readonly string[] = []): { concepts: ProfileConcept[]; uncovered: UncoveredConcept[] } {
+export function buildConcepts(profile: ResolvedProfile, catalogServices: readonly string[] = [], options: { architecturePhrases?: boolean } = {}): { concepts: ProfileConcept[]; uncovered: UncoveredConcept[] } {
   const drafts = new Map<string, Draft>();
   const tails = serviceTails(catalogServices);
   for (const service of profile.services) {
@@ -245,7 +255,8 @@ export function buildConcepts(profile: ResolvedProfile, catalogServices: readonl
   const uncovered: UncoveredConcept[] = [];
   for (const pattern of profile.patterns) {
     if (isGapOrDeadCode(pattern.name)) continue;
-    const entry = PATTERN_PHRASES.get(pattern.name.toLowerCase());
+    const found = PATTERN_PHRASES.get(pattern.name.toLowerCase());
+    const entry = found === undefined ? undefined : { ...found, phrase: options.architecturePhrases === true ? found.architecture ?? found.phrase : found.phrase };
     if (entry === undefined) {
       uncovered.push({ concept: pattern.name, kind: "pattern", reason: NO_PHRASE_REASON });
       continue;
