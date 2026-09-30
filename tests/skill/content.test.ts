@@ -705,6 +705,9 @@ describe("newer gap guidance in profiling.md", () => {
     expect(collapsed).toContain("say which part in the `note`");
     expect(collapsed).toContain("A practice that is wired in but switched off");
   });
+  it("says the newer gaps skip AI-tagged sessions for a profile with no AI pattern", () => {
+    expect(collapsed).toContain("skip a session tagged Agentic AI or Generative AI unless your profile has an `agentic` or `genai-single-call` pattern");
+  });
   it("names the remedy services of the newer gaps in the stack-fit paragraph", () => {
     for (const service of ["AWS Distro for OpenTelemetry", "CodePipeline", "AWS Backup", "AWS WAF", "ElastiCache", "EC2 - Graviton"]) {
       expect(collapsed).toContain(service);

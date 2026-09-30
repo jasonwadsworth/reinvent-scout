@@ -216,10 +216,12 @@ gap.
 
 - **`gap-no-tracing`** (Operational Excellence). The repository deploys a request path that crosses
   two or more components (an API to a function to a queue or table, a service calling another
-  service) and no tracing is enabled anywhere on it: no X-Ray active tracing (`tracing: Active`,
-  `TracingConfig`), no OpenTelemetry SDK, collector or Lambda layer, no Powertools Tracer. Cite the
-  function or service declaration. Logs and metrics are not tracing. A single function that calls
-  nothing else is not this gap.
+  service) and a function or service on it has no tracing enabled: no X-Ray active tracing
+  (`tracing: Active`, `TracingConfig`), no OpenTelemetry SDK, collector or Lambda layer, no
+  Powertools Tracer. Tracing on the API alone (an AppSync `xrayEnabled`) does not trace the
+  functions behind it; cite an untraced function or service declaration and name the others in the
+  `note`. Logs and metrics are not tracing. A single function that calls nothing else is not this
+  gap.
 - **`gap-no-ci`** (Operational Excellence). The repository deploys infrastructure or services to a
   real environment and holds no pipeline that builds or tests it on change: no
   `.github/workflows`, `buildspec`, CodePipeline or CDK Pipelines stack, `.gitlab-ci.yml`,
@@ -415,9 +417,9 @@ not a complete assessment or a claim that every repository has these gaps.
 | `gap-no-cost-monitoring` | Cost Optimization | Cost monitoring, allocation, anomalies, AWS Budgets |
 | `gap-no-resource-rightsizing` | Sustainability | Resource rightsizing |
 | `gap-no-tracing` | Operational Excellence | Distributed or end-to-end tracing, AWS X-Ray, OpenTelemetry (bare "tracing" does not count) |
-| `gap-no-ci` | Operational Excellence | CI/CD, continuous integration, delivery or deployment, deployment and release pipelines (bare "pipelines" does not count) |
+| `gap-no-ci` | Operational Excellence | CI/CD, continuous integration, delivery or deployment, release and delivery pipelines (bare "pipelines" and deployment strategies do not count) |
 | `gap-no-backups` | Reliability | AWS Backup, point-in-time recovery, backup plans, vaults or policies, immutable and cross-Region backups (bare "backup" does not count) |
-| `gap-no-waf` | Security | AWS WAF, web application firewalls |
+| `gap-no-waf` | Security | AWS WAF, web application firewalls (a migration from a third-party WAF does not count) |
 | `gap-no-caching` | Performance Efficiency | Caching layers and strategies, edge, in-memory, application, read or response caching, cache hits (semantic and prompt caching do not count) |
 | `gap-no-graviton` | Sustainability | Graviton, arm64 |
 
@@ -469,7 +471,9 @@ IAM with Access Analyzer, or IAM with one of your core services, is. A session a
 about the stack the gap sits in. The newer gaps use the same path with their own remedy services:
 `gap-no-tracing` (AWS Distro for OpenTelemetry), `gap-no-ci` (CodePipeline, CodeBuild, CodeDeploy),
 `gap-no-backups` (AWS Backup), `gap-no-waf` (AWS WAF), `gap-no-caching` (ElastiCache, CloudFront)
-and `gap-no-graviton` (EC2 - Graviton). A `gap-no-tests` session about testing infrastructure code with a
+and `gap-no-graviton` (EC2 - Graviton). The six newer gaps also skip a session tagged Agentic AI or Generative AI unless your profile has an
+`agentic` or `genai-single-call` pattern: a talk about securing or observing agents is not about the
+gap in an ordinary application. A `gap-no-tests` session about testing infrastructure code with a
 tool your profile lists (CDK, even as a supporting service) fits the same way. A profile with no core service (none listed, or
 every one marked supporting) has no stack to fit, so both lenses admit nothing and `skippedRules`
 names each activated rule with "profile has no core services to check stack fit": list the
