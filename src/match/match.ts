@@ -1,5 +1,5 @@
 import { buildStackFit, hasCoreService, PREFIX_REQUIRED_SERVICE_NAMES } from "./stack-fit.js";
-import { absentBroadTopics, buildConcepts, type ConceptMatch, type UncoveredConcept } from "./concepts.js";
+import { absentBroadTopics, buildConcepts, interestConcepts, type ConceptMatch, type UncoveredConcept } from "./concepts.js";
 import { allReason, demotionReason, matchAllConcepts, rankAll } from "./all.js";
 import { explainReason, matchConcepts, selectExplain } from "./explain.js";
 import { activeLensRules, scoreLensSignals, skippedLensRules, type LensHit, type SkippedRule } from "./lens-signals.js";
@@ -472,7 +472,8 @@ function matchAll(
   limit: number | undefined,
   abstractOf: AbstractOf,
 ): MatchResult {
-  const { concepts } = buildConcepts(profile, knownServices(profile, index));
+  const { concepts: evidenced } = buildConcepts(profile, knownServices(profile, index));
+  const concepts = [...evidenced, ...interestConcepts(profile, evidenced)];
   const absent = absentBroadTopics(concepts);
   const scored: ScoredRecord[] = [];
   for (const record of index) {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Session } from "../../src/api/types.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
-import { absentBroadTopics, admitConcepts, buildConcepts, type ConceptMatch, type ProfileConcept } from "../../src/match/concepts.js";
+import { absentBroadTopics, admitConcepts, buildConcepts, interestConcepts, type ConceptMatch, type ProfileConcept } from "../../src/match/concepts.js";
 import { allReason, demotionReason, matchAllConcepts, rankAll, type AllSession } from "../../src/match/all.js";
 import type { ResolvedProfile } from "../../src/profile/profile.js";
 
@@ -43,7 +43,8 @@ describe("matchAllConcepts", () => {
 
   it("admits an abstract that names the concept once when a listed service says the same, more weakly", () => {
     expect(shape(dynamo, { title: "Data at scale", services: ["Amazon DynamoDB"] }, "You will use DynamoDB tables.")).toEqual([["Amazon DynamoDB", 1]]);
-    expect(shape(serverless, { title: "Data at scale", topics: ["Serverless"] }, "A serverless design.")).toEqual([["serverless", 1]]);
+    // A pattern alone needs a title that names it (see below), so only a service is admitted this way.
+    expect(shape(serverless, { title: "Data at scale", topics: ["Serverless"] }, "A serverless design.")).toEqual([]);
   });
 
   it("never admits on one abstract mention nothing corroborates, nor on a tag or listed service alone", () => {
@@ -57,10 +58,13 @@ describe("matchAllConcepts", () => {
     expect(shape(dynamo, { title: "Storage options", services: ["Amazon DynamoDB"] }, abstract)).toEqual([]);
   });
 
-  it("admits a broad term only by a title that names it, not by an abstract or by how-to wording", () => {
+  it("admits a broad term only by a title that names it, and only beside another concept of the profile", () => {
+    const both = conceptsOf([{ name: "AWS Lambda" }], [{ name: "agentic" }]);
     const abstract = "An agent plans. The agent acts. Agents everywhere.";
-    expect(shape(agentic, { title: "Platform engineering", topics: ["Agentic AI"] }, abstract)).toEqual([]);
-    expect(shape(agentic, { title: "Agents in the wild" })).toEqual([["agentic", 3]]);
+    expect(shape(both, { title: "Platform engineering", topics: ["Agentic AI"] }, abstract)).toEqual([]);
+    expect(shape(both, { title: "Agents in the wild" })).toEqual([]);
+    expect(shape(both, { title: "Agents on Lambda" })).toEqual([["agentic", 3], ["AWS Lambda", 3]]);
+    expect(shape(agentic, { title: "Agents on Lambda" })).toEqual([]);
   });
 
   it("skips an AWS Partner bootcamp, a certification session and exam prep, whatever they name", () => {
@@ -102,6 +106,19 @@ describe("demotionReason", () => {
     expect(reason({ title: "Acme: How we scaled to 1M RPS" })).toBe("customer story");
     expect(reason({ title: "Scaling", type: "Breakout session" }, "See how a customer moved to the cloud.")).toBe("customer story");
     expect(reason({ title: "Acme: How to scale on Lambda" })).toBeUndefined();
+  });
+
+  it("names a customer story told in the abstract about a named company, whatever the title", () => {
+    const story = "Honeycomb spends millions of dollars a year on Lambda. We outgrew Lambda Functions.";
+    expect(reason({ title: "Lambda for every scale" }, story)).toBe("customer story");
+    expect(reason({ title: "Scaling" }, "Nordstrom built a platform. Then it grew.")).toBe("customer story");
+    expect(reason({ title: "Scaling" }, "Intro. Acme Corp migrated 400 services to containers.")).toBe("customer story");
+  });
+
+  it("does not take a plain subject, a pronoun or a common noun for a company", () => {
+    for (const text of ["AI moves fast. Payment processes vary.", "Partners spent months. Agents built tools.", "Maybe migrated later. Then we built it.", "You built it. Teams moved on.", "Learn how Lambda scales. AWS built the service."]) {
+      expect(reason({ title: "Scaling" }, text), text).toBeUndefined();
+    }
   });
 
   it("names a modernization or migration session", () => {
@@ -174,6 +191,14 @@ describe("rankAll", () => {
       .toEqual(["A", "C", "B"]);
   });
 
+  it("ranks a session about a stated interest after one about an evidenced concept at the same strength", () => {
+    const interest: ProfileConcept = { ...sqs, name: "Aardvark", kind: "interest", citations: [], centrality: 1, weight: 1 };
+    expect(keys([session("INT", [match(interest)]), session("SQS", [match(sqs)]), session("LAM", [match(lam)])])).toEqual(["LAM", "SQS", "INT"]);
+    expect(keys([session("INT", [match(interest, 3)]), session("SQS", [match(sqs, 2)])])).toEqual(["INT", "SQS"]);
+    const [entry] = rankAll([session("X", [match(interest), match(sqs)])]);
+    expect(entry!.matches.map(found => found.concept.name)).toEqual(["Amazon SQS", "Aardvark"]);
+  });
+
   it("puts a scheduled session before an unscheduled one that ties on everything else, then orders by key", () => {
     const scheduled = record({ title: "B", sessionTime: { date: "2026-12-01", time: "10:00", length: "60" } });
     expect(keys([session("A", [match(lam)]), session("B", [match(lam)], { record: scheduled })])).toEqual(["B", "A"]);
@@ -231,5 +256,45 @@ describe("allReason", () => {
     expect(reason.kind).toBe("matchesConcept");
     expect(reason.detail).toBe('Matches Amazon DynamoDB ("DynamoDB"), which this code uses at a.ts:1.');
     expect(reason.profileEvidence).toEqual([cite("a.ts")]);
+  });
+});
+
+describe("interest concepts", () => {
+  const withInterests = (interests: string[], services: Parameters<typeof profile>[0] = [], patterns: Parameters<typeof profile>[1] = []) => {
+    const p = { ...profile(services, patterns), interests };
+    return [...buildConcepts(p).concepts, ...interestConcepts(p, buildConcepts(p).concepts)];
+  };
+  const interestShape = (concepts: ProfileConcept[], session: Parameters<typeof record>[0], abstract = "") =>
+    matchAllConcepts(concepts, record(session), abstract).map(match => [match.concept.name, match.concept.kind, match.strength, match.phrase]);
+
+  it("makes each stated interest a concept of centrality one with no citations", () => {
+    const [interest] = interestConcepts({ ...profile([]), interests: ["Kubernetes"] }, []);
+    expect(interest).toMatchObject({ name: "Kubernetes", kind: "interest", weight: 1, centrality: 1, citations: [], tags: ["Kubernetes"] });
+  });
+
+  it("skips an interest the profile already evidences under the same name, and a repeat", () => {
+    const concepts = withInterests(["serverless", "Serverless", "Kubernetes", "kubernetes"], [], [{ name: "serverless" }]);
+    expect(concepts.map(concept => concept.name)).toEqual(["serverless", "Kubernetes"]);
+  });
+
+  it("admits an interest named in the title", () => {
+    expect(interestShape(withInterests(["Kubernetes"]), { title: "Kubernetes from scratch" })).toEqual([["Kubernetes", "interest", 3, "Kubernetes"]]);
+  });
+
+  it("admits an interest by an exact topic or area-of-interest tag, which is the user's own ask", () => {
+    const concepts = withInterests(["Edge Computing"]);
+    expect(interestShape(concepts, { title: "Faster pages", areasOfInterest: ["Edge Computing"] })).toEqual([["Edge Computing", "interest", 1, "Edge Computing"]]);
+    expect(interestShape(concepts, { title: "Faster pages", topics: ["edge computing"] })).toEqual([["Edge Computing", "interest", 1, "edge computing"]]);
+  });
+
+  it("does not admit an interest named only in the abstract, or by a tag that merely contains it", () => {
+    const concepts = withInterests(["Kubernetes"]);
+    expect(interestShape(concepts, { title: "Clusters" }, "Kubernetes everywhere. Kubernetes again.")).toEqual([]);
+    expect(interestShape(concepts, { title: "Clusters", topics: ["Kubernetes Security"] })).toEqual([]);
+  });
+
+  it("quotes nothing for a tag-only match, and the abstract sentence when it also names the interest", () => {
+    const tagged = matchAllConcepts(withInterests(["Edge Computing"]), record({ title: "Faster pages", areasOfInterest: ["Edge Computing"] }), "")[0]!;
+    expect(tagged.site.index).toBe(-1);
   });
 });

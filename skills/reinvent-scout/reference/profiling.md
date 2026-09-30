@@ -427,12 +427,16 @@ sessions of any level and format, so it does not ask for an introduction.
 
 **Admission.** A session is about a concept when its title names it, or its abstract names it at least twice
 outside an enumeration of names, or once outside one when the session also lists the service or carries a
-matching tag. A tag or a listed service alone never admits a session. `agentic` and `genai-single-call` are
-admitted only by a title that names them. A profile with no concept a session names gets nothing: `all` does
-not fall back to shared wording, your `interests` or your `intents`. An "AWS Partner:" bootcamp and a
-certification or exam session are never returned.
+matching tag. A tag or a listed service alone never admits a session. A session matched only through
+patterns (no service of yours among them) needs a pattern named in its title. `agentic` and
+`genai-single-call` are too widespread to count alone: a title that names them admits a session only beside
+another concept of yours, so a profile whose only concepts are those two gets nothing. Each entry of the
+profile's `interests` is a concept too (centrality 1, nothing cited): a title that names it, or a topic or
+area-of-interest tag equal to it, admits a session, and those rank after sessions about your evidenced concepts.
+`intents` and shared wording are not used. An "AWS Partner:" bootcamp and a certification or exam session are
+never returned.
 
-**Demotion.** A sponsored session, a feature-news or launch session, a customer story, a modernization or
+**Demotion.** A sponsored session, a feature-news or launch session, a customer story (including a named company's migration or scaling told in the abstract, "Honeycomb spends ..."), a modernization or
 migration session, a session made for an industry, and a session titled about agents or generative AI when
 your profile has no `agentic` or `genai-single-call` pattern are returned after every other session, each
 with a `demoted` reason, because an experienced reader may still want them.

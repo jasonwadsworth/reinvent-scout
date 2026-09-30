@@ -265,7 +265,7 @@ describe("the why block", () => {
     it("describes a matched pattern by its note and quotes the sentence that says it", () => {
       const p = profileOf([{ name: "serverless", note: "Only Lambda and DynamoDB.", evidence: [cite("app.ts", 5)] }], []);
       const abstract = "Intro. We build a serverless backend from scratch. Enjoy.";
-      const why = run(p, [session("SLS100", "Backends", { services: [], topics: ["Serverless"], abstract })], "all").candidates[0]!.why;
+      const why = run(p, [session("SLS100", "Serverless backends", { services: [], topics: ["Serverless"], abstract })], "all").candidates[0]!.why;
       expect(why.summary).toBe("Matches your serverless (Only Lambda and DynamoDB).");
       expect(why.yourCode).toEqual([{ repo: "repo", file: "app.ts", line: 5 }]);
       expect(why.sessionSays).toBe("We build a serverless backend from scratch.");
@@ -285,7 +285,7 @@ describe("the why block", () => {
     it("finds a pattern by the wording sessions use for it, not only its name", () => {
       const p = profileOf([{ name: "event-driven", evidence: [cite("bus.ts", 3)] }], []);
       const abstract = "Intro. We build event-based systems on AWS. Done.";
-      const why = run(p, [session("EVT100", "Systems", { services: [], topics: ["Event-Driven Architecture"], abstract })], "all").candidates[0]!.why;
+      const why = run(p, [session("EVT100", "Event-driven systems", { services: [], topics: ["Event-Driven Architecture"], abstract })], "all").candidates[0]!.why;
       expect(why.sessionSays).toBe("We build event-based systems on AWS.");
     });
 

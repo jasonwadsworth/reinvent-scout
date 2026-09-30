@@ -8,7 +8,7 @@ import { PLATFORM_SERVICES, serviceNamePatterns } from "./stack-fit.js";
  * supporting one) or a non-gap pattern the profile evidences. */
 export interface ProfileConcept {
   name: string;
-  kind: "service" | "pattern";
+  kind: "service" | "pattern" | "interest";
   /** 1 for a core service or a pattern, 0.5 for a supporting service. */
   weight: number;
   /** Distinct cited files (per repo) times `weight`: how much of the code the concept underlies. */
@@ -25,6 +25,10 @@ export interface ProfileConcept {
   /** The profile's own words for how the code uses it: a service's `usage`, else a pattern's `note`. */
   note?: string;
 }
+
+/** A named company's story told in the abstract ("Honeycomb spends ...", "Nordstrom built ..."): a capitalized
+ * subject that is not an ordinary sentence opener or a plural, and a verb of what one team did. */
+export const NAMED_STORY = /(?:^|[.!?]\s+)(?!(?:AWS|Amazon|In|You|We|Learn|Join|Explore|Discover|This|These|Hear|See|Dive|Come|Attend|Through|Using|With|Whether|As|When|Many|Most|Every|Today|Then|They|Maybe|Customers|Developers|Organizations|Teams|Companies|Enterprises)\b)[A-Z][A-Za-z0-9&]{2,}(?: [A-Z][A-Za-z0-9&]+)?(?<![a-z]s) (?:spends?|spent|migrated|scaled|built|rebuilt|moved|reduced|cut|saved|outgrew|adopted|replaced)\b/;
 
 export interface UncoveredConcept {
   concept: string;
@@ -196,6 +200,24 @@ interface Draft {
   note?: string;
 }
 
+/** The profile's stated interests that its evidence does not already name, as concepts of centrality 1 with
+ * nothing cited: the user's own ask, admitted by a title that names one or by an exact topic or area-of-interest tag. */
+export function interestConcepts(profile: ResolvedProfile, existing: readonly ProfileConcept[]): ProfileConcept[] {
+  const seen = new Set(existing.map(concept => concept.name.toLowerCase()));
+  const concepts: ProfileConcept[] = [];
+  for (const interest of profile.interests ?? []) {
+    const name = interest.trim();
+    if (name === "" || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    const words = name.split(/[\s-]+/).map(escapeRegExp).join("[- ]");
+    concepts.push({
+      name, kind: "interest", weight: 1, centrality: 1, citations: [], catalogName: null, tags: [name], titleOnly: false,
+      matchers: [new RegExp(`(?<![\\w-])${words}(?![\\w-])`, "i")],
+    });
+  }
+  return concepts;
+}
+
 /** The profile's concepts, most central first, and the patterns that cannot be matched at all. A
  * platform service, a gap pattern and dead code are not something the code is built from. */
 export function buildConcepts(profile: ResolvedProfile, catalogServices: readonly string[] = []): { concepts: ProfileConcept[]; uncovered: UncoveredConcept[] } {
@@ -328,6 +350,15 @@ export function admitConcepts(concepts: readonly ProfileConcept[], record: Index
     const inTitle = mentions(concept, record.title)[0];
     const inAbstract = mentions(concept, abstract);
     const boosted = isBoosted(concept, record);
+    if (concept.kind === "interest") {
+      const tag = [...record.topics, ...record.areasOfInterest].find(value => value.toLowerCase() === concept.name.toLowerCase());
+      if (inTitle === undefined && tag === undefined) continue;
+      matches.push({
+        concept, strength: inTitle === undefined ? SINGLE_STRENGTH : TITLE_STRENGTH, phrase: inTitle?.[0] ?? tag!, boosted,
+        site: inTitle === undefined && inAbstract[0] === undefined ? { inTitle: false, index: -1, length: 0 } : quotedSite(inTitle, inAbstract[0]),
+      });
+      continue;
+    }
     const repeated = inAbstract.length >= ABSTRACT_MENTIONS;
     const abstractAdmits = admission.singleCorroborated ? repeated || (boosted && inAbstract.length > 0) : boosted && repeated;
     const admitted = concept.titleOnly

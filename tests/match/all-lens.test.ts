@@ -82,6 +82,35 @@ describe("the all lens", () => {
     expect(agentic.candidates.map(candidate => candidate.demoted)).toEqual([undefined, undefined]);
   });
 
+  it("returns a session for a stated interest, after the sessions about the profile's evidence, and says so", () => {
+    const p = { ...profile(["AWS Lambda"]), interests: ["Edge Computing"] };
+    const result = run(p, [
+      session("EDG300", "Faster pages", { areasOfInterest: ["Edge Computing"] }),
+      session("TIT300", "Edge Computing in practice"),
+      session("LAM300", "Lambda in practice"),
+    ]);
+    expect(codes(result)).toEqual(["LAM300", "TIT300", "EDG300"]);
+    const tagged = result.candidates[2]!;
+    expect(tagged.why.summary).toBe("Matches your interest in Edge Computing.");
+    expect(tagged.why.yourCode).toEqual([]);
+    expect(tagged.why.sessionSays).toBeUndefined();
+    expect(tagged.reasons[0]!.detail).toBe('Matches your interest in Edge Computing ("Edge Computing").');
+  });
+
+  it("does not use intents, and a profile with only an interest nothing names returns nothing", () => {
+    const p = { ...profile([]), interests: ["Edge Computing"], intents: [{ kind: "goal" as const, text: "Lambda basics" }] };
+    expect(codes(run(p, [session("LAM300", "Lambda in practice", { abstract: "Edge Computing is mentioned. Edge Computing again." })]))).toEqual([]);
+  });
+
+  it("names a story about a company told in the abstract, whatever the title", () => {
+    const result = run(profile(["AWS Lambda"]), [
+      session("STO300", "Lambda at every scale", { abstract: "Honeycomb spends millions of dollars a year on Lambda. We outgrew it." }),
+      session("OKK300", "Lambda in practice"),
+    ]);
+    expect(codes(result)).toEqual(["OKK300", "STO300"]);
+    expect(result.candidates[1]!.demoted).toBe("customer story");
+  });
+
   it("ranks a session about the code's central concept above one about a rare concept", () => {
     const p = profile(["AWS Lambda", "Amazon Cognito"]);
     p.services[0]!.evidence = [cite("a.ts"), cite("b.ts"), cite("c.ts")];

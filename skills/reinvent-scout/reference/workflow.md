@@ -170,7 +170,7 @@ Each `reasons` entry is `{ "kind": ..., "detail": string, "weight": number, "evi
 the Fix and Next-level lenses), `pillarGap` or `migrationPath` (the Fix and Next-level lenses only, and
 they also carry `profileEvidence`), `explainsConcept` (Explain lens only: the concept the session
 explains and the profile files that use it, also carried as `profileEvidence`) or `matchesConcept`
-(All lens only: the concept the session is about, the phrase that says so and the files that use it,
+(All lens only: the concept of yours, or stated interest, the session is about, the phrase that says so and the files that use it,
 also carried as `profileEvidence`; `why` already says it, so MCP drops it first when the response is tight). `weight` is
 that reason's own contribution to `score` (every reason's `weight` sums to `score` exactly).
 `evidence` is the specific catalog value that matched -- a service name, a topic, or the matched

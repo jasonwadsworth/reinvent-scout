@@ -215,8 +215,9 @@ export function allWhy(matches: readonly ConceptMatch[], demoted: string | undef
   const [first, second] = matches;
   if (first === undefined) throw new Error("an all candidate has no concept it was admitted for");
   const note = trimNote(first.concept.note, true);
-  const described = note === undefined ? displayName(first.concept.name) : `${displayName(first.concept.name)} (${note})`;
-  const names = second === undefined ? described : `${described} and ${displayName(second.concept.name)}`;
+  const label = (concept: ConceptMatch["concept"]): string => concept.kind === "interest" ? `interest in ${concept.name}` : displayName(concept.name);
+  const described = note === undefined ? label(first.concept) : `${label(first.concept)} (${note})`;
+  const names = second === undefined ? described : `${described} and ${label(second.concept)}`;
   const pitch = demoted === undefined ? "" : `; ranked lower: ${demoted}`;
   return withQuote({ summary: sentence(`Matches your ${names}${pitch}`), ...citationsOf(interleave(first.concept.citations, second?.concept.citations ?? [])) }, quoteSite(text, first.site));
 }

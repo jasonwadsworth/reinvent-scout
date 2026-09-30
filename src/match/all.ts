@@ -1,7 +1,7 @@
 import type { IndexRecord } from "../catalog/index-record.js";
 import {
-  admitConcepts, CERTIFICATION, CUSTOMER_STORY, EXPLAINER, MODERNIZATION, NEWS, PARTNER, SPONSORED, STORY, usedAt,
-  type AbsentTopic, type Admission, type ConceptMatch, type ProfileConcept,
+  admitConcepts, CERTIFICATION, CUSTOMER_STORY, EXPLAINER, MODERNIZATION, NAMED_STORY, NEWS, PARTNER, SPONSORED, STORY, usedAt,
+  TITLE_STRENGTH, type AbsentTopic, type Admission, type ConceptMatch, type ProfileConcept,
 } from "./concepts.js";
 import type { Reason } from "./score.js";
 
@@ -17,7 +17,15 @@ function excluded(record: IndexRecord): boolean {
 
 /** The concepts a session is about, none when it cannot be attended as such. */
 export function matchAllConcepts(concepts: readonly ProfileConcept[], record: IndexRecord, abstract: string): ConceptMatch[] {
-  return excluded(record) ? [] : admitConcepts(concepts, record, abstract, ALL_ADMISSION);
+  if (excluded(record)) return [];
+  const matches = admitConcepts(concepts, record, abstract, ALL_ADMISSION);
+  // A broad topic (agents, generative AI) is too widespread to make a session about the code on its own: it
+  // adds to a session that names something else the profile has, and never admits one alone.
+  if (matches.every(match => match.concept.titleOnly)) return [];
+  // Patterns are words a session uses about anything ("serverless", "event-driven"): with no service of the
+  // profile among them, one must be named in the title to make the session about it.
+  const onlyPatterns = matches.every(match => match.concept.kind === "pattern");
+  return onlyPatterns && !matches.some(match => match.strength === TITLE_STRENGTH) ? [] : matches;
 }
 
 /** A sponsored code ends in "-S" (and, for a repeat, a number). */
@@ -31,7 +39,7 @@ export function demotionReason(record: IndexRecord, abstract: string, absent: re
   const reasons = [
     SPONSORED.test(record.title) || SPONSORED_CODE.test(record.abbreviation ?? "") ? "sponsored session" : undefined,
     NEWS.test(record.title) ? "news or launch session" : undefined,
-    (STORY.test(record.title) && !EXPLAINER.test(record.title)) || CUSTOMER_STORY.test(abstract) ? "customer story" : undefined,
+    (STORY.test(record.title) && !EXPLAINER.test(record.title)) || CUSTOMER_STORY.test(abstract) || NAMED_STORY.test(abstract) ? "customer story" : undefined,
     MODERNIZATION.test(record.title) ? "modernization or migration session" : undefined,
     record.industries.length > 0 ? "industry session" : undefined,
     about === undefined ? undefined : `about ${about.label}, which this code does not use`,
@@ -55,9 +63,12 @@ export interface RankedAll {
   matches: ConceptMatch[];
 }
 
-/** The concepts the session is about, most about first: the strongest match, then the most central. */
+const isInterest = (match: ConceptMatch): boolean => match.concept.kind === "interest";
+
+/** The concepts the session is about, most about first: the strongest match, an evidenced concept before a
+ * stated interest, then the most central. */
 function primaryFirst(matches: readonly ConceptMatch[]): ConceptMatch[] {
-  return [...matches].sort((a, b) => b.strength - a.strength || b.concept.centrality - a.concept.centrality || a.concept.name.localeCompare(b.concept.name));
+  return [...matches].sort((a, b) => b.strength - a.strength || Number(isInterest(a)) - Number(isInterest(b)) || b.concept.centrality - a.concept.centrality || a.concept.name.localeCompare(b.concept.name));
 }
 
 interface Ranked {
@@ -65,6 +76,8 @@ interface Ranked {
   matches: ConceptMatch[];
   centrality: number;
   strongest: number;
+  /** Some concept of the profile's evidence, not only a stated interest. */
+  evidenced: boolean;
 }
 
 const TOP = 10;
@@ -74,7 +87,8 @@ const MIN_CONCEPTS_FOR_CAP = 4;
 
 /**
  * Orders sessions by, in sequence: demoted sessions after every other; the strongest match (a title that
- * names a concept before an abstract that only does); the summed centrality of the concepts they are
+ * names a concept before an abstract that only does); a session about the profile's evidence before one
+ * about only a stated interest; the summed centrality of the concepts they are
  * about (the code's central concepts first); the number of concepts; relevance; a scheduled session
  * before an unscheduled one; the key. Each key is compared only when the ones before it tie; none is
  * added to another. Then no concept is the main subject of more than three of the first ten, unless
@@ -87,11 +101,13 @@ export function rankAll(sessions: readonly AllSession[]): RankedAll[] {
       session, matches,
       centrality: matches.reduce((sum, match) => sum + match.concept.centrality, 0),
       strongest: Math.max(...matches.map(match => match.strength)),
+      evidenced: matches.some(match => !isInterest(match)),
     };
   });
   ranked.sort((a, b) =>
     Number(a.session.demoted !== undefined) - Number(b.session.demoted !== undefined)
     || b.strongest - a.strongest
+    || Number(b.evidenced) - Number(a.evidenced)
     || b.centrality - a.centrality
     || b.matches.length - a.matches.length
     || b.session.relevance - a.session.relevance
@@ -123,7 +139,7 @@ export function allReason(match: ConceptMatch, repoCount: number): Reason {
   const { citations, where } = usedAt(match.concept, repoCount);
   return {
     kind: "matchesConcept",
-    detail: `Matches ${match.concept.name} ("${match.phrase}")${where}.`,
+    detail: `Matches ${match.concept.kind === "interest" ? "your interest in " : ""}${match.concept.name} ("${match.phrase}")${where}.`,
     evidence: match.phrase, profileEvidence: citations,
     weight: BASE_WEIGHT + STRENGTH_WEIGHT * (match.strength + (match.boosted ? 1 : 0)),
   };

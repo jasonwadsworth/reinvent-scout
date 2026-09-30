@@ -110,7 +110,7 @@ export function selectExplain(
     const closest = advanced.get(concept)!.filter(option => option.match.strength >= TITLE_STRENGTH).sort(bestFirst)[0];
     return {
       concept: concept.name,
-      kind: concept.kind,
+      kind: concept.kind === "pattern" ? ("pattern" as const) : ("service" as const),
       reason: closest === undefined ? NOT_COVERED_REASON : `${NO_INTRODUCTION_REASON}: ${closest.session.key} "${closest.session.record.title}"`,
     };
   });
