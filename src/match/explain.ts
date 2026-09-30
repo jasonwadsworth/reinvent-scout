@@ -27,6 +27,8 @@ export interface ExplainConcept {
 
 export interface UncoveredConcept {
   concept: string;
+  /** Tells a service from a pattern of the same name. */
+  kind: "service" | "pattern";
   reason: string;
 }
 
@@ -50,14 +52,15 @@ const SPONSORED = /\(sponsored by /i;
  * to", "how it works" and questions stay. */
 const STORY = /(?:^|[:\-–—]\s+)how\b/i;
 const EXPLAINER = /\bhow (?:to|do|does|can|should)\b|\bworks\b/i;
-/** AWS Partner sessions train partners on the partner program, not newcomers to a codebase. */
+/** AWS Partner bootcamps are technical but restricted to AWS Partners ("This bootcamp is for AWS
+ * Partners only"), so most attendees cannot use them as an introduction. */
 const PARTNER = /^AWS Partner:/i;
 /** A news or recap session lists changes; it does not teach the technology. */
 const NEWS = /\bwhat[’']s new\b|\byear in review\b|\bthe latest\b|\bannouncements?\b|\brecap\b/i;
 /** What a title says when the session is about building or designing the thing, not applying it. */
-const BUILD_CUE = /\b(?:build(?:ing)?|architect\w*|patterns?|best practices|design(?:ing)?|getting started|introduction|fundamentals|basics|101|where do|how to|what is)\b/i;
+const BUILD_CUE = /\b(?:build(?:ing)?|architect\w*|patterns?|best practices|design(?:ing)?|getting started|introduction|fundamentals|basics|101|how to|what is)\b/i;
 /** A title that reads as an introduction ranks ahead of one that does not. */
-const INTRO_CUE = /\b(?:getting started|introduction|intro to|fundamentals|basics|101|beginners?|from scratch|your first|first \w+ application|in under \d+ minutes)\b/i;
+const INTRO_CUE = /\b(?:getting started|introduction|intro to|fundamentals|basics|101|beginners?|from scratch|your first)\b/i;
 
 interface PatternEntry {
   phrase: RegExp;
@@ -121,6 +124,12 @@ function serviceMatchers(name: string, catalogName: string | null): RegExp[] {
   return matchers;
 }
 
+/** "ecs" for "Amazon Elastic Container Service (Amazon ECS)": the parenthesized short name, lowercase. */
+function shortNames(catalogName: string): string[] {
+  const parenthesized = /\(([^)]+)\)\s*$/.exec(catalogName)?.[1];
+  return parenthesized === undefined ? [] : [parenthesized.replace(PREFIX, "").trim().toLowerCase()];
+}
+
 const fileKey = (citation: Evidence): string => JSON.stringify([citation.repo, citation.file]);
 
 interface Draft {
@@ -160,7 +169,15 @@ export function buildConcepts(profile: ResolvedProfile): { concepts: ExplainConc
     if (isGapOrDeadCode(pattern.name)) continue;
     const entry = PATTERN_PHRASES.get(pattern.name.toLowerCase());
     if (entry === undefined) {
-      uncovered.push({ concept: pattern.name, reason: NO_PHRASE_REASON });
+      uncovered.push({ concept: pattern.name, kind: "pattern", reason: NO_PHRASE_REASON });
+      continue;
+    }
+    const twin = [...drafts.values()].find(draft => draft.kind === "service" && shortNames(draft.name).includes(pattern.name.toLowerCase()));
+    if (twin !== undefined) {
+      // The pattern and the service are one concept (ecs and Amazon ECS): one citation list, one turn.
+      twin.citations.push(...pattern.evidence);
+      twin.matchers.push(entry.phrase);
+      twin.tags = [...twin.tags, ...entry.tags];
       continue;
     }
     const key = `pattern:${pattern.name.toLowerCase()}`;
@@ -325,6 +342,7 @@ export function selectExplain(
     const closest = advanced.get(concept)!.filter(option => option.match.strength >= TITLE_STRENGTH).sort(bestFirst)[0];
     return {
       concept: concept.name,
+      kind: concept.kind,
       reason: closest === undefined ? NOT_COVERED_REASON : `${NO_INTRODUCTION_REASON}: ${closest.session.key} "${closest.session.record.title}"`,
     };
   });

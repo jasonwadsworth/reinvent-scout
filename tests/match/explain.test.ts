@@ -47,6 +47,22 @@ describe("buildConcepts", () => {
     ]);
   });
 
+  it("merges the ecs and eks patterns into the service of the same name, with both citations and Kubernetes wording", () => {
+    const { concepts } = buildConcepts(profile(
+      [{ name: "Amazon ECS", catalogName: "Amazon Elastic Container Service (Amazon ECS)", files: ["a.ts"] }, { name: "Amazon EKS", catalogName: "Amazon Elastic Kubernetes Service (Amazon EKS)", files: ["b.ts"] }],
+      [{ name: "ecs", files: ["c.ts"] }, { name: "eks", files: ["d.ts"] }, { name: "containers", files: ["e.ts"] }],
+    ));
+    expect(concepts.map(concept => [concept.name, concept.centrality]).sort()).toEqual([
+      ["Amazon Elastic Container Service (Amazon ECS)", 2], ["Amazon Elastic Kubernetes Service (Amazon EKS)", 2], ["containers", 1],
+    ]);
+    const eks = concepts.find(concept => concept.name.includes("Kubernetes"))!;
+    expect(matchConcepts([eks], record({ title: "Kubernetes from scratch" }), "")).toHaveLength(1);
+  });
+
+  it("keeps the ecs pattern when the profile lists no ECS service", () => {
+    expect(buildConcepts(profile([], [{ name: "ecs" }])).concepts.map(concept => concept.name)).toEqual(["ecs"]);
+  });
+
   it("puts a pattern ahead of a service at the same centrality", () => {
     const { concepts } = buildConcepts(profile([{ name: "Amazon DynamoDB" }, { name: "AWS Lambda" }], [{ name: "serverless" }]));
     expect(concepts.map(concept => concept.name)).toEqual(["serverless", "Amazon DynamoDB", "AWS Lambda"]);
@@ -75,7 +91,7 @@ describe("buildConcepts", () => {
   it("reports a pattern with no phrase entry as uncovered, and keeps the ones that have one", () => {
     const { concepts, uncovered } = buildConcepts(profile([], [{ name: "serverless" }, { name: "mcp-server" }, { name: "Event-Driven" }]));
     expect(concepts.map(concept => concept.name)).toEqual(["Event-Driven", "serverless"]);
-    expect(uncovered).toEqual([{ concept: "mcp-server", reason: "no session phrase is defined for this pattern, so no session can be matched to it" }]);
+    expect(uncovered).toEqual([{ concept: "mcp-server", kind: "pattern", reason: "no session phrase is defined for this pattern, so no session can be matched to it" }]);
   });
 
   it("keeps a service the catalog has no name for, matched by the profile's own spelling", () => {
@@ -200,7 +216,7 @@ describe("matchConcepts", () => {
     const abstract = "Agentic systems are new. Build agentic workflows.";
     expect(strengths(agentic, { title: "Building agentic applications" })).toEqual([["agentic", 3, "agentic"]]);
     expect(strengths(agentic, { title: "Best practices to build and optimize agents" })).toEqual([["agentic", 3, "agents"]]);
-    expect(strengths(agentic, { title: "Where do agents fit?" })).toEqual([["agentic", 3, "agents"]]);
+    expect(strengths(agentic, { title: "Where do agents fit?" })).toEqual([]);
     expect(strengths(agentic, { title: "AWS AI agents accelerate SAP migration" })).toEqual([]);
     expect(strengths(agentic, { title: "Agentic modernization with United Airlines" })).toEqual([]);
     expect(strengths(agentic, { title: "Govern AI agents by hacking one first" })).toEqual([]);
@@ -297,7 +313,7 @@ describe("selectExplain", () => {
       session("L1", "Lambda basics"),
     ], concepts);
     expect(selected.map(entry => entry.key)).toEqual(["L1"]);
-    expect(uncovered[0]).toEqual({ concept: "Amazon DynamoDB", reason: 'no introductory (100/200) session is about it; the closest is a 300-level one: D3 "DynamoDB design"' });
+    expect(uncovered[0]).toEqual({ concept: "Amazon DynamoDB", kind: "service", reason: 'no introductory (100/200) session is about it; the closest is a 300-level one: D3 "DynamoDB design"' });
   });
 
   it("prefers a title that reads as an introduction, after strength and boost", () => {
@@ -330,8 +346,8 @@ describe("selectExplain", () => {
   it("reports a concept with no qualifying session as uncovered, in centrality order", () => {
     const { uncovered } = selectExplain([session("L1", "Lambda basics")], concepts);
     expect(uncovered).toEqual([
-      { concept: "Amazon DynamoDB", reason: "no introductory (100/200) or 300-level session is about it" },
-      { concept: "serverless", reason: "no introductory (100/200) or 300-level session is about it" },
+      { concept: "Amazon DynamoDB", kind: "service", reason: "no introductory (100/200) or 300-level session is about it" },
+      { concept: "serverless", kind: "pattern", reason: "no introductory (100/200) or 300-level session is about it" },
     ]);
   });
 

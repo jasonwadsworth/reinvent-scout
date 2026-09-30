@@ -156,7 +156,7 @@ comes from the *profile's own* evidence for that service (see `reference/profili
 this field.
 
 Under `explain`, the response also has `uncovered` (always present, usually `[]`): the profile's
-concepts that no introductory session is about, as `{ "concept": "Amazon Cognito", "reason": ... }`.
+concepts that no introductory session is about, as `{ "concept": "Amazon Cognito", "kind": "service", "reason": ... }` (`kind` is `service` or `pattern`).
 Report them to the user as parts of their code the catalog has no introduction for; see "The explain
 lens" in `reference/profiling.md`. Candidates come round-robin across concepts, not by score.
 

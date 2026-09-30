@@ -73,22 +73,30 @@ describe("the explain lens", () => {
       session("DDB400", "DynamoDB at the limit", { level: "400 - Expert" }),
     ]);
     expect(codes(result)).toEqual(["LAM100"]);
-    expect(result.uncovered).toEqual([{ concept: "Amazon DynamoDB", reason: 'no introductory (100/200) session is about it; the closest is a 300-level one: DDB300 "DynamoDB design"' }]);
+    expect(result.uncovered).toEqual([{ concept: "Amazon DynamoDB", kind: "service", reason: 'no introductory (100/200) session is about it; the closest is a 300-level one: DDB300 "DynamoDB design"' }]);
   });
 
   it("reports a concept no session explains, and a pattern it cannot match, always as a list", () => {
     const result = run(profile(["AWS Lambda", "Amazon Cognito"], ["mcp-server", "gap-no-dlq", "dead-code"]), [session("LAM100", "Lambda basics")]);
     expect(result.uncovered).toEqual([
-      { concept: "Amazon Cognito", reason: "no introductory (100/200) or 300-level session is about it" },
-      { concept: "mcp-server", reason: "no session phrase is defined for this pattern, so no session can be matched to it" },
+      { concept: "Amazon Cognito", kind: "service", reason: "no introductory (100/200) or 300-level session is about it" },
+      { concept: "mcp-server", kind: "pattern", reason: "no session phrase is defined for this pattern, so no session can be matched to it" },
     ]);
     expect(run(profile(["AWS Lambda"]), [session("LAM100", "Lambda basics")]).uncovered).toEqual([]);
+  });
+
+  it("tells a service from a pattern of the same name in the uncovered list", () => {
+    const p = profile(["Zorblax"], ["serverless"]);
+    p.services[0]!.name = "serverless";
+    p.services[0]!.catalogName = null;
+    const result = run(p, [session("LAM100", "Lambda basics")]);
+    expect(result.uncovered!.map(entry => [entry.concept, entry.kind]).sort()).toEqual([["serverless", "pattern"], ["serverless", "service"]]);
   });
 
   it("returns nothing but the uncovered list for a profile no session is about", () => {
     const result = run(profile(["Playwright"]), [session("LAM100", "Lambda basics")]);
     expect(result.candidates).toEqual([]);
-    expect(result.uncovered).toEqual([{ concept: "Playwright", reason: "no introductory (100/200) or 300-level session is about it" }]);
+    expect(result.uncovered).toEqual([{ concept: "Playwright", kind: "service", reason: "no introductory (100/200) or 300-level session is about it" }]);
   });
 
   it("leaves the other lenses without an uncovered list", () => {

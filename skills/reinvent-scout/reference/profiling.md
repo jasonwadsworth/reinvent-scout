@@ -398,7 +398,7 @@ alone never admits a session. Services match by catalog name and short form ("Am
 that only a title that says how to build or design them admits (for example "Building agents in
 production"). A pattern with any other name cannot be matched and comes back in `uncovered`; prefer
 the names above where they fit. A sponsored session, a "What's new" or recap session, a customer
-story ("How X scaled Y") and "AWS Partner:" training are never used to explain a concept.
+story ("How X scaled Y") and "AWS Partner:" bootcamps (attendance is restricted to AWS Partners) are never used to explain a concept.
 
 **Selection.** Only level 100 and 200 sessions are listed. They are picked round-robin across the
 concepts in centrality order, the best session per concept each round, so the top of the list covers
@@ -408,9 +408,11 @@ talk. Each candidate's `explainsConcept` reason names the concept, the phrase th
 files in your profile that use it, so the file citations you record are what the user reads.
 
 **`uncovered`.** The response always carries `uncovered`, `[]` when nothing is missing. Each entry is
-`{ "concept", "reason" }` for a concept no introductory session is about. When only a 300-level
-session is about it, the reason names that session, so you can offer it while saying it is not an
-introduction. Tell the user which parts of their code the catalog has no introduction for instead of
+`{ "concept", "reason" }` for a concept no introductory session is about. When a 300-level
+session names the concept in its title, the reason names that session (a 300-level session that only
+mentions the concept in its abstract is not named), so you can offer it while saying it is not an
+introduction. Each entry has a `kind` (`service` or `pattern`) because a service and a pattern can
+share a name. Tell the user which parts of their code the catalog has no introduction for instead of
 padding the list with weaker sessions; an empty `candidates` with a full `uncovered` is a valid
 answer (a codebase built on tools the conference does not cover).
 
