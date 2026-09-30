@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Session } from "../../src/api/types.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
-import { buildConcepts, explainReason, matchConcepts, selectExplain, type ExplainSession } from "../../src/match/explain.js";
+import { buildConcepts } from "../../src/match/concepts.js";
+import { explainReason, matchConcepts, selectExplain, type ExplainSession } from "../../src/match/explain.js";
 import type { ResolvedProfile } from "../../src/profile/profile.js";
 
 const cite = (file: string, line = 1, repo = "repo") => ({ repo, file, line });

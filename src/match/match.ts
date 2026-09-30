@@ -1,5 +1,6 @@
 import { buildStackFit, hasCoreService, PREFIX_REQUIRED_SERVICE_NAMES } from "./stack-fit.js";
-import { buildConcepts, explainReason, matchConcepts, selectExplain, type ConceptMatch, type UncoveredConcept } from "./explain.js";
+import { buildConcepts, type ConceptMatch, type UncoveredConcept } from "./concepts.js";
+import { explainReason, matchConcepts, selectExplain } from "./explain.js";
 import { activeLensRules, scoreLensSignals, skippedLensRules, type LensHit, type SkippedRule } from "./lens-signals.js";
 import { readRaw, type CatalogStoreDeps } from "../catalog/store.js";
 import { baseSessionCode, requireCurrentIndex } from "../catalog/query.js";

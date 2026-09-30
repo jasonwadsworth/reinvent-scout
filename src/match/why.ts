@@ -1,5 +1,5 @@
 import type { Evidence, ResolvedProfile } from "../profile/profile.js";
-import { mentionsOf, patternPhrase, type ConceptMatch } from "./explain.js";
+import { mentionsOf, patternPhrase, type ConceptMatch } from "./concepts.js";
 import { lensRuleDetail, type LensHit } from "./lens-signals.js";
 import type { Reason } from "./score.js";
 import { serviceNamePatterns } from "./stack-fit.js";

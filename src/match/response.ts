@@ -1,5 +1,5 @@
 import { toPublicIndexRecord } from "../catalog/index-record.js";
-import type { UncoveredConcept } from "./explain.js";
+import type { UncoveredConcept } from "./concepts.js";
 import type { SkippedRule } from "./lens-signals.js";
 import type { MatchCandidate, MatchResult } from "./match.js";
 import type { Reason } from "./score.js";
