@@ -3,6 +3,8 @@ import type { CatalogStoreDeps } from "../catalog/store.js";
 import { readRaw } from "../catalog/store.js";
 import { requireCurrentIndex } from "../catalog/query.js";
 import { hasCoreService } from "./stack-fit.js";
+import { demotionReason, industryTerms } from "./all.js";
+import { serviceTails, TITLE_STRENGTH } from "./concepts.js";
 import { selectExplain } from "./explain.js";
 import { getLensProfile } from "./lens.js";
 import {
@@ -90,15 +92,22 @@ export function createFocusEngine(profile: ResolvedProfile, deps: CatalogStoreDe
   };
 
   const deepen = (topic: Topic): Listed => {
-    const ranked = once("all", () => allRanked(ctx)).filter(candidate => candidate.explain!.some(match => conceptKey(match.concept) === topic.conceptKey));
+    // A session is about the topic when its title names it; an abstract that only mentions it is a session about something else.
+    const ranked = once("all", () => allRanked(ctx))
+      .filter(candidate => candidate.demoted === undefined
+        && candidate.explain!.some(match => conceptKey(match.concept) === topic.conceptKey && match.strength >= TITLE_STRENGTH));
     const candidates = finish(ranked, "all");
-    return candidates.length > 0 ? { candidates } : { candidates, reason: `no session names ${topic.label} in its title or abstract` };
+    return candidates.length > 0 ? { candidates } : { candidates, reason: `no session names ${topic.label} in its title` };
   };
 
   const improve = (topic: Topic): Listed => {
     if (topic.skipped !== undefined) return { candidates: [], reason: topic.skipped };
     const lens = topic.group === "gaps" ? "fix" : "next-level";
-    const ranked = once(lens, () => rulesRanked(ctx, lens)).filter(candidate => candidate.lens?.hits.some(hit => hit.rule === topic.rule) === true);
+    const demotion = { services: serviceTails(knownServices(profile, index)), industries: industryTerms(index) };
+    const ranked = once(lens, () => rulesRanked(ctx, lens))
+      // A confident signal only: the rule's phrase in the title, or a mention a gap cue or a tag backs, never passing mentions.
+      .filter(candidate => candidate.lens?.hits.some(hit => hit.rule === topic.rule && hit.strength >= TITLE_STRENGTH) === true)
+      .filter(candidate => demotionReason(candidate.record, ctx.abstractOf(candidate.record), demotion) === undefined);
     const candidates = finish(ranked, lens);
     if (candidates.length > 0) return { candidates };
     const blocked = lensSkippedRules(profile, lens).find(entry => entry.rule === topic.rule);
@@ -141,7 +150,10 @@ function validate(topics: readonly Topic[], choices: readonly FocusChoice[], per
 /**
  * The sessions for each of the user's choices: one topic of the profile and what to do with it. Each choice runs the lens that
  * goal stands for, restricted to that topic, with that lens's own admission, demotions and ranking. A session listed under an
- * earlier choice is left out of later ones, which the earlier candidate notes in `alsoMatches`.
+ * earlier choice is left out of later ones, which the earlier candidate notes in `alsoMatches`. A focused list is short and meant to be
+ * precise, so it also leaves out a session the All lens would demote (a sponsored pitch, news, a customer story, migration tooling, an
+ * industry session, a technology the code does not use). A session is listed for a service or pattern only when its title names it,
+ * and for a gap or a next step only on a strong signal.
  */
 export function matchFocus(profile: ResolvedProfile, deps: CatalogStoreDeps, choices: readonly FocusChoice[], options: FocusOptions = {}): FocusResult {
   const engine = createFocusEngine(profile, deps);

@@ -36,6 +36,9 @@ const CATALOG: Session[] = [
   session("DLQ300", "Dead-letter queues in depth", { level: "300 - Advanced", services: ["AWS Lambda", "Amazon DynamoDB"], abstract: "Recover from failures with dead-letter queues and redrive." }),
   session("CON300", "Running containers on Fargate", { level: "300 - Advanced", services: ["AWS Lambda"], abstract: "Start from Lambda functions and grow into containers." }),
   session("PIT300", "Lambda at scale (sponsored by Acme)", { level: "300 - Advanced" }),
+  session("SPN300", "Dead-letter queues, the sponsored edition (sponsored by Acme)", { level: "300 - Advanced", services: ["AWS Lambda", "Amazon DynamoDB"], abstract: "Recover with dead-letter queues and redrive." }),
+  session("PAS300", "Reliability patterns", { level: "300 - Advanced", services: ["AWS Lambda", "Amazon DynamoDB"], abstract: "Use dead-letter queues and redrive policies when a batch fails." }),
+  session("ABS300", "Data at scale", { level: "300 - Advanced", services: ["Amazon DynamoDB"], abstract: "You will use DynamoDB tables. DynamoDB streams too." }),
 ];
 
 describe("mapProfile and matchFocus", () => {
@@ -117,13 +120,19 @@ describe("mapProfile and matchFocus", () => {
       expect(codes(entry!)).not.toContain("DDB300");
     });
 
-    it("deepen: sessions of any level admitted by that concept, with the demotions kept", () => {
+    it("deepen: sessions of any level admitted by that concept, leaving out the demoted ones", () => {
       seed();
       const [entry] = matchFocus(base(), deps(), [{ topic: "service:AWS Lambda", goal: "deepen" }]).results;
-      expect(codes(entry!)).toEqual(expect.arrayContaining(["LAM200", "LAM201", "PIT300"]));
+      expect(codes(entry!).sort()).toEqual(["LAM200", "LAM201"]);
       expect(codes(entry!)).not.toContain("DDB300");
-      expect(codes(entry!).at(-1)).toBe("PIT300");
-      expect(entry!.candidates.find(candidate => candidate.code === "PIT300")).toHaveProperty("demoted", "sponsored session");
+      expect(codes(entry!)).not.toContain("PIT300");
+    });
+
+    it("deepen: only sessions whose title names the topic, not ones that only mention it in the abstract", () => {
+      seed();
+      const [entry] = matchFocus(base(), deps(), [{ topic: "service:Amazon DynamoDB", goal: "deepen" }]).results;
+      expect(codes(entry!).sort()).toEqual(["DDB100", "DDB300", "LAM201"]);
+      expect(codes(entry!)).not.toContain("ABS300");
     });
 
     it("improve a gap: only that rule's sessions, each with its why", () => {
@@ -131,6 +140,20 @@ describe("mapProfile and matchFocus", () => {
       const [entry] = matchFocus(base(), deps(), [{ topic: "gap:gap-no-dlq", goal: "improve" }]).results;
       expect(codes(entry!)).toEqual(["DLQ300"]);
       expect(entry!.candidates[0]!.why.summary).toContain("gap-no-dlq");
+    });
+
+    it("improve: only sessions whose signal is strong, a title or a cued or tagged mention, not two passing mentions in the abstract", () => {
+      seed();
+      const [entry] = matchFocus(base(), deps(), [{ topic: "gap:gap-no-dlq", goal: "improve" }]).results;
+      expect(codes(entry!)).toEqual(["DLQ300"]);
+      expect(codes(matchFocus(base(), deps(), [{ topic: "gap:gap-no-dlq", goal: "improve" }]).results[0]!)).not.toContain("PAS300");
+    });
+
+    it("improve a gap: leaves out a sponsored, news or customer-story session", () => {
+      seed();
+      const [entry] = matchFocus(base(), deps(), [{ topic: "gap:gap-no-dlq", goal: "improve" }]).results;
+      expect(codes(entry!)).not.toContain("SPN300");
+      expect(entry!.total).toBe(1);
     });
 
     it("improve a path: only that next-level rule's sessions", () => {
@@ -150,9 +173,9 @@ describe("mapProfile and matchFocus", () => {
 
     it("caps an entry at perTopic, keeping the uncapped total", () => {
       seed();
-      const [entry] = matchFocus(base(), deps(), [{ topic: "service:AWS Lambda", goal: "deepen" }], { perTopic: 2 }).results;
-      expect(entry!.candidates).toHaveLength(2);
-      expect(entry!.total).toBeGreaterThan(2);
+      const [entry] = matchFocus(base(), deps(), [{ topic: "service:AWS Lambda", goal: "deepen" }], { perTopic: 1 }).results;
+      expect(entry!.candidates).toHaveLength(1);
+      expect(entry!.total).toBeGreaterThan(1);
     });
 
     it("says why an entry has no sessions", () => {
