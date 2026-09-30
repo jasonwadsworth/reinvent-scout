@@ -143,7 +143,7 @@ describe("matchConcepts", () => {
     ["ecs", "Running workloads on Amazon ECS"],
     ["eks", "Kubernetes on EKS from scratch"],
     ["agentic", "Building agentic applications"],
-    ["genai-single-call", "Your first generative AI application"],
+    ["genai-single-call", "Building your first generative AI application"],
     ["streaming", "Streaming data with Kinesis"],
     ["data-lake", "Building a data lake"],
   ])("has a curated phrase for the %s pattern: %s", (name, title) => {
@@ -160,13 +160,25 @@ describe("matchConcepts", () => {
     expect(strengths(dynamo, { title: "Data at scale (sponsored by Acme)" }, "DynamoDB here. DynamoDB there.")).toEqual([]);
   });
 
-  it("admits a broad pattern such as agentic only when the title names it", () => {
+  it("never explains from a news or recap session", () => {
+    for (const title of ["What's new in DynamoDB", "DynamoDB: a year in review", "The latest DynamoDB announcements", "DynamoDB recap"]) {
+      expect(strengths(dynamo, { title }), title).toEqual([]);
+    }
+    expect(strengths(dynamo, { title: "DynamoDB basics" }, "See what\u2019s new. Learn what's new.")).toEqual([["Amazon DynamoDB", 3, "DynamoDB"]]);
+  });
+
+  it("admits a broad pattern such as agentic only when the title names it and says how to build or design", () => {
     const agentic = buildConcepts(profile([], [{ name: "agentic" }])).concepts;
     const abstract = "Agentic systems are new. Build agentic workflows.";
     expect(strengths(agentic, { title: "Building agentic applications" })).toEqual([["agentic", 3, "agentic"]]);
+    expect(strengths(agentic, { title: "Best practices to build and optimize agents" })).toEqual([["agentic", 3, "agents"]]);
+    expect(strengths(agentic, { title: "Where do agents fit?" })).toEqual([["agentic", 3, "agents"]]);
+    expect(strengths(agentic, { title: "AWS AI agents accelerate SAP migration" })).toEqual([]);
+    expect(strengths(agentic, { title: "Agentic modernization with United Airlines" })).toEqual([]);
     expect(strengths(agentic, { title: "Data pipelines" }, abstract)).toEqual([]);
     const genai = buildConcepts(profile([], [{ name: "genai-single-call" }])).concepts;
     expect(strengths(genai, { title: "Data pipelines" }, "Generative AI is here. Use generative AI wisely.")).toEqual([]);
+    expect(strengths(genai, { title: "Generative AI for insurers" })).toEqual([]);
   });
 
   it("marks a match boosted when the session also lists the service or carries a matching topic", () => {
@@ -245,6 +257,15 @@ describe("selectExplain", () => {
     expect(selected.map(entry => entry.key)).toEqual(["L1", "D3"]);
     expect(selected[1]!.matches.map(match => match.fallback)).toEqual([true]);
     expect(selected[0]!.matches.map(match => match.fallback)).toEqual([false]);
+  });
+
+  it("prefers a title that reads as an introduction, after strength and boost", () => {
+    expect(order([
+      session("A-PLN", "Lambda in the enterprise"), session("Z-INT", "Lambda getting started"),
+    ])).toEqual(["Z-INT", "A-PLN"]);
+    expect(order([
+      session("A-INT", "Lambda getting started"), session("Z-LST", "Lambda plain", { services: ["AWS Lambda"] }),
+    ])).toEqual(["Z-LST", "A-INT"]);
   });
 
   it("takes a 300 session only when it names the concept in its title", () => {

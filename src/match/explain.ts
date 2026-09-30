@@ -21,7 +21,7 @@ export interface ExplainConcept {
   catalogName: string | null;
   /** Catalog topics and areas of interest that boost, never admit, a session. */
   tags: readonly string[];
-  /** Only a title that names the concept admits a session. */
+  /** Only a title that names the concept and says how to build or design it admits a session. */
   titleOnly: boolean;
 }
 
@@ -46,12 +46,18 @@ const ABSTRACT_STRENGTH = 2;
 const ABSTRACT_MENTIONS = 2;
 /** A sponsored session is the sponsor's pitch for its own product, not an introduction to a technology. */
 const SPONSORED = /\(sponsored by /i;
+/** A news or recap session lists changes; it does not teach the technology. */
+const NEWS = /\bwhat[’']s new\b|\byear in review\b|\bthe latest\b|\bannouncements?\b|\brecap\b/i;
+/** What a title says when the session is about building or designing the thing, not applying it. */
+const BUILD_CUE = /\b(?:build(?:ing)?|architect\w*|patterns?|best practices|design(?:ing)?|getting started|introduction|fundamentals|basics|101|first|where do|how to|what is|guide)\b/i;
+/** A title that reads as an introduction ranks ahead of one that does not. */
+const INTRO_CUE = /\b(?:getting started|introduction|intro to|fundamentals|basics|101|beginners?|from scratch|your first|first \w+ application|in under \d+ minutes)\b/i;
 
 interface PatternEntry {
   phrase: RegExp;
   tags: readonly string[];
-  /** A term so widespread that a session mentioning it twice is rarely about it: only a title
-   * that names it admits. */
+  /** A term so widespread that a session mentioning it is rarely about it: only a title that names
+   * it and says how to build or design it (see `BUILD_CUE`) admits. */
   broad?: boolean;
 }
 
@@ -70,7 +76,7 @@ const PATTERN_PHRASES: ReadonlyMap<string, PatternEntry> = new Map([
   ["containers", { phrase: /\bcontainer(?:s|ized|ization)?\b/i, tags: ["Containers"] }],
   ["ecs", { phrase: /\bECS\b|\bElastic Container Service\b/i, tags: ["Containers"] }],
   ["eks", { phrase: /\bEKS\b|\bKubernetes\b|\bElastic Kubernetes Service\b/i, tags: ["Kubernetes", "Containers"] }],
-  ["agentic", { phrase: /\bagentic\b|\bAI agents?\b|\bmulti[- ]agent\b/i, tags: ["Agentic AI"], broad: true }],
+  ["agentic", { phrase: /\bagentic\b|\b(?:AI )?agents?\b|\bmulti[- ]agent\b/i, tags: ["Agentic AI"], broad: true }],
   ["genai-single-call", { phrase: /\bgenerative AI\b|\bGenAI\b|\bLLMs?\b|\bfoundation models?\b/i, tags: ["Generative AI"], broad: true }],
   ["streaming", { phrase: /\bstreaming\b|\bKinesis\b|\bKafka\b/i, tags: [] }],
   ["data-lake", { phrase: /\bdata lakes?\b|\blakehouse\b/i, tags: [] }],
@@ -176,12 +182,14 @@ function isBoosted(concept: ExplainConcept, record: IndexRecord): boolean {
 /** The concepts a session is about: it names the concept in its title, or at least twice in its
  * abstract, outside a listing. A tag or a listed service can lift a match, never make one. */
 export function matchConcepts(concepts: readonly ExplainConcept[], record: IndexRecord, abstract: string): ConceptMatch[] {
-  if (SPONSORED.test(record.title)) return [];
+  if (SPONSORED.test(record.title) || NEWS.test(record.title)) return [];
   const matches: ConceptMatch[] = [];
   for (const concept of concepts) {
     const inTitle = mentions(concept, record.title)[0];
     const inAbstract = mentions(concept, abstract);
-    const admitted = inTitle ?? (!concept.titleOnly && inAbstract.length >= ABSTRACT_MENTIONS ? inAbstract[0] : undefined);
+    const admitted = concept.titleOnly
+      ? (BUILD_CUE.test(record.title) ? inTitle : undefined)
+      : inTitle ?? (inAbstract.length >= ABSTRACT_MENTIONS ? inAbstract[0] : undefined);
     if (admitted === undefined) continue;
     matches.push({
       concept, strength: inTitle === undefined ? ABSTRACT_STRENGTH : TITLE_STRENGTH,
@@ -223,6 +231,7 @@ interface Option {
 }
 
 const FORMAT_SCALE = 10;
+const INTRO_BONUS = 0.75;
 
 /**
  * Picks sessions round-robin across concepts in centrality order, the best session per concept each
@@ -250,7 +259,7 @@ export function selectExplain(
       const format = session.record.type === null ? 0 : (typeWeights.get(session.record.type) ?? 0);
       options.get(match.concept)?.push({
         session, match: { ...match, fallback },
-        score: match.strength + (match.boosted ? 1 : 0) + format / FORMAT_SCALE,
+        score: match.strength + (match.boosted ? 1 : 0) + (INTRO_CUE.test(session.record.title) ? INTRO_BONUS : 0) + format / FORMAT_SCALE,
       });
     }
   }
