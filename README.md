@@ -173,6 +173,7 @@ A profile looks like this:
     {
       "name": "dynamodb",
       "usage": "orders table",
+      "footprint": 4,
       "evidence": [{ "repo": ".", "file": "src/db.ts", "line": 12 }]
     }
   ],
@@ -186,7 +187,8 @@ A profile looks like this:
 }
 ```
 
-`services[].name` can be spelled any way a person or an LLM naturally would -- a short key
+`footprint` (optional, on any service or pattern) is how many distinct source files use it, which ranking
+reads as how central it is to your code; see "Footprint" in the skill's `reference/profiling.md`. `services[].name` can be spelled any way a person or an LLM naturally would -- a short key
 (`dynamodb`), the catalog's own display name (`Amazon DynamoDB`), an SDK package name
 (`@aws-sdk/client-dynamodb`), a CDK submodule path, a Java or Go import, or a Terraform resource
 type (`aws_dynamodb_table`) -- it's resolved against the catalog regardless. **Every service and
