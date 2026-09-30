@@ -5,6 +5,7 @@ import { CURRENT_SCHEMA_VERSION, writeCatalog } from "../../src/catalog/store.js
 import { ValidationError } from "../../src/core/errors.js";
 import { mapProfile } from "../../src/match/map.js";
 import { matchFocus } from "../../src/match/focus.js";
+import { matchSessionsDetailed } from "../../src/match/match.js";
 import type { ResolvedProfile } from "../../src/profile/profile.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
 
@@ -150,22 +151,24 @@ describe("mapProfile and matchFocus", () => {
     it("improve a gap: only that rule's sessions, each with its why", () => {
       seed();
       const [entry] = matchFocus(base(), deps(), [{ topic: "gap:gap-no-dlq", goal: "improve" }]).results;
-      expect(codes(entry!)).toEqual(["DLQ300"]);
-      expect(entry!.candidates[0]!.why.summary).toContain("gap-no-dlq");
+      expect(codes(entry!)).toContain("DLQ300");
+      expect(entry!.candidates.find(candidate => candidate.code === "DLQ300")!.why.summary).toContain("gap-no-dlq");
     });
 
-    it("improve: only sessions whose signal is strong, a title or a cued or tagged mention, not two passing mentions in the abstract", () => {
+    it("improve a gap: lists every non-demoted session the fix lens admits for that rule, however strong its signal", () => {
       seed();
-      const [entry] = matchFocus(base(), deps(), [{ topic: "gap:gap-no-dlq", goal: "improve" }]).results;
-      expect(codes(entry!)).toEqual(["DLQ300"]);
-      expect(codes(matchFocus(base(), deps(), [{ topic: "gap:gap-no-dlq", goal: "improve" }]).results[0]!)).not.toContain("PAS300");
+      const fixCodes = matchSessionsDetailed(base(), deps(), { lens: "fix" }).candidates
+        .filter(candidate => candidate.lensRules?.includes("gap-no-dlq") === true).map(candidate => candidate.code);
+      expect(fixCodes).toEqual(expect.arrayContaining(["DLQ300", "PAS300", "SPN300"]));
+      const [entry] = matchFocus(base(), deps(), [{ topic: "gap:gap-no-dlq", goal: "improve" }], { perTopic: 10 }).results;
+      expect(codes(entry!).sort()).toEqual(fixCodes.filter(code => code !== "SPN300").sort());
+      expect(entry!.total).toBe(fixCodes.length - 1);
     });
 
     it("improve a gap: leaves out a sponsored, news or customer-story session", () => {
       seed();
       const [entry] = matchFocus(base(), deps(), [{ topic: "gap:gap-no-dlq", goal: "improve" }]).results;
       expect(codes(entry!)).not.toContain("SPN300");
-      expect(entry!.total).toBe(1);
     });
 
     it("improve a gap: a session another gap's rule admitted is not listed under it", () => {
@@ -173,7 +176,8 @@ describe("mapProfile and matchFocus", () => {
       const p = base();
       p.patterns.push({ name: "gap-no-tests", evidence: [cite("t.ts")] });
       const { results } = matchFocus(p, deps(), [{ topic: "gap:gap-no-dlq", goal: "improve" }, { topic: "gap:gap-no-tests", goal: "improve" }]);
-      expect(codes(results[0]!)).toEqual(["DLQ300"]);
+      expect(codes(results[0]!)).toContain("DLQ300");
+      expect(codes(results[0]!)).not.toContain("TST300");
       expect(codes(results[1]!)).toEqual(["TST300"]);
     });
 

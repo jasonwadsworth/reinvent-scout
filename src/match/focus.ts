@@ -105,8 +105,7 @@ export function createFocusEngine(profile: ResolvedProfile, deps: CatalogStoreDe
     const lens = topic.group === "gaps" ? "fix" : "next-level";
     const demotion = { services: serviceTails(knownServices(profile, index)), industries: industryTerms(index) };
     const ranked = once(lens, () => rulesRanked(ctx, lens))
-      // A confident signal only: the rule's phrase in the title, or a mention a gap cue or a tag backs, never passing mentions.
-      .filter(candidate => candidate.lens?.hits.some(hit => hit.rule === topic.rule && hit.strength >= TITLE_STRENGTH) === true)
+      .filter(candidate => candidate.lens?.hits.some(hit => hit.rule === topic.rule) === true)
       .filter(candidate => demotionReason(candidate.record, ctx.abstractOf(candidate.record), demotion) === undefined);
     const candidates = finish(ranked, lens);
     if (candidates.length > 0) return { candidates };
@@ -152,8 +151,8 @@ function validate(topics: readonly Topic[], choices: readonly FocusChoice[], per
  * goal stands for, restricted to that topic, with that lens's own admission, demotions and ranking. A session listed under an
  * earlier choice is left out of later ones, which the earlier candidate notes in `alsoMatches`. A focused list is short and meant to be
  * precise, so it also leaves out a session the All lens would demote (a sponsored pitch, news, a customer story, migration tooling, an
- * industry session, a technology the code does not use). A session is listed for a service or pattern only when its title names it,
- * and for a gap or a next step only on a strong signal.
+ * industry session, a technology the code does not use). A session is listed for a service or pattern only when its title names it;
+ * for a gap or a next step, every session the Fix or Next-level lens admits for that one rule, minus the demoted ones.
  */
 export function matchFocus(profile: ResolvedProfile, deps: CatalogStoreDeps, choices: readonly FocusChoice[], options: FocusOptions = {}): FocusResult {
   const engine = createFocusEngine(profile, deps);
