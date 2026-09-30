@@ -108,6 +108,11 @@ relevance.
       "title": "Graviton. Serverless. Apache Iceberg. Your guide to a modern data warehouse strategy",
       "type": "Breakout session",
       "levelBand": 300,
+      "why": {
+        "summary": "Matches your Amazon Redshift (Nightly reporting warehouse).",
+        "yourCode": [ { "repo": "reports", "file": "infra/redshift.tf", "line": 12 } ],
+        "sessionSays": "Modernize your warehouse with Amazon Redshift and Apache Iceberg."
+      },
       "score": 50,
       "reasons": [
         { "kind": "service", "detail": "Uses Amazon Redshift, which this session covers.", "weight": 50, "evidence": "Amazon Redshift" }
@@ -144,6 +149,21 @@ sitting of the same talk. `offerings` lists every scheduled sitting (a repeat co
 twice has two), each with its own date, time, venue and room; use the `sessionId` from the specific
 offering you mean when calling `favorite_sessions`, not `code`.
 
+Each candidate's `why` is `{ "summary": string, "yourCode": [{ "repo", "file", "line"? }], "more"?: number, "sessionSays"?: string }`,
+built from the profile and the session's own title or abstract (never model text). `summary` is one
+sentence naming what the candidate covers: under `fix` the gap and its note (`Covers your
+gap-no-dlq: ...`), under `next-level` the source pattern and destination, under `explain` the
+concept and how the code uses it, under `all` the one or two strongest services or patterns
+matched. `yourCode` lists up to three deduped citations in profile order; `more` counts the ones
+left out and is absent when none were. `sessionSays` is the sentence of the session that matched,
+trimmed to about 160 characters, and is absent (not empty) when nothing could be quoted. Lead with
+`why.summary` and `sessionSays` when presenting, and cite `yourCode`.
+
+When the response would not fit the budget, MCP drops every candidate's ranking reasons first and
+sets `rankingReasonsOmitted` to true; `why` and the lens reasons stay whole. Only then are whole
+candidates left out (`truncated`). The CLI's `--verbose` flag shows the ranking reasons in the
+human table (they are always in `--json`); it has no effect on `--json`.
+
 Each `reasons` entry is `{ "kind": ..., "detail": string, "weight": number, "evidence": string }`.
 `kind` is one of `service`, `topic`, `areaOfInterest`, `text`, `level`, `format`, `pillarGap` or
 `migrationPath` (the last two only under the Fix and Next-level lenses, and they also carry
@@ -173,14 +193,16 @@ unscheduled: the talk exists but has no time yet, so it cannot go on a schedule.
 The CLI prints the same object: `reinvent-scout match --json` returns exactly what `match_sessions`
 returns (the CLI is not size-budgeted, and `--include-abstracts` adds an `abstract` to each
 candidate), and `reinvent-scout profile validate --json` returns exactly the `validate_profile`
-report. Human output shows each candidate's level and rules, then one `Skipped:` line per skipped
-path.
+report. Human output shows each candidate's title line, its `Why:`, `Your code:` and `Session:`
+lines, its rules and lens reasons (ranking reasons only under `--verbose`), then one `Skipped:` line
+per skipped path.
 
 ## 6. Present candidates
 
-Not a tool call. Present each candidate with its `reasons` (why it matched) and `offerings` (when
-and where) so the user can judge for themselves, not just a bare title and score. Ask for
-confirmation before favoriting anything.
+Not a tool call. Present each candidate with `why.summary` and `why.sessionSays`, cite
+`why.yourCode`, and give its `offerings` (when and where) so the user can judge for themselves, not
+just a bare title and score. Do not read out ranking `reasons` unless asked. Ask for confirmation
+before favoriting anything.
 
 ## 7. `favorite_sessions`
 
