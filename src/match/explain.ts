@@ -21,6 +21,8 @@ export interface ExplainConcept {
   catalogName: string | null;
   /** Catalog topics and areas of interest that boost, never admit, a session. */
   tags: readonly string[];
+  /** Only a title that names the concept admits a session. */
+  titleOnly: boolean;
 }
 
 export interface UncoveredConcept {
@@ -42,10 +44,15 @@ const SUPPORTING_WEIGHT = 0.5;
 const TITLE_STRENGTH = 3;
 const ABSTRACT_STRENGTH = 2;
 const ABSTRACT_MENTIONS = 2;
+/** A sponsored session is the sponsor's pitch for its own product, not an introduction to a technology. */
+const SPONSORED = /\(sponsored by /i;
 
 interface PatternEntry {
   phrase: RegExp;
   tags: readonly string[];
+  /** A term so widespread that a session mentioning it twice is rarely about it: only a title
+   * that names it admits. */
+  broad?: boolean;
 }
 
 /**
@@ -56,15 +63,15 @@ interface PatternEntry {
 const PATTERN_PHRASES: ReadonlyMap<string, PatternEntry> = new Map([
   ["serverless", { phrase: /\bserverless\b/i, tags: ["Serverless", "Lambda-Based Applications"] }],
   ["event-driven", { phrase: /\bevent[- ](?:driven|based)\b/i, tags: ["Event-Driven Architecture"] }],
-  ["api", { phrase: /\b(?:REST|HTTP|GraphQL|WebSocket)\s+APIs?\b|\bAPI (?:design|development|management|first)\b|\bbuilding APIs\b/i, tags: [] }],
+  ["api", { phrase: /\b(?:REST|HTTP|GraphQL|WebSocket)\s+APIs?\b|\bAPI (?:design|development|management|first|Gateway)\b|\bbuilding APIs\b/i, tags: [] }],
   ["multi-tenant", { phrase: /\bmulti[- ]tenan(?:t|cy)\b|\bSaaS\b/i, tags: ["SaaS"] }],
   ["multi-account", { phrase: /\bmulti[- ]account\b|\bAWS Organizations\b|\bControl Tower\b|\blanding zones?\b/i, tags: [] }],
   ["iac-cdk", { phrase: /\b(?:CDK|Cloud Development Kit|infrastructure[- ]as[- ]code|IaC)\b/i, tags: [] }],
   ["containers", { phrase: /\bcontainer(?:s|ized|ization)?\b/i, tags: ["Containers"] }],
   ["ecs", { phrase: /\bECS\b|\bElastic Container Service\b/i, tags: ["Containers"] }],
   ["eks", { phrase: /\bEKS\b|\bKubernetes\b|\bElastic Kubernetes Service\b/i, tags: ["Kubernetes", "Containers"] }],
-  ["agentic", { phrase: /\bagentic\b|\bAI agents?\b|\bmulti[- ]agent\b/i, tags: ["Agentic AI"] }],
-  ["genai-single-call", { phrase: /\bgenerative AI\b|\bGenAI\b|\bLLMs?\b|\bfoundation models?\b/i, tags: ["Generative AI"] }],
+  ["agentic", { phrase: /\bagentic\b|\bAI agents?\b|\bmulti[- ]agent\b/i, tags: ["Agentic AI"], broad: true }],
+  ["genai-single-call", { phrase: /\bgenerative AI\b|\bGenAI\b|\bLLMs?\b|\bfoundation models?\b/i, tags: ["Generative AI"], broad: true }],
   ["streaming", { phrase: /\bstreaming\b|\bKinesis\b|\bKafka\b/i, tags: [] }],
   ["data-lake", { phrase: /\bdata lakes?\b|\blakehouse\b/i, tags: [] }],
 ]);
@@ -90,6 +97,7 @@ interface Draft {
   matchers: RegExp[];
   catalogName: string | null;
   tags: readonly string[];
+  titleOnly: boolean;
 }
 
 /** The profile's concepts, most central first, and the patterns that cannot be matched at all. A
@@ -105,7 +113,7 @@ export function buildConcepts(profile: ResolvedProfile): { concepts: ExplainConc
       drafts.set(key, {
         name: service.catalogName ?? service.name, kind: "service", supporting,
         citations: [...service.evidence], matchers: serviceNamePatterns(service.name, service.catalogName),
-        catalogName: service.catalogName, tags: [],
+        catalogName: service.catalogName, tags: [], titleOnly: false,
       });
     } else {
       draft.supporting = draft.supporting && supporting;
@@ -124,7 +132,7 @@ export function buildConcepts(profile: ResolvedProfile): { concepts: ExplainConc
     const key = `pattern:${pattern.name.toLowerCase()}`;
     const draft = drafts.get(key);
     if (draft === undefined) {
-      drafts.set(key, { name: pattern.name, kind: "pattern", supporting: false, citations: [...pattern.evidence], matchers: [entry.phrase], catalogName: null, tags: entry.tags });
+      drafts.set(key, { name: pattern.name, kind: "pattern", supporting: false, citations: [...pattern.evidence], matchers: [entry.phrase], catalogName: null, tags: entry.tags, titleOnly: entry.broad === true });
     } else {
       draft.citations.push(...pattern.evidence);
     }
@@ -134,18 +142,20 @@ export function buildConcepts(profile: ResolvedProfile): { concepts: ExplainConc
     return {
       name: draft.name, kind: draft.kind, weight,
       centrality: new Set(draft.citations.map(fileKey)).size * weight,
-      citations: draft.citations, matchers: draft.matchers, catalogName: draft.catalogName, tags: draft.tags,
+      citations: draft.citations, matchers: draft.matchers, catalogName: draft.catalogName, tags: draft.tags, titleOnly: draft.titleOnly,
     };
   });
   concepts.sort((a, b) => b.centrality - a.centrality || b.weight - a.weight
-    || b.citations.length - a.citations.length || a.name.localeCompare(b.name));
+    || Number(b.kind === "pattern") - Number(a.kind === "pattern") || b.citations.length - a.citations.length || a.name.localeCompare(b.name));
   return { concepts, uncovered };
 }
 
 /** Where `concept` is named in `text` outside an enumeration, each place once even when two of its
  * spellings overlap ("Amazon DynamoDB" and "DynamoDB"). */
 function mentions(concept: ExplainConcept, text: string): RegExpExecArray[] {
-  const all = concept.matchers.flatMap(matcher => unlistedMatches(matcher, text, PATTERN_VOCABULARY));
+  // "Lambda, DynamoDB & SQS" is an enumeration like the "and" form.
+  const spoken = text.replace(/ & /g, " and ");
+  const all = concept.matchers.flatMap(matcher => unlistedMatches(matcher, spoken, PATTERN_VOCABULARY));
   all.sort((a, b) => a.index - b.index || b[0].length - a[0].length);
   const distinct: RegExpExecArray[] = [];
   let end = 0;
@@ -166,11 +176,12 @@ function isBoosted(concept: ExplainConcept, record: IndexRecord): boolean {
 /** The concepts a session is about: it names the concept in its title, or at least twice in its
  * abstract, outside a listing. A tag or a listed service can lift a match, never make one. */
 export function matchConcepts(concepts: readonly ExplainConcept[], record: IndexRecord, abstract: string): ConceptMatch[] {
+  if (SPONSORED.test(record.title)) return [];
   const matches: ConceptMatch[] = [];
   for (const concept of concepts) {
     const inTitle = mentions(concept, record.title)[0];
     const inAbstract = mentions(concept, abstract);
-    const admitted = inTitle ?? (inAbstract.length >= ABSTRACT_MENTIONS ? inAbstract[0] : undefined);
+    const admitted = inTitle ?? (!concept.titleOnly && inAbstract.length >= ABSTRACT_MENTIONS ? inAbstract[0] : undefined);
     if (admitted === undefined) continue;
     matches.push({
       concept, strength: inTitle === undefined ? ABSTRACT_STRENGTH : TITLE_STRENGTH,
@@ -216,9 +227,9 @@ const FORMAT_SCALE = 10;
 /**
  * Picks sessions round-robin across concepts in centrality order, the best session per concept each
  * round, so a short list covers as many concepts as it can. A concept a session already explains
- * does not take another session in the first round. Sessions at level 100 or 200 come first; a
- * concept none of them covers may take one 300-level session. A concept with no session at all is
- * reported as uncovered.
+ * does not take another session in the first round. Sessions at level 100 or 200 come first; after
+ * all of them, a concept none of them covers may take one 300-level session that names it in its
+ * title. A concept with no session at all is reported as uncovered.
  */
 export function selectExplain(
   sessions: readonly ExplainSession[],
@@ -235,7 +246,7 @@ export function selectExplain(
   for (const session of eligible) {
     const fallback = session.record.levelBand === FALLBACK_BAND;
     for (const match of session.matches) {
-      if (fallback && introductory.has(match.concept)) continue;
+      if (fallback && (introductory.has(match.concept) || match.strength < TITLE_STRENGTH)) continue;
       const format = session.record.type === null ? 0 : (typeWeights.get(session.record.type) ?? 0);
       options.get(match.concept)?.push({
         session, match: { ...match, fallback },
@@ -253,21 +264,28 @@ export function selectExplain(
   const taken = new Set<string>();
   const covered = new Set<ExplainConcept>();
   const order = new Map(concepts.map((concept, index) => [concept, index]));
-  for (let round = 0; [...queues.values()].some(queue => queue.length > 0); round++) {
-    for (const concept of concepts) {
-      if (round === 0 && covered.has(concept)) continue;
-      const queue = queues.get(concept)!;
-      while (queue.length > 0 && taken.has(queue[0]!.session.key)) queue.shift();
-      const option = queue.shift();
-      if (option === undefined) continue;
-      taken.add(option.session.key);
-      const positionOf = (match: SelectedMatch): number => match.concept === option.match.concept ? -1 : order.get(match.concept)!;
-      const matches = option.session.matches
-        .flatMap(match => options.get(match.concept)?.find(entry => entry.session === option.session)?.match ?? [])
-        .sort((a, b) => positionOf(a) - positionOf(b));
-      for (const match of matches) covered.add(match.concept);
-      selected.push({ key: option.session.key, matches });
+  const take = (concept: ExplainConcept): void => {
+    const queue = queues.get(concept)!;
+    while (queue.length > 0 && taken.has(queue[0]!.session.key)) queue.shift();
+    const option = queue.shift();
+    if (option === undefined) return;
+    taken.add(option.session.key);
+    const positionOf = (match: SelectedMatch): number => match.concept === option.match.concept ? -1 : order.get(match.concept)!;
+    const matches = option.session.matches
+      .flatMap(match => options.get(match.concept)?.find(entry => entry.session === option.session)?.match ?? [])
+      .sort((a, b) => positionOf(a) - positionOf(b));
+    for (const match of matches) covered.add(match.concept);
+    selected.push({ key: option.session.key, matches });
+  };
+  // Introductory sessions come first, round-robin; the 300-level fallbacks follow them, one per concept.
+  const withIntroduction = concepts.filter(concept => introductory.has(concept));
+  for (let round = 0; withIntroduction.some(concept => queues.get(concept)!.length > 0); round++) {
+    for (const concept of withIntroduction) {
+      if (!(round === 0 && covered.has(concept))) take(concept);
     }
+  }
+  for (const concept of concepts.filter(concept => !introductory.has(concept))) {
+    if (!covered.has(concept)) take(concept);
   }
   const uncovered = concepts
     .filter(concept => options.get(concept)!.length === 0)

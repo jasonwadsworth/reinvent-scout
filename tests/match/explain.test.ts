@@ -47,6 +47,11 @@ describe("buildConcepts", () => {
     ]);
   });
 
+  it("puts a pattern ahead of a service at the same centrality", () => {
+    const { concepts } = buildConcepts(profile([{ name: "Amazon DynamoDB" }, { name: "AWS Lambda" }], [{ name: "serverless" }]));
+    expect(concepts.map(concept => concept.name)).toEqual(["serverless", "Amazon DynamoDB", "AWS Lambda"]);
+  });
+
   it("counts a file cited in two repos as two", () => {
     const multi = profile([{ name: "AWS Lambda" }]);
     multi.services[0]!.evidence = [cite("a.ts", 1, "one"), cite("a.ts", 9, "two"), cite("a.ts", 12, "two")];
@@ -112,6 +117,10 @@ describe("matchConcepts", () => {
     expect(strengths(dynamo, { title: "DynamoDB, Amazon S3, and Amazon RDS" })).toEqual([]);
   });
 
+  it("reads an ampersand as an and in an enumeration", () => {
+    expect(strengths(dynamo, { title: "Lambda, DynamoDB & SQS scaling lessons" })).toEqual([]);
+  });
+
   it("does not count a lowercase concept list as prose either", () => {
     expect(strengths(serverless, { title: "Modern apps" }, "Serverless, containers, and event-driven design. Also serverless, edge, and containers.")).toEqual([]);
   });
@@ -122,8 +131,42 @@ describe("matchConcepts", () => {
     expect(strengths(eventDriven, { title: "Building your first event driven application" })).toEqual([["event-driven", 3, "event driven"]]);
   });
 
+  it.each([
+    ["serverless", "Going serverless with functions"],
+    ["event-driven", "Designing event-driven systems"],
+    ["api", "Designing REST APIs at scale"],
+    ["api", "API Gateway unleashed"],
+    ["multi-tenant", "Multi-tenant SaaS architecture"],
+    ["multi-account", "Multi-account strategy with AWS Organizations"],
+    ["iac-cdk", "Infrastructure as code with the AWS CDK"],
+    ["containers", "Containers for beginners"],
+    ["ecs", "Running workloads on Amazon ECS"],
+    ["eks", "Kubernetes on EKS from scratch"],
+    ["agentic", "Building agentic applications"],
+    ["genai-single-call", "Your first generative AI application"],
+    ["streaming", "Streaming data with Kinesis"],
+    ["data-lake", "Building a data lake"],
+  ])("has a curated phrase for the %s pattern: %s", (name, title) => {
+    const concepts = buildConcepts(profile([], [{ name }])).concepts;
+    expect(strengths(concepts, { title }).map(([concept]) => concept)).toEqual([name]);
+  });
+
   it("does not read the word lambda as the service", () => {
     expect(strengths(lambda, { title: "Functional programming" }, "A lambda is a function. Every lambda is small.")).toEqual([]);
+  });
+
+  it("never explains from a sponsored session, which is the sponsor's pitch", () => {
+    expect(strengths(dynamo, { title: "DynamoDB at scale (sponsored by Acme)" })).toEqual([]);
+    expect(strengths(dynamo, { title: "Data at scale (sponsored by Acme)" }, "DynamoDB here. DynamoDB there.")).toEqual([]);
+  });
+
+  it("admits a broad pattern such as agentic only when the title names it", () => {
+    const agentic = buildConcepts(profile([], [{ name: "agentic" }])).concepts;
+    const abstract = "Agentic systems are new. Build agentic workflows.";
+    expect(strengths(agentic, { title: "Building agentic applications" })).toEqual([["agentic", 3, "agentic"]]);
+    expect(strengths(agentic, { title: "Data pipelines" }, abstract)).toEqual([]);
+    const genai = buildConcepts(profile([], [{ name: "genai-single-call" }])).concepts;
+    expect(strengths(genai, { title: "Data pipelines" }, "Generative AI is here. Use generative AI wisely.")).toEqual([]);
   });
 
   it("marks a match boosted when the session also lists the service or carries a matching topic", () => {
@@ -202,6 +245,20 @@ describe("selectExplain", () => {
     expect(selected.map(entry => entry.key)).toEqual(["L1", "D3"]);
     expect(selected[1]!.matches.map(match => match.fallback)).toEqual([true]);
     expect(selected[0]!.matches.map(match => match.fallback)).toEqual([false]);
+  });
+
+  it("takes a 300 session only when it names the concept in its title", () => {
+    const { selected } = selectExplain([
+      session("D3", "Modeling data", { level: "300 - Advanced", abstract: "DynamoDB tables. DynamoDB keys." }),
+    ], concepts);
+    expect(selected).toEqual([]);
+  });
+
+  it("puts every 300-level fallback after all introductory picks", () => {
+    expect(order([
+      session("D3", "DynamoDB internals", { level: "300 - Advanced" }),
+      session("L1", "Lambda basics"), session("L2", "Lambda tips"), session("L3", "Lambda patterns"),
+    ])).toEqual(["L1", "L2", "L3", "D3"]);
   });
 
   it("does not take a 300 session for a concept an introductory session covers", () => {
