@@ -211,6 +211,7 @@ describe("selectExplain", () => {
     return { key: code, record: built, matches: matchConcepts(concepts, built, options.abstract ?? ""), rank: options.rank ?? 0 };
   };
   const order = (sessions: ExplainSession[]) => selectExplain(sessions, concepts).selected.map(entry => entry.key);
+  const withFallbacks = (sessions: ExplainSession[]) => selectExplain(sessions, concepts, undefined, true);
 
   it("takes the best session per concept each round, in centrality order", () => {
     expect(order([
@@ -255,11 +256,20 @@ describe("selectExplain", () => {
     ])).toEqual(["Z-HIGH", "A-LOW"]);
   });
 
-  it("allows one 300 session for a concept with no 100/200 session, and marks it", () => {
-    const { selected } = selectExplain([
+  it("does not list a 300-level session, and names the closest one in the uncovered reason", () => {
+    const { selected, uncovered } = selectExplain([
       session("D3", "DynamoDB design", { level: "300 - Advanced" }), session("D3B", "DynamoDB modeling", { level: "300 - Advanced" }),
       session("L1", "Lambda basics"),
     ], concepts);
+    expect(selected.map(entry => entry.key)).toEqual(["L1"]);
+    expect(uncovered[0]).toEqual({ concept: "Amazon DynamoDB", reason: 'no introductory (100/200) session is about it; the closest is a 300-level one: D3 "DynamoDB design"' });
+  });
+
+  it("can list one 300 session for a concept with no 100/200 session, and marks it", () => {
+    const { selected } = withFallbacks([
+      session("D3", "DynamoDB design", { level: "300 - Advanced" }), session("D3B", "DynamoDB modeling", { level: "300 - Advanced" }),
+      session("L1", "Lambda basics"),
+    ]);
     expect(selected.map(entry => entry.key)).toEqual(["L1", "D3"]);
     expect(selected[1]!.matches.map(match => match.fallback)).toEqual([true]);
     expect(selected[0]!.matches.map(match => match.fallback)).toEqual([false]);
@@ -275,17 +285,18 @@ describe("selectExplain", () => {
   });
 
   it("takes a 300 session only when it names the concept in its title", () => {
-    const { selected } = selectExplain([
-      session("D3", "Modeling data", { level: "300 - Advanced", abstract: "DynamoDB tables. DynamoDB keys." }),
-    ], concepts);
+    const { selected, uncovered } = selectExplain([
+      session("D3", "Modeling data", { level: "300 - Advanced", abstract: "DynamoDB tables. DynamoDB keys.", services: ["Amazon DynamoDB"] }),
+    ], concepts, undefined, true);
     expect(selected).toEqual([]);
+    expect(uncovered.find(entry => entry.concept === "Amazon DynamoDB")!.reason).toBe("no introductory (100/200) or 300-level session is about it");
   });
 
   it("puts every 300-level fallback after all introductory picks", () => {
-    expect(order([
+    expect(withFallbacks([
       session("D3", "DynamoDB internals", { level: "300 - Advanced" }),
       session("L1", "Lambda basics"), session("L2", "Lambda tips"), session("L3", "Lambda patterns"),
-    ])).toEqual(["L1", "L2", "L3", "D3"]);
+    ]).selected.map(entry => entry.key)).toEqual(["L1", "L2", "L3", "D3"]);
   });
 
   it("does not take a 300 session for a concept an introductory session covers", () => {
@@ -305,7 +316,7 @@ describe("selectExplain", () => {
   });
 
   it("does not report a concept only a 300 session covers", () => {
-    const { uncovered } = selectExplain([session("D3", "DynamoDB design", { level: "300 - Advanced" })], concepts);
+    const { uncovered } = withFallbacks([session("D3", "DynamoDB design", { level: "300 - Advanced" })]);
     expect(uncovered.map(entry => entry.concept)).toEqual(["AWS Lambda", "serverless"]);
   });
 });

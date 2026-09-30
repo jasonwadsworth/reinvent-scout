@@ -66,14 +66,14 @@ describe("the explain lens", () => {
     expect(result.candidates[0]!.record.title).toBe("Lambda basics");
   });
 
-  it("takes one 300-level session for a concept with no introductory one, and says so", () => {
+  it("lists no 300-level session, and names the closest for a concept with no introductory one", () => {
     const result = run(profile(["AWS Lambda", "Amazon DynamoDB"]), [
       session("LAM100", "Lambda basics"), session("LAM300", "Lambda internals", { level: "300 - Advanced" }),
       session("DDB300", "DynamoDB design", { level: "300 - Advanced" }), session("DDB301", "DynamoDB modeling", { level: "300 - Advanced" }),
       session("DDB400", "DynamoDB at the limit", { level: "400 - Expert" }),
     ]);
-    expect(codes(result).sort()).toEqual(["DDB300", "LAM100"]);
-    expect(result.candidates.find(candidate => candidate.code === "DDB300")!.reasons[0]!.detail).toContain("300-level");
+    expect(codes(result)).toEqual(["LAM100"]);
+    expect(result.uncovered).toEqual([{ concept: "Amazon DynamoDB", reason: 'no introductory (100/200) session is about it; the closest is a 300-level one: DDB300 "DynamoDB design"' }]);
   });
 
   it("reports a concept no session explains, and a pattern it cannot match, always as a list", () => {

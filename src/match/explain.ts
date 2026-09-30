@@ -204,6 +204,7 @@ export function matchConcepts(concepts: readonly ExplainConcept[], record: Index
 /** Level 100 and 200: what the Explain lens is for. */
 const INTRODUCTORY_BANDS: readonly number[] = getLensProfile("explain").levelBands ?? [];
 const FALLBACK_BAND = 300;
+const NO_INTRODUCTION_REASON = "no introductory (100/200) session is about it; the closest is a 300-level one";
 const NOT_COVERED_REASON = "no introductory (100/200) or 300-level session is about it";
 
 /** A catalog session (repeat sittings already grouped) with the concepts it is about. */
@@ -240,12 +241,15 @@ const INTRO_BONUS = 0.75;
  * round, so a short list covers as many concepts as it can. A concept a session already explains
  * does not take another session in the first round. Sessions at level 100 or 200 come first; after
  * all of them, a concept none of them covers may take one 300-level session that names it in its
- * title. A concept with no session at all is reported as uncovered.
+ * title, but only with `listFallbacks`; otherwise the concept is reported as uncovered and the
+ * closest such session is named in the reason, because a 300-level talk does not introduce anything.
+ * A concept with no session at all is reported as uncovered.
  */
 export function selectExplain(
   sessions: readonly ExplainSession[],
   concepts: readonly ExplainConcept[],
   typeWeights: ReadonlyMap<string, number> = getLensProfile("explain").typeWeights,
+  listFallbacks = false,
 ): { selected: ExplainSelection[]; uncovered: UncoveredConcept[] } {
   const introductoryBand = (session: ExplainSession): boolean =>
     session.record.levelBand !== null && INTRODUCTORY_BANDS.includes(session.record.levelBand);
@@ -295,12 +299,22 @@ export function selectExplain(
       if (!(round === 0 && covered.has(concept))) take(concept);
     }
   }
-  for (const concept of concepts.filter(concept => !introductory.has(concept))) {
-    if (!covered.has(concept)) take(concept);
+  const withoutIntroduction = concepts.filter(concept => !introductory.has(concept));
+  const closest = new Map(withoutIntroduction.flatMap(concept => {
+    const best = options.get(concept)![0];
+    return best === undefined ? [] : [[concept, best.session] as const];
+  }));
+  if (listFallbacks) {
+    for (const concept of withoutIntroduction) {
+      if (!covered.has(concept)) take(concept);
+    }
   }
   const uncovered = concepts
-    .filter(concept => options.get(concept)!.length === 0)
-    .map(concept => ({ concept: concept.name, reason: NOT_COVERED_REASON }));
+    .filter(concept => options.get(concept)!.length === 0 || (!listFallbacks && !introductory.has(concept)))
+    .map(concept => {
+      const session = closest.get(concept);
+      return { concept: concept.name, reason: session === undefined ? NOT_COVERED_REASON : `${NO_INTRODUCTION_REASON}: ${session.key} "${session.record.title}"` };
+    });
   return { selected, uncovered };
 }
 
