@@ -73,23 +73,19 @@ describe("match --lens fix: the why block in the terminal", () => {
     expect(verbose).toContain("Uses AWS Lambda, which this session covers.");
   });
 
-  it("omits Your code and Session when there is nothing to cite or quote", async () => {
-    const quiet: Session = { ...dlqTalk, title: "Unrelated", abstract: "Nothing to see." };
-    const text = await run([cite("rules.ts", 179)], ["--lens", "all"], [quiet]);
-    expect(text).toContain("  Why: Matches your AWS Lambda");
-    expect(text).toContain("  Your code: tracker/fn.ts:1");
-    expect(text).not.toContain("Session:");
-    const interest = { ...profile([cite("x.ts", 1)]), services: [], patterns: [], interests: ["Kubernetes"] };
-    const file = join(home.path, "interest.json");
-    writeFileSync(file, JSON.stringify(interest));
-    const k8s: Session = { sessionId: "k8", abbreviation: "K8S100", title: "Cluster basics", areasOfInterest: ["Kubernetes"], abstract: "Learn Kubernetes today." };
-    writeCatalog({ raw: [k8s], index: [buildIndexRecord(k8s)], meta: { schemaVersion: CURRENT_SCHEMA_VERSION, eventId: "reinvent2026", syncedAt: 1, totalCount: 1, count: 1, includedAbstracts: true, timezone: null } }, { storeRoot: home.path });
-    const printed: string[] = [];
-    const program = new Command().exitOverride();
-    registerMatchCommands(program, { resolveStoreRoot: () => home.path, print: message => { printed.push(message); } });
-    await program.parseAsync(["node", "reinvent-scout", "match", "--profile", file]);
-    expect(printed.join("\n")).toContain("  Why: Matches your interest in Kubernetes.");
-    expect(printed.join("\n")).not.toContain("Your code:");
+  it("shows Why, Your code and Session for an all candidate, and says when it is demoted", async () => {
+    const pitch: Session = { ...dlqTalk, sessionId: "s2", abbreviation: "LAM302-S", title: "Run Lambda faster (sponsored by Acme)", abstract: "Nothing more." };
+    const text = await run([cite("rules.ts", 179)], ["--lens", "all"], [pitch]);
+    const lines = text.split("\n");
+    expect(lines[1]).toBe("  Why: Matches your AWS Lambda, though it is a sponsored session.");
+    expect(lines[2]).toBe("  Your code: tracker/fn.ts:1");
+    expect(lines[3]).toBe('  Session: "Run Lambda faster (sponsored by Acme)"');
+    expect(lines[4]).toBe("  Demoted: sponsored session");
+  });
+
+  it("prints no Demoted line for an all candidate that is not demoted", async () => {
+    const plain: Session = { ...dlqTalk, title: "Run Lambda faster" };
+    expect(await run([cite("rules.ts", 179)], ["--lens", "all"], [plain])).not.toContain("Demoted:");
   });
 
   it("does not change --json with --verbose, and JSON always keeps the ranking reasons", async () => {

@@ -140,7 +140,8 @@ function formatCandidateWithReasons(candidate: MatchCandidate, verbose: boolean,
   ]);
   const offeringLines = candidate.offerings.map(formatOfferingLine);
   const ruleLines = candidate.lensRules === undefined ? [] : [`  Rules: ${candidate.lensRules.join(", ")}`];
-  const parts = [line, ...formatWhyLines(candidate.why), ...ruleLines, ...reasonLines, "  Offerings:", ...offeringLines];
+  const demotedLines = candidate.demoted === undefined ? [] : [`  Demoted: ${candidate.demoted}`];
+  const parts = [line, ...formatWhyLines(candidate.why), ...demotedLines, ...ruleLines, ...reasonLines, "  Offerings:", ...offeringLines];
   if (abstract !== undefined && abstract !== null && abstract !== "") {
     parts.push(`  ${abstract}`);
   }

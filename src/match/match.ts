@@ -1,5 +1,6 @@
 import { buildStackFit, hasCoreService, PREFIX_REQUIRED_SERVICE_NAMES } from "./stack-fit.js";
 import { buildConcepts, type ConceptMatch, type UncoveredConcept } from "./concepts.js";
+import { allReason, demotionReason, matchAllConcepts, rankAll } from "./all.js";
 import { explainReason, matchConcepts, selectExplain } from "./explain.js";
 import { activeLensRules, scoreLensSignals, skippedLensRules, type LensHit, type SkippedRule } from "./lens-signals.js";
 import { readRaw, type CatalogStoreDeps } from "../catalog/store.js";
@@ -54,6 +55,9 @@ export interface MatchCandidate {
   offerings: MatchOffering[];
   /** Fix and Next-level only: the source pattern names of every rule that admitted this session. */
   lensRules?: string[];
+  /** All only: why the session ranks after the others that cover the same ground (a sponsored
+   * session, a news or launch session, a customer story). Absent for any other session. */
+  demoted?: string;
   /** Why this session is recommended, in the profile's and the session's own words. */
   why: Why;
 }
@@ -77,6 +81,7 @@ interface LensInfo {
 interface GroupedCandidate extends Omit<MatchCandidate, "why"> {
   lens?: LensInfo;
   explain?: ConceptMatch[];
+  demoted?: string;
 }
 
 /** Appends `value` to `list` only the first time its case-insensitive form is seen -- used for
@@ -118,7 +123,7 @@ function pushDeduped(list: string[], seen: Set<string>, value: string): void {
  *   text match on the same term costs nothing extra to compute and helps sessions that mention the
  *   service without it being in their formal `services` list.
  */
-function buildMatchQuery(profile: ResolvedProfile): MatchQuery {
+export function buildMatchQuery(profile: ResolvedProfile): MatchQuery {
   const seenServices = new Set<string>();
   const services: string[] = [];
   const supportingServices: string[] = [];
@@ -178,6 +183,7 @@ interface ScoredRecord {
   reasons: Reason[];
   lens?: LensInfo;
   explain?: ConceptMatch[];
+  demoted?: string;
 }
 
 /** The real catalog marks *some* (not all) repeat sittings' titles with a trailing " [REPEAT]" --
@@ -254,6 +260,7 @@ function groupByCode(scoredRecords: readonly ScoredRecord[]): GroupedCandidate[]
       offerings,
       ...(winner.lens === undefined ? {} : { lens: winner.lens }),
       ...(winner.explain === undefined ? {} : { explain: winner.explain }),
+      ...(winner.demoted === undefined ? {} : { demoted: winner.demoted }),
     });
   }
   return candidates;
@@ -275,7 +282,8 @@ type AbstractOf = (record: IndexRecord) => string;
 function whyFor(candidate: GroupedCandidate, lens: Lens, profile: ResolvedProfile, abstractOf: AbstractOf): Why {
   const text = { title: candidate.record.title, abstract: abstractOf(candidate.record) };
   if (lens === "all") {
-    return allWhy(candidate.reasons, profile, text);
+    if (candidate.explain === undefined) throw new Error(`all candidate ${candidate.code} has no concept it was admitted for`);
+    return allWhy(candidate.explain, candidate.demoted, profile, text);
   }
   if (lens === "explain") {
     const taken = candidate.explain?.[0];
@@ -299,6 +307,7 @@ function roundCandidate(candidate: GroupedCandidate, why: Why): MatchCandidate {
     })),
     offerings: candidate.offerings,
     ...(candidate.lens === undefined ? {} : { lensRules: candidate.lens.hits.map((hit) => hit.rule) }),
+    ...(candidate.demoted === undefined ? {} : { demoted: candidate.demoted }),
     why,
   };
 }
@@ -453,6 +462,48 @@ function matchExplain(
   };
 }
 
+/**
+ * The All lens: the sessions about the technologies and architecture the profile is built on, at any
+ * level and in any format (see `all.ts`). A session is admitted for a concept of the profile it names,
+ * ranked by how central the concepts are to the code, and listed at most three to a concept while
+ * other concepts have sessions. Anything the profile's concepts do not name is not returned.
+ */
+function matchAll(
+  profile: ResolvedProfile,
+  index: readonly IndexRecord[],
+  rawById: ReadonlyMap<string, { abstract?: string }>,
+  query: MatchQuery,
+  corpusStats: ReturnType<typeof buildCorpusStats>,
+  limit: number | undefined,
+  abstractOf: AbstractOf,
+): MatchResult {
+  const { concepts } = buildConcepts(profile, knownServices(profile, index));
+  const scored: ScoredRecord[] = [];
+  for (const record of index) {
+    const abstract = rawById.get(record.sessionId)?.abstract ?? "";
+    const matches = matchAllConcepts(concepts, record, abstract);
+    if (matches.length === 0) continue;
+    const demoted = demotionReason(record, abstract);
+    scored.push({ record, score: scoreSession(record, query, corpusStats).score, reasons: [], explain: matches, ...(demoted === undefined ? {} : { demoted }) });
+  }
+  const groups = groupByCode(scored);
+  const byCode = new Map(groups.map((group) => [group.code, group]));
+  const ranked = rankAll(groups.map((group) => ({
+    key: group.code, record: group.record, matches: group.explain!, relevance: group.score,
+    ...(group.demoted === undefined ? {} : { demoted: group.demoted }),
+  })));
+  const candidates = ranked.map((entry) => allCandidate(byCode.get(entry.key)!, entry.matches, profile));
+  return {
+    candidates: (limit === undefined ? candidates : candidates.slice(0, limit)).map((candidate) => roundCandidate(candidate, whyFor(candidate, "all", profile, abstractOf))),
+    skippedRules: [],
+  };
+}
+
+function allCandidate(group: GroupedCandidate, matches: readonly ConceptMatch[], profile: ResolvedProfile): GroupedCandidate {
+  const reasons: Reason[] = matches.map((match) => allReason(match, profile.repos.length));
+  return { ...group, explain: [...matches], reasons, score: reasons.reduce((sum, reason) => sum + reason.weight, 0) };
+}
+
 /** Services a title can list next to another ("Amazon Polly and Transcribe"): the catalog's own service
  * vocabulary, the profile's, and the ordinary-word names (Glue, Backup, ...), since the catalog does not
  * list every service a profile names. */
@@ -499,6 +550,9 @@ export function matchSessionsDetailed(
   // how rare a term actually is.
   const corpusStats = buildCorpusStats(index);
 
+  if (lens === "all") {
+    return matchAll(profile, index, rawById, query, corpusStats, options.limit, abstractOf);
+  }
   if (lens === "explain") {
     return matchExplain(profile, index, rawById, query, corpusStats, options.limit, abstractOf);
   }

@@ -1,8 +1,6 @@
 import type { Evidence, ResolvedProfile } from "../profile/profile.js";
-import { mentionsOf, patternPhrase, type ConceptMatch } from "./concepts.js";
+import type { ConceptMatch } from "./concepts.js";
 import { lensRuleDetail, type LensHit } from "./lens-signals.js";
-import type { Reason } from "./score.js";
-import { serviceNamePatterns } from "./stack-fit.js";
 
 /** Where the profile's code shows the thing a summary names. */
 export interface Citation {
@@ -206,122 +204,19 @@ export function explainWhy(match: ConceptMatch, profile: ResolvedProfile, text: 
   return withQuote({ summary: sentence(`Explains ${displayName(match.concept.name)}, which this code uses${uses}`), ...cited }, quoteSite(text, match.site));
 }
 
-/** A thing in the profile that a summary can name: what to call it, how the code uses it, where,
- * and how a session words it. */
-interface NamedConcept {
-  name: string;
-  note: string | undefined;
-  evidence: Evidence[];
-  matchers: RegExp[];
-}
-
-const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const CONCEPT_REASONS = 2;
-
-function serviceConcept(profile: ResolvedProfile, catalogName: string): NamedConcept | undefined {
-  const services = profile.services.filter(service => service.catalogName === catalogName);
-  if (services.length === 0) return undefined;
-  return {
-    name: catalogName, note: services.map(service => trimNote(service.usage, true)).find(note => note !== undefined),
-    evidence: services.flatMap(service => service.evidence),
-    matchers: services.flatMap(service => serviceNamePatterns(service.name, service.catalogName)),
-  };
-}
-
-function patternConcept(profile: ResolvedProfile, patternName: string): NamedConcept | undefined {
-  const patterns = profile.patterns.filter(pattern => pattern.name.toLowerCase() === patternName.toLowerCase());
-  if (patterns.length === 0) return undefined;
-  const name = patterns[0]!.name;
-  return {
-    name, note: patterns.map(pattern => trimNote(pattern.note, true)).find(note => note !== undefined),
-    evidence: patterns.flatMap(pattern => pattern.evidence),
-    matchers: [patternPhrase(name) ?? new RegExp(`\\b${escapeRegExp(name).replace(/\\?-/g, "[- ]")}\\b`, "i")],
-  };
-}
-
-/** The profile's service, or pattern, that a `service` or `topic` reason was matched for. */
-function conceptOf(reason: Reason, profile: ResolvedProfile): NamedConcept | undefined {
-  return reason.kind === "service" ? serviceConcept(profile, reason.evidence) : patternConcept(profile, reason.evidence);
-}
-
-/** Every other service and pattern of the profile, for a session that names one in its text though no
- * ranking reason points at it. Gaps and dead code are not something the code is built from. */
-function otherConcepts(profile: ResolvedProfile): NamedConcept[] {
-  const patterns = profile.patterns.map(pattern => pattern.name)
-    .filter(name => !name.toLowerCase().startsWith("gap-") && name.toLowerCase() !== "dead-code")
-    .flatMap(name => patternConcept(profile, name) ?? []);
-  const services = profile.services.flatMap(service => service.catalogName === null ? [] : serviceConcept(profile, service.catalogName) ?? []);
-  return [...patterns, ...services];
-}
-
-/** A match site, and whether the name stands only inside an enumeration of names. */
-interface QuoteSite extends MatchSite {
-  listed: boolean;
-}
-
-/** Where a concept is named, best first: outside an enumeration in the abstract, outside one in the
- * title, then inside one in the abstract, then inside one in the title. */
-function siteOf(matchers: readonly RegExp[], text: SessionText): QuoteSite | undefined {
-  for (const listed of [false, true]) {
-    for (const [inTitle, where] of [[false, text.abstract], [true, text.title]] as const) {
-      const first = mentionsOf(matchers, where, listed)[0];
-      if (first !== undefined) return { inTitle, index: first.index, length: first[0].length, listed };
-    }
-  }
-  return undefined;
-}
-
-const siteRank = (site: QuoteSite): number => Number(site.listed) * 2 + Number(site.inTitle);
-
-/** The concept with the best-ranked site, the first on a tie. */
-function bestSite<T extends { found: QuoteSite }>(entries: readonly T[]): T | undefined {
-  return entries.reduce<T | undefined>((best, entry) => (best === undefined || siteRank(entry.found) < siteRank(best.found) ? entry : best), undefined);
-}
-
 /** a[0], b[0], a[1], b[1], ...: each concept gets its turn before either gets a second place. */
 function interleave<T>(a: readonly T[], b: readonly T[]): T[] {
   return Array.from({ length: Math.max(a.length, b.length) }, (_, index) => [a[index], b[index]]).flat().filter((item): item is T => item !== undefined);
 }
 
-/** The ranking reasons of a plain match, read back as the profile's own services and patterns: the
- * two strongest by reason weight, the strongest with the code's note on it. When neither is named in
- * the session's text, the next concept that is (a weaker reason, else any service or pattern of the
- * profile) takes the second place, so the summary and the quote are about the same thing. A session
- * matched only by an area of interest or by shared wording says so, with nothing of the code to cite. */
-export function allWhy(reasons: readonly Reason[], profile: ResolvedProfile, text: SessionText): Why {
-  const ranked = reasons
-    .filter(reason => reason.kind === "service" || reason.kind === "topic")
-    .sort((a, b) => b.weight - a.weight)
-    .flatMap(reason => conceptOf(reason, profile) ?? [])
-    .filter((concept, position, list) => list.findIndex(other => other.name === concept.name) === position);
-  const [first] = ranked;
-  if (first === undefined) {
-    const interest = reasons.find(reason => reason.kind === "areaOfInterest");
-    const shared = reasons.find(reason => reason.kind === "text");
-    const term = interest?.evidence ?? shared?.evidence.split(", ")[0];
-    const site = term === undefined ? undefined : siteOf([new RegExp(`(?<![\\w-])${escapeRegExp(term)}(?![\\w-])`, "i")], text);
-    const summary = interest !== undefined ? `Matches your interest in ${interest.evidence}`
-      : `Matches the wording of your profile: ${shared?.evidence ?? "no shared terms"}`;
-    return withQuote({ summary: sentence(summary), yourCode: [] }, site === undefined ? undefined : quoteSite(text, site));
-  }
-  let named = ranked.slice(0, CONCEPT_REASONS);
-  const found = (concepts: readonly NamedConcept[]) =>
-    concepts.flatMap(concept => { const at = siteOf(concept.matchers, text); return at === undefined ? [] : [{ concept, found: at }]; });
-  const chosen = bestSite(found(named));
-  let site = chosen?.found;
-  if (site === undefined || site.listed) {
-    // A concept the session says outside a list beats the named ones it only lists. A concept no reason
-    // points at is never swapped in on a mention inside a list.
-    const known = new Set(ranked.map(concept => concept.name));
-    const others = found([...ranked.slice(CONCEPT_REASONS), ...otherConcepts(profile).filter(concept => !known.has(concept.name))]);
-    const taken = bestSite(others.filter(entry => !entry.found.listed));
-    if (taken !== undefined) {
-      named = [first, taken.concept];
-      site = taken.found;
-    }
-  }
-  const [, other] = named;
-  const described = first.note === undefined ? displayName(first.name) : `${displayName(first.name)} (${first.note})`;
-  const summary = other === undefined ? described : `${described} and ${displayName(other.name)}`;
-  return withQuote({ summary: sentence(`Matches your ${summary}`), ...citationsOf(interleave(first.evidence, other?.evidence ?? [])) }, site === undefined ? undefined : quoteSite(text, site));
+/** All: the two concepts the session was admitted for, most about first, the strongest with the code's
+ * note on it, and what the session says about the first. A demoted session says what it is. */
+export function allWhy(matches: readonly ConceptMatch[], demoted: string | undefined, profile: ResolvedProfile, text: SessionText): Why {
+  const [first, second] = matches;
+  if (first === undefined) throw new Error("an all candidate has no concept it was admitted for");
+  const note = trimNote(first.concept.note, true);
+  const described = note === undefined ? displayName(first.concept.name) : `${displayName(first.concept.name)} (${note})`;
+  const names = second === undefined ? described : `${described} and ${displayName(second.concept.name)}`;
+  const pitch = demoted === undefined ? "" : `, though it is a ${demoted}`;
+  return withQuote({ summary: sentence(`Matches your ${names}${pitch}`), ...citationsOf(interleave(first.concept.citations, second?.concept.citations ?? [])) }, quoteSite(text, first.site));
 }

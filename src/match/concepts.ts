@@ -326,3 +326,27 @@ export function admitConcepts(concepts: readonly ProfileConcept[], record: Index
   }
   return matches;
 }
+
+const LISTED_CITATIONS = 3;
+
+function citationKey(citation: Evidence): string {
+  return JSON.stringify([citation.repo, citation.file, citation.line, citation.snippet, citation.note]);
+}
+
+/** "src/db/table.ts:14", with the repo in front when the profile spans several. */
+function place(citation: Evidence, repoCount: number): string {
+  const file = repoCount > 1 ? `${citation.repo}/${citation.file}` : citation.file;
+  return citation.line === undefined ? file : `${file}:${citation.line}`;
+}
+
+/** The concept's distinct citations, and ", which this code uses at <first three places> and N more" (empty when the code cites none). */
+export function usedAt(concept: ProfileConcept, repoCount: number): { citations: Evidence[]; where: string } {
+  const unique = new Map<string, Evidence>();
+  for (const citation of concept.citations) {
+    if (!unique.has(citationKey(citation))) unique.set(citationKey(citation), { ...citation });
+  }
+  const citations = [...unique.values()];
+  const places = citations.slice(0, LISTED_CITATIONS).map(citation => place(citation, repoCount));
+  const more = citations.length - LISTED_CITATIONS;
+  return { citations, where: places.length === 0 ? "" : `, which this code uses at ${places.join(", ")}${more > 0 ? ` and ${more} more` : ""}` };
+}

@@ -1,8 +1,7 @@
 import type { IndexRecord } from "../catalog/index-record.js";
-import type { Evidence } from "../profile/profile.js";
 import {
   admitConcepts, CERTIFICATION, CUSTOMER_STORY, EXPLAIN_ADMISSION, EXPLAINER, INTRO_CUE, MODERNIZATION, NEWS, NON_EXPLANATORY_TYPES,
-  PARTNER, SPONSORED, STORY, TITLE_STRENGTH, type ConceptMatch, type ProfileConcept, type UncoveredConcept,
+  PARTNER, SPONSORED, STORY, TITLE_STRENGTH, usedAt, type ConceptMatch, type ProfileConcept, type UncoveredConcept,
 } from "./concepts.js";
 import { getLensProfile } from "./lens.js";
 import type { Reason } from "./score.js";
@@ -120,28 +119,10 @@ export function selectExplain(
 
 const BASE_WEIGHT = 20;
 const STRENGTH_WEIGHT = 10;
-const LISTED_CITATIONS = 3;
-
-function citationKey(citation: Evidence): string {
-  return JSON.stringify([citation.repo, citation.file, citation.line, citation.snippet, citation.note]);
-}
-
-/** "src/db/table.ts:14", with the repo in front when the profile spans several. */
-function place(citation: Evidence, repoCount: number): string {
-  const file = repoCount > 1 ? `${citation.repo}/${citation.file}` : citation.file;
-  return citation.line === undefined ? file : `${file}:${citation.line}`;
-}
 
 /** Why a session is listed: what it explains, the phrase that says so, and where the code uses it. */
 export function explainReason(match: ConceptMatch, repoCount: number): Reason {
-  const unique = new Map<string, Evidence>();
-  for (const citation of match.concept.citations) {
-    if (!unique.has(citationKey(citation))) unique.set(citationKey(citation), { ...citation });
-  }
-  const citations = [...unique.values()];
-  const places = citations.slice(0, LISTED_CITATIONS).map(citation => place(citation, repoCount));
-  const more = citations.length - LISTED_CITATIONS;
-  const where = places.length === 0 ? "" : `, which this code uses at ${places.join(", ")}${more > 0 ? ` and ${more} more` : ""}`;
+  const { citations, where } = usedAt(match.concept, repoCount);
   return {
     kind: "explainsConcept",
     detail: `Explains ${match.concept.name} ("${match.phrase}")${where}.`,
