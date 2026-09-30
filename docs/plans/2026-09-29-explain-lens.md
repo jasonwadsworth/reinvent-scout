@@ -29,9 +29,11 @@ measured, and it inherits the weaknesses the Fix/Next-level work found:
    need a small curated phrase map: `serverless`, `event-driven`, `api`, `multi-tenant`,
    `multi-account`, `iac-cdk`, `containers`, `ecs`, `eks`, `agentic`, `genai-single-call`,
    `streaming`, `data-lake`. A pattern with no phrase entry is skipped and reported.
-3. **Introductory first.** Keep level 100/200. When a concept has no 100/200 session that
-   qualifies, allow one 300 session for it, marked in the reason. Keep the Breakout/Chalk talk
-   preference as a tiebreak, not a gate.
+3. **Introductory first.** Only level 100/200 sessions are listed. A 300-level talk does not
+   introduce anything, so it is never a candidate. When a concept has no 100/200 session that
+   qualifies but a 300 session names it in its title, the concept goes in `uncovered` and the
+   reason names that session (code and title). Keep the Breakout/Chalk talk preference as a
+   tiebreak, not a gate.
 4. **Coverage over repetition.** Select round-robin across concepts in centrality order, with the
    best session per concept each round, so the top N covers as many distinct concepts as
    possible. Repeat sittings are already grouped.
@@ -102,11 +104,11 @@ hallway 5/5 (api, iac-cdk, CloudFront uncovered; event-driven, serverless genuin
 
 ### Sabotage list
 
-Each applied alone, the suite run, the named tests went red, reverted: platform exclusion; gap/dead-code filter; abstract 2 -> 1 mention; listing detection off; vocabulary off (lowercase list); overlap dedupe ("Amazon DynamoDB" counted twice); supporting weight; distinct-file centrality; unmapped pattern report; citation merge across spellings; boost; ampersand normalization; API phrase; sponsored filter; partner filter; story filter and its explainer exemption; news filter; broad-term title-only and build cue; `agents?` plural; intro-cue bonus; abstract corroboration; pattern-first tie-break; title-only 300 fallback; one 300 per concept; 300 gating on introductory coverage; fallback after introductory picks; first-round covered skip; format, boost, strength and relevance ordering; taxonomy of level filter; queue shift on taken; match position order; round-robin loop; response `uncovered` (full and truncated); unmapped append; limit slice; score sum; repeat grouping; other lenses without `uncovered`; abstract read; human `Uncovered:` line; `listFallbacks` gate and the closest-session reason.
+Each applied alone, the suite run, the named tests went red, reverted: platform exclusion; gap/dead-code filter; abstract 2 -> 1 mention; listing detection off; vocabulary off (lowercase list); overlap dedupe ("Amazon DynamoDB" counted twice); supporting weight; distinct-file centrality; unmapped pattern report; citation merge across spellings; boost; ampersand normalization; API phrase; sponsored filter; partner filter; story filter and its explainer exemption; news filter; broad-term title-only and build cue; `agents?` plural; intro-cue bonus; abstract corroboration; pattern-first tie-break; title-only 300 fallback; one 300 per concept; 300 gating on introductory coverage; fallback after introductory picks; first-round covered skip; format, boost, strength and relevance ordering; taxonomy of level filter; queue shift on taken; match position order; round-robin loop; response `uncovered` (full and truncated); unmapped append; limit slice; score sum; repeat grouping; other lenses without `uncovered`; abstract read; human `Uncovered:` line; the closest-session reason (title gate, 300 band gate).
 
 ### Decisions made during implementation
 
-- **300-level sessions are reported, not listed.** As specified, a concept with no 100/200 session took one 300-level session. Graded strictly they were all weak (for example "Origin management for multi-region applications with Amazon CloudFront"), which put precision at 52% (tuning) and 45% (holdout) and left top-5 coverage at 1 to 3 of 5. Now such a concept is in `uncovered` with the reason `no introductory (100/200) session is about it; the closest is a 300-level one: CODE "title"`. The listing path remains behind `selectExplain`'s `listFallbacks` argument (tested) if the lead prefers the original behavior.
+- **300-level sessions are reported, not listed.** As specified, a concept with no 100/200 session took one 300-level session. Graded strictly they were all weak (for example "Origin management for multi-region applications with Amazon CloudFront"), which put precision at 52% (tuning) and 45% (holdout) and left top-5 coverage at 1 to 3 of 5. Now such a concept is in `uncovered` with the reason `no introductory (100/200) session is about it; the closest is a 300-level one: CODE "title"`. The lead approved this; the listing path was removed rather than kept unused.
 - **Abstract-only matches need corroboration** (the session lists the service or has a matching tag), a tightening of "at least twice in its abstract". It removed Bedrock false positives on AI-agent security talks.
 - **agentic and genai-single-call are broad**: only a title that names the term and says how to build or design it admits.
 - **Skipped for this lens** (title markers, no session codes): sponsored, news/recap ("What's new", "year in review"), customer stories ("How X ..." unless "how to", "how it works", questions), and "AWS Partner:" training.

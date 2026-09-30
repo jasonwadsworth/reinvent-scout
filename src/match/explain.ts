@@ -210,7 +210,7 @@ export function matchConcepts(concepts: readonly ExplainConcept[], record: Index
 
 /** Level 100 and 200: what the Explain lens is for. */
 const INTRODUCTORY_BANDS: readonly number[] = getLensProfile("explain").levelBands ?? [];
-const FALLBACK_BAND = 300;
+const ADVANCED_BAND = 300;
 const NO_INTRODUCTION_REASON = "no introductory (100/200) session is about it; the closest is a 300-level one";
 const NOT_COVERED_REASON = "no introductory (100/200) or 300-level session is about it";
 
@@ -223,20 +223,15 @@ export interface ExplainSession {
   rank: number;
 }
 
-export interface SelectedMatch extends ConceptMatch {
-  /** A 300-level session taken because no introductory one covers the concept. */
-  fallback: boolean;
-}
-
 export interface ExplainSelection {
   key: string;
   /** Every concept the session explains; the one it was taken for comes first. */
-  matches: SelectedMatch[];
+  matches: ConceptMatch[];
 }
 
 interface Option {
   session: ExplainSession;
-  match: SelectedMatch;
+  match: ConceptMatch;
   score: number;
 }
 
@@ -246,40 +241,35 @@ const INTRO_BONUS = 0.75;
 /**
  * Picks sessions round-robin across concepts in centrality order, the best session per concept each
  * round, so a short list covers as many concepts as it can. A concept a session already explains
- * does not take another session in the first round. Sessions at level 100 or 200 come first; after
- * all of them, a concept none of them covers may take one 300-level session that names it in its
- * title, but only with `listFallbacks`; otherwise the concept is reported as uncovered and the
- * closest such session is named in the reason, because a 300-level talk does not introduce anything.
- * A concept with no session at all is reported as uncovered.
+ * does not take another session in the first round. Only level 100 and 200 sessions are listed. A
+ * concept none of them is about is reported as uncovered; when a 300-level session names it in its
+ * title, that session is named in the reason, but it is not listed because a 300-level talk does not
+ * introduce anything. A concept with no session at all is reported as uncovered too.
  */
 export function selectExplain(
   sessions: readonly ExplainSession[],
   concepts: readonly ExplainConcept[],
   typeWeights: ReadonlyMap<string, number> = getLensProfile("explain").typeWeights,
-  listFallbacks = false,
 ): { selected: ExplainSelection[]; uncovered: UncoveredConcept[] } {
   const introductoryBand = (session: ExplainSession): boolean =>
     session.record.levelBand !== null && INTRODUCTORY_BANDS.includes(session.record.levelBand);
-  const eligible = sessions.filter(session => introductoryBand(session) || session.record.levelBand === FALLBACK_BAND);
-  const introductory = new Set(eligible
-    .filter(introductoryBand)
-    .flatMap(session => session.matches.map(match => match.concept)));
+  const scoreOf = (session: ExplainSession, match: ConceptMatch): number => {
+    const format = session.record.type === null ? 0 : (typeWeights.get(session.record.type) ?? 0);
+    return match.strength + (match.boosted ? 1 : 0) + (INTRO_CUE.test(session.record.title) ? INTRO_BONUS : 0) + format / FORMAT_SCALE;
+  };
+  const bestFirst = (a: Option, b: Option): number =>
+    b.score - a.score || b.session.rank - a.session.rank || a.session.key.localeCompare(b.session.key);
   const options = new Map<ExplainConcept, Option[]>(concepts.map(concept => [concept, []]));
-  for (const session of eligible) {
-    const fallback = session.record.levelBand === FALLBACK_BAND;
-    for (const match of session.matches) {
-      if (fallback && (introductory.has(match.concept) || match.strength < TITLE_STRENGTH)) continue;
-      const format = session.record.type === null ? 0 : (typeWeights.get(session.record.type) ?? 0);
-      options.get(match.concept)?.push({
-        session, match: { ...match, fallback },
-        score: match.strength + (match.boosted ? 1 : 0) + (INTRO_CUE.test(session.record.title) ? INTRO_BONUS : 0) + format / FORMAT_SCALE,
-      });
+  const advanced = new Map<ExplainConcept, Option[]>(concepts.map(concept => [concept, []]));
+  for (const session of sessions) {
+    const target = introductoryBand(session) ? options : session.record.levelBand === ADVANCED_BAND ? advanced : undefined;
+    for (const match of target === undefined ? [] : session.matches) {
+      target!.get(match.concept)?.push({ session, match, score: scoreOf(session, match) });
     }
   }
   const queues = new Map<ExplainConcept, Option[]>();
   for (const [concept, list] of options) {
-    list.sort((a, b) => b.score - a.score || b.session.rank - a.session.rank || a.session.key.localeCompare(b.session.key));
-    queues.set(concept, list[0]?.match.fallback === true ? list.slice(0, 1) : [...list]);
+    queues.set(concept, list.sort(bestFirst).slice());
   }
 
   const selected: ExplainSelection[] = [];
@@ -292,36 +282,27 @@ export function selectExplain(
     const option = queue.shift();
     if (option === undefined) return;
     taken.add(option.session.key);
-    const positionOf = (match: SelectedMatch): number => match.concept === option.match.concept ? -1 : order.get(match.concept)!;
+    const positionOf = (match: ConceptMatch): number => match.concept === option.match.concept ? -1 : order.get(match.concept)!;
     const matches = option.session.matches
       .flatMap(match => options.get(match.concept)?.find(entry => entry.session === option.session)?.match ?? [])
       .sort((a, b) => positionOf(a) - positionOf(b));
     for (const match of matches) covered.add(match.concept);
     selected.push({ key: option.session.key, matches });
   };
-  // Introductory sessions come first, round-robin; the 300-level fallbacks follow them, one per concept.
-  const withIntroduction = concepts.filter(concept => introductory.has(concept));
+  const withIntroduction = concepts.filter(concept => options.get(concept)!.length > 0);
   for (let round = 0; withIntroduction.some(concept => queues.get(concept)!.length > 0); round++) {
     for (const concept of withIntroduction) {
       if (!(round === 0 && covered.has(concept))) take(concept);
     }
   }
-  const withoutIntroduction = concepts.filter(concept => !introductory.has(concept));
-  const closest = new Map(withoutIntroduction.flatMap(concept => {
-    const best = options.get(concept)![0];
-    return best === undefined ? [] : [[concept, best.session] as const];
-  }));
-  if (listFallbacks) {
-    for (const concept of withoutIntroduction) {
-      if (!covered.has(concept)) take(concept);
-    }
-  }
-  const uncovered = concepts
-    .filter(concept => options.get(concept)!.length === 0 || (!listFallbacks && !introductory.has(concept)))
-    .map(concept => {
-      const session = closest.get(concept);
-      return { concept: concept.name, reason: session === undefined ? NOT_COVERED_REASON : `${NO_INTRODUCTION_REASON}: ${session.key} "${session.record.title}"` };
-    });
+  const uncovered = concepts.filter(concept => options.get(concept)!.length === 0).map(concept => {
+    // A 300-level session is not an introduction, but it is worth naming when it names the concept in its title.
+    const closest = advanced.get(concept)!.filter(option => option.match.strength >= TITLE_STRENGTH).sort(bestFirst)[0];
+    return {
+      concept: concept.name,
+      reason: closest === undefined ? NOT_COVERED_REASON : `${NO_INTRODUCTION_REASON}: ${closest.session.key} "${closest.session.record.title}"`,
+    };
+  });
   return { selected, uncovered };
 }
 
@@ -340,7 +321,7 @@ function place(citation: Evidence, repoCount: number): string {
 }
 
 /** Why a session is listed: what it explains, the phrase that says so, and where the code uses it. */
-export function explainReason(match: SelectedMatch, repoCount: number): Reason {
+export function explainReason(match: ConceptMatch, repoCount: number): Reason {
   const unique = new Map<string, Evidence>();
   for (const citation of match.concept.citations) {
     if (!unique.has(citationKey(citation))) unique.set(citationKey(citation), { ...citation });
@@ -349,10 +330,9 @@ export function explainReason(match: SelectedMatch, repoCount: number): Reason {
   const places = citations.slice(0, LISTED_CITATIONS).map(citation => place(citation, repoCount));
   const more = citations.length - LISTED_CITATIONS;
   const where = places.length === 0 ? "" : `, which this code uses at ${places.join(", ")}${more > 0 ? ` and ${more} more` : ""}`;
-  const fallback = match.fallback ? " No introductory session covers it, so this 300-level one is included." : "";
   return {
     kind: "explainsConcept",
-    detail: `Explains ${match.concept.name} ("${match.phrase}")${where}.${fallback}`,
+    detail: `Explains ${match.concept.name} ("${match.phrase}")${where}.`,
     evidence: match.phrase, profileEvidence: citations,
     weight: BASE_WEIGHT + STRENGTH_WEIGHT * (match.strength + (match.boosted ? 1 : 0)),
   };

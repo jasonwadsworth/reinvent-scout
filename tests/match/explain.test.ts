@@ -220,7 +220,6 @@ describe("selectExplain", () => {
     return { key: code, record: built, matches: matchConcepts(concepts, built, options.abstract ?? ""), rank: options.rank ?? 0 };
   };
   const order = (sessions: ExplainSession[]) => selectExplain(sessions, concepts).selected.map(entry => entry.key);
-  const withFallbacks = (sessions: ExplainSession[]) => selectExplain(sessions, concepts, undefined, true);
 
   it("takes the best session per concept each round, in centrality order", () => {
     expect(order([
@@ -274,16 +273,6 @@ describe("selectExplain", () => {
     expect(uncovered[0]).toEqual({ concept: "Amazon DynamoDB", reason: 'no introductory (100/200) session is about it; the closest is a 300-level one: D3 "DynamoDB design"' });
   });
 
-  it("can list one 300 session for a concept with no 100/200 session, and marks it", () => {
-    const { selected } = withFallbacks([
-      session("D3", "DynamoDB design", { level: "300 - Advanced" }), session("D3B", "DynamoDB modeling", { level: "300 - Advanced" }),
-      session("L1", "Lambda basics"),
-    ]);
-    expect(selected.map(entry => entry.key)).toEqual(["L1", "D3"]);
-    expect(selected[1]!.matches.map(match => match.fallback)).toEqual([true]);
-    expect(selected[0]!.matches.map(match => match.fallback)).toEqual([false]);
-  });
-
   it("prefers a title that reads as an introduction, after strength and boost", () => {
     expect(order([
       session("A-PLN", "Lambda in the enterprise"), session("Z-INT", "Lambda getting started"),
@@ -293,19 +282,12 @@ describe("selectExplain", () => {
     ])).toEqual(["Z-LST", "A-INT"]);
   });
 
-  it("takes a 300 session only when it names the concept in its title", () => {
+  it("names a 300 session in the uncovered reason only when its title names the concept", () => {
     const { selected, uncovered } = selectExplain([
       session("D3", "Modeling data", { level: "300 - Advanced", abstract: "DynamoDB tables. DynamoDB keys.", services: ["Amazon DynamoDB"] }),
-    ], concepts, undefined, true);
+    ], concepts);
     expect(selected).toEqual([]);
     expect(uncovered.find(entry => entry.concept === "Amazon DynamoDB")!.reason).toBe("no introductory (100/200) or 300-level session is about it");
-  });
-
-  it("puts every 300-level fallback after all introductory picks", () => {
-    expect(withFallbacks([
-      session("D3", "DynamoDB internals", { level: "300 - Advanced" }),
-      session("L1", "Lambda basics"), session("L2", "Lambda tips"), session("L3", "Lambda patterns"),
-    ]).selected.map(entry => entry.key)).toEqual(["L1", "L2", "L3", "D3"]);
   });
 
   it("does not take a 300 session for a concept an introductory session covers", () => {
@@ -314,6 +296,8 @@ describe("selectExplain", () => {
 
   it("ignores sessions with no level band and 400 level sessions", () => {
     expect(order([session("L4", "Lambda expert", { level: "400 - Expert" }), session("L0", "Lambda unknown", { level: "" })])).toEqual([]);
+    const { uncovered } = selectExplain([session("L4", "Lambda expert", { level: "400 - Expert" })], concepts);
+    expect(uncovered[0]!.reason).toBe("no introductory (100/200) or 300-level session is about it");
   });
 
   it("reports a concept with no qualifying session as uncovered, in centrality order", () => {
@@ -324,10 +308,6 @@ describe("selectExplain", () => {
     ]);
   });
 
-  it("does not report a concept only a 300 session covers", () => {
-    const { uncovered } = withFallbacks([session("D3", "DynamoDB design", { level: "300 - Advanced" })]);
-    expect(uncovered.map(entry => entry.concept)).toEqual(["AWS Lambda", "serverless"]);
-  });
 });
 
 describe("explainReason", () => {
@@ -336,9 +316,9 @@ describe("explainReason", () => {
     built.services[0]!.evidence = citations;
     return buildConcepts(built).concepts;
   };
-  const reasonFor = (concepts: ReturnType<typeof buildConcepts>["concepts"], fallback = false, session: Parameters<typeof record>[0] = { title: "DynamoDB basics" }) => {
+  const reasonFor = (concepts: ReturnType<typeof buildConcepts>["concepts"], session: Parameters<typeof record>[0] = { title: "DynamoDB basics" }) => {
     const [match] = matchConcepts(concepts, record(session), "");
-    return explainReason({ ...match!, fallback }, 1);
+    return explainReason(match!, 1);
   };
 
   it("names the concept, the code that uses it and the session phrase", () => {
@@ -360,20 +340,16 @@ describe("explainReason", () => {
 
   it("prefixes the repo when the profile has several", () => {
     const [match] = matchConcepts(withEvidence([{ repo: "api", file: "a.ts", line: 1 }]), record({ title: "DynamoDB basics" }), "");
-    expect(explainReason({ ...match!, fallback: false }, 2).detail).toContain("at api/a.ts:1");
-  });
-
-  it("marks a 300-level fallback in the detail", () => {
-    expect(reasonFor(withEvidence([{ repo: "repo", file: "a.ts" }]), true).detail).toContain("No introductory session covers it, so this 300-level one is included.");
+    expect(explainReason(match!, 2).detail).toContain("at api/a.ts:1");
   });
 
   it("weighs a title hit above an abstract hit and a boost above neither", () => {
     const concepts = withEvidence([{ repo: "repo", file: "a.ts" }]);
     const title = reasonFor(concepts).weight;
-    const listed = reasonFor(concepts, false, { title: "DynamoDB basics", services: ["Amazon DynamoDB"] }).weight;
+    const listed = reasonFor(concepts, { title: "DynamoDB basics", services: ["Amazon DynamoDB"] }).weight;
     const [abstractOnly] = matchConcepts(concepts, record({ title: "Data", services: ["Amazon DynamoDB"] }), "DynamoDB here. DynamoDB there.");
     expect(listed).toBeGreaterThan(title);
-    expect(explainReason({ ...abstractOnly!, fallback: false }, 1).weight).toBeLessThan(listed);
-    expect(explainReason({ ...abstractOnly!, boosted: false, fallback: false }, 1).weight).toBeLessThan(title);
+    expect(explainReason(abstractOnly!, 1).weight).toBeLessThan(listed);
+    expect(explainReason({ ...abstractOnly!, boosted: false }, 1).weight).toBeLessThan(title);
   });
 });
