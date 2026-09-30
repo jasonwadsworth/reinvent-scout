@@ -89,7 +89,7 @@ interface LensInfo {
   relevance: number;
 }
 
-interface GroupedCandidate extends Omit<MatchCandidate, "why"> {
+export interface GroupedCandidate extends Omit<MatchCandidate, "why"> {
   lens?: LensInfo;
   explain?: ConceptMatch[];
   demoted?: string;
@@ -288,9 +288,9 @@ function roundToTwoDecimals(value: number): number {
 }
 
 /** The abstract of the sitting that scored, which the quote and the lens signals were matched against. */
-type AbstractOf = (record: IndexRecord) => string;
+export type AbstractOf = (record: IndexRecord) => string;
 
-function whyFor(candidate: GroupedCandidate, lens: Lens, profile: ResolvedProfile, abstractOf: AbstractOf): Why {
+export function whyFor(candidate: GroupedCandidate, lens: Lens, profile: ResolvedProfile, abstractOf: AbstractOf): Why {
   const text = { title: candidate.record.title, abstract: abstractOf(candidate.record) };
   if (lens === "all") {
     if (candidate.explain === undefined) throw new Error(`all candidate ${candidate.code} has no concept it was admitted for`);
@@ -307,7 +307,7 @@ function whyFor(candidate: GroupedCandidate, lens: Lens, profile: ResolvedProfil
   return lensWhy(lens, candidate.lens.hits, profile, text);
 }
 
-function roundCandidate(candidate: GroupedCandidate, why: Why): MatchCandidate {
+export function roundCandidate(candidate: GroupedCandidate, why: Why): MatchCandidate {
   return {
     code: candidate.code,
     record: candidate.record,
@@ -418,7 +418,7 @@ const NO_CORE_SERVICES_REASON = "profile has no core services to check stack fit
 
 /** Paths already taken, plus -- when the profile has no core service, so the stack gate admits
  * nothing -- every other activated rule, so an empty result says why. */
-function lensSkippedRules(profile: ResolvedProfile, lens: "fix" | "next-level"): SkippedRule[] {
+export function lensSkippedRules(profile: ResolvedProfile, lens: "fix" | "next-level"): SkippedRule[] {
   const taken = skippedLensRules(profile, lens);
   if (hasCoreService(profile)) {
     return taken;
@@ -516,13 +516,13 @@ function allCandidate(group: GroupedCandidate, matches: readonly ConceptMatch[],
 /** Services a title can list next to another ("Amazon Polly and Transcribe"): the catalog's own service
  * vocabulary, the profile's, and the ordinary-word names (Glue, Backup, ...), since the catalog does not
  * list every service a profile names. */
-function knownServices(profile: ResolvedProfile, index: readonly IndexRecord[]): string[] {
+export function knownServices(profile: ResolvedProfile, index: readonly IndexRecord[]): string[] {
   const fromProfile = profile.services.flatMap((service) => [service.name, ...(service.catalogName === null ? [] : [service.catalogName])]);
   const ordinaryWords = PREFIX_REQUIRED_SERVICE_NAMES.map((name) => name.charAt(0).toUpperCase() + name.slice(1));
   return [...new Set([...index.flatMap((record) => record.services), ...fromProfile, ...ordinaryWords])];
 }
 
-function explainCandidate(
+export function explainCandidate(
   group: GroupedCandidate,
   matches: readonly ConceptMatch[],
   profile: ResolvedProfile,

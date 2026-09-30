@@ -161,6 +161,11 @@ export function skippedLensRules(profile: ResolvedProfile, lens: SignalLens): Sk
     .map(rule => ({ rule: rule.source, reason: `profile already has ${rule.destination}` }));
 }
 
+/** The pattern a Next-level rule moves toward (`serverless` → `containers`), or `undefined` for any other rule. */
+export function lensRuleDestination(source: string): string | undefined {
+  return RULES.find(rule => rule.source === source)?.destination;
+}
+
 /** A rule's own plain-language description ("Reliability: dead-letter handling is not evident in
  * the cited scope."), for a summary whose gap pattern carries no note of its own. */
 export function lensRuleDetail(source: string): string | undefined {
