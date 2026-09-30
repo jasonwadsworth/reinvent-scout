@@ -691,6 +691,38 @@ describe("lens-precision guidance in profiling.md", () => {
   });
 });
 
+describe("newer gap guidance in profiling.md", () => {
+  const collapsed = profilingMd.replace(/\s+/g, " ");
+  const gaps = ["gap-no-tracing", "gap-no-ci", "gap-no-graviton"];
+  it.each(gaps)("defines %s, says what does not count, and lists it in the rules table", name => {
+    const entry = new RegExp(`- \\*\\*\`${name}\`\\*\\* \\(([A-Za-z ]+)\\)\\. (.*?)(?= - \\*\\*\`gap-|## Interests)`).exec(collapsed);
+    expect(entry, name).not.toBeNull();
+    expect(entry![2]).toMatch(/\bnot\b/);
+    expect(profilingMd).toMatch(new RegExp(`\\| \`${name}\` \\| ${entry![1]} \\|`));
+  });
+  it("says a switched-off practice is the gap and a partly true gap names its part", () => {
+    expect(collapsed).toContain("wired in but switched off");
+    expect(collapsed).toContain("say which part in the `note`");
+    expect(collapsed).toContain("A practice that is wired in but switched off");
+  });
+  it("keeps the guide sentences that settle the edge cases", () => {
+    expect(collapsed).toContain("A single function that calls nothing else is not this gap.");
+    expect(collapsed).toContain("cite the part that lacks it and say which part in the `note`");
+    expect(collapsed).toContain("is present but weak (tracing sampled at a low rate, a pipeline that runs one test) is not this gap");
+    expect(collapsed).toContain("Custom resources and placeholder functions (reserved concurrency 0, an inline stub) are not production compute");
+    expect(collapsed).not.toContain("a retention of 0");
+    expect(collapsed).not.toContain("association that exists only in a comment");
+  });
+  it("says the newer gaps skip AI-tagged sessions for a profile with no AI pattern", () => {
+    expect(collapsed).toContain("skip a session tagged Agentic AI or Generative AI unless your profile has an `agentic` or `genai-single-call` pattern");
+  });
+  it("names the remedy services of the newer gaps in the stack-fit paragraph", () => {
+    for (const service of ["AWS Distro for OpenTelemetry", "CodePipeline", "EC2 - Graviton"]) {
+      expect(collapsed).toContain(service);
+    }
+  });
+});
+
 it("executes the documented plan-confirm-reserve-cancel contracts using plan-returned IDs", async () => {
   const blocks = [...workflowMd.matchAll(/```json\n([\s\S]*?)```/g)].map(match => JSON.parse(match[1]!) as { tool?: string; arguments?: { sessionIds?: string[]; sessionId?: string } }).filter(value => ["plan_schedule", "reserve_sessions", "cancel_reservation"].includes(value.tool ?? ""));
   expect(blocks.map(value => value.tool)).toEqual(["plan_schedule", "reserve_sessions", "cancel_reservation"]);

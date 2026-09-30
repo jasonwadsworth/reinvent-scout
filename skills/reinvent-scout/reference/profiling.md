@@ -181,7 +181,7 @@ by default -- this exception only bites for a multi-word topic.
 
 A gap (see "Say what's missing, too" below) is always kebab-case with a `gap-` prefix, never a
 topic spelling, so it's never confused with a positive, present-tense pattern: `gap-no-dlq`,
-`gap-no-alarms`, `gap-broad-iam`, `gap-no-tests`. Code nothing reaches is `dead-code` (no `gap-`
+`gap-no-alarms`, `gap-broad-iam`, `gap-no-tests`, `gap-no-tracing`. Code nothing reaches is `dead-code` (no `gap-`
 prefix -- it isn't an absence, it's a presence that doesn't count).
 
 ## Say what's missing, too
@@ -203,6 +203,38 @@ practices; otherwise leave them out, since they are true of almost any repositor
 to a clearly cited part of the system: record it and say which part in the `note`. A wildcard
 permission narrowed by a condition or session policy is still recordable as `gap-broad-iam`, with
 the narrowing mentioned in the `note`.
+
+## What counts as each newer gap
+
+Three more gaps have a fixed definition, so two people profiling the same repository record the same
+ones. Each needs a code citation of the thing that *lacks* the practice. A gap that is only partly
+true is still recordable: cite the part that lacks it and say which part in the `note`. A practice
+that is wired in but switched off (`Disabled`, `false`, a tracing mode of `PassThrough`) is the gap, and you cite the line that switches it off. A practice that
+is present but weak (tracing sampled at a low rate, a pipeline that runs one test) is not this
+gap.
+
+- **`gap-no-tracing`** (Operational Excellence). The repository deploys a request path that crosses
+  two or more components (an API to a function to a queue or table, a service calling another
+  service) and a function or service on it has no tracing enabled: no X-Ray active tracing
+  (`tracing: Active`, `TracingConfig`), no OpenTelemetry SDK, collector or Lambda layer, no
+  Powertools Tracer. Tracing on the API alone (an AppSync `xrayEnabled`) does not trace the
+  functions behind it; cite an untraced function or service declaration and name the others in the
+  `note`. Logs and metrics are not tracing. A single function that calls nothing else is not this
+  gap.
+- **`gap-no-ci`** (Operational Excellence). The repository deploys infrastructure or services to a
+  real environment and holds no pipeline that builds or tests it on change: no
+  `.github/workflows`, `buildspec`, CodePipeline or CDK Pipelines stack, `.gitlab-ci.yml`,
+  CircleCI or Jenkins file. Cite the IaC entry point. A pipeline that only runs tests still counts
+  as CI, so it is not this gap. If the pipeline could live in a different repository, say so in the
+  `note` and record it only when the repository is the deployable unit.
+- **`gap-no-graviton`** (Sustainability). The repository deploys production compute and every
+  resource in the cited scope runs on x86: Lambda functions with no `architecture` (the default
+  is x86_64), ECS task definitions with `X86_64` or no `runtimePlatform`, EC2 instance types with no
+  Graviton family (the ones ending in `g`, such as `m7g`). Cite the function or task declaration.
+  A resource pinned to x86 by a dependency you can see (an x86-only native layer, an image built
+  `--platform=linux/amd64`) is not this gap; mention it in the `note` of the gap you do record, if
+  any. Custom resources and placeholder functions (reserved concurrency 0, an inline stub) are not
+  production compute, so x86 there is not this gap.
 
 ## Interests
 
@@ -366,6 +398,9 @@ not a complete assessment or a claim that every repository has these gaps.
 | `gap-no-load-tests` | Performance Efficiency | Load, performance, stress testing |
 | `gap-no-cost-monitoring` | Cost Optimization | Cost monitoring, allocation, anomalies, AWS Budgets |
 | `gap-no-resource-rightsizing` | Sustainability | Resource rightsizing |
+| `gap-no-tracing` | Operational Excellence | Distributed or end-to-end tracing, AWS X-Ray, OpenTelemetry (bare "tracing" does not count) |
+| `gap-no-ci` | Operational Excellence | CI/CD, continuous integration, delivery or deployment, release and delivery pipelines (bare "pipelines" and deployment strategies do not count) |
+| `gap-no-graviton` | Sustainability | Graviton, arm64 |
 
 `gap-no-alarms` means no alarm that notifies a person. An alarm that only drives automation
 (scaling, rollback) does not count as one, so an application with only those still has the gap.
@@ -412,7 +447,11 @@ lists that rule's remedy services (IAM and IAM Access Analyzer; AWS Billing and 
 which covers Budgets and Cost Explorer) needs fewer of your services: each remedy service it lists
 counts as one of the two, so IAM alone, which is on almost every security talk, is not enough, but
 IAM with Access Analyzer, or IAM with one of your core services, is. A session about the fix is not
-about the stack the gap sits in. A `gap-no-tests` session about testing infrastructure code with a
+about the stack the gap sits in. The newer gaps use the same path with their own remedy services:
+`gap-no-tracing` (AWS Distro for OpenTelemetry), `gap-no-ci` (CodePipeline, CodeBuild, CodeDeploy)
+and `gap-no-graviton` (EC2 - Graviton). The three newer gaps also skip a session tagged Agentic AI or Generative AI unless your profile has an
+`agentic` or `genai-single-call` pattern: a talk about securing or observing agents is not about the
+gap in an ordinary application. A `gap-no-tests` session about testing infrastructure code with a
 tool your profile lists (CDK, even as a supporting service) fits the same way. A profile with no core service (none listed, or
 every one marked supporting) has no stack to fit, so both lenses admit nothing and `skippedRules`
 names each activated rule with "profile has no core services to check stack fit": list the
