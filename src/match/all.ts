@@ -24,20 +24,40 @@ function namedProfileServices(concepts: readonly ProfileConcept[], record: Index
   return { any: services.filter(concept => outside(concept) || listed(concept)), outsideLists: services.filter(outside) };
 }
 
-/** The concepts a session is about, none when it cannot be attended as such. */
-export function matchAllConcepts(concepts: readonly ProfileConcept[], record: IndexRecord, abstract: string): ConceptMatch[] {
+/** The profile's services that fewer than `fraction` of the catalog's sessions name, in a list or not: a rare name in a
+ * session's list (Claude Code) says something about the session, a common one (Lambda) does not. */
+export function rareProfileServices(concepts: readonly ProfileConcept[], records: readonly IndexRecord[], abstractOf: (record: IndexRecord) => string, fraction: number): Set<ProfileConcept> {
+  const named = new Map<ProfileConcept, number>();
+  for (const record of records) {
+    for (const concept of namedProfileServices(concepts, record, abstractOf(record)).any) named.set(concept, (named.get(concept) ?? 0) + 1);
+  }
+  return new Set(concepts.filter(concept => concept.kind === "service" && (named.get(concept) ?? 0) < fraction * records.length));
+}
+
+/** The concepts a session is about, none when it cannot be attended as such. `rare` are the profile's services that few
+ * sessions name: one a session only lists adds weight to a session that is already about something. */
+export function matchAllConcepts(concepts: readonly ProfileConcept[], record: IndexRecord, abstract: string, rare: ReadonlySet<ProfileConcept> = new Set()): ConceptMatch[] {
+  const matches = admittedConcepts(concepts, record, abstract);
+  if (matches.length === 0 || rare.size === 0) return matches;
+  const matched = new Set(matches.map(match => match.concept));
+  const listed = namedProfileServices(concepts, record, abstract).any.filter(concept => rare.has(concept) && !matched.has(concept));
+  return [...matches, ...listed.map(named)];
+}
+
+const named = (concept: ProfileConcept): ConceptMatch =>
+  ({ concept, strength: 1, phrase: concept.name, boosted: false, site: { inTitle: false, index: -1, length: 0 } });
+
+function admittedConcepts(concepts: readonly ProfileConcept[], record: IndexRecord, abstract: string): ConceptMatch[] {
   if (excluded(record)) return [];
   const matches = admitConcepts(concepts, record, abstract, ALL_ADMISSION);
   // A broad topic (agents, generative AI) is too widespread to make a session about the code on its own: alone,
   // the title must also say how to build or design it (as in the Explain lens), or the session must name a service
   // of the profile (even in a list), which is what ties the topic to this code. That service then counts as named.
   if (matches.length > 0 && matches.every(match => match.concept.titleOnly)) {
-    const named = namedProfileServices(concepts, record, abstract);
-    if (!BUILD_CUE.test(record.title) && named.any.length === 0) return [];
-    // A service named only in a list may admit the session but adds no weight to it.
-    return [...matches, ...named.outsideLists.map((concept): ConceptMatch => ({
-      concept, strength: 1, phrase: concept.name, boosted: false, site: { inTitle: false, index: -1, length: 0 },
-    }))];
+    const services = namedProfileServices(concepts, record, abstract);
+    if (!BUILD_CUE.test(record.title) && services.any.length === 0) return [];
+    // A service named only in a list may admit the session but adds no weight to it (unless it is rare: see `matchAllConcepts`).
+    return [...matches, ...services.outsideLists.map(named)];
   }
   // Patterns are words a session uses about anything ("serverless", "event-driven"): with no service of the
   // profile among them, one must be named in the title to make the session about it.

@@ -137,6 +137,17 @@ describe("the all lens", () => {
     expect(Object.fromEntries(result.candidates.map(candidate => [candidate.code, candidate.demoted]))).toEqual({ GOV300: "industry session", RET300: undefined });
   });
 
+  it("lets a rare service a session only lists add weight, but only for a profile that measured footprints", () => {
+    const raw = [
+      session("AAA300", "Serverless platform notes", { abstract: "Serverless design. Serverless again. Kiro CLI, Claude Code, and Codex." }),
+      session("BBB300", "Serverless platform notes two", { abstract: "Serverless design. Serverless again." }),
+    ];
+    const claude = (footprint?: number) => ({ ...profile(["AWS Lambda", "Claude Code"], ["serverless"]), ...(footprint === undefined ? {} : { patterns: [{ name: "serverless", footprint, evidence: [cite("p.ts", 7)] }] }) });
+    const weights = (p: ResolvedProfile) => Object.fromEntries(run(p, [...raw, ...Array.from({ length: 60 }, (_, i) => session(`ZZZ${i}`, `Filler ${i}`))]).candidates.map(candidate => [candidate.code, candidate.reasons.length]));
+    expect(weights(claude())).toEqual({ AAA300: 1, BBB300: 1 });
+    expect(weights(claude(2))).toEqual({ AAA300: 2, BBB300: 1 });
+  });
+
   it("ranks a session about the code's central concept above one about a rare concept", () => {
     const p = profile(["AWS Lambda", "Amazon Cognito"]);
     p.services[0]!.evidence = [cite("a.ts"), cite("b.ts"), cite("c.ts")];
