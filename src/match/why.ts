@@ -44,8 +44,10 @@ const QUOTE_MAX = 160;
 const NOTE_BOILERPLATE = /^not evident in the cited scope:\s*/i;
 /** A sentence ends at ".", "!" or "?" followed by whitespace and something that starts a sentence;
  * a lowercase word after a period ("e.g. the") or a file extension ("cdk-construct.ts,") does not end one. */
-const SENTENCE_END = /[.!?](?=\s+[A-Z0-9"'“(\[])/;
-const BOUNDARY = /[.!?]["')\]”]?(?=\s+[A-Z0-9"'“(\[])|\n+/g;
+const SENTENCE_END = /(?<!\b(?:e\.g|i\.e|etc|vs|approx))[.!?](?=\s+[A-Z0-9"'“(\[])/;
+const BOUNDARY = /(?<!\b(?:e\.g|i\.e|etc|vs|approx))[.!?]["')\]”]?(?=\s+[A-Z0-9"'“(\[])|\n+/g;
+/** What a gap note says is missing. A note cut to a clause without it would say what is there instead. */
+const NEGATIVE = /\b(?:no|not|without|missing|lacks?|lacking|none|never|absent)\b/i;
 
 /** Cuts at the last clause break (", " or "; ") once past the note's midpoint, else at a word, so a
  * long note ends on a thought rather than on "so a". */
@@ -54,7 +56,9 @@ function cutAtClause(text: string, max: number): string {
   const head = text.slice(0, max);
   const clause = Math.max(head.lastIndexOf(", "), head.lastIndexOf("; "));
   const space = head.lastIndexOf(" ");
-  const cut = clause >= max / 2 ? clause : space > 0 ? space : max;
+  const atWord = space > 0 ? space : max;
+  const keepsGap = !NEGATIVE.test(text) || NEGATIVE.test(head.slice(0, Math.max(clause, 0)));
+  const cut = clause >= max / 2 && keepsGap ? clause : atWord;
   const kept = head.slice(0, cut);
   // Never end inside an open parenthesis.
   const open = kept.lastIndexOf("(");
@@ -105,8 +109,9 @@ export function quoteAround(text: string, index: number, length: number): string
   const wordStart = from > start && text[from - 1] !== " " ? Math.min(text.indexOf(" ", from) + 1, index) : from;
   const lastSpace = text.lastIndexOf(" ", to);
   const wordEnd = to < end && text[to] !== " " && lastSpace >= index + length ? lastSpace : to;
-  const quote = text.slice(wordStart, wordEnd).trim();
-  return `${wordStart > start ? "…" : ""}${quote}${wordEnd < end ? "…" : ""}`;
+  const cutShort = wordEnd < end;
+  const quote = text.slice(wordStart, wordEnd).trim().replace(cutShort ? /[,;:]$/ : /(?!)/, "");
+  return `${wordStart > start ? "…" : ""}${quote}${cutShort ? "…" : ""}`;
 }
 
 /** Up to three deduped places in profile order, plus how many were left out. */
@@ -143,6 +148,15 @@ function displayName(name: string): string {
   return name.replace(/\s*\([^()]*\)\s*$/, "");
 }
 
+/** A note that follows a colon reads as a clause, so its first word loses its capital unless it is an
+ * acronym or camel-case name (two capitals), or a name the profile itself uses (a service such as Lambda). */
+function lowerFirst(note: string, profile: ResolvedProfile): string {
+  const word = /^[^\s,;:()]+/.exec(note)?.[0] ?? "";
+  const names = new Set([...profile.services.flatMap(service => [service.name, service.catalogName ?? ""]), ...profile.patterns.map(pattern => pattern.name)]
+    .flatMap(name => name.split(/[^\w-]+/)));
+  return /^[A-Z]/.test(word) && !/[A-Z].*[A-Z]/.test(word) && !names.has(word) ? `${word.charAt(0).toLowerCase()}${note.slice(1)}` : note;
+}
+
 function patternsNamed(profile: ResolvedProfile, name: string) {
   return profile.patterns.filter(pattern => pattern.name.toLowerCase() === name);
 }
@@ -167,7 +181,7 @@ export function lensWhy(lens: "fix" | "next-level", hits: readonly LensHit[], pr
   const patternNote = patterns.map(pattern => trimNote(pattern.note)).find(note => note !== undefined);
   let summary: string;
   if (lens === "fix") {
-    summary = sentence(`Covers your ${patternNote === undefined ? ruleSummary(hit.rule, lensRuleDetail(hit.rule)) : `${hit.rule}: ${patternNote}`}`, others);
+    summary = sentence(`Covers your ${patternNote === undefined ? ruleSummary(hit.rule, lensRuleDetail(hit.rule)) : `${hit.rule}: ${lowerFirst(patternNote, profile)}`}`, others);
   } else {
     const aside = [...patterns.map(pattern => pattern.note), ...evidence.map(item => item.note)]
       .map(candidate => trimNote(candidate, true)).find(found => found !== undefined);
@@ -240,13 +254,28 @@ function otherConcepts(profile: ResolvedProfile): NamedConcept[] {
   return [...patterns, ...services];
 }
 
-/** The first place a concept is named outside an enumeration: in the abstract if there, else the title. */
-function siteOf(matchers: readonly RegExp[], text: SessionText): MatchSite | undefined {
-  for (const [inTitle, where] of [[false, text.abstract], [true, text.title]] as const) {
-    const first = mentionsOf(matchers, where)[0];
-    if (first !== undefined) return { inTitle, index: first.index, length: first[0].length };
+/** A match site, and whether the name stands only inside an enumeration of names. */
+interface QuoteSite extends MatchSite {
+  listed: boolean;
+}
+
+/** Where a concept is named, best first: outside an enumeration in the abstract, outside one in the
+ * title, then inside one in the abstract, then inside one in the title. */
+function siteOf(matchers: readonly RegExp[], text: SessionText): QuoteSite | undefined {
+  for (const listed of [false, true]) {
+    for (const [inTitle, where] of [[false, text.abstract], [true, text.title]] as const) {
+      const first = mentionsOf(matchers, where, listed)[0];
+      if (first !== undefined) return { inTitle, index: first.index, length: first[0].length, listed };
+    }
   }
   return undefined;
+}
+
+const siteRank = (site: QuoteSite): number => Number(site.listed) * 2 + Number(site.inTitle);
+
+/** The concept with the best-ranked site, the first on a tie. */
+function bestSite<T extends { found: QuoteSite }>(entries: readonly T[]): T | undefined {
+  return entries.reduce<T | undefined>((best, entry) => (best === undefined || siteRank(entry.found) < siteRank(best.found) ? entry : best), undefined);
 }
 
 /** a[0], b[0], a[1], b[1], ...: each concept gets its turn before either gets a second place. */
@@ -276,13 +305,15 @@ export function allWhy(reasons: readonly Reason[], profile: ResolvedProfile, tex
     return withQuote({ summary: sentence(summary), yourCode: [] }, site === undefined ? undefined : quoteSite(text, site));
   }
   let named = ranked.slice(0, CONCEPT_REASONS);
-  const namedSites = named.flatMap(concept => siteOf(concept.matchers, text) ?? []);
-  let site = namedSites.find(found => !found.inTitle) ?? namedSites[0];
-  if (site === undefined) {
+  const found = (concepts: readonly NamedConcept[]) =>
+    concepts.flatMap(concept => { const at = siteOf(concept.matchers, text); return at === undefined ? [] : [{ concept, found: at }]; });
+  const chosen = bestSite(found(named));
+  let site = chosen?.found;
+  if (site === undefined || site.listed) {
+    // A concept the session says outside a list beats the named ones it only lists; with neither, any mention.
     const known = new Set(ranked.map(concept => concept.name));
-    const taken = [...ranked.slice(CONCEPT_REASONS), ...otherConcepts(profile).filter(concept => !known.has(concept.name))]
-      .flatMap(concept => { const found = siteOf(concept.matchers, text); return found === undefined ? [] : [{ concept, found }]; })
-      .sort((a, b) => Number(a.found.inTitle) - Number(b.found.inTitle))[0];
+    const others = found([...ranked.slice(CONCEPT_REASONS), ...otherConcepts(profile).filter(concept => !known.has(concept.name))]);
+    const taken = bestSite(others.filter(entry => !entry.found.listed)) ?? (site === undefined ? bestSite(others) : undefined);
     if (taken !== undefined) {
       named = [first, taken.concept];
       site = taken.found;

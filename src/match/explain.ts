@@ -1,7 +1,7 @@
 import type { IndexRecord } from "../catalog/index-record.js";
 import type { Evidence, ResolvedProfile } from "../profile/profile.js";
 import { getLensProfile } from "./lens.js";
-import { unlistedMatches } from "./listing.js";
+import { listedMatches, unlistedMatches } from "./listing.js";
 import type { Reason } from "./score.js";
 import type { MatchSite } from "./why.js";
 import { PLATFORM_SERVICES, serviceNamePatterns } from "./stack-fit.js";
@@ -256,12 +256,14 @@ function originalIndex(text: string, spokenIndex: number): number {
   return spokenIndex - shift;
 }
 
-/** Where any of `matchers` names something in `text` outside an enumeration, each place once even
+/** Where any of `matchers` names something in `text` outside an enumeration (or, with `inEnumeration`,
+ * only inside one), each place once even
  * when two of its spellings overlap ("Amazon DynamoDB" and "DynamoDB"), at offsets in `text` itself. */
-export function mentionsOf(matchers: readonly RegExp[], text: string): RegExpExecArray[] {
+export function mentionsOf(matchers: readonly RegExp[], text: string, inEnumeration = false): RegExpExecArray[] {
   // "Lambda, DynamoDB & SQS" is an enumeration like the "and" form.
   const spoken = text.replace(/ & /g, " and ");
-  const all = matchers.flatMap(matcher => unlistedMatches(matcher, spoken, PATTERN_VOCABULARY));
+  const find = inEnumeration ? listedMatches : unlistedMatches;
+  const all = matchers.flatMap(matcher => find(matcher, spoken, PATTERN_VOCABULARY));
   all.sort((a, b) => a.index - b.index || b[0].length - a[0].length);
   const distinct: RegExpExecArray[] = [];
   let end = 0;

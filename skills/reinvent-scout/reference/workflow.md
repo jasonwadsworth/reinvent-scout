@@ -130,7 +130,7 @@ relevance.
 }
 ```
 
-Never includes abstracts. `truncated`/`omitted`/`hint` only matter when the response would
+Never includes full abstracts (`why.sessionSays` quotes one sentence of one). `truncated`/`omitted`/`hint` only matter when the response would
 otherwise exceed the size budget:
 
 - `truncated: false` -- every matched candidate (up to `returned`) is included; `omitted` is `0`
@@ -191,8 +191,9 @@ produced nothing instead of reporting an empty result. An offering with `startDa
 unscheduled: the talk exists but has no time yet, so it cannot go on a schedule.
 
 The CLI prints the same object: `reinvent-scout match --json` returns exactly what `match_sessions`
-returns (the CLI is not size-budgeted, and `--include-abstracts` adds an `abstract` to each
-candidate), and `reinvent-scout profile validate --json` returns exactly the `validate_profile`
+returns, except that the CLI is not size-budgeted: MCP may drop every candidate's ranking reasons to fit its budget
+(`rankingReasonsOmitted`, common at the default limit under `all`), and the CLI never does (`--include-abstracts` adds an
+`abstract` to each candidate), and `reinvent-scout profile validate --json` returns exactly the `validate_profile`
 report. Human output shows each candidate's title line, its `Why:`, `Your code:` and `Session:`
 lines, then `Rules:` (every reason with its sources only under `--verbose`), then one `Skipped:` line
 per skipped path.

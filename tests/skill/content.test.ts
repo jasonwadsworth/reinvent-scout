@@ -807,6 +807,18 @@ describe("why documentation", () => {
     expect(Object.keys(example.candidates[0]!).sort()).toEqual(["code", "levelBand", "offerings", "reasons", "score", "sessionId", "title", "type", "why"]);
   });
 
+  it("says the summary names the strongest rule, not the first", () => {
+    expect(presenting).toContain("names only the strongest");
+    expect(presenting).not.toContain("names only the first");
+  });
+
+  it("says CLI --json differs from MCP only by the ranking reasons MCP may drop, and that no full abstract is included", () => {
+    const cli = workflowMd.slice(workflowMd.indexOf("The CLI prints the same object"), workflowMd.indexOf("## 6. Present candidates"));
+    expect(cli).toContain("`rankingReasonsOmitted`");
+    expect(workflowMd).not.toContain("Never includes abstracts.");
+    expect(workflowMd).toContain("Never includes full abstracts");
+  });
+
   it("documents --verbose in the README", () => {
     expect(readmeMd).toContain("--verbose");
     expect(readmeMd).toContain("rankingReasonsOmitted");

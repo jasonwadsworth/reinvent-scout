@@ -133,6 +133,16 @@ describe("the why block", () => {
       expect(run(viaPattern, [session("SLS100", "Serverless backends", { services: [], topics: ["Serverless"] })], "all").candidates[0]!.why.summary).toBe("Matches your serverless (No servers anywhere).");
     });
 
+    it("starts the gap note in lower case after the colon unless it opens with an acronym or a service name", () => {
+      const summaryOf = (note: string) => run(profileOf([{ name: "gap-no-dlq", note, evidence: [cite("rules.ts", 4)] }]), [talk], "fix").candidates[0]!.why.summary;
+      expect(summaryOf("The reaper function has no DLQ.")).toBe("Covers your gap-no-dlq: the reaper function has no DLQ.");
+      expect(summaryOf("IAM policies here are broad.")).toBe("Covers your gap-no-dlq: IAM policies here are broad.");
+      expect(summaryOf("GitHub-OIDC role is broad.")).toBe("Covers your gap-no-dlq: GitHub-OIDC role is broad.");
+      expect(summaryOf("Lambda handlers set no DLQ.")).toBe("Covers your gap-no-dlq: Lambda handlers set no DLQ.");
+      expect(summaryOf("Partial: only core has tests.")).toBe("Covers your gap-no-dlq: partial: only core has tests.");
+      expect(summaryOf("3 rules set no DLQ.")).toBe("Covers your gap-no-dlq: 3 rules set no DLQ.");
+    });
+
     it("names an explained service without its catalog acronym", () => {
       const p = profileOf([], [service("Amazon Simple Queue Service (Amazon SQS)", { usage: "Work queues" })]);
       const why = run(p, [session("SQS100", "Getting started with Amazon SQS", { services: [] })], "explain").candidates[0]!.why;
@@ -277,10 +287,35 @@ describe("the why block", () => {
       expect(why.sessionSays).toBe("Then AWS Lambda gets a deep dive.");
     });
 
-    it("treats an ampersand list of names as an enumeration, not a mention", () => {
-      const p = profileOf([], [lambda, service("Amazon DynamoDB")]);
-      const listed = session("LST100", "Scaling lessons: Lambda, DynamoDB & SQS", { services: ["AWS Lambda", "Amazon DynamoDB"] });
-      expect("sessionSays" in run(p, [listed], "all").candidates[0]!.why).toBe(false);
+    describe("when a service appears only in a list", () => {
+      const p = profileOf([], [lambda]);
+      const listedAbstract = "We compare Kinesis, AWS Lambda and Step Functions side by side. Nothing else.";
+      const say = (raw: Session) => run(p, [raw], "all").candidates[0]!.why.sessionSays;
+
+      it("quotes the sentence with the first listed mention rather than omitting it, an ampersand list included", () => {
+        expect(say(session("LST100", "Scaling lessons: Lambda, DynamoDB & SQS", { services: ["AWS Lambda"] }))).toBe("Scaling lessons: Lambda, DynamoDB & SQS");
+        expect(say(session("LST101", "Event handlers", { services: ["AWS Lambda"], abstract: listedAbstract }))).toBe("We compare Kinesis, AWS Lambda and Step Functions side by side.");
+      });
+
+      it("prefers a listed abstract sentence over a listed title", () => {
+        expect(say(session("LST102", "Scaling lessons: Lambda, DynamoDB & SQS", { services: ["AWS Lambda"], abstract: listedAbstract })))
+          .toBe("We compare Kinesis, AWS Lambda and Step Functions side by side.");
+      });
+
+      it("prefers an unlisted title over a listed abstract sentence", () => {
+        expect(say(session("LST103", "Building on AWS Lambda", { abstract: listedAbstract }))).toBe("Building on AWS Lambda");
+      });
+
+      it("prefers an unlisted mention of another profile concept over a listed one of a named service", () => {
+        const withPattern = profileOf([{ name: "serverless", evidence: [cite("app.ts", 5)] }], [lambda]);
+        const why = run(withPattern, [session("LST104", "Event handlers", { services: ["AWS Lambda"], abstract: `${listedAbstract} Everything here is serverless by design.` })], "all").candidates[0]!.why;
+        expect(why.sessionSays).toBe("Everything here is serverless by design.");
+        expect(why.summary).toBe("Matches your AWS Lambda (Cognito triggers and stream processors) and serverless.");
+      });
+
+      it("omits the quote only when there is no mention at all", () => {
+        expect("sessionSays" in run(p, [session("LST105", "Event handlers", { services: ["AWS Lambda"], abstract: "Nothing relevant." })], "all").candidates[0]!.why).toBe(false);
+      });
     });
 
     it("prefers an abstract sentence over a title naming the same service", () => {
@@ -342,6 +377,12 @@ describe("the why block", () => {
         const why = allWhy(reasons, profile, { title: "Building on AWS Lambda", abstract: "Intro. Tables live in Amazon DynamoDB here. Done." });
         expect(why.summary).toBe("Matches your AWS Lambda and Amazon DynamoDB.");
         expect(why.sessionSays).toBe("Tables live in Amazon DynamoDB here.");
+      });
+
+      it("prefers a service the title says over one the abstract only lists", () => {
+        const reasons = [reason("service", "AWS Lambda", 50), reason("service", "Amazon DynamoDB", 40)];
+        const why = allWhy(reasons, profile, { title: "Building on Amazon DynamoDB", abstract: "We compare Kinesis, AWS Lambda and Step Functions side by side." });
+        expect(why.sessionSays).toBe("Building on Amazon DynamoDB");
       });
 
       it("never swaps in a gap pattern", () => {

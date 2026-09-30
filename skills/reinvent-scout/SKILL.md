@@ -85,7 +85,7 @@ you wrote and the session's text, so it is as good as your notes and citations a
 is worth attending, so do not read them out unless the user asks how the ranking works. Each
 reason's own `evidence` field (see `reference/workflow.md`) is the matched catalog value, not a
 file. Fix and Next-level reasons (`pillarGap`, `migrationPath`) also carry `profileEvidence` with
-every source that admitted the session; when `why.summary` names only the first of several rules
+every source that admitted the session; when `why.summary` names only the strongest (the first on a tie) of several rules
 (`(+N more)`), mention the others from those reasons. If a response came back with
 `rankingReasonsOmitted`, the ranking reasons were dropped to fit the budget; `why` is unaffected.
 `why.yourCode` is the traceability that agent-authored, evidence-backed profiles buy over a black-box

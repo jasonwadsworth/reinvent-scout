@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { quoteAround, trimNote } from "../../src/match/why.js";
+import { quoteAround, quoteSite, trimNote } from "../../src/match/why.js";
 
 describe("trimNote", () => {
   it("strips the profiling-guide boilerplate prefix", () => {
@@ -42,6 +42,27 @@ describe("trimNote", () => {
   it("removes parenthetical asides, innermost first, when asked, before trimming", () => {
     expect(trimNote("Bedrock is one call (one prompt (no tools), no loop) and validated.", true)).toBe("Bedrock is one call and validated");
     expect(trimNote("Bedrock is one call (one prompt).", false)).toBe("Bedrock is one call (one prompt)");
+  });
+
+  it.each(["e.g.", "i.e.", "etc.", "vs.", "approx."])("does not end a sentence at %s before a capital", abbreviation => {
+    expect(trimNote(`Rules fan out to other Lambdas (${abbreviation} CreateCompany provisions a pool). Second sentence.`))
+      .toBe(`Rules fan out to other Lambdas (${abbreviation} CreateCompany provisions a pool)`);
+  });
+
+  it("never cuts a note to a clause that lost the gap's negative, cutting at a word instead", () => {
+    const note = "Partial: shared/core, the regional AppSync authorizers, the deploy scripts and a few access-management utilities have Jest tests for the happy paths, but the company and audit services have no test files at all, so nothing exercises their handlers";
+    const trimmed = trimNote(note)!;
+    expect(trimmed.endsWith(", but…")).toBe(false);
+    expect(trimmed.endsWith("happy paths…")).toBe(false);
+    expect(trimmed.startsWith("Partial: shared/core")).toBe(true);
+    expect(trimmed.endsWith("…")).toBe(true);
+    expect(trimmed.length).toBeGreaterThan(190);
+  });
+
+  it("still cuts at a clause when the kept part holds the negative or the note has none", () => {
+    const withNegative = `No alarms exist on the queue, ${"and other things are also missing here ".repeat(2)}, then ${"more text follows ".repeat(8)}`;
+    expect(trimNote(withNegative)!.endsWith(",…")).toBe(false);
+    expect(trimNote(`${"word ".repeat(30)}end of clause, ${"other ".repeat(20)}tail`)!.endsWith("end of clause…")).toBe(true);
   });
 
   it("returns undefined for a missing or empty note", () => {
@@ -90,5 +111,25 @@ describe("quoteAround", () => {
     const quote = quoteAround(long, 0, "Dead-letter queues".length);
     expect(quote.startsWith("Dead-letter")).toBe(true);
     expect(quote.endsWith("…")).toBe(true);
+  });
+});
+
+describe("quoteAround and quoteSite edges", () => {
+  it("does not end a quote sentence at e.g. before a capital", () => {
+    const text = "Use tools (e.g. CreateCompany) for pools. Next.";
+    expect(quoteAround(text, text.indexOf("tools"), 5)).toBe("Use tools (e.g. CreateCompany) for pools.");
+  });
+
+  it("drops a trailing comma before the closing ellipsis", () => {
+    const long = `Dead-letter queues ${"x".repeat(111)} and across Step Functions, and then ${"tail ".repeat(30)}.`;
+    const quote = quoteAround(long, 0, "Dead-letter queues".length);
+    expect(quote.endsWith("Step Functions…")).toBe(true);
+  });
+
+  it("quotes nothing for a site outside the text it claims, or an empty title", () => {
+    expect(quoteSite({ title: "Title", abstract: "Short." }, { inTitle: false, index: 40, length: 4 })).toBeUndefined();
+    expect(quoteSite({ title: "Title", abstract: "Short." }, { inTitle: false, index: -1, length: 4 })).toBeUndefined();
+    expect(quoteSite({ title: "", abstract: "Short." }, { inTitle: true, index: 0, length: 1 })).toBeUndefined();
+    expect(quoteSite({ title: "Title", abstract: "Short." }, { inTitle: true, index: 0, length: 1 })).toBe("Title");
   });
 });
