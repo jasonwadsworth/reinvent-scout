@@ -148,6 +148,16 @@ describe("the all lens", () => {
     expect(weights).toEqual({ AAA300: 2, BBB300: 1 });
   });
 
+  it("demotes a session titled about a technology the code does not use, and not when the profile uses it", () => {
+    const sessions = [session("TER300", "Building serverless applications with Terraform"), session("LAM300", "Building serverless applications")];
+    const result = run(profile(["AWS Lambda"], ["serverless"]), sessions);
+    expect(Object.fromEntries(result.candidates.map(candidate => [candidate.code, candidate.demoted]))).toEqual({ LAM300: undefined, TER300: "about Terraform, which this code does not use" });
+    expect(result.candidates.find(candidate => candidate.code === "TER300")!.why.summary).toContain("ranked lower: about Terraform, which this code does not use");
+    expect(codes(result)).toEqual(["LAM300", "TER300"]);
+    const uses = run(profile(["AWS Lambda", "Terraform"], ["serverless"]), sessions);
+    expect(uses.candidates.map(candidate => candidate.demoted)).toEqual([undefined, undefined]);
+  });
+
   it("ranks a session about the code's central concept above one about a rare concept", () => {
     const p = profile(["AWS Lambda", "Amazon Cognito"]);
     p.services[0]!.evidence = [cite("a.ts"), cite("b.ts"), cite("c.ts")];
