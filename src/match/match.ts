@@ -1,5 +1,7 @@
 import { buildStackFit, hasCoreService, PREFIX_REQUIRED_SERVICE_NAMES } from "./stack-fit.js";
-import { buildConcepts, explainReason, matchConcepts, selectExplain, type ConceptMatch, type UncoveredConcept } from "./explain.js";
+import { absentBroadTopics, buildConcepts, interestConcepts, serviceTails, type ConceptMatch, type UncoveredConcept } from "./concepts.js";
+import { allReason, demotionReason, industryTerms, matchAllConcepts, rankAll } from "./all.js";
+import { explainReason, matchConcepts, selectExplain } from "./explain.js";
 import { activeLensRules, scoreLensSignals, skippedLensRules, type LensHit, type SkippedRule } from "./lens-signals.js";
 import { readRaw, type CatalogStoreDeps } from "../catalog/store.js";
 import { baseSessionCode, requireCurrentIndex } from "../catalog/query.js";
@@ -15,7 +17,7 @@ import { allWhy, explainWhy, lensWhy, type Why } from "./why.js";
 const RARE_SERVICE_FRACTION = 0.03;
 
 export interface MatchOptions {
-  /** Defaults to `"all"` -- no level restriction, no format preference. */
+  /** Defaults to `"all"`: the sessions about what the profile's code is built on, at any level. */
   lens?: Lens;
   /** Caps the number of candidates (groups, not raw sittings -- see `MatchCandidate.offerings`)
    * returned, after ranking. */
@@ -53,6 +55,9 @@ export interface MatchCandidate {
   offerings: MatchOffering[];
   /** Fix and Next-level only: the source pattern names of every rule that admitted this session. */
   lensRules?: string[];
+  /** All only: why the session ranks after the others that cover the same ground (a sponsored
+   * session, a news or launch session, a customer story). Absent for any other session. */
+  demoted?: string;
   /** Why this session is recommended, in the profile's and the session's own words. */
   why: Why;
 }
@@ -76,6 +81,7 @@ interface LensInfo {
 interface GroupedCandidate extends Omit<MatchCandidate, "why"> {
   lens?: LensInfo;
   explain?: ConceptMatch[];
+  demoted?: string;
 }
 
 /** Appends `value` to `list` only the first time its case-insensitive form is seen -- used for
@@ -117,7 +123,7 @@ function pushDeduped(list: string[], seen: Set<string>, value: string): void {
  *   text match on the same term costs nothing extra to compute and helps sessions that mention the
  *   service without it being in their formal `services` list.
  */
-function buildMatchQuery(profile: ResolvedProfile): MatchQuery {
+export function buildMatchQuery(profile: ResolvedProfile): MatchQuery {
   const seenServices = new Set<string>();
   const services: string[] = [];
   const supportingServices: string[] = [];
@@ -177,6 +183,7 @@ interface ScoredRecord {
   reasons: Reason[];
   lens?: LensInfo;
   explain?: ConceptMatch[];
+  demoted?: string;
 }
 
 /** The real catalog marks *some* (not all) repeat sittings' titles with a trailing " [REPEAT]" --
@@ -253,6 +260,7 @@ function groupByCode(scoredRecords: readonly ScoredRecord[]): GroupedCandidate[]
       offerings,
       ...(winner.lens === undefined ? {} : { lens: winner.lens }),
       ...(winner.explain === undefined ? {} : { explain: winner.explain }),
+      ...(winner.demoted === undefined ? {} : { demoted: winner.demoted }),
     });
   }
   return candidates;
@@ -274,7 +282,8 @@ type AbstractOf = (record: IndexRecord) => string;
 function whyFor(candidate: GroupedCandidate, lens: Lens, profile: ResolvedProfile, abstractOf: AbstractOf): Why {
   const text = { title: candidate.record.title, abstract: abstractOf(candidate.record) };
   if (lens === "all") {
-    return allWhy(candidate.reasons, profile, text);
+    if (candidate.explain === undefined) throw new Error(`all candidate ${candidate.code} has no concept it was admitted for`);
+    return allWhy(candidate.explain, candidate.demoted, profile, text);
   }
   if (lens === "explain") {
     const taken = candidate.explain?.[0];
@@ -298,6 +307,7 @@ function roundCandidate(candidate: GroupedCandidate, why: Why): MatchCandidate {
     })),
     offerings: candidate.offerings,
     ...(candidate.lens === undefined ? {} : { lensRules: candidate.lens.hits.map((hit) => hit.rule) }),
+    ...(candidate.demoted === undefined ? {} : { demoted: candidate.demoted }),
     why,
   };
 }
@@ -358,18 +368,12 @@ function interleaveByRule(candidates: readonly GroupedCandidate[]): GroupedCandi
 }
 
 /**
- * Ranks the local catalog against a resolved profile, applying `options.lens`'s level-band
- * restriction (a session with no level band on record is excluded whenever the lens restricts by
- * level, never assumed to satisfy it) and format preference (an additional `"format"` reason,
- * appended on top of `scoreSession`'s own reasons) before sorting.
- *
- * A session with nothing to say for it -- no service, topic, area-of-interest, or text signal at
- * all from `scoreSession` -- is excluded entirely, before the lens's format bonus is even
- * considered, rather than returned at the bottom with a `0`. The format bonus is a tiebreak among
- * sessions that already share a real signal with the profile, never a standalone reason to include
- * one that shares nothing with it -- gating on it too would let a session earn a place purely by
- * being the lens's favored type. This is also what makes a profile with no signals at all return an
- * empty list instead of every session in the catalog in an arbitrary order.
+ * Ranks the local catalog against a resolved profile under `options.lens`. All and Explain admit a
+ * session only for a concept of the profile it names (see `concepts.ts`, `all.ts`, `explain.ts`);
+ * Fix and Next-level admit it on a rule's signal (see `lens-signals.ts`), and add `scoreSession`'s
+ * relevance to the score. A session with nothing to say for it is never returned, rather than
+ * returned at the bottom with a `0`, which is also why a profile with no concepts returns an empty
+ * list instead of every session in the catalog in an arbitrary order.
  *
  * Every repeat sitting of the same talk (see `baseSessionCode`) is collapsed into one
  * `MatchCandidate` before ranking, so `options.limit` counts distinct talks, not raw sittings, and
@@ -377,10 +381,11 @@ function interleaveByRule(candidates: readonly GroupedCandidate[]): GroupedCandi
  * same talk occupying several slots under different suffixes. `catalog search` is deliberately
  * left ungrouped -- it's a raw listing, not a ranked set of choices to pick between.
  *
- * Ties break first on whether the group's best-scoring sitting is actually scheduled (`startDate`
- * present) -- an otherwise-equal group with nothing yet scheduled ranks below one that does, since
- * there's nothing yet to act on for it -- and then on `code`, the same deterministic tiebreak
- * `catalog/query.ts`'s local search uses on `abbreviation`.
+ * Fix and Next-level ties break first on whether the group's best-scoring sitting is actually
+ * scheduled (`startDate` present) -- an otherwise-equal group with nothing yet scheduled ranks below
+ * one that does, since there's nothing yet to act on for it -- and then on `code`, the same
+ * deterministic tiebreak `catalog/query.ts`'s local search uses on `abbreviation`. All ends its
+ * ordering the same way.
  *
  * Throws `CatalogMissingError`/`CatalogUnusableError` exactly like `queryCatalog`, since there's
  * nothing to rank against until a catalog has been synced.
@@ -452,6 +457,51 @@ function matchExplain(
   };
 }
 
+/**
+ * The All lens: the sessions about the technologies and architecture the profile is built on, at any
+ * level and in any format (see `all.ts`). A session is admitted for a concept of the profile it names,
+ * ranked by how central the concepts are to the code, and listed at most three to a concept while
+ * other concepts have sessions. Anything the profile's concepts do not name is not returned.
+ */
+function matchAll(
+  profile: ResolvedProfile,
+  index: readonly IndexRecord[],
+  rawById: ReadonlyMap<string, { abstract?: string }>,
+  query: MatchQuery,
+  corpusStats: ReturnType<typeof buildCorpusStats>,
+  limit: number | undefined,
+  abstractOf: AbstractOf,
+): MatchResult {
+  const services = knownServices(profile, index);
+  const { concepts: evidenced } = buildConcepts(profile, services, { architecturePhrases: true });
+  const concepts = [...evidenced, ...interestConcepts(profile, evidenced)];
+  const context = { absent: absentBroadTopics(concepts), services: serviceTails(services), industries: industryTerms(index) };
+  const scored: ScoredRecord[] = [];
+  for (const record of index) {
+    const abstract = rawById.get(record.sessionId)?.abstract ?? "";
+    const matches = matchAllConcepts(concepts, record, abstract);
+    if (matches.length === 0) continue;
+    const demoted = demotionReason(record, abstract, context);
+    scored.push({ record, score: scoreSession(record, query, corpusStats).score, reasons: [], explain: matches, ...(demoted === undefined ? {} : { demoted }) });
+  }
+  const groups = groupByCode(scored);
+  const byCode = new Map(groups.map((group) => [group.code, group]));
+  const ranked = rankAll(groups.map((group) => ({
+    key: group.code, record: group.record, matches: group.explain!, relevance: group.score,
+    ...(group.demoted === undefined ? {} : { demoted: group.demoted }),
+  })));
+  const candidates = ranked.map((entry) => allCandidate(byCode.get(entry.key)!, entry.matches, profile));
+  return {
+    candidates: (limit === undefined ? candidates : candidates.slice(0, limit)).map((candidate) => roundCandidate(candidate, whyFor(candidate, "all", profile, abstractOf))),
+    skippedRules: [],
+  };
+}
+
+function allCandidate(group: GroupedCandidate, matches: readonly ConceptMatch[], profile: ResolvedProfile): GroupedCandidate {
+  const reasons: Reason[] = matches.map((match) => allReason(match, profile.repos.length));
+  return { ...group, explain: [...matches], reasons, score: reasons.reduce((sum, reason) => sum + reason.weight, 0) };
+}
+
 /** Services a title can list next to another ("Amazon Polly and Transcribe"): the catalog's own service
  * vocabulary, the profile's, and the ordinary-word names (Glue, Backup, ...), since the catalog does not
  * list every service a profile names. */
@@ -498,6 +548,9 @@ export function matchSessionsDetailed(
   // how rare a term actually is.
   const corpusStats = buildCorpusStats(index);
 
+  if (lens === "all") {
+    return matchAll(profile, index, rawById, query, corpusStats, options.limit, abstractOf);
+  }
   if (lens === "explain") {
     return matchExplain(profile, index, rawById, query, corpusStats, options.limit, abstractOf);
   }
@@ -516,10 +569,7 @@ export function matchSessionsDetailed(
       }
     }
 
-    const lensBase = lens === "fix" || lens === "next-level"
-      ? scoreLensSignals(record, profile, lens, rawById?.get(record.sessionId)?.abstract, fitsStack)
-      : undefined;
-    const base = lensBase ?? scoreSession(record, query, corpusStats);
+    const base = scoreLensSignals(record, profile, lens, rawById.get(record.sessionId)?.abstract, fitsStack);
     // Gated on the scorer's own score, before the lens's format bonus is even considered -- a
     // format preference is a tiebreak among sessions that already share a real signal with the
     // profile (a service, a topic, an area of interest, or free-text overlap), never a standalone
@@ -532,13 +582,9 @@ export function matchSessionsDetailed(
 
     let score = base.score;
     const reasons = [...base.reasons];
-    let lensInfo: LensInfo | undefined;
-    if (lensBase !== undefined) {
-      const relevance = scoreSession(record, query, corpusStats);
-      score += relevance.score;
-      reasons.push(...relevance.reasons);
-      lensInfo = { hits: lensBase.hits, relevance: relevance.score };
-    }
+    const relevance = scoreSession(record, query, corpusStats);
+    score += relevance.score;
+    reasons.push(...relevance.reasons);
 
     const formatBonus = record.type !== null ? lensProfile.typeWeights.get(record.type) : undefined;
     if (formatBonus !== undefined) {
@@ -551,17 +597,16 @@ export function matchSessionsDetailed(
       score += formatBonus;
     }
 
-    scoredRecords.push({ record, score, reasons, ...(lensInfo === undefined ? {} : { lens: lensInfo }) });
+    scoredRecords.push({ record, score, reasons, lens: { hits: base.hits, relevance: relevance.score } });
   }
 
   const candidates = groupByCode(scoredRecords);
 
-  const isLens = lens === "fix" || lens === "next-level";
-  const ordered = isLens ? interleaveByRule(candidates) : candidates.sort(compareByScore);
+  const ordered = interleaveByRule(candidates);
 
   const limited = options.limit === undefined ? ordered : ordered.slice(0, options.limit);
   return {
     candidates: limited.map(candidate => roundCandidate(candidate, whyFor(candidate, lens, profile, abstractOf))),
-    skippedRules: isLens ? lensSkippedRules(profile, lens) : [],
+    skippedRules: lensSkippedRules(profile, lens),
   };
 }

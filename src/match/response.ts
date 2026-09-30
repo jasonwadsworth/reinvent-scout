@@ -1,12 +1,13 @@
 import { toPublicIndexRecord } from "../catalog/index-record.js";
-import type { UncoveredConcept } from "./explain.js";
+import type { UncoveredConcept } from "./concepts.js";
 import type { SkippedRule } from "./lens-signals.js";
 import type { MatchCandidate, MatchResult } from "./match.js";
 import type { Reason } from "./score.js";
 
-/** Reasons that only explain the ranking (a shared service, topic, wording, level or format). The
- * lens reasons (`pillarGap`, `migrationPath`, `explainsConcept`) carry every source that admitted a
- * candidate, so they are not ranking reasons. */
+/** Reasons that only explain the ranking (a shared service, topic, wording, level or format; under
+ * `all`, a concept the session is about, which `why` already says). The lens reasons (`pillarGap`,
+ * `migrationPath`, `explainsConcept`) carry every source that admitted a candidate, so they are not
+ * ranking reasons. */
 const LENS_REASON_KINDS: readonly Reason["kind"][] = ["pillarGap", "migrationPath", "explainsConcept"];
 
 export function isRankingReason(reason: Reason): boolean {
@@ -40,6 +41,7 @@ export function toLeanCandidate(candidate: MatchCandidate): Record<string, unkno
     reasons: candidate.reasons,
     offerings: candidate.offerings,
     ...(candidate.lensRules === undefined ? {} : { lensRules: candidate.lensRules }),
+    ...(candidate.demoted === undefined ? {} : { demoted: candidate.demoted }),
   };
 }
 

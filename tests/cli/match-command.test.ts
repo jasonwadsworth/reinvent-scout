@@ -61,7 +61,7 @@ function manyLambdaSessions(n: number): Session[] {
   return Array.from({ length: n }, (_, i) => ({
     sessionId: `synthetic-${i}`,
     abbreviation: `LAM${String(i).padStart(3, "0")}`,
-    title: `Serverless deep dive ${i}`,
+    title: `Lambda deep dive ${i}`,
     services: ["AWS Lambda"],
   }));
 }

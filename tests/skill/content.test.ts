@@ -824,3 +824,20 @@ describe("why documentation", () => {
     expect(readmeMd).toContain("rankingReasonsOmitted");
   });
 });
+
+describe("the all lens documentation", () => {
+  const readmeMd = readFileSync(join(here, "..", "..", "README.md"), "utf8");
+  const collapse = (text: string): string => text.replace(/\s+/g, " ");
+  it("describes admission, demotion and order in profiling.md", () => {
+    for (const text of ["The all lens", "at least twice", "never admits a session", "`demoted`", "sponsored session", "more than three of the first ten"]) {
+      expect(collapse(profilingMd)).toContain(text);
+    }
+  });
+  it("names the matchesConcept reason and the demoted field in workflow.md, and the demotion in the skill and the readme", () => {
+    expect(workflowMd).toContain("`matchesConcept`");
+    expect(workflowMd).toContain("`demoted`");
+    expect(collapse(workflowMd)).toContain("ranked lower: sponsored session");
+    expect(skillMd).toContain("`demoted`");
+    expect(readmeMd).toContain("`demoted`");
+  });
+});

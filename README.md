@@ -222,19 +222,21 @@ unsafe name is refused outright rather than silently sanitized.
 reinvent-scout match --profile my-profile.json
 ```
 
-Ranks every session in the local catalog against a profile and prints the candidates that share
-at least one real signal with it -- an exact catalog service match, a topic or area-of-interest
-match, or free-text overlap with the profile's own prose (service usage notes, pattern names and
-notes, interests, and intents). Each candidate carries a `score` and a list of `reasons`, plus every
-scheduled `offerings` (day, time, venue, room), so you (or an agent) can see exactly why a session
-was suggested and when to actually attend it, not just that it was suggested -- this is real output,
-from the profile example above run against the real catalog:
+Finds the sessions about what your code is built on: a session is admitted only when it names one of
+the profile's services or patterns (or one of its stated `interests`) in its title or abstract, and candidates
+are ranked by how central those concepts are to your code. Each candidate carries a `why` (the concepts it
+matches, where your code uses them, and the session's own sentence that says so), a `score` and `reasons`,
+plus every scheduled `offerings` (day, time, venue, room), so you (or an agent) can see exactly why a session
+was suggested and when to actually attend it -- this is real output for a serverless profile against the real
+catalog (`--verbose` adds the reasons):
 
 ```
-ARC325 -- Serverless at 1M RPS: Lambda, DynamoDB & SQS Scaling Lessons -- [Chalk talk] -- (score: 76.96)
-  - Uses Amazon DynamoDB, which this session covers.
-  - Matches the topic "Serverless".
-  - Text overlap on: dynamodb, lambda, serverless.
+ARC325 -- Serverless at 1M RPS: Lambda, DynamoDB & SQS Scaling Lessons -- [Chalk talk] -- 300 - Advanced -- (score: 180)
+  Why: Matches your serverless (Every backend component is Lambda, AppSync, DynamoDB, EventBridge; no containers or servers) and Amazon DynamoDB.
+  Your code: infrastructure/stacks/hallway-track-stack.ts:321, infrastructure/stacks/hallway-track-stack.ts:54
+  Session: "…the exact crossover point where serverless cost exceeds containers, and the operational trade-offs at each threshold."
+  - Matches serverless ("Serverless"), which this code uses at infrastructure/stacks/hallway-track-stack.ts:321.
+  - Matches Amazon DynamoDB ("DynamoDB"), which this code uses at infrastructure/stacks/hallway-track-stack.ts:54.
   Offerings:
     2026-12-02 -- 13:30 -- Caesars Forum -- Level 1 | Alliance 314
     2026-12-03 -- 10:00 -- Caesars Palace -- Caesars Palace | Promenade Level | Trevi
@@ -254,7 +256,13 @@ between.
 it is, it's resolved through the exact same validation and catalog-name resolution `profile
 validate` uses. Options:
 
-- `--lens <lens>` -- `all` (default, no restriction) or `explain`, which lists introductory sessions
+- `--lens <lens>` -- `all` (default) lists the sessions about what your code is built on, at any level and in
+  any format: a session is admitted only if it names one of your profile's services or patterns in its
+  title or abstract (a tag or a listed service alone never admits one; the exception is a stated
+  `interest`, which an exact topic or area-of-interest tag also admits), ranked by how central those
+  concepts are to your code. Sponsored, news or launch, customer-story, modernization, industry and
+  off-topic agent sessions are not dropped but follow the rest, each with a `demoted` reason. Or
+  `explain`, which lists introductory sessions
   (level bands 100 and 200) that are about the services and patterns your profile evidences. A
   session is admitted only if it names the concept in its title or at least twice in its abstract,
   and candidates come round-robin across concepts, most-cited first, so the list covers your code
@@ -262,7 +270,7 @@ validate` uses. Options:
   also carries `uncovered`, the concepts no introductory session is about, each with a reason. A
   session with no level on record is excluded. `fix` selects sessions addressing evidenced gaps;
   `next-level` selects sessions about supported migration destinations. These two lenses have no
-  level or format preference and leave `all` unchanged.
+  level or format preference.
 - `--limit <n>` -- cap the number of candidates (default 30, maximum 100).
 - `--include-abstracts` -- include each session's abstract text in the output.
 - `--json` -- machine-readable output: an array of resolved sessions, each with its own `score`

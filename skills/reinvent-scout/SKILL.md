@@ -37,7 +37,9 @@ explained shortlist.
    but it's worth a passing mention to the user.
 5. Call `match_sessions` with **the profile you wrote in step 3** -- never with `validate_profile`'s
    own report, which is a different, smaller shape `match_sessions` doesn't accept. Default to the
-   `"all"` lens unless the user wants foundational sessions (`"explain"`, which also returns
+   `"all"` lens (the sessions about the services and patterns their code is built on, any level; a
+   candidate with a `demoted` reason is a sponsored, news, customer-story, modernization, industry or
+   off-topic agent session, so say so when you present it) unless the user wants foundational sessions (`"explain"`, which also returns
    `uncovered`: concepts of their code with no introductory session), evidenced gap
    remediation (`"fix"`), or migration options (`"next-level"`). Fix uses only supported,
    evidence-bearing gap patterns; Next-level uses `serverless`, `ecs`, or `genai-single-call`.

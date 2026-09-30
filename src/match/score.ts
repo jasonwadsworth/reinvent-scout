@@ -8,7 +8,7 @@ import { getOwnTermCount, tokenize, type IndexRecord } from "../catalog/index-re
  * touching this module's arithmetic.
  */
 export interface Reason {
-  kind: "service" | "topic" | "areaOfInterest" | "text" | "level" | "format" | "pillarGap" | "migrationPath" | "explainsConcept";
+  kind: "service" | "topic" | "areaOfInterest" | "text" | "level" | "format" | "pillarGap" | "migrationPath" | "explainsConcept" | "matchesConcept";
   /** A one-line, human-readable explanation, e.g. `Uses Amazon DynamoDB, which this session
    * covers.` */
   detail: string;

@@ -5,7 +5,6 @@ import { CURRENT_SCHEMA_VERSION, writeCatalog } from "../../src/catalog/store.js
 import type { Lens } from "../../src/match/lens.js";
 import { matchSessionsDetailed } from "../../src/match/match.js";
 import type { Evidence, ResolvedProfile } from "../../src/profile/profile.js";
-import type { Reason } from "../../src/match/score.js";
 import { allWhy } from "../../src/match/why.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
 
@@ -233,52 +232,43 @@ describe("the why block", () => {
     const sqs = { ...service("Amazon Simple Queue Service (Amazon SQS)", { usage: "Dead-letter queues." }), role: "supporting" as const };
     const talk = (extra: Partial<Session> = {}) => session("LAM100", "Building on AWS Lambda", { ...extra });
 
-    it("names the two strongest matched services, the strongest with the code's note", () => {
-      const why = run(profileOf([], [sqs, lambda]), [talk()], "all").candidates[0]!.why;
+    it("names the two strongest matched concepts, the strongest with the code's note", () => {
+      const why = run(profileOf([], [sqs, lambda]), [talk({ title: "Building on AWS Lambda and Amazon SQS" })], "all").candidates[0]!.why;
       expect(why.summary).toBe("Matches your AWS Lambda (Cognito triggers and stream processors) and Amazon Simple Queue Service.");
       expect(why.yourCode).toEqual([{ repo: "repo", file: "fn/a.ts", line: 8 }, { repo: "repo", file: "Amazon Simple Queue Service (Amazon SQS).ts", line: 3 }, { repo: "repo", file: "fn/b.ts", line: 2 }]);
-      expect(why.sessionSays).toBe("Building on AWS Lambda");
+      expect(why.sessionSays).toBe("Building on AWS Lambda and Amazon SQS");
     });
 
     it("never names a third", () => {
       const three = [lambda, service("Amazon DynamoDB"), service("Amazon Cognito")];
-      const why = run(profileOf([], three), [talk({ services: ["AWS Lambda", "Amazon DynamoDB", "Amazon Cognito"] })], "all").candidates[0]!.why;
-      expect(why.summary).toBe("Matches your AWS Lambda (Cognito triggers and stream processors) and Amazon DynamoDB.");
+      const why = run(profileOf([], three), [talk({ title: "AWS Lambda with Amazon DynamoDB and Amazon Cognito" })], "all").candidates[0]!.why;
+      expect(why.summary).toBe("Matches your AWS Lambda (Cognito triggers and stream processors) and Amazon Cognito.");
     });
 
-    it("quotes the abstract sentence that names the service when the title does not", () => {
+    it("names only the concepts the session was admitted for, not one it merely lists", () => {
+      const three = [lambda, service("Amazon DynamoDB")];
+      const why = run(profileOf([], three), [talk({ services: ["AWS Lambda", "Amazon DynamoDB"] })], "all").candidates[0]!.why;
+      expect(why.summary).toBe("Matches your AWS Lambda (Cognito triggers and stream processors).");
+    });
+
+    it("quotes the abstract sentence that names the concept when the title does not", () => {
       const abstract = "A deep look at events. Every handler runs on AWS Lambda behind a queue. More to come.";
       const why = run(profileOf([], [lambda]), [session("EVT100", "Event handlers", { services: ["AWS Lambda"], abstract })], "all").candidates[0]!.why;
       expect(why.sessionSays).toBe("Every handler runs on AWS Lambda behind a queue.");
     });
 
-    it("omits the quote rather than invent one when the session only lists the service", () => {
-      const why = run(profileOf([], [lambda]), [session("EVT100", "Event handlers", { services: ["AWS Lambda"], abstract: "Nothing relevant here." })], "all").candidates[0]!.why;
-      expect("sessionSays" in why).toBe(false);
+    it("quotes the title when the abstract does not name the concept", () => {
+      const why = run(profileOf([], [lambda]), [talk({ abstract: "Nothing relevant here." })], "all").candidates[0]!.why;
+      expect(why.sessionSays).toBe("Building on AWS Lambda");
     });
 
     it("describes a matched pattern by its note and quotes the sentence that says it", () => {
       const p = profileOf([{ name: "serverless", note: "Only Lambda and DynamoDB.", evidence: [cite("app.ts", 5)] }], []);
       const abstract = "Intro. We build a serverless backend from scratch. Enjoy.";
-      const why = run(p, [session("SLS100", "Backends", { services: [], topics: ["Serverless"], abstract })], "all").candidates[0]!.why;
+      const why = run(p, [session("SLS100", "Serverless backends", { services: [], topics: ["Serverless"], abstract })], "all").candidates[0]!.why;
       expect(why.summary).toBe("Matches your serverless (Only Lambda and DynamoDB).");
       expect(why.yourCode).toEqual([{ repo: "repo", file: "app.ts", line: 5 }]);
       expect(why.sessionSays).toBe("We build a serverless backend from scratch.");
-    });
-
-    it("says an interest matched when nothing of the code did, citing no code", () => {
-      const p = { ...profileOf([], []), interests: ["Kubernetes"] };
-      const why = run(p, [session("K8S100", "Cluster basics", { services: [], areasOfInterest: ["Kubernetes"], abstract: "Learn Kubernetes today." })], "all").candidates[0]!.why;
-      expect(why.summary).toBe("Matches your interest in Kubernetes.");
-      expect(why.yourCode).toEqual([]);
-      expect(why.sessionSays).toBe("Learn Kubernetes today.");
-    });
-
-    it("falls back to the wording it shares with the profile, with nothing of the code to cite", () => {
-      const p = { ...profileOf([], []), intents: [{ kind: "goal" as const, text: "reduce cold starts" }] };
-      const why = run(p, [session("COLD100", "Cold starts", { services: [], abstract: "Fewer cold starts, faster." })], "all").candidates[0]!.why;
-      expect(why.summary).toMatch(/^Matches the wording of your profile: /);
-      expect(why.yourCode).toEqual([]);
     });
 
     it("quotes the first mention outside an enumeration of names", () => {
@@ -287,117 +277,25 @@ describe("the why block", () => {
       expect(why.sessionSays).toBe("Then AWS Lambda gets a deep dive.");
     });
 
-    describe("when a service appears only in a list", () => {
-      const p = profileOf([], [lambda]);
-      const listedAbstract = "We compare Kinesis, AWS Lambda and Step Functions side by side. Nothing else.";
-      const say = (raw: Session) => run(p, [raw], "all").candidates[0]!.why.sessionSays;
-
-      it("quotes the sentence with the first listed mention rather than omitting it, an ampersand list included", () => {
-        expect(say(session("LST100", "Scaling lessons: Lambda, DynamoDB & SQS", { services: ["AWS Lambda"] }))).toBe("Scaling lessons: Lambda, DynamoDB & SQS");
-        expect(say(session("LST101", "Event handlers", { services: ["AWS Lambda"], abstract: listedAbstract }))).toBe("We compare Kinesis, AWS Lambda and Step Functions side by side.");
-      });
-
-      it("prefers a listed abstract sentence over a listed title", () => {
-        expect(say(session("LST102", "Scaling lessons: Lambda, DynamoDB & SQS", { services: ["AWS Lambda"], abstract: listedAbstract })))
-          .toBe("We compare Kinesis, AWS Lambda and Step Functions side by side.");
-      });
-
-      it("prefers an unlisted title over a listed abstract sentence", () => {
-        expect(say(session("LST103", "Building on AWS Lambda", { abstract: listedAbstract }))).toBe("Building on AWS Lambda");
-      });
-
-      it("prefers an unlisted mention of another profile concept over a listed one of a named service", () => {
-        const withPattern = profileOf([{ name: "serverless", evidence: [cite("app.ts", 5)] }], [lambda]);
-        const why = run(withPattern, [session("LST104", "Event handlers", { services: ["AWS Lambda"], abstract: `${listedAbstract} Everything here is serverless by design.` })], "all").candidates[0]!.why;
-        expect(why.sessionSays).toBe("Everything here is serverless by design.");
-        expect(why.summary).toBe("Matches your AWS Lambda (Cognito triggers and stream processors) and serverless.");
-      });
-
-      it("omits the quote only when there is no mention at all", () => {
-        expect("sessionSays" in run(p, [session("LST105", "Event handlers", { services: ["AWS Lambda"], abstract: "Nothing relevant." })], "all").candidates[0]!.why).toBe(false);
-      });
-    });
-
     it("prefers an abstract sentence over a title naming the same service", () => {
       const why = run(profileOf([], [lambda]), [talk({ abstract: "Intro. Handlers run on AWS Lambda here. Then more." })], "all").candidates[0]!.why;
       expect(why.sessionSays).toBe("Handlers run on AWS Lambda here.");
     });
 
-    it("finds a pattern with no defined session wording by its own name", () => {
-      const p = profileOf([{ name: "cell-based", evidence: [cite("cells.ts", 3)] }], []);
-      const abstract = "Intro. Cell based design keeps the blast radius small. Done.";
-      const why = run(p, [session("CEL100", "Blast radius", { services: [], topics: ["Cell-Based"], abstract })], "all").candidates[0]!.why;
-      expect(why.summary).toBe("Matches your cell-based.");
-      expect(why.sessionSays).toBe("Cell based design keeps the blast radius small.");
-    });
-
     it("finds a pattern by the wording sessions use for it, not only its name", () => {
       const p = profileOf([{ name: "event-driven", evidence: [cite("bus.ts", 3)] }], []);
       const abstract = "Intro. We build event-based systems on AWS. Done.";
-      const why = run(p, [session("EVT100", "Systems", { services: [], topics: ["Event-Driven"], abstract })], "all").candidates[0]!.why;
+      const why = run(p, [session("EVT100", "Event-driven systems", { services: [], topics: ["Event-Driven Architecture"], abstract })], "all").candidates[0]!.why;
       expect(why.sessionSays).toBe("We build event-based systems on AWS.");
     });
 
-    describe("from reasons directly", () => {
-      const reason = (kind: Reason["kind"], evidence: string, weight: number): Reason => ({ kind, detail: "", evidence, weight });
-      const profile = profileOf([], [service("AWS Lambda"), service("Amazon DynamoDB"), service("Amazon Cognito")]);
-      const empty = { title: "Nothing", abstract: "" };
+    it("says what a demoted session is", () => {
+      const why = run(profileOf([], [lambda]), [talk({ title: "What's new in AWS Lambda" })], "all").candidates[0]!.why;
+      expect(why.summary).toBe("Matches your AWS Lambda (Cognito triggers and stream processors); ranked lower: news or launch session.");
+    });
 
-      it("orders concepts by reason weight, not by the order the reasons arrive in", () => {
-        const why = allWhy([reason("service", "AWS Lambda", 25), reason("service", "Amazon DynamoDB", 50)], profile, empty);
-        expect(why.summary).toBe("Matches your Amazon DynamoDB and AWS Lambda.");
-      });
-
-      it("names a concept once however many reasons point at it", () => {
-        const why = allWhy([reason("service", "AWS Lambda", 50), reason("service", "AWS Lambda", 25), reason("service", "Amazon DynamoDB", 12)], profile, empty);
-        expect(why.summary).toBe("Matches your AWS Lambda and Amazon DynamoDB.");
-      });
-
-      it("quotes only for a concept the summary names, swapping in a weaker matched one the session does say", () => {
-        const reasons = [reason("service", "AWS Lambda", 50), reason("service", "Amazon DynamoDB", 40), reason("service", "Amazon Cognito", 30)];
-        expect(allWhy(reasons, profile, { title: "Sign-in", abstract: "" })).not.toHaveProperty("sessionSays");
-        const swapped = allWhy(reasons, profile, { title: "Sign-in with Amazon Cognito", abstract: "" });
-        expect(swapped.summary).toBe("Matches your AWS Lambda and Amazon Cognito.");
-        expect(swapped.sessionSays).toBe("Sign-in with Amazon Cognito");
-        const kept = allWhy(reasons, profile, { title: "Sign-in with Amazon DynamoDB", abstract: "" });
-        expect(kept.summary).toBe("Matches your AWS Lambda and Amazon DynamoDB.");
-        expect(kept.sessionSays).toBe("Sign-in with Amazon DynamoDB");
-      });
-
-      it("swaps in a profile pattern the session names though no reason points at it, abstract first", () => {
-        const withPatterns = profileOf([{ name: "event-driven", evidence: [cite("bus.ts", 6)] }, { name: "serverless", evidence: [cite("app.ts", 5)] }], [service("AWS Lambda")]);
-        const why = allWhy([reason("service", "AWS Lambda", 50)], withPatterns, { title: "Testing serverless applications", abstract: "We cover event-driven flows. Then event-driven again." });
-        expect(why.summary).toBe("Matches your AWS Lambda and event-driven.");
-        expect(why.sessionSays).toBe("We cover event-driven flows.");
-        expect(why.yourCode).toEqual([{ repo: "repo", file: "AWS Lambda.ts", line: 3 }, { repo: "repo", file: "bus.ts", line: 6 }]);
-      });
-
-      it("quotes the named concept that the abstract says, not the first one only the title names", () => {
-        const reasons = [reason("service", "AWS Lambda", 50), reason("service", "Amazon DynamoDB", 40)];
-        const why = allWhy(reasons, profile, { title: "Building on AWS Lambda", abstract: "Intro. Tables live in Amazon DynamoDB here. Done." });
-        expect(why.summary).toBe("Matches your AWS Lambda and Amazon DynamoDB.");
-        expect(why.sessionSays).toBe("Tables live in Amazon DynamoDB here.");
-      });
-
-      it("prefers a service the title says over one the abstract only lists", () => {
-        const reasons = [reason("service", "AWS Lambda", 50), reason("service", "Amazon DynamoDB", 40)];
-        const why = allWhy(reasons, profile, { title: "Building on Amazon DynamoDB", abstract: "We compare Kinesis, AWS Lambda and Step Functions side by side." });
-        expect(why.sessionSays).toBe("Building on Amazon DynamoDB");
-      });
-
-      it("never swaps in a concept no reason points at on a mention inside a list", () => {
-        const withPattern = profileOf([{ name: "serverless", evidence: [cite("app.ts", 5)] }], [service("AWS Lambda"), service("Amazon DynamoDB")]);
-        const reasons = [reason("service", "AWS Lambda", 50), reason("service", "Amazon DynamoDB", 40)];
-        const why = allWhy(reasons, withPattern, { title: "Platforms", abstract: "We cover serverless, containers, and event-driven designs." });
-        expect(why.summary).toBe("Matches your AWS Lambda and Amazon DynamoDB.");
-        expect(why).not.toHaveProperty("sessionSays");
-      });
-
-      it("never swaps in a gap pattern", () => {
-        const withGap = profileOf([{ name: "gap-no-dlq", evidence: [cite("rules.ts", 4)] }], [service("AWS Lambda")]);
-        const why = allWhy([reason("service", "AWS Lambda", 50)], withGap, { title: "gap-no-dlq and dead-letter queues", abstract: "" });
-        expect(why.summary).toBe("Matches your AWS Lambda.");
-      });
+    it("has nothing to say for a candidate no concept admitted", () => {
+      expect(() => allWhy([], undefined, profileOf([], [lambda]), { title: "Nothing", abstract: "" })).toThrow("no concept");
     });
   });
 });

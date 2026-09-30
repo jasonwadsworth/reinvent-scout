@@ -247,13 +247,14 @@ service or pattern you already recorded elsewhere.
 For each interest, look for the nearest match in `reference/taxonomy.md`'s "Areas of interest" list
 and spell it exactly as the catalog does -- `"Event-Driven Architecture"`, `"Kubernetes"`, `"Cost
 Optimization"`, not a paraphrase of any of them. This matters mechanically, not just stylistically:
-`match_sessions` only produces an `areaOfInterest` reason for an exact tag match; anything else in
-`interests` still counts toward the free-text score, but only an exact tag earns that specific,
-strongest reason. "Exact" here means spelling and punctuation, not case -- the comparison itself is
-case-insensitive (`"kubernetes"` and `"Kubernetes"` match equally well), so there's no need to worry
-about matching the catalog's own capitalization exactly, only its wording. Keep an interest as free
-text only when nothing in the real list is actually a good fit -- don't force a weak match just to
-get the stronger reason type.
+under the `all` lens an interest is a concept of its own (centrality 1, no code cited). A session whose title
+names it, or that carries a topic or area-of-interest tag equal to it, is returned with a `matchesConcept`
+reason "Matches your interest in X"; an interest spelled any other way is admitted only by a title that names it.
+"Exact" here means spelling and punctuation, not case -- the comparison is case-insensitive -- so there's no
+need to match the catalog's capitalization, only its wording. Sessions about an interest rank after sessions
+about the services and patterns you evidenced. An interest that names a broad topic ("Agentic AI") also stops
+sessions about it being ranked lower as off-topic. Shared wording and `intents` only break ties. Keep an
+interest as free text only when nothing in the real list is a good fit -- a title mention still admits it.
 
 ## Fold in issues and other context
 
@@ -417,6 +418,38 @@ introduction. Each entry has a `kind` (`service` or `pattern`) because a service
 share a name. Tell the user which parts of their code the catalog has no introduction for instead of
 padding the list with weaker sessions; an empty `candidates` with a full `uncovered` is a valid
 answer (a codebase built on tools the conference does not cover).
+
+## The all lens
+
+`lens: "all"` (the default) answers "which sessions are about the technologies and architecture this code
+is built on?". It works from the same concepts as the explain lens (core services, supporting ones at half
+weight, and non-gap patterns; platform services are not concepts) and needs no gap or path patterns. It lists
+sessions of any level and format, so it does not ask for an introduction.
+
+**Admission.** A session is about a concept when its title names it, or its abstract names it at least twice
+outside an enumeration of names, or once outside one when the session also lists the service or carries a
+matching tag. A tag or a listed service alone never admits a session. A session matched only through
+patterns (no service of yours among them) needs a pattern named in its title. `agentic` and
+`genai-single-call` are too widespread to count on a bare title: alone, a title that names them admits a session only
+if it also says how to build or design it ("Building ...", "Best practices for ...") or the session names one of your
+services (even in a list, which admits it but adds no weight to it; outside a list the service counts as a second
+concept). A profile whose only concepts are those two therefore gets a short list of such sessions, not every agent talk. Each entry of the
+profile's `interests` is a concept too (centrality 1, nothing cited): a title that names it, or a topic or
+area-of-interest tag equal to it, admits a session, and those rank after sessions about your evidenced concepts.
+`intents` and shared wording are not used. An "AWS Partner:" bootcamp and a certification or exam session are
+never returned.
+
+**Demotion.** A sponsored session, a feature-news or launch session, a customer story (including a named company's migration or scaling told in the abstract, "Honeycomb spends ..."), a modernization or
+migration session, a session made for an industry, and a session titled about agents or generative AI when
+your profile has no `agentic` or `genai-single-call` pattern are returned after every other session, each
+with a `demoted` reason, because an experienced reader may still want them.
+
+**Order.** A title that names a concept comes before an abstract that only does; a session about your evidenced
+concepts comes before one about only a stated interest; then the summed centrality of
+the concepts (the distinct files you cited, so cite the files that really use each one), then the number of
+concepts, then relevance to the whole profile. No concept is the main subject of more than three of the first ten
+while four or more concepts have sessions; what that holds back follows the ten in order. Each candidate's
+`why` names the concepts it was admitted for and quotes the sentence that says so.
 
 ## Supported evidence lenses
 

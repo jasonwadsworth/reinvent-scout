@@ -51,7 +51,7 @@ function manyLambdaSessions(n: number): Session[] {
   return Array.from({ length: n }, (_, i) => ({
     sessionId: `synthetic-${i}`,
     abbreviation: `LAM${String(i).padStart(3, "0")}`,
-    title: `Serverless deep dive ${i}`,
+    title: `Lambda deep dive ${i}`,
     services: ["AWS Lambda"],
   }));
 }
@@ -92,20 +92,24 @@ function longReasonsSessions(n: number): Session[] {
     sessionId: `long-${i}`,
     abbreviation: `LNG${String(i).padStart(3, "0")}`,
     title:
-      `A deliberately verbose synthetic session title used only to inflate response size for ` +
+      `A deliberately verbose synthetic Lambda session title used only to inflate response size for ` +
       `the truncation test, entry number ${i}`,
     services: LONG_SERVICE_NAMES,
   }));
 }
 
+/** A profile whose one concept the sessions name cites forty places, each with a long note, so the
+ * reason every candidate carries is genuinely large. */
 function longReasonsProfile(): unknown {
   return {
     schemaVersion: 1,
     repos: [{ root: ".", languages: [] }],
-    services: LONG_SERVICE_NAMES.map((name, i) => ({
-      name,
-      evidence: [{ repo: ".", file: `service-${i}.ts` }],
-    })),
+    services: [
+      {
+        name: "AWS Lambda",
+        evidence: Array.from({ length: 40 }, (_, i) => ({ repo: ".", file: `service-${i}.ts`, line: i + 1, note: "a long note about this place ".repeat(6) })),
+      },
+    ],
     patterns: [],
   };
 }
@@ -639,8 +643,8 @@ describe("match_sessions tool", () => {
     expect(typeof parsed.hint).toBe("string");
     expect(parsed.hint.length).toBeGreaterThan(0);
     // Every included candidate is whole -- why and offerings are never partially serialized to
-    // make room; a candidate is either fully in or fully left out. Ranking reasons went first,
-    // from all of them, and the response says so.
+    // make room; a candidate is either fully in or fully left out. Ranking reasons (under All, the
+    // concept reasons) went first, from all of them, and the response says so.
     expect((parsed as { rankingReasonsOmitted?: boolean }).rankingReasonsOmitted).toBe(true);
     for (const candidate of parsed.candidates) {
       expect(typeof (candidate.why as { summary: string }).summary).toBe("string");
@@ -671,46 +675,6 @@ describe("match_sessions tool", () => {
         "A narrower lens or a more specific profile changes what ranks highest.",
     );
     expect(parsed.hint).not.toMatch(/limit/i);
-  });
-
-  it("drops ranking reasons before any candidate at the default limit, driven by profile richness rather than the limit requested", async () => {
-    // Reviewer's follow-up measurement, against the real catalog: an eight-service profile --
-    // not exotic, an ordinary serverless app names Lambda, DynamoDB, S3, SQS, EventBridge, API
-    // Gateway, Step Functions and CloudWatch without trying -- already breaches 30 KB at the
-    // *default* limit of 25, because each matched service adds its own reason to every candidate.
-    // No candidate-count limit fixes that; only a response-level budget does. Reproduced here with
-    // a synthetic eight-service profile against forty candidate sessions (more than the default
-    // limit, so there's a real ranked set to truncate from), no `limit` argument given at all.
-    const services = LONG_SERVICE_NAMES.slice(0, 8);
-    const sessions = Array.from({ length: 40 }, (_, i) => ({
-      sessionId: `rich-${i}`,
-      abbreviation: `RCH${String(i).padStart(3, "0")}`,
-      title: `Synthetic session ${i}`,
-      services,
-    }));
-    seedCatalog(home.path, sessions);
-    const client = await connectedClient({ resolveStoreRoot: () => home.path });
-
-    const result = await client.callTool({
-      name: "match_sessions",
-      arguments: {
-        profile: {
-          schemaVersion: 1,
-          repos: [{ root: ".", languages: [] }],
-          services: services.map((name, i) => ({ name, evidence: [{ repo: ".", file: `f${i}.ts` }] })),
-          patterns: [],
-        },
-      },
-    });
-
-    expect(result.isError).not.toBe(true);
-    expect(Buffer.byteLength(JSON.stringify(result), "utf8")).toBeLessThan(30 * 1024);
-    const parsed = JSON.parse(textOf(result)) as { truncated: boolean; requested: number; returned: number; rankingReasonsOmitted?: boolean };
-    expect(parsed.requested).toBe(25); // the default -- never explicitly asked for more
-    // Ranking reasons are dropped before any candidate is: dropping them is enough at the default limit.
-    expect(parsed.rankingReasonsOmitted).toBe(true);
-    expect(parsed.truncated).toBe(false);
-    expect(parsed.returned).toBe(25);
   });
 
   it("returns a truncated response's candidates as exactly the ranked prefix an untruncated run would produce", async () => {

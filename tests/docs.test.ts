@@ -101,7 +101,7 @@ describe("README match output examples", () => {
     expect(scoreLines.length).toBeGreaterThan(0);
 
     for (const line of scoreLines) {
-      expect(line).toMatch(/^\S.* -- .* -- \[.+\] -- \(score: [\d.]+\)$/);
+      expect(line).toMatch(/^\S.* -- .* -- \[.+\] -- (?:\d+ - \w+ -- )?\(score: [\d.]+\)$/);
     }
   });
 });
