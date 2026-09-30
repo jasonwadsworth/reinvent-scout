@@ -288,28 +288,3 @@ describe("service role", () => {
     expect(() => parseProfile(withRole("primary"))).toThrow();
   });
 });
-
-describe("footprint", () => {
-  const withFootprint = (where: "services" | "patterns", footprint: unknown): unknown => {
-    const raw = validRawProfile() as { services: Array<Record<string, unknown>>; patterns: Array<Record<string, unknown>> };
-    raw[where][0]!.footprint = footprint;
-    return raw;
-  };
-  it("accepts a non-negative integer on a service and a pattern and keeps it through parse and resolve", () => {
-    expect(parseProfile(withFootprint("services", 12)).services[0]?.footprint).toBe(12);
-    expect(parseProfile(withFootprint("services", 0)).services[0]?.footprint).toBe(0);
-    expect(parseProfile(withFootprint("patterns", 7)).patterns[0]?.footprint).toBe(7);
-    expect(resolveProfile(withFootprint("services", 12), testAliasIndex()).services[0]?.footprint).toBe(12);
-  });
-  it("is optional: a profile without one is valid and unchanged", () => {
-    const parsed = parseProfile(validRawProfile());
-    expect(parsed.services[0]).not.toHaveProperty("footprint");
-    expect(parsed.patterns[0]).not.toHaveProperty("footprint");
-  });
-  it("rejects a negative, fractional or non-numeric footprint", () => {
-    for (const bad of [-1, 2.5, "3", null]) {
-      expect(() => parseProfile(withFootprint("services", bad)), String(bad)).toThrow();
-      expect(() => parseProfile(withFootprint("patterns", bad)), String(bad)).toThrow();
-    }
-  });
-});

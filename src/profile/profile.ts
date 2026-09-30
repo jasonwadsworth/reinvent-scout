@@ -24,8 +24,6 @@ const RepoSchema = z.object({
   summary: z.string().optional(),
 });
 
-const FootprintSchema = z.number().int().nonnegative().optional();
-
 const ServiceSchema = z.object({
   /** However the agent (or a person) spelled it -- a short key, a full catalog display name, an
    * SDK package name, anything. Resolved against the catalog by `resolveProfile`. */
@@ -35,18 +33,12 @@ const ServiceSchema = z.object({
    * CI-only tooling, code it generates for users); it counts for half in matching. Absent means
    * core. Optional, so the schema version stays 1. */
   role: z.enum(["core", "supporting"]).optional(),
-  /** How many distinct source files in the cited repos use the service (tests, generated code, lockfiles and docs
-   * excluded): a count the profiler measures by search, not a citation. It is an estimate. Optional, so the schema
-   * version stays 1. */
-  footprint: FootprintSchema,
   evidence: z.array(EvidenceSchema),
 });
 
 const PatternSchema = z.object({
   name: z.string().min(1),
   note: z.string().optional(),
-  /** How many distinct source files in the cited repos exhibit the pattern; see the service's `footprint`. */
-  footprint: FootprintSchema,
   evidence: z.array(EvidenceSchema),
 });
 

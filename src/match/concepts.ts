@@ -207,18 +207,8 @@ interface Draft {
   catalogName: string | null;
   tags: readonly string[];
   titleOnly: boolean;
-  /** The largest footprint among the profile entries merged into this concept. */
-  footprint?: number;
   note?: string;
 }
-
-/** The profile measured how much the code uses at least one of its services or patterns. */
-export function hasFootprints(profile: ResolvedProfile): boolean {
-  return profile.services.some(service => service.footprint !== undefined) || profile.patterns.some(pattern => pattern.footprint !== undefined);
-}
-
-const largest = (a: number | undefined, b: number | undefined): number | undefined =>
-  a === undefined ? b : b === undefined ? a : Math.max(a, b);
 
 /** The profile's stated interests that its evidence does not already name, as concepts of centrality 1 with
  * nothing cited: the user's own ask, admitted by a title that names one or by an exact topic or area-of-interest tag. */
@@ -253,15 +243,12 @@ export function buildConcepts(profile: ResolvedProfile, catalogServices: readonl
         name: service.catalogName ?? service.name, kind: "service", supporting,
         citations: [...service.evidence], matchers: serviceMatchers(service.name, service.catalogName, tails),
         catalogName: service.catalogName, tags: [], titleOnly: false,
-        ...(service.footprint === undefined ? {} : { footprint: service.footprint }),
         ...(service.usage === undefined ? {} : { note: service.usage }),
       });
     } else {
       draft.supporting = draft.supporting && supporting;
       if (draft.note === undefined && service.usage !== undefined) draft.note = service.usage;
       draft.citations.push(...service.evidence);
-      const footprint = largest(draft.footprint, service.footprint);
-      if (footprint !== undefined) draft.footprint = footprint;
       draft.matchers.push(...serviceMatchers(service.name, service.catalogName, tails));
     }
   }
@@ -278,8 +265,6 @@ export function buildConcepts(profile: ResolvedProfile, catalogServices: readonl
     if (twin !== undefined) {
       // The pattern and the service are one concept (ecs and Amazon ECS): one citation list, one turn.
       twin.citations.push(...pattern.evidence);
-      const footprint = largest(twin.footprint, pattern.footprint);
-      if (footprint !== undefined) twin.footprint = footprint;
       if (twin.note === undefined && pattern.note !== undefined) twin.note = pattern.note;
       twin.matchers.push(entry.phrase);
       twin.tags = [...twin.tags, ...entry.tags];
@@ -288,23 +273,17 @@ export function buildConcepts(profile: ResolvedProfile, catalogServices: readonl
     const key = `pattern:${pattern.name.toLowerCase()}`;
     const draft = drafts.get(key);
     if (draft === undefined) {
-      drafts.set(key, { name: pattern.name, kind: "pattern", supporting: false, citations: [...pattern.evidence], matchers: [entry.phrase], catalogName: null, tags: entry.tags, titleOnly: entry.broad === true, ...(pattern.footprint === undefined ? {} : { footprint: pattern.footprint }), ...(pattern.note === undefined ? {} : { note: pattern.note }) });
+      drafts.set(key, { name: pattern.name, kind: "pattern", supporting: false, citations: [...pattern.evidence], matchers: [entry.phrase], catalogName: null, tags: entry.tags, titleOnly: entry.broad === true, ...(pattern.note === undefined ? {} : { note: pattern.note }) });
     } else {
       draft.citations.push(...pattern.evidence);
-      const footprint = largest(draft.footprint, pattern.footprint);
-      if (footprint !== undefined) draft.footprint = footprint;
       if (draft.note === undefined && pattern.note !== undefined) draft.note = pattern.note;
     }
   }
-  // A profile that measured footprints gets log2(1 + files used) for every concept (the cited-file count standing in
-  // where one is missing); one that did not keeps the cited-file count, so its ranking is exactly what it was.
-  const measured = hasFootprints(profile);
   const concepts = [...drafts.values()].map((draft): ProfileConcept => {
     const weight = draft.supporting ? SUPPORTING_WEIGHT : 1;
-    const files = draft.footprint ?? new Set(draft.citations.map(fileKey)).size;
     return {
       name: draft.name, kind: draft.kind, weight,
-      centrality: (measured ? Math.log2(1 + files) : files) * weight,
+      centrality: new Set(draft.citations.map(fileKey)).size * weight,
       citations: draft.citations, matchers: draft.matchers, catalogName: draft.catalogName, tags: draft.tags, titleOnly: draft.titleOnly,
       ...(draft.note === undefined ? {} : { note: draft.note }),
     };

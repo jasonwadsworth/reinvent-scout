@@ -298,7 +298,6 @@ restatement of the `services` list as prose.
     {
       "name": "Amazon DynamoDB",
       "usage": "Stores orders and their line items.",
-      "footprint": 9,
       "evidence": [
         { "repo": "api", "file": "src/handlers/create-order.ts", "line": 12, "snippet": "new DynamoDBClient({})" }
       ]
@@ -308,7 +307,6 @@ restatement of the `services` list as prose.
     {
       "name": "event-driven",
       "note": "Order creation publishes to EventBridge.",
-      "footprint": 6,
       "evidence": [
         { "repo": "api", "file": "infra/stack.ts", "line": 44, "snippet": "new events.EventBus(this, \"OrderEvents\")" }
       ]
@@ -350,49 +348,6 @@ would silently fail to match the real topic at all.
 
 For a multi-repository profile, add one entry per repository to `repos` and use its `root` as the
 `repo` value in every citation that belongs to it.
-
-## Footprint: how much of the code uses it
-
-Every service and pattern may carry `"footprint"`: a non-negative integer, **the number of distinct source files in
-the repositories you profiled that use the service or exhibit the pattern**. Citations say *where to look*; the footprint
-says *how much of the code is built on it*. You cite a few strong places, so a service the whole product runs on and one
-used once look the same without it. `match_sessions` ranks the sessions for the concepts the code uses most first, using
-`log2(1 + footprint)`, so 200 files does not drown 10. Write it on every service and pattern of the profile or on none:
-a profile with no footprint at all ranks exactly as it always has, and once any entry has one the rest fall back to
-their cited-file count.
-
-**What to count.** Files that *use* the thing in the project's own code: application source, infrastructure code,
-scripts and configuration. **Exclude** tests and fixtures, generated code and build output (`dist/`, `cdk.out/`,
-`node_modules/`, `vendor/`), lockfiles, and documentation (README, `docs/`). Count a file once however many times it
-uses the service. In a multi-repository profile add up the repositories.
-
-**How to count: one search per service, from its kind.** List the matching files, drop the excluded ones, count.
-
-- **An SDK client.** Files that import its package or module: `@aws-sdk/client-dynamodb`, `boto3.client("dynamodb")` or
-  `boto3.resource("dynamodb")`, `software.amazon.awssdk.services.dynamodb`, `github.com/aws/aws-sdk-go-v2/service/dynamodb`.
-  For a third-party or non-AWS tool, its package name or its command (`@playwright/test`, `claude -p`, `kiro-cli`).
-- **Infrastructure as code.** Files that declare it: the CDK construct (`new dynamodb.Table`, `aws-cdk-lib/aws-dynamodb`),
-  the CloudFormation type (`AWS::DynamoDB::Table`), the Terraform resource (`aws_dynamodb_table`), the SAM or Serverless
-  Framework function and event types (`AWS::Serverless::Function`, `functions:`).
-- **CLI, config or runtime use.** Files that call or configure it without an SDK: `aws dynamodb ...` in scripts and
-  workflows, environment variables and config keys (`TABLE_NAME`, `AWS_ENDPOINT_URL_DYNAMODB`), IAM actions
-  (`dynamodb:PutItem`), and Lambda handlers that the service triggers (a file that reads `event.Records`).
-- **A pattern.** Files that exhibit it: for `serverless`, handler files and the files that define functions; for
-  `event-driven`, files that publish, route or consume events (`PutEvents`, rules, queue consumers, stream handlers);
-  for `containers`, Dockerfiles and task or pod definitions; for `api`, route and handler files; for `iac-cdk`, stack and
-  construct files; for `agentic` and `genai-single-call`, the files that run the agent loop or call the model.
-
-A file that uses several services counts for each of them. **It is an estimate and that is fine**: a search that is
-off by a third changes nothing that matters, a count of 1 against a count of 40 does. Do not read every file; search,
-skim the list for obvious noise (a vendored copy, a sample), and count. Write the number down with the search you used in
-the entry's `usage` or `note` only if it explains something the number does not.
-
-```json
-{ "name": "Amazon DynamoDB", "footprint": 9, "evidence": [{ "repo": "api", "file": "src/db/orders.ts", "line": 12 }] }
-```
-
-Here nine source files import the DynamoDB client or declare a table (`rg -l "client-dynamodb|dynamodb\.Table" src infra
-scripts`, minus one test file), while the evidence cites the one place that best shows it.
 
 ## Supporting components and mixed usage
 
