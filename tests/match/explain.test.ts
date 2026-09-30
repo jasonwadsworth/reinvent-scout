@@ -204,6 +204,17 @@ describe("matchConcepts", () => {
     }
   });
 
+  it("never explains from a feature-news, modernization or certification session", () => {
+    for (const title of [
+      "Modernizing your compute stack with DynamoDB's new execution models", "New silicon, new instances, DynamoDB", "DynamoDB launches",
+      "Modernize legacy applications with DynamoDB", "Migration strategies for DynamoDB", "DynamoDB transformation roadmap",
+      "DynamoDB certification path", "DynamoDB exam prep", "Proficiency in DynamoDB",
+    ]) {
+      expect(strengths(dynamo, { title }), title).toEqual([]);
+    }
+    expect(strengths(dynamo, { title: "Renewing DynamoDB tables" })).toHaveLength(1);
+  });
+
   it("never explains from a news or recap session", () => {
     for (const title of ["What's new in DynamoDB", "DynamoDB: a year in review", "The latest DynamoDB announcements", "DynamoDB recap"]) {
       expect(strengths(dynamo, { title }), title).toEqual([]);

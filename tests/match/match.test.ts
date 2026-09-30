@@ -74,9 +74,14 @@ describe("matchSessions", () => {
     expect(results[0]?.record.abbreviation).toBe("API318");
   });
 
-  it("takes introductory sessions first under the explain lens, and no deeper session for a concept they cover", () => {
+  it("lists only introductory sessions under the explain lens", () => {
+    const sessions: Session[] = [
+      { sessionId: "intro", abbreviation: "INT200", title: "Going serverless", level: "200 - Intermediate" },
+      { sessionId: "advanced", abbreviation: "ADV300", title: "Serverless internals", level: "300 - Advanced" },
+      { sessionId: "expert", abbreviation: "EXP400", title: "Serverless at the limit", level: "400 - Expert" },
+    ];
     writeCatalog(
-      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
+      { raw: sessions, index: sessions.map(buildIndexRecord), meta: sampleMeta({ totalCount: 3, count: 3 }) },
       { storeRoot: home.path },
     );
 
@@ -86,14 +91,7 @@ describe("matchSessions", () => {
 
     const results = matchSessions(profile, { storeRoot: home.path }, { lens: "explain" });
 
-    // API201 (serverless in its title, level 200) is the introductory match; API318 (level 300) also
-    // says serverless but the concept is covered, and API402 is level 400.
-    expect(results.map((r) => r.record.abbreviation)).toContain("API201");
-    expect(results.map((r) => r.record.abbreviation)).not.toContain("API318");
-    expect(results.map((r) => r.record.abbreviation)).not.toContain("API402");
-    for (const result of results) {
-      expect([100, 200]).toContain(result.record.levelBand);
-    }
+    expect(results.map((r) => r.record.abbreviation)).toEqual(["INT200"]);
   });
 
   it("excludes a session with no level band under a level-restricting lens", () => {

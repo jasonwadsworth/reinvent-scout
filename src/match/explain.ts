@@ -55,8 +55,12 @@ const EXPLAINER = /\bhow (?:to|do|does|can|should)\b|\bworks\b/i;
 /** AWS Partner bootcamps are technical but restricted to AWS Partners ("This bootcamp is for AWS
  * Partners only"), so most attendees cannot use them as an introduction. */
 const PARTNER = /^AWS Partner:/i;
-/** A news or recap session lists changes; it does not teach the technology. */
-const NEWS = /\bwhat[’']s new\b|\byear in review\b|\bthe latest\b|\bannouncements?\b|\brecap\b/i;
+/** A news, launch or recap session lists changes; it does not teach the technology. */
+const NEWS = /\bwhat[’']s new\b|\bnew\b|\byear in review\b|\bthe latest\b|\bannouncements?\b|\brecap\b|\blaunch(?:es|ed)\b/i;
+/** Modernization and migration sessions are about tooling that moves code onto the concept. */
+const MODERNIZATION = /\bmoderni[sz]\w*|\bmigrat\w*|\btransform(?:ation|ing)?\b/i;
+/** Certification and training paths teach the exam, not the technology. */
+const CERTIFICATION = /\bcertif\w*|\bproficien\w*|\bexam\b/i;
 /** What a title says when the session is about building or designing the thing, not applying it. */
 const BUILD_CUE = /\b(?:build(?:ing)?|architect\w*|patterns?|best practices|design(?:ing)?|getting started|introduction|fundamentals|basics|101|how to|what is)\b/i;
 /** A title that reads as an introduction ranks ahead of one that does not. */
@@ -228,7 +232,7 @@ function isBoosted(concept: ExplainConcept, record: IndexRecord): boolean {
  * abstract, outside a listing. An abstract alone must be corroborated by a listed service or a
  * matching tag, which never make a match on their own. */
 export function matchConcepts(concepts: readonly ExplainConcept[], record: IndexRecord, abstract: string): ConceptMatch[] {
-  if (SPONSORED.test(record.title) || NEWS.test(record.title) || PARTNER.test(record.title)
+  if (SPONSORED.test(record.title) || [NEWS, MODERNIZATION, CERTIFICATION, PARTNER].some(pattern => pattern.test(record.title))
     || (STORY.test(record.title) && !EXPLAINER.test(record.title))) return [];
   const matches: ConceptMatch[] = [];
   for (const concept of concepts) {
