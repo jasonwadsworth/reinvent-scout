@@ -37,7 +37,8 @@ explained shortlist.
    but it's worth a passing mention to the user.
 5. Call `match_sessions` with **the profile you wrote in step 3** -- never with `validate_profile`'s
    own report, which is a different, smaller shape `match_sessions` doesn't accept. Default to the
-   `"all"` lens unless the user wants foundational sessions (`"explain"`), evidenced gap
+   `"all"` lens unless the user wants foundational sessions (`"explain"`, which also returns
+   `uncovered`: concepts of their code with no introductory session), evidenced gap
    remediation (`"fix"`), or migration options (`"next-level"`). Fix uses only supported,
    evidence-bearing gap patterns; Next-level uses `serverless`, `ecs`, or `genai-single-call`.
    See the exact vocabulary and trade-offs in `reference/profiling.md`.

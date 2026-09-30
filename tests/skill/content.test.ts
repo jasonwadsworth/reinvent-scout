@@ -609,9 +609,29 @@ describe("documented evidence lenses", () => {
     }
   });
 });
+describe("explain lens documentation", () => {
+  const readmeMd = readFileSync(join(here, "..", "..", "README.md"), "utf8");
+  it("describes concepts, the admission rule, the uncovered list and the curated pattern phrases in profiling.md", () => {
+    const section = profilingMd.slice(profilingMd.indexOf("## The explain lens"), profilingMd.indexOf("## Supported evidence lenses"));
+    for (const text of [
+      "distinct files", "names the concept in its title", "at least twice in its abstract", "`uncovered`", "300-level",
+      "sponsored", "What's new", "`serverless`", "`event-driven`", "`api`", "`multi-tenant`", "`multi-account`", "`iac-cdk`", "`containers`",
+      "`ecs`", "`eks`", "`agentic`", "`genai-single-call`", "`streaming`", "`data-lake`",
+    ]) {
+      expect(section, text).toContain(text);
+    }
+  });
+  it("documents the explain output shape in workflow.md, SKILL.md, taxonomy.md and the README", () => {
+    expect(workflowMd).toContain("`uncovered`");
+    expect(workflowMd).toContain("explainsConcept");
+    expect(skillMd).toContain("`uncovered`");
+    expect(readFileSync(join(here, "..", "..", "skills", "reinvent-scout", "reference", "taxonomy.md"), "utf8")).toContain("tiebreak");
+    expect(readmeMd).toContain("`uncovered`");
+  });
+});
 describe("lens-quality documentation", () => {
   it("lists all eight reason kinds, the lens fields, and that the CLI prints the MCP objects", () => {
-    for (const kind of ["service", "topic", "areaOfInterest", "text", "level", "format", "pillarGap", "migrationPath"]) {
+    for (const kind of ["service", "topic", "areaOfInterest", "text", "level", "format", "pillarGap", "migrationPath", "explainsConcept"]) {
       expect(workflowMd).toContain(`\`${kind}\``);
     }
     for (const field of ["lensRules", "skippedRules", "startDate: null", "profile already has agentic"]) expect(workflowMd).toContain(field);
