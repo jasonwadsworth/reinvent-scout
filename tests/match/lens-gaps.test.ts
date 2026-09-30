@@ -22,24 +22,24 @@ interface GapCase {
   titles: string[];
   /** Words the remedy shares with ordinary prose; alone, even repeated, they admit nothing. */
   common: string[];
-  remedy: string;
+  remedies: string[];
   /** A title that names the remedy only inside an enumeration of names. */
   listed: string;
 }
 
 const CASES: GapCase[] = [
-  { rule: "gap-no-tracing", listed: "Lambda, SQS and AWS X-Ray", pillar: "Operational Excellence", remedy: "AWS Distro for OpenTelemetry",
-    titles: ["Distributed tracing for microservices", "Instrument a service with OpenTelemetry", "Debugging with AWS X-Ray", "End-to-end tracing on serverless"],
+  { rule: "gap-no-tracing", listed: "Lambda, SQS and AWS X-Ray", pillar: "Operational Excellence", remedies: ["AWS Distro for OpenTelemetry"],
+    titles: ["Distributed tracing for microservices", "Instrument a service with OpenTelemetry", "Debugging with AWS X-Ray", "End-to-end tracing on serverless", "Zero-code OTel instrumentation", "Trace propagation across services"],
     common: ["Tracing", "Trace the request", "Tracing paper", "Hotel booking", "Ray tracing for graphics"] },
-  { rule: "gap-no-ci", listed: "Lambda, SQS and CI/CD", pillar: "Operational Excellence", remedy: "AWS CodePipeline",
+  { rule: "gap-no-ci", listed: "Lambda, SQS and CI/CD", pillar: "Operational Excellence", remedies: ["AWS CodePipeline", "AWS CodeBuild", "AWS CodeDeploy"],
     titles: ["CI/CD on AWS", "Continuous delivery for serverless", "Modernize your release pipelines", "Continuous integration in practice"],
     common: ["Pipelines", "Data pipelines at scale", "Continuous learning", "Delivery of packages", "Integration patterns"] },
-  { rule: "gap-no-graviton", listed: "Lambda, SQS and Graviton", pillar: "Sustainability", remedy: "Amazon EC2 - Graviton",
+  { rule: "gap-no-graviton", listed: "Lambda, SQS and Graviton", pillar: "Sustainability", remedies: ["Amazon EC2 - Graviton"],
     titles: ["Moving to arm64", "Graviton for Lambda", "Reducing cost with Graviton5", "Graviton 4 migration"],
     common: ["ARM holdings", "Gravity", "Armed forces"] },
 ];
 
-describe.each(CASES)("$rule", ({ rule, pillar, titles, common, remedy, listed }) => {
+describe.each(CASES)("$rule", ({ rule, pillar, titles, common, remedies, listed }) => {
   const record = (title: string, services: string[] = []) => buildIndexRecord({ sessionId: "x", title, services });
   const score = (title: string, abstract = "", services: string[] = []) =>
     scoreLensSignals(record(title, services), stacked(rule), "fix", abstract).score;
@@ -76,10 +76,10 @@ describe.each(CASES)("$rule", ({ rule, pillar, titles, common, remedy, listed })
       expect(gated(titles[0]!, "", ["Amazon Redshift"])).toBe(0);
       expect(gated(titles[0]!, "", ["Amazon Redshift", "Amazon Kinesis"])).toBe(0);
     });
-    it("admits a remedy session that also lists one of the profile's core services", () => {
+    it.each(remedies)("admits a session listing the remedy service %s and one of the profile's core services", remedy => {
       expect(gated(titles[0]!, "", [remedy, "AWS Lambda"])).toBe(50);
     });
-    it("rejects the remedy service alone, or a passing mention of the phrase, on the remedy path", () => {
+    it.each(remedies)("rejects the remedy service %s alone, or a passing mention of the phrase, on the remedy path", remedy => {
       expect(gated(titles[0]!, "", [remedy])).toBe(0);
       expect(gated("Deep dive", `We cover ${titles[0]!.toLowerCase()}.`, [remedy, "AWS Lambda"])).toBe(0);
     });
@@ -97,6 +97,10 @@ describe.each(CASES)("$rule and AI-tagged sessions", ({ rule, titles }) => {
   });
   it.each(["agentic", "genai-single-call"])("admits it for a profile that has the %s pattern", pattern => {
     expect(scoreLensSignals(tagged(titles[0]!, "Agentic AI"), ai(pattern), "fix").score).toBe(50);
+  });
+  it("matches the AI area regardless of case", () => {
+    expect(scoreLensSignals(tagged(titles[0]!, "agentic ai"), stacked(rule), "fix").score).toBe(0);
+    expect(scoreLensSignals(tagged(titles[0]!, "GENERATIVE AI"), stacked(rule), "fix").score).toBe(0);
   });
   it("admits a session tagged with another area for any profile", () => {
     expect(scoreLensSignals(tagged(titles[0]!, "Monitoring & Observability"), stacked(rule), "fix").score).toBe(50);

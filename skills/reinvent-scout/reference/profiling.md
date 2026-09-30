@@ -209,8 +209,7 @@ the narrowing mentioned in the `note`.
 Three more gaps have a fixed definition, so two people profiling the same repository record the same
 ones. Each needs a code citation of the thing that *lacks* the practice. A gap that is only partly
 true is still recordable: cite the part that lacks it and say which part in the `note`. A practice
-that is wired in but switched off (`Disabled`, `false`, a retention of 0, an association that
-exists only in a comment) is the gap, and you cite the line that switches it off. A practice that
+that is wired in but switched off (`Disabled`, `false`, a tracing mode of `PassThrough`) is the gap, and you cite the line that switches it off. A practice that
 is present but weak (tracing sampled at a low rate, a pipeline that runs one test) is not this
 gap.
 
@@ -234,7 +233,8 @@ gap.
   Graviton family (the ones ending in `g`, such as `m7g`). Cite the function or task declaration.
   A resource pinned to x86 by a dependency you can see (an x86-only native layer, an image built
   `--platform=linux/amd64`) is not this gap; mention it in the `note` of the gap you do record, if
-  any.
+  any. Custom resources and placeholder functions (reserved concurrency 0, an inline stub) are not
+  production compute, so x86 there is not this gap.
 
 ## Interests
 
