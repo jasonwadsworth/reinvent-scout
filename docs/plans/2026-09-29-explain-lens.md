@@ -72,4 +72,50 @@ tracking. Measure and report both sets separately, before and after.
 
 ## Results
 
-(implementer appends)
+Measured with the built CLI against `lens-home` (2043 index records), `--lens explain --limit 10 --json`. Precision is GENUINE / returned in the top 10; weak (W) counts as not genuine. A 300-level session is never GENUINE (not introductory). Scripts and outputs are in the scratchpad (`explain/`), not committed.
+
+### Precision (before -> after)
+
+| Set | Before | After |
+|---|---|---|
+| Tuning (hallway, kirocrew, adaptative-http, policy-tracker, career-ops) | 14 / 50 = 28% | 28 / 36 = 78% |
+| Holdout (conformity, tracking) | 7 / 20 = 35% | 9 / 9 = 100% |
+
+Per profile after (genuine / returned): hallway 5/5, kirocrew 7/10, adaptative-http 8/8, policy-tracker 5/5, career-ops 3/8; conformity 5/5, tracking 4/4. Before: hallway 4/10, kirocrew 3/10, adaptative-http 5/10, policy-tracker 2/10, career-ops 0/10; conformity 3/10, tracking 4/10.
+
+Honesty note on the holdout: I printed all seven profiles' outputs at every step, so I saw conformity and tracking while tuning. No rule was written for a holdout-only candidate, and the mechanisms were motivated by tuning-set noise, but it is not a blind holdout.
+
+### Coverage (top 5 concepts by centrality; GENUINE in the top 10, or listed in `uncovered`)
+
+hallway 5/5 (api, iac-cdk, CloudFront uncovered; event-driven, serverless genuine). kirocrew 4/5 (agentic has only weak sessions MAM204 and ARC204; genai-single-call uncovered). adaptative-http 5/5. policy-tracker 4/5 (Bedrock: only TNC210 remained and is not genuine; then SES, DynamoDB, EventBridge uncovered). career-ops 5/5 (agentic genuine; Playwright, genai-single-call, Claude Code, Gemini uncovered). conformity 5/5. tracking 5/5.
+
+### Other lenses
+
+`all`, `fix` and `next-level` outputs (`--limit 100`) are byte-identical to the baseline on all 7 profiles (`cmp`), at the first and at the last commit.
+
+### Remaining noise
+
+- career-ops (3/8): ARC204 and GHJ212 are about agents but not introductions (W); MAM204, TNC217 and TNC105 apply agents to another subject (N). agentic is a broad term and a title cue is the only handle regex has.
+- kirocrew: MAM204 (N), ARC204 (W), CMP202 "New silicon, new instances" (W, news-like).
+- policy-tracker: TNC210 is dropped only because AWS Partner sessions are skipped; before that it was a Bedrock false positive.
+- Most of the catalog's introductory pool is small (about 399 sessions at level 100/200): no introductory session names DynamoDB, EventBridge, API Gateway, Cognito, CloudFront, AppSync or SES in the title, so those come back in `uncovered`.
+
+### Sabotage list
+
+Each applied alone, the suite run, the named tests went red, reverted: platform exclusion; gap/dead-code filter; abstract 2 -> 1 mention; listing detection off; vocabulary off (lowercase list); overlap dedupe ("Amazon DynamoDB" counted twice); supporting weight; distinct-file centrality; unmapped pattern report; citation merge across spellings; boost; ampersand normalization; API phrase; sponsored filter; partner filter; story filter and its explainer exemption; news filter; broad-term title-only and build cue; `agents?` plural; intro-cue bonus; abstract corroboration; pattern-first tie-break; title-only 300 fallback; one 300 per concept; 300 gating on introductory coverage; fallback after introductory picks; first-round covered skip; format, boost, strength and relevance ordering; taxonomy of level filter; queue shift on taken; match position order; round-robin loop; response `uncovered` (full and truncated); unmapped append; limit slice; score sum; repeat grouping; other lenses without `uncovered`; abstract read; human `Uncovered:` line; `listFallbacks` gate and the closest-session reason.
+
+### Decisions made during implementation
+
+- **300-level sessions are reported, not listed.** As specified, a concept with no 100/200 session took one 300-level session. Graded strictly they were all weak (for example "Origin management for multi-region applications with Amazon CloudFront"), which put precision at 52% (tuning) and 45% (holdout) and left top-5 coverage at 1 to 3 of 5. Now such a concept is in `uncovered` with the reason `no introductory (100/200) session is about it; the closest is a 300-level one: CODE "title"`. The listing path remains behind `selectExplain`'s `listFallbacks` argument (tested) if the lead prefers the original behavior.
+- **Abstract-only matches need corroboration** (the session lists the service or has a matching tag), a tightening of "at least twice in its abstract". It removed Bedrock false positives on AI-agent security talks.
+- **agentic and genai-single-call are broad**: only a title that names the term and says how to build or design it admits.
+- **Skipped for this lens** (title markers, no session codes): sponsored, news/recap ("What's new", "year in review"), customer stories ("How X ..." unless "how to", "how it works", questions), and "AWS Partner:" training.
+- **Ordering**: centrality ties go to patterns before services, then citation count, then name. Session ties: title over abstract, listed service or tag, introduction-style title, format (Breakout, Chalk talk), profile relevance.
+- **Only explain has `uncovered`**; it is absent from the other lenses so their output stays byte-identical.
+- The unmapped-pattern report lives in `uncovered` (reason: no phrase entry), not `skippedRules`.
+- `serviceNamePatterns` was exported from `stack-fit.ts` for name matching; `lens-signals.ts` is untouched.
+
+### Commits
+
+9de4deb, 60f658d, 019c91c, 7498390, 190f805, c3b3cc4, d5338b5, 88d4ef4, 4206269, 2a0fe7c, d01bbea, plus the Results commit. `npm run check` is green on each: 1104 tests at the last code commit.
+
