@@ -1,0 +1,179 @@
+import type { IndexRecord } from "../catalog/index-record.js";
+import type { Evidence, ResolvedProfile } from "../profile/profile.js";
+import { unlistedMatches } from "./listing.js";
+import { PLATFORM_SERVICES, serviceNamePatterns } from "./stack-fit.js";
+
+/** A thing in the profile a newcomer would want explained: a core service (or, at half weight, a
+ * supporting one) or a non-gap pattern the profile evidences. */
+export interface ExplainConcept {
+  name: string;
+  kind: "service" | "pattern";
+  /** 1 for a core service or a pattern, 0.5 for a supporting service. */
+  weight: number;
+  /** Distinct cited files (per repo) times `weight`: how much of the code the concept underlies. */
+  centrality: number;
+  citations: Evidence[];
+  /** What names the concept in a session's text. */
+  matchers: RegExp[];
+  /** Catalog display name, for a service the catalog knows. */
+  catalogName: string | null;
+  /** Catalog topics and areas of interest that boost, never admit, a session. */
+  tags: readonly string[];
+}
+
+export interface UncoveredConcept {
+  concept: string;
+  reason: string;
+}
+
+export interface ConceptMatch {
+  concept: ExplainConcept;
+  /** 3 for the concept named in the title, 2 for it named at least twice in the abstract. */
+  strength: number;
+  /** The text of the session that named the concept. */
+  phrase: string;
+  /** The session also lists the service or carries a matching tag. Never admits on its own. */
+  boosted: boolean;
+}
+
+const SUPPORTING_WEIGHT = 0.5;
+const TITLE_STRENGTH = 3;
+const ABSTRACT_STRENGTH = 2;
+const ABSTRACT_MENTIONS = 2;
+
+interface PatternEntry {
+  phrase: RegExp;
+  tags: readonly string[];
+}
+
+/**
+ * The session wording for each pattern the profiling guide names. Deliberately phrases, not single
+ * words, where the bare word is ordinary prose ("API" appears in nearly every agent talk). A pattern
+ * absent from this map cannot be matched and is reported as uncovered.
+ */
+const PATTERN_PHRASES: ReadonlyMap<string, PatternEntry> = new Map([
+  ["serverless", { phrase: /\bserverless\b/i, tags: ["Serverless", "Lambda-Based Applications"] }],
+  ["event-driven", { phrase: /\bevent[- ](?:driven|based)\b/i, tags: ["Event-Driven Architecture"] }],
+  ["api", { phrase: /\b(?:REST|HTTP|GraphQL|WebSocket)\s+APIs?\b|\bAPI (?:design|development|management|first)\b|\bbuilding APIs\b/i, tags: [] }],
+  ["multi-tenant", { phrase: /\bmulti[- ]tenan(?:t|cy)\b|\bSaaS\b/i, tags: ["SaaS"] }],
+  ["multi-account", { phrase: /\bmulti[- ]account\b|\bAWS Organizations\b|\bControl Tower\b|\blanding zones?\b/i, tags: [] }],
+  ["iac-cdk", { phrase: /\b(?:CDK|Cloud Development Kit|infrastructure[- ]as[- ]code|IaC)\b/i, tags: [] }],
+  ["containers", { phrase: /\bcontainer(?:s|ized|ization)?\b/i, tags: ["Containers"] }],
+  ["ecs", { phrase: /\bECS\b|\bElastic Container Service\b/i, tags: ["Containers"] }],
+  ["eks", { phrase: /\bEKS\b|\bKubernetes\b|\bElastic Kubernetes Service\b/i, tags: ["Kubernetes", "Containers"] }],
+  ["agentic", { phrase: /\bagentic\b|\bAI agents?\b|\bmulti[- ]agent\b/i, tags: ["Agentic AI"] }],
+  ["genai-single-call", { phrase: /\bgenerative AI\b|\bGenAI\b|\bLLMs?\b|\bfoundation models?\b/i, tags: ["Generative AI"] }],
+  ["streaming", { phrase: /\bstreaming\b|\bKinesis\b|\bKafka\b/i, tags: [] }],
+  ["data-lake", { phrase: /\bdata lakes?\b|\blakehouse\b/i, tags: [] }],
+]);
+
+/** Every phrase above, so a lowercase list of them ("serverless, containers, and event-driven") is
+ * read as a list of names rather than prose. */
+const PATTERN_VOCABULARY = new RegExp([...PATTERN_PHRASES.values()].map(entry => `(?:${entry.phrase.source})`).join("|"), "i");
+
+const NO_PHRASE_REASON = "no session phrase is defined for this pattern, so no session can be matched to it";
+
+function isGapOrDeadCode(name: string): boolean {
+  const key = name.toLowerCase();
+  return key.startsWith("gap-") || key === "dead-code";
+}
+
+const fileKey = (citation: Evidence): string => JSON.stringify([citation.repo, citation.file]);
+
+interface Draft {
+  name: string;
+  kind: "service" | "pattern";
+  supporting: boolean;
+  citations: Evidence[];
+  matchers: RegExp[];
+  catalogName: string | null;
+  tags: readonly string[];
+}
+
+/** The profile's concepts, most central first, and the patterns that cannot be matched at all. A
+ * platform service, a gap pattern and dead code are not something the code is built from. */
+export function buildConcepts(profile: ResolvedProfile): { concepts: ExplainConcept[]; uncovered: UncoveredConcept[] } {
+  const drafts = new Map<string, Draft>();
+  for (const service of profile.services) {
+    if (service.catalogName !== null && PLATFORM_SERVICES.includes(service.catalogName)) continue;
+    const key = `service:${(service.catalogName ?? service.name).toLowerCase()}`;
+    const draft = drafts.get(key);
+    const supporting = service.role === "supporting";
+    if (draft === undefined) {
+      drafts.set(key, {
+        name: service.catalogName ?? service.name, kind: "service", supporting,
+        citations: [...service.evidence], matchers: serviceNamePatterns(service.name, service.catalogName),
+        catalogName: service.catalogName, tags: [],
+      });
+    } else {
+      draft.supporting = draft.supporting && supporting;
+      draft.citations.push(...service.evidence);
+      draft.matchers.push(...serviceNamePatterns(service.name, service.catalogName));
+    }
+  }
+  const uncovered: UncoveredConcept[] = [];
+  for (const pattern of profile.patterns) {
+    if (isGapOrDeadCode(pattern.name)) continue;
+    const entry = PATTERN_PHRASES.get(pattern.name.toLowerCase());
+    if (entry === undefined) {
+      uncovered.push({ concept: pattern.name, reason: NO_PHRASE_REASON });
+      continue;
+    }
+    const key = `pattern:${pattern.name.toLowerCase()}`;
+    const draft = drafts.get(key);
+    if (draft === undefined) {
+      drafts.set(key, { name: pattern.name, kind: "pattern", supporting: false, citations: [...pattern.evidence], matchers: [entry.phrase], catalogName: null, tags: entry.tags });
+    } else {
+      draft.citations.push(...pattern.evidence);
+    }
+  }
+  const concepts = [...drafts.values()].map((draft): ExplainConcept => {
+    const weight = draft.supporting ? SUPPORTING_WEIGHT : 1;
+    return {
+      name: draft.name, kind: draft.kind, weight,
+      centrality: new Set(draft.citations.map(fileKey)).size * weight,
+      citations: draft.citations, matchers: draft.matchers, catalogName: draft.catalogName, tags: draft.tags,
+    };
+  });
+  concepts.sort((a, b) => b.centrality - a.centrality || b.weight - a.weight
+    || b.citations.length - a.citations.length || a.name.localeCompare(b.name));
+  return { concepts, uncovered };
+}
+
+/** Where `concept` is named in `text` outside an enumeration, each place once even when two of its
+ * spellings overlap ("Amazon DynamoDB" and "DynamoDB"). */
+function mentions(concept: ExplainConcept, text: string): RegExpExecArray[] {
+  const all = concept.matchers.flatMap(matcher => unlistedMatches(matcher, text, PATTERN_VOCABULARY));
+  all.sort((a, b) => a.index - b.index || b[0].length - a[0].length);
+  const distinct: RegExpExecArray[] = [];
+  let end = 0;
+  for (const match of all) {
+    if (match.index < end) continue;
+    distinct.push(match);
+    end = match.index + match[0].length;
+  }
+  return distinct;
+}
+
+function isBoosted(concept: ExplainConcept, record: IndexRecord): boolean {
+  if (concept.catalogName !== null && record.services.includes(concept.catalogName)) return true;
+  const wanted = new Set(concept.tags.map(tag => tag.toLowerCase()));
+  return [...record.topics, ...record.areasOfInterest].some(value => wanted.has(value.toLowerCase()));
+}
+
+/** The concepts a session is about: it names the concept in its title, or at least twice in its
+ * abstract, outside a listing. A tag or a listed service can lift a match, never make one. */
+export function matchConcepts(concepts: readonly ExplainConcept[], record: IndexRecord, abstract: string): ConceptMatch[] {
+  const matches: ConceptMatch[] = [];
+  for (const concept of concepts) {
+    const inTitle = mentions(concept, record.title)[0];
+    const inAbstract = mentions(concept, abstract);
+    const admitted = inTitle ?? (inAbstract.length >= ABSTRACT_MENTIONS ? inAbstract[0] : undefined);
+    if (admitted === undefined) continue;
+    matches.push({
+      concept, strength: inTitle === undefined ? ABSTRACT_STRENGTH : TITLE_STRENGTH,
+      phrase: admitted[0], boosted: isBoosted(concept, record),
+    });
+  }
+  return matches;
+}
