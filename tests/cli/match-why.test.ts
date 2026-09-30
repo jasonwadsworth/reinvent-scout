@@ -50,8 +50,16 @@ describe("match --lens fix: the why block in the terminal", () => {
     expect(text).toContain("  Your code: tracker/a.ts:1, tracker/b.ts:2, tracker/c.ts:3 (+2 more)");
   });
 
-  it("keeps the lens reason, with its sources, after the why", async () => {
+  it("shows only the rule names by default, not the lens reason or its sources again", async () => {
     const text = await run([cite("rules.ts", 179)]);
+    expect(text).toContain("  Rules: gap-no-dlq");
+    expect(text).not.toContain("Reliability");
+    expect(text).not.toContain("Source:");
+    expect(text.match(/rules\.ts:179/g)).toHaveLength(1);
+  });
+
+  it("puts the full lens reason, with its sources, after the why under --verbose", async () => {
+    const text = await run([cite("rules.ts", 179)], ["--verbose"]);
     expect(text.indexOf("Why:")).toBeLessThan(text.indexOf("gap-no-dlq: Reliability"));
     expect(text).toContain("    Source: tracker/rules.ts:179");
   });
@@ -59,6 +67,7 @@ describe("match --lens fix: the why block in the terminal", () => {
   it("hides ranking reasons unless --verbose is given", async () => {
     const quiet = await run([cite("rules.ts", 179)]);
     expect(quiet).not.toContain("which this session covers");
+    expect(quiet).not.toContain("Reliability");
     expect(quiet).not.toContain("Text overlap");
     const verbose = await run([cite("rules.ts", 179)], ["--verbose"]);
     expect(verbose).toContain("Uses AWS Lambda, which this session covers.");

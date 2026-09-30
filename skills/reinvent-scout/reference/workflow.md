@@ -155,13 +155,13 @@ sentence naming what the candidate covers: under `fix` the gap and its note (`Co
 gap-no-dlq: ...`), under `next-level` the source pattern and destination, under `explain` the
 concept and how the code uses it, under `all` the one or two strongest services or patterns
 matched. `yourCode` lists up to three deduped citations in profile order; `more` counts the ones
-left out and is absent when none were. `sessionSays` is the sentence of the session that matched,
+left out and is absent when none were. `sessionSays` is the abstract sentence that says it (the title only when the abstract has none),
 trimmed to about 160 characters, and is absent (not empty) when nothing could be quoted. Lead with
 `why.summary` and `sessionSays` when presenting, and cite `yourCode`.
 
 When the response would not fit the budget, MCP drops every candidate's ranking reasons first and
 sets `rankingReasonsOmitted` to true; `why` and the lens reasons stay whole. Only then are whole
-candidates left out (`truncated`). The CLI's `--verbose` flag shows the ranking reasons in the
+candidates left out (`truncated`). The CLI's `--verbose` flag shows every reason, lens and ranking, in the
 human table (they are always in `--json`); it has no effect on `--json`.
 
 Each `reasons` entry is `{ "kind": ..., "detail": string, "weight": number, "evidence": string }`.
@@ -194,7 +194,7 @@ The CLI prints the same object: `reinvent-scout match --json` returns exactly wh
 returns (the CLI is not size-budgeted, and `--include-abstracts` adds an `abstract` to each
 candidate), and `reinvent-scout profile validate --json` returns exactly the `validate_profile`
 report. Human output shows each candidate's title line, its `Why:`, `Your code:` and `Session:`
-lines, its rules and lens reasons (ranking reasons only under `--verbose`), then one `Skipped:` line
+lines, then `Rules:` (every reason with its sources only under `--verbose`), then one `Skipped:` line
 per skipped path.
 
 ## 6. Present candidates

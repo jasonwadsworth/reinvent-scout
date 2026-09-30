@@ -124,10 +124,11 @@ narrowed with:
 - `--day <date>` -- `YYYY-MM-DD`.
 - `--limit <n>` -- cap the number of results (default 20).
 - `--include-abstracts` -- include each session's abstract text in the output.
-- `--verbose` -- also show the ranking reasons (shared services, topics, wording) in the table.
-  Without it the table leads each candidate with its `why` (what it covers, `Your code:` citations
-  from the profile, and a `Session:` sentence the session itself says) and keeps only the lens
-  reasons. It changes the table only; `--json` always carries every reason.
+- `--verbose` -- also show every reason in the table: the lens reasons with their sources, and the
+  ranking reasons (shared services, topics, wording). Without it the table leads each candidate with
+  its `why` (what it covers, `Your code:` citations from the profile, and a `Session:` sentence from
+  the session's abstract, or its title when the abstract has none) and then only `Rules:`. It changes
+  the table only; `--json` always carries every reason.
 - `--json` -- machine-readable output; abstracts are always omitted here unless
   `--include-abstracts` is also given, so a search never bloats past what you actually asked for.
 
