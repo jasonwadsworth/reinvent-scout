@@ -1,4 +1,4 @@
-import { buildStackFit, hasCoreService } from "./stack-fit.js";
+import { buildStackFit, hasCoreService, PREFIX_REQUIRED_SERVICE_NAMES } from "./stack-fit.js";
 import { buildConcepts, explainReason, matchConcepts, selectExplain, type ConceptMatch, type UncoveredConcept } from "./explain.js";
 import { activeLensRules, scoreLensSignals, skippedLensRules, type LensHit, type SkippedRule } from "./lens-signals.js";
 import { readRaw, type CatalogStoreDeps } from "../catalog/store.js";
@@ -405,7 +405,7 @@ function matchExplain(
   limit: number | undefined,
 ): MatchResult {
   const { typeWeights } = getLensProfile("explain");
-  const { concepts, uncovered: unmapped } = buildConcepts(profile, [...new Set(index.flatMap((record) => record.services))]);
+  const { concepts, uncovered: unmapped } = buildConcepts(profile, knownServices(profile, index));
   const scored: ScoredRecord[] = [];
   for (const record of index) {
     const matches = matchConcepts(concepts, record, rawById.get(record.sessionId)?.abstract ?? "");
@@ -426,6 +426,15 @@ function matchExplain(
     skippedRules: [],
     uncovered: [...uncovered, ...unmapped],
   };
+}
+
+/** Services a title can list next to another ("Amazon Polly and Transcribe"): the catalog's own service
+ * vocabulary, the profile's, and the ordinary-word names (Glue, Backup, ...), since the catalog does not
+ * list every service a profile names. */
+function knownServices(profile: ResolvedProfile, index: readonly IndexRecord[]): string[] {
+  const fromProfile = profile.services.flatMap((service) => [service.name, ...(service.catalogName === null ? [] : [service.catalogName])]);
+  const ordinaryWords = PREFIX_REQUIRED_SERVICE_NAMES.map((name) => name.charAt(0).toUpperCase() + name.slice(1));
+  return [...new Set([...index.flatMap((record) => record.services), ...fromProfile, ...ordinaryWords])];
 }
 
 function explainCandidate(

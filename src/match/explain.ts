@@ -131,9 +131,9 @@ function serviceMatchers(name: string, catalogName: string | null, tails: readon
   }
   if (words.length === 1 && PREFIX.test(catalogName ?? name) && /^[A-Z][a-z]+$/.test(last) && tails.length > 0) {
     const known = tails.map(escapeRegExp).join("|");
-    // Every earlier item must be a known service, and the name must end the phrase: "Amazon Bedrock and
-    // Connect Your Data" is a title, not a list of services.
-    matchers.push(new RegExp(`\\b(?:Amazon|AWS) (?:(?:${known})(?:, | and | or |, and |, or ))+${last}(?![\\w-]| [A-Z])`));
+    // Every earlier item must be a known service, and the name must end its item: what follows is the end,
+    // punctuation, "and" or "or". "Amazon Bedrock and Connect to Your Data" is a title, not a list of services.
+    matchers.push(new RegExp(`\\b(?:Amazon|AWS) (?:(?:${known})(?:, | and | or |, and |, or ))+${last}(?=$|[,.;:!?)]|\\s+(?:and|or)\\b)`));
   }
   return matchers;
 }

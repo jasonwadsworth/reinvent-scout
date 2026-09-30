@@ -93,6 +93,27 @@ describe("the explain lens", () => {
     expect(result.uncovered!.map(entry => [entry.concept, entry.kind]).sort()).toEqual([["serverless", "pattern"], ["serverless", "service"]]);
   });
 
+  it("covers a service named after a shared prefix when the other service is only in the profile", () => {
+    const result = run(profile(["Amazon Polly", "Amazon Transcribe"]), [session("VOI200", "Build voice apps with Amazon Polly and Transcribe")]);
+    expect(codes(result)).toEqual(["VOI200"]);
+    expect(result.uncovered).toEqual([]);
+    expect(result.candidates[0]!.reasons.filter(reason => reason.kind === "explainsConcept").map(reason => reason.detail.split(" (")[0])).toEqual(["Explains Amazon Polly", "Explains Amazon Transcribe"]);
+  });
+
+  it("covers a service named after a shared prefix when the other service is only in the catalog vocabulary", () => {
+    const result = run(profile(["Amazon Transcribe"]), [
+      session("VOI200", "Build voice apps with Amazon Polly and Transcribe"),
+      session("OTH200", "Something else entirely", { services: ["Amazon Polly"] }),
+    ]);
+    expect(codes(result)).toEqual(["VOI200"]);
+    expect(result.uncovered).toEqual([]);
+  });
+
+  it("treats the ordinary-word service names as known services in a shared-prefix list", () => {
+    const result = run(profile(["Amazon Transcribe"]), [session("VOI200", "Build voice apps with Amazon Comprehend and Transcribe")]);
+    expect(codes(result)).toEqual(["VOI200"]);
+  });
+
   it("returns nothing but the uncovered list for a profile no session is about", () => {
     const result = run(profile(["Playwright"]), [session("LAM100", "Lambda basics")]);
     expect(result.candidates).toEqual([]);

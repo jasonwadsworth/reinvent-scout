@@ -188,9 +188,16 @@ describe("matchConcepts", () => {
     expect(strengths(transcribe, { title: "Amazon SQS and Transcribe" })).toHaveLength(1);
     const connect = buildConcepts(profile([{ name: "Amazon Connect" }]), known).concepts;
     expect(strengths(connect, { title: "Using Amazon Bedrock and Connect Your Data" }), "title case").toEqual([]);
+    expect(strengths(connect, { title: "Using Amazon Bedrock and Connect to Your Data" }), "continues with to").toEqual([]);
+    expect(strengths(connect, { title: "Amazon Polly and Connect: a guide" }), "colon").toHaveLength(1);
+    expect(strengths(connect, { title: "Amazon Polly and Connect, together" }), "comma").toHaveLength(1);
+    expect(strengths(connect, { title: "Amazon Polly and Connect and more" }), "or").toHaveLength(1);
+    const backup = buildConcepts(profile([{ name: "AWS Backup" }]), [...known, "Amazon Simple Storage Service (Amazon S3)"]).concepts;
+    expect(strengths(backup, { title: "Protect Amazon S3 and Backup the Rest" }), "Backup the Rest").toEqual([]);
+    expect(strengths(backup, { title: "Protect Amazon S3 and Backup" })).toHaveLength(1);
     expect(strengths(connect, { title: "Amazon Foo and Connect" }), "unknown service").toEqual([]);
     expect(strengths(connect, { title: "Amazon Polly and Connect" })).toHaveLength(1);
-    expect(strengths(connect, { title: "Amazon Polly and Connect it up" })).toHaveLength(1);
+    expect(strengths(connect, { title: "Amazon Polly and Connect it up" }), "lowercase continuation").toEqual([]);
   });
 
   it("takes the camel-case tail only from a name without for, on or with", () => {
