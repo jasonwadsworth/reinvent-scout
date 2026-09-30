@@ -64,6 +64,16 @@ const RULES: readonly SignalRule[] = [
   { source: "gap-no-load-tests", lens: "fix", detail: "Performance Efficiency: load tests are not evident in the cited scope.", phrase: /\b(?:load|performance|stress) test(?:s|ing)?\b/i },
   { source: "gap-no-cost-monitoring", lens: "fix", detail: "Cost Optimization: cost monitoring is not evident in the cited scope.", phrase: /\b(?:cost[- ](?:monitoring|allocation|anomal(?:y|ies)|visibility)|(?:AWS|cost) budgets?|budgets? (?:and|for) (?:\w+ )?costs?)\b/i, remedyServices: ["AWS Billing and Cost Management"] },
   { source: "gap-no-resource-rightsizing", lens: "fix", detail: "Sustainability: resource rightsizing is not evident in the cited scope.", phrase: /\b(?:right[- ]?sizing|right[- ]?size)\b/i },
+  // Tracing tools by name: bare "tracing" is ray tracing and stack traces.
+  { source: "gap-no-tracing", lens: "fix", detail: "Operational Excellence: distributed tracing is not evident in the cited scope.", phrase: /\b(?:distributed tracing|end-to-end tracing|AWS X-Ray|OpenTelemetry|OTel|trace propagation)\b/i, remedyServices: ["AWS Distro for OpenTelemetry"] },
+  // Pipeline language only: bare "pipelines" is data pipelines, and "delivery" or "integration" alone is everything.
+  { source: "gap-no-ci", lens: "fix", detail: "Operational Excellence: a CI/CD pipeline is not evident in the cited scope.", phrase: /\b(?:CI\/CD|continuous (?:integration|delivery|deployment)|(?:deployment|release|delivery) pipelines?)\b/i, remedyServices: ["AWS CodePipeline", "AWS CodeBuild", "AWS CodeDeploy"] },
+  // Backup as a managed practice; bare "backup" is prose and "disaster recovery" is a failover remedy, not a backup one.
+  { source: "gap-no-backups", lens: "fix", detail: "Reliability: backups or point-in-time recovery are not evident in the cited scope.", phrase: /\b(?:AWS Backup|point-in-time recovery|backup (?:plans?|vaults?|policies|strateg(?:y|ies)|and (?:restore|recovery))|(?:immutable|cross-Region|automated) backups?)\b/i, remedyServices: ["AWS Backup"] },
+  { source: "gap-no-waf", lens: "fix", detail: "Security: a web application firewall is not evident in the cited scope.", phrase: /\b(?:WAF|web application firewalls?)\b/i, remedyServices: ["AWS WAF"] },
+  // Application and edge caching only: semantic and prompt caching cut model cost, not read load.
+  { source: "gap-no-caching", lens: "fix", detail: "Performance Efficiency: a cache layer is not evident in the cited scope.", phrase: /\b(?:caching (?:layers?|strateg(?:y|ies)|patterns?)|(?:edge|in-memory|application|API|read|response|query|distributed) cach(?:e|es|ing)|cache hit)\b/i, remedyServices: ["Amazon ElastiCache", "Amazon ElastiCache Serverless", "Amazon CloudFront"] },
+  { source: "gap-no-graviton", lens: "fix", detail: "Sustainability: Arm-based (Graviton) compute is not evident in the cited scope.", phrase: /\b(?:Graviton\d*|arm64)\b/i, remedyServices: ["Amazon EC2 - Graviton"] },
   {
     source: "serverless", lens: "next-level", destination: "containers",
     sourceText: /\b(?:Lambda|serverless|functions?)\b/i,

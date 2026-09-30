@@ -181,7 +181,7 @@ by default -- this exception only bites for a multi-word topic.
 
 A gap (see "Say what's missing, too" below) is always kebab-case with a `gap-` prefix, never a
 topic spelling, so it's never confused with a positive, present-tense pattern: `gap-no-dlq`,
-`gap-no-alarms`, `gap-broad-iam`, `gap-no-tests`. Code nothing reaches is `dead-code` (no `gap-`
+`gap-no-alarms`, `gap-broad-iam`, `gap-no-tests`, `gap-no-tracing`. Code nothing reaches is `dead-code` (no `gap-`
 prefix -- it isn't an absence, it's a presence that doesn't count).
 
 ## Say what's missing, too
@@ -203,6 +203,54 @@ practices; otherwise leave them out, since they are true of almost any repositor
 to a clearly cited part of the system: record it and say which part in the `note`. A wildcard
 permission narrowed by a condition or session policy is still recordable as `gap-broad-iam`, with
 the narrowing mentioned in the `note`.
+
+## What counts as each newer gap
+
+Six more gaps have a fixed definition, so two people profiling the same repository record the same
+ones. Each needs a code citation of the thing that *lacks* the practice. A gap that is only partly
+true is still recordable: cite the part that lacks it and say which part in the `note`. A practice
+that is wired in but switched off (`Disabled`, `false`, a retention of 0, an association that
+exists only in a comment) is the gap, and you cite the line that switches it off. A practice that
+is present but weak (a rule in count-only mode, a cache with a one-second lifetime) is not this
+gap.
+
+- **`gap-no-tracing`** (Operational Excellence). The repository deploys a request path that crosses
+  two or more components (an API to a function to a queue or table, a service calling another
+  service) and no tracing is enabled anywhere on it: no X-Ray active tracing (`tracing: Active`,
+  `TracingConfig`), no OpenTelemetry SDK, collector or Lambda layer, no Powertools Tracer. Cite the
+  function or service declaration. Logs and metrics are not tracing. A single function that calls
+  nothing else is not this gap.
+- **`gap-no-ci`** (Operational Excellence). The repository deploys infrastructure or services to a
+  real environment and holds no pipeline that builds or tests it on change: no
+  `.github/workflows`, `buildspec`, CodePipeline or CDK Pipelines stack, `.gitlab-ci.yml`,
+  CircleCI or Jenkins file. Cite the IaC entry point. A pipeline that only runs tests still counts
+  as CI, so it is not this gap. If the pipeline could live in a different repository, say so in the
+  `note` and record it only when the repository is the deployable unit.
+- **`gap-no-backups`** (Reliability). A store that holds the system of record has no backup: a
+  DynamoDB table without point-in-time recovery (`pointInTimeRecovery` unset or false) and covered by
+  no AWS Backup plan, an RDS or Aurora instance with `backupRetention` of 0, or a stateful store with
+  neither a backup plan nor a snapshot policy. Cite the table or instance. Tables that only hold
+  data you can rebuild (a cache, a derived index) are not this gap; say in the `note` why the store
+  is the system of record.
+- **`gap-no-waf`** (Security). An internet-facing HTTP entry point has no web ACL: a CloudFront
+  distribution, a public load balancer, a REST API or AppSync API with no `WebACL` and no
+  association (`CfnWebACL`, `WebAclAssociation`, `webAclId`, `aws_wafv2_web_acl_association`)
+  anywhere in the repository. Cite the entry point. API Gateway HTTP APIs cannot take a web ACL, so
+  an HTTP API is this gap only when it is fronted by a CloudFront distribution that has none. A
+  private API or an internal load balancer is not this gap.
+- **`gap-no-caching`** (Performance Efficiency). A public GET route whose response is the same for
+  every caller (a catalog, a listing, configuration) reads its data store or an upstream API on
+  every request, and nothing on the path caches it: no CloudFront distribution, no API Gateway
+  stage cache, no ElastiCache or DAX, no `Cache-Control` response header, no memoization in the
+  function. Cite the handler line that does the read. A route whose response depends on the caller,
+  a write path and an admin route are not this gap.
+- **`gap-no-graviton`** (Sustainability). The repository deploys production compute and every
+  resource in the cited scope runs on x86: Lambda functions with no `architecture` (the default
+  is x86_64), ECS task definitions with `X86_64` or no `runtimePlatform`, EC2 instance types with no
+  Graviton family (the ones ending in `g`, such as `m7g`). Cite the function or task declaration.
+  A resource pinned to x86 by a dependency you can see (an x86-only native layer, an image built
+  `--platform=linux/amd64`) is not this gap; mention it in the `note` of the gap you do record, if
+  any.
 
 ## Interests
 
@@ -366,6 +414,12 @@ not a complete assessment or a claim that every repository has these gaps.
 | `gap-no-load-tests` | Performance Efficiency | Load, performance, stress testing |
 | `gap-no-cost-monitoring` | Cost Optimization | Cost monitoring, allocation, anomalies, AWS Budgets |
 | `gap-no-resource-rightsizing` | Sustainability | Resource rightsizing |
+| `gap-no-tracing` | Operational Excellence | Distributed or end-to-end tracing, AWS X-Ray, OpenTelemetry (bare "tracing" does not count) |
+| `gap-no-ci` | Operational Excellence | CI/CD, continuous integration, delivery or deployment, deployment and release pipelines (bare "pipelines" does not count) |
+| `gap-no-backups` | Reliability | AWS Backup, point-in-time recovery, backup plans, vaults or policies, immutable and cross-Region backups (bare "backup" does not count) |
+| `gap-no-waf` | Security | AWS WAF, web application firewalls |
+| `gap-no-caching` | Performance Efficiency | Caching layers and strategies, edge, in-memory, application, read or response caching, cache hits (semantic and prompt caching do not count) |
+| `gap-no-graviton` | Sustainability | Graviton, arm64 |
 
 `gap-no-alarms` means no alarm that notifies a person. An alarm that only drives automation
 (scaling, rollback) does not count as one, so an application with only those still has the gap.
@@ -412,7 +466,10 @@ lists that rule's remedy services (IAM and IAM Access Analyzer; AWS Billing and 
 which covers Budgets and Cost Explorer) needs fewer of your services: each remedy service it lists
 counts as one of the two, so IAM alone, which is on almost every security talk, is not enough, but
 IAM with Access Analyzer, or IAM with one of your core services, is. A session about the fix is not
-about the stack the gap sits in. A `gap-no-tests` session about testing infrastructure code with a
+about the stack the gap sits in. The newer gaps use the same path with their own remedy services:
+`gap-no-tracing` (AWS Distro for OpenTelemetry), `gap-no-ci` (CodePipeline, CodeBuild, CodeDeploy),
+`gap-no-backups` (AWS Backup), `gap-no-waf` (AWS WAF), `gap-no-caching` (ElastiCache, CloudFront)
+and `gap-no-graviton` (EC2 - Graviton). A `gap-no-tests` session about testing infrastructure code with a
 tool your profile lists (CDK, even as a supporting service) fits the same way. A profile with no core service (none listed, or
 every one marked supporting) has no stack to fit, so both lenses admit nothing and `skippedRules`
 names each activated rule with "profile has no core services to check stack fit": list the

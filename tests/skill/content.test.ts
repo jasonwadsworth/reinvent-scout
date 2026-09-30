@@ -691,6 +691,27 @@ describe("lens-precision guidance in profiling.md", () => {
   });
 });
 
+describe("newer gap guidance in profiling.md", () => {
+  const collapsed = profilingMd.replace(/\s+/g, " ");
+  const gaps = ["gap-no-tracing", "gap-no-ci", "gap-no-backups", "gap-no-waf", "gap-no-caching", "gap-no-graviton"];
+  it.each(gaps)("defines %s, says what does not count, and lists it in the rules table", name => {
+    const entry = new RegExp(`- \\*\\*\`${name}\`\\*\\* \\(([A-Za-z ]+)\\)\\. (.*?)(?= - \\*\\*\`gap-|## Interests)`).exec(collapsed);
+    expect(entry, name).not.toBeNull();
+    expect(entry![2]).toMatch(/\bnot\b/);
+    expect(profilingMd).toMatch(new RegExp(`\\| \`${name}\` \\| ${entry![1]} \\|`));
+  });
+  it("says a switched-off practice is the gap and a partly true gap names its part", () => {
+    expect(collapsed).toContain("wired in but switched off");
+    expect(collapsed).toContain("say which part in the `note`");
+    expect(collapsed).toContain("A practice that is wired in but switched off");
+  });
+  it("names the remedy services of the newer gaps in the stack-fit paragraph", () => {
+    for (const service of ["AWS Distro for OpenTelemetry", "CodePipeline", "AWS Backup", "AWS WAF", "ElastiCache", "EC2 - Graviton"]) {
+      expect(collapsed).toContain(service);
+    }
+  });
+});
+
 it("executes the documented plan-confirm-reserve-cancel contracts using plan-returned IDs", async () => {
   const blocks = [...workflowMd.matchAll(/```json\n([\s\S]*?)```/g)].map(match => JSON.parse(match[1]!) as { tool?: string; arguments?: { sessionIds?: string[]; sessionId?: string } }).filter(value => ["plan_schedule", "reserve_sessions", "cancel_reservation"].includes(value.tool ?? ""));
   expect(blocks.map(value => value.tool)).toEqual(["plan_schedule", "reserve_sessions", "cancel_reservation"]);
