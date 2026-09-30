@@ -492,7 +492,7 @@ describe("match_sessions tool", () => {
     // response-level truncation in buildMatchResponse, not the candidate shape, that now carries
     // the size guarantee -- see the size test below.
     expect(Object.keys(parsed.candidates[0]!).sort()).toEqual(
-      ["code", "levelBand", "offerings", "reasons", "score", "sessionId", "title", "type"].sort(),
+      ["code", "levelBand", "offerings", "reasons", "score", "sessionId", "title", "type", "why"].sort(),
     );
   });
 
@@ -638,11 +638,14 @@ describe("match_sessions tool", () => {
     expect(parsed.omitted).toBeGreaterThan(0);
     expect(typeof parsed.hint).toBe("string");
     expect(parsed.hint.length).toBeGreaterThan(0);
-    // Every included candidate is whole -- reasons and offerings are never partially serialized
-    // to make room; a candidate is either fully in or fully left out.
+    // Every included candidate is whole -- why and offerings are never partially serialized to
+    // make room; a candidate is either fully in or fully left out. Ranking reasons went first,
+    // from all of them, and the response says so.
+    expect((parsed as { rankingReasonsOmitted?: boolean }).rankingReasonsOmitted).toBe(true);
     for (const candidate of parsed.candidates) {
-      expect(Array.isArray(candidate.reasons)).toBe(true);
-      expect((candidate.reasons as unknown[]).length).toBeGreaterThan(0);
+      expect(typeof (candidate.why as { summary: string }).summary).toBe("string");
+      expect((candidate.offerings as unknown[]).length).toBeGreaterThan(0);
+      expect(candidate.reasons).toEqual([]);
     }
   });
 
@@ -670,7 +673,7 @@ describe("match_sessions tool", () => {
     expect(parsed.hint).not.toMatch(/limit/i);
   });
 
-  it("truncates at the default limit too, driven by profile richness rather than the limit requested", async () => {
+  it("drops ranking reasons before any candidate at the default limit, driven by profile richness rather than the limit requested", async () => {
     // Reviewer's follow-up measurement, against the real catalog: an eight-service profile --
     // not exotic, an ordinary serverless app names Lambda, DynamoDB, S3, SQS, EventBridge, API
     // Gateway, Step Functions and CloudWatch without trying -- already breaches 30 KB at the
@@ -702,10 +705,12 @@ describe("match_sessions tool", () => {
 
     expect(result.isError).not.toBe(true);
     expect(Buffer.byteLength(JSON.stringify(result), "utf8")).toBeLessThan(30 * 1024);
-    const parsed = JSON.parse(textOf(result)) as { truncated: boolean; requested: number; returned: number };
+    const parsed = JSON.parse(textOf(result)) as { truncated: boolean; requested: number; returned: number; rankingReasonsOmitted?: boolean };
     expect(parsed.requested).toBe(25); // the default -- never explicitly asked for more
-    expect(parsed.truncated).toBe(true);
-    expect(parsed.returned).toBeLessThan(25);
+    // Ranking reasons are dropped before any candidate is: dropping them is enough at the default limit.
+    expect(parsed.rankingReasonsOmitted).toBe(true);
+    expect(parsed.truncated).toBe(false);
+    expect(parsed.returned).toBe(25);
   });
 
   it("returns a truncated response's candidates as exactly the ranked prefix an untruncated run would produce", async () => {
@@ -732,5 +737,46 @@ describe("match_sessions tool", () => {
     expect(parsed.candidates.map((c) => c.code)).toEqual(
       fullRanking.slice(0, parsed.returned).map((c) => c.code),
     );
+  });
+  it.each([
+    ["all", "Lambda in practice", "Every handler runs on AWS Lambda behind a queue."],
+    ["explain", "Introduction to Lambda", "Every handler runs on AWS Lambda behind a queue."],
+    ["fix", "Dead-letter queues in depth", "Recover with dead-letter queues and redrive."],
+    ["next-level", "Containers on Fargate", "Start from Lambda functions and grow into containers."],
+  ] as const)("keeps %s within the response budget at the maximum limit with why on every candidate", async (lens, title, sentence) => {
+    const filler = " Further detail about the session.".repeat(20);
+    const sessions = Array.from({ length: 80 }, (_, i) => ({
+      sessionId: `why-${i}`, abbreviation: `WHY${String(i).padStart(3, "0")}`, title: `${title} ${i}`,
+      level: "200 - Intermediate", type: "Breakout session", abstract: `${sentence}${filler} ${sentence}`,
+      services: ["AWS Lambda", "Amazon Simple Queue Service (Amazon SQS)", ...LONG_SERVICE_NAMES.slice(0, 6)],
+    }));
+    seedCatalog(home.path, sessions);
+    const client = await connectedClient({ resolveStoreRoot: () => home.path });
+    const note = "Not evident in the cited scope: the three tenant-lifecycle EventBridge rules targeting Step Functions set no deadLetterQueue or retry policy. Second.".padEnd(400, "!");
+    const evidence = Array.from({ length: 12 }, (_, i) => ({ repo: ".", file: `infra/very/long/path/to/a/construct-${i}.ts`, line: i + 1, note: "n".repeat(100) }));
+    const result = await client.callTool({
+      name: "match_sessions",
+      arguments: {
+        lens, limit: 100,
+        profile: {
+          schemaVersion: 1, repos: [{ root: ".", languages: [] }],
+          services: [
+            { name: "lambda", usage: note, evidence }, { name: "sqs", usage: note, evidence },
+            ...LONG_SERVICE_NAMES.slice(0, 6).map(name => ({ name, usage: note, evidence })),
+          ],
+          patterns: [{ name: "gap-no-dlq", note, evidence }, { name: "serverless", note, evidence }],
+        },
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(result), "utf8")).toBeLessThan(30 * 1024);
+    const parsed = JSON.parse(textOf(result)) as { candidates: Array<{ why: { summary: string; sessionSays?: string } }>; requested: number };
+    expect(parsed.requested).toBe(50);
+    expect(parsed.candidates.length).toBeGreaterThan(0);
+    for (const candidate of parsed.candidates) {
+      expect(candidate.why.summary.length).toBeGreaterThan(0);
+      expect(candidate.why.sessionSays).toBeDefined();
+    }
   });
 });

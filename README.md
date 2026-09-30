@@ -124,6 +124,10 @@ narrowed with:
 - `--day <date>` -- `YYYY-MM-DD`.
 - `--limit <n>` -- cap the number of results (default 20).
 - `--include-abstracts` -- include each session's abstract text in the output.
+- `--verbose` -- also show the ranking reasons (shared services, topics, wording) in the table.
+  Without it the table leads each candidate with its `why` (what it covers, `Your code:` citations
+  from the profile, and a `Session:` sentence the session itself says) and keeps only the lens
+  reasons. It changes the table only; `--json` always carries every reason.
 - `--json` -- machine-readable output; abstracts are always omitted here unless
   `--include-abstracts` is also given, so a search never bloats past what you actually asked for.
 
@@ -302,8 +306,10 @@ can qualify. Inspect the session abstract before treating a result as guidance f
 
 New `pillarGap` and `migrationPath` reasons carry optional `profileEvidence` with the original
 repo/file/line, snippet and note, while `evidence` remains the matched catalog signal. The human
-CLI prints source locations. MCP keeps complete reasons and drops whole candidates if necessary
-to honor its existing response budget. Phrase signals use titles and available abstracts; a
+CLI prints source locations. Every candidate also carries a `why` (`summary`, up to three
+`yourCode` citations with a `more` count, and `sessionSays`, a sentence of the session's title or
+abstract; omitted when nothing can be quoted). MCP keeps `why` and the lens reasons complete; to honor its existing
+response budget it drops every candidate's ranking reasons first (`rankingReasonsOmitted`), then whole candidates if necessary. Phrase signals use titles and available abstracts; a
 catalog synced without abstracts can miss an abstract-only signal. See the complete synthetic
 [profile and executable examples](skills/reinvent-scout/reference/workflow.md#evidence-lens-example)
 and [profiling guidance](skills/reinvent-scout/reference/profiling.md#supported-evidence-lenses).
