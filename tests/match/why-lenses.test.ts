@@ -114,6 +114,13 @@ describe("the why block", () => {
       expect(run(p, [talk2], "next-level").candidates[0]!.why.summary).toBe("Next step from serverless (Every handler is a Lambda function with no servers) toward containers.");
     });
 
+    it("does not nest parentheses in an all-lens summary when a service note or pattern note has its own", () => {
+      const viaService = profileOf([], [service("AWS Lambda", { usage: "Handlers (one per route) behind the API." })]);
+      expect(run(viaService, [session("LAM100", "Building on AWS Lambda")], "all").candidates[0]!.why.summary).toBe("Matches your AWS Lambda (Handlers behind the API).");
+      const viaPattern = profileOf([{ name: "serverless", note: "No servers (none at all) anywhere.", evidence: [cite("app.ts", 5)] }], []);
+      expect(run(viaPattern, [session("SLS100", "Serverless backends", { services: [], topics: ["Serverless"] })], "all").candidates[0]!.why.summary).toBe("Matches your serverless (No servers anywhere).");
+    });
+
     it("names an explained service without its catalog acronym", () => {
       const p = profileOf([], [service("Amazon Simple Queue Service (Amazon SQS)", { usage: "Work queues" })]);
       const why = run(p, [session("SQS100", "Getting started with Amazon SQS", { services: [] })], "explain").candidates[0]!.why;

@@ -32,6 +32,18 @@ describe("trimNote", () => {
     expect(trimmed.endsWith("end of clause…")).toBe(true);
   });
 
+  it("never ends inside an open parenthesis", () => {
+    const long = `${"word ".repeat(30)}(presigned PUT URLs for audit ${"tail ".repeat(20)}) end`;
+    const trimmed = trimNote(long)!;
+    expect(trimmed.endsWith("word…")).toBe(true);
+    expect(trimmed).not.toContain("(");
+  });
+
+  it("removes parenthetical asides, innermost first, when asked, before trimming", () => {
+    expect(trimNote("Bedrock is one call (one prompt (no tools), no loop) and validated.", true)).toBe("Bedrock is one call and validated");
+    expect(trimNote("Bedrock is one call (one prompt).", false)).toBe("Bedrock is one call (one prompt)");
+  });
+
   it("returns undefined for a missing or empty note", () => {
     expect(trimNote(undefined)).toBeUndefined();
     expect(trimNote("   ")).toBeUndefined();

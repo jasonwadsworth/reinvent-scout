@@ -55,14 +55,24 @@ function cutAtClause(text: string, max: number): string {
   const clause = Math.max(head.lastIndexOf(", "), head.lastIndexOf("; "));
   const space = head.lastIndexOf(" ");
   const cut = clause >= max / 2 ? clause : space > 0 ? space : max;
-  return `${head.slice(0, cut).trimEnd()}…`;
+  const kept = head.slice(0, cut);
+  // Never end inside an open parenthesis.
+  const open = kept.lastIndexOf("(");
+  const unclosed = open > kept.lastIndexOf(")") && open > 0;
+  return `${(unclosed ? kept.slice(0, open) : kept).trimEnd().replace(/[,;:]$/, "")}…`;
+}
+
+/** `text` with every parenthetical aside removed, innermost first, for a note set inside parentheses. */
+function withoutParentheses(text: string): string {
+  const stripped = text.replace(/\s*\([^()]*\)/g, "");
+  return stripped === text ? text : withoutParentheses(stripped);
 }
 
 /** One sentence of a profile note, at most about 200 characters, without the profiling-guide
  * boilerplate prefix or a trailing period. `undefined` when nothing is left. */
-export function trimNote(note: string | undefined): string | undefined {
+export function trimNote(note: string | undefined, withoutAsides = false): string | undefined {
   if (note === undefined) return undefined;
-  const flat = note.replace(/\s+/g, " ").trim().replace(NOTE_BOILERPLATE, "");
+  const flat = (withoutAsides ? withoutParentheses(note) : note).replace(/\s+/g, " ").trim().replace(NOTE_BOILERPLATE, "");
   const end = flat.search(SENTENCE_END);
   const sentence = (end === -1 ? flat : flat.slice(0, end + 1)).replace(/[.!?]+$/, "").trim();
   return sentence === "" ? undefined : cutAtClause(sentence, NOTE_MAX);
@@ -133,11 +143,6 @@ function displayName(name: string): string {
   return name.replace(/\s*\([^()]*\)\s*$/, "");
 }
 
-/** A note to set inside parentheses: its own parenthetical asides removed so they do not nest. */
-function unnested(note: string): string {
-  return note.replace(/\s*\([^()]*\)/g, "").replace(/\s+([,;:.])/g, "$1").trim();
-}
-
 function patternsNamed(profile: ResolvedProfile, name: string) {
   return profile.patterns.filter(pattern => pattern.name.toLowerCase() === name);
 }
@@ -164,10 +169,10 @@ export function lensWhy(lens: "fix" | "next-level", hits: readonly LensHit[], pr
   if (lens === "fix") {
     summary = sentence(`Covers your ${patternNote === undefined ? ruleSummary(hit.rule, lensRuleDetail(hit.rule)) : `${hit.rule}: ${patternNote}`}`, others);
   } else {
-    const note = patternNote ?? evidence.map(item => trimNote(item.note)).find(found => found !== undefined);
+    const aside = [...patterns.map(pattern => pattern.note), ...evidence.map(item => item.note)]
+      .map(candidate => trimNote(candidate, true)).find(found => found !== undefined);
     const toward = hit.destination === undefined ? "" : ` toward ${hit.destination}`;
-    const aside = note === undefined ? "" : unnested(note);
-    summary = sentence(`Next step from ${hit.rule}${aside === "" ? "" : ` (${aside})`}${toward}`, others);
+    summary = sentence(`Next step from ${hit.rule}${aside === undefined ? "" : ` (${aside})`}${toward}`, others);
   }
   return withQuote({ summary, ...citationsOf(evidence) }, quoteSite(text, hit.site));
 }
@@ -203,7 +208,7 @@ function serviceConcept(profile: ResolvedProfile, catalogName: string): NamedCon
   const services = profile.services.filter(service => service.catalogName === catalogName);
   if (services.length === 0) return undefined;
   return {
-    name: catalogName, note: services.map(service => trimNote(service.usage)).find(note => note !== undefined),
+    name: catalogName, note: services.map(service => trimNote(service.usage, true)).find(note => note !== undefined),
     evidence: services.flatMap(service => service.evidence),
     matchers: services.flatMap(service => serviceNamePatterns(service.name, service.catalogName)),
   };
@@ -214,7 +219,7 @@ function patternConcept(profile: ResolvedProfile, patternName: string): NamedCon
   if (patterns.length === 0) return undefined;
   const name = patterns[0]!.name;
   return {
-    name, note: patterns.map(pattern => trimNote(pattern.note)).find(note => note !== undefined),
+    name, note: patterns.map(pattern => trimNote(pattern.note, true)).find(note => note !== undefined),
     evidence: patterns.flatMap(pattern => pattern.evidence),
     matchers: [patternPhrase(name) ?? new RegExp(`\\b${escapeRegExp(name).replace(/\\?-/g, "[- ]")}\\b`, "i")],
   };
@@ -283,8 +288,7 @@ export function allWhy(reasons: readonly Reason[], profile: ResolvedProfile, tex
     }
   }
   const [, other] = named;
-  const note = first.note === undefined ? undefined : unnested(first.note);
-  const described = note === undefined || note === "" ? displayName(first.name) : `${displayName(first.name)} (${note})`;
+  const described = first.note === undefined ? displayName(first.name) : `${displayName(first.name)} (${first.note})`;
   const summary = other === undefined ? described : `${described} and ${displayName(other.name)}`;
   return withQuote({ summary: sentence(`Matches your ${summary}`), ...citationsOf(interleave(first.evidence, other?.evidence ?? [])) }, site === undefined ? undefined : quoteSite(text, site));
 }
