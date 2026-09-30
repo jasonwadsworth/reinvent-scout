@@ -155,6 +155,21 @@ describe("matchConcepts", () => {
     expect(strengths(concepts, { title }).map(([concept]) => concept)).toEqual([name]);
   });
 
+  it("matches the distinctive last word of a multi-word name, such as AgentCore for Amazon Bedrock AgentCore", () => {
+    const agentcore = buildConcepts(profile([{ name: "Amazon Bedrock AgentCore" }])).concepts;
+    expect(strengths(agentcore, { title: "Best practices to build agents on AgentCore" })).toEqual([["Amazon Bedrock AgentCore", 3, "AgentCore"]]);
+    const queue = buildConcepts(profile([{ name: "Amazon SQS", catalogName: "Amazon Simple Queue Service (Amazon SQS)" }])).concepts;
+    expect(strengths(queue, { title: "Service mesh basics" })).toEqual([]);
+    expect(strengths(queue, { title: "Queue basics" })).toEqual([]);
+  });
+
+  it("matches a name that needs its prefix when the prefix is shared across a coordinated list", () => {
+    const transcribe = buildConcepts(profile([{ name: "Amazon Transcribe" }])).concepts;
+    expect(strengths(transcribe, { title: "Build voice AI with Amazon Polly and Transcribe" })).toEqual([["Amazon Transcribe", 3, "Amazon Polly and Transcribe"]]);
+    expect(strengths(transcribe, { title: "Build voice AI with Amazon Polly, Transcribe" })).toHaveLength(1);
+    expect(strengths(transcribe, { title: "Please transcribe this and Transcribe that" })).toEqual([]);
+  });
+
   it("does not read the word lambda as the service", () => {
     expect(strengths(lambda, { title: "Functional programming" }, "A lambda is a function. Every lambda is small.")).toEqual([]);
   });
@@ -262,6 +277,18 @@ describe("selectExplain", () => {
     expect(order([
       session("A-LOW", "Lambda low", { rank: 1 }), session("Z-HIGH", "Lambda high", { rank: 9 }),
     ])).toEqual(["Z-HIGH", "A-LOW"]);
+  });
+
+  it("ranks a title match above an abstract match whatever the boost or the introduction cue", () => {
+    const abstract = "Lambda runs code. Lambda scales.";
+    expect(order([
+      session("A-ABS", "Compute talk", { abstract, services: ["AWS Lambda"] }),
+      session("Z-TTL", "Lambda talk"),
+    ])).toEqual(["Z-TTL", "A-ABS"]);
+    expect(order([
+      session("A-ABS", "Getting started with compute", { abstract, services: ["AWS Lambda"], type: "Breakout session" }),
+      session("Z-TTL", "Lambda talk", { type: "Workshop" }),
+    ])).toEqual(["Z-TTL", "A-ABS"]);
   });
 
   it("does not list a 300-level session, and names the closest one in the uncovered reason", () => {

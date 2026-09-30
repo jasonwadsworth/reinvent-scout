@@ -99,6 +99,28 @@ function isGapOrDeadCode(name: string): boolean {
   return key.startsWith("gap-") || key === "dead-code";
 }
 
+const PREFIX = /^(?:Amazon|AWS)\s+/i;
+
+/**
+ * How a session names a service beyond `serviceNamePatterns`: the distinctive last word of a
+ * multi-word name ("AgentCore" for "Amazon Bedrock AgentCore"; only a camel-case word, never an
+ * ordinary one such as "Service"), and a name that needs its prefix when the prefix is shared
+ * across a coordinated list ("Amazon Polly and Transcribe").
+ */
+function serviceMatchers(name: string, catalogName: string | null): RegExp[] {
+  const matchers = serviceNamePatterns(name, catalogName);
+  const stripped = (catalogName ?? name).replace(/\s*\(.*\)\s*$/, "").replace(PREFIX, "").trim();
+  const words = stripped.split(/\s+/);
+  const last = words[words.length - 1] ?? "";
+  if (words.length > 1 && /^[A-Z][a-z]+[A-Z]\w*$/.test(last)) {
+    matchers.push(new RegExp(`(?<![\\w-])${last}(?![\\w-])`));
+  }
+  if (words.length === 1 && PREFIX.test(catalogName ?? name) && /^[A-Z][a-z]+$/.test(last)) {
+    matchers.push(new RegExp(`\\b(?:Amazon|AWS) (?:[A-Z][\\w-]*(?:, | and | or |, and |, or ))+${last}(?![\\w-])`));
+  }
+  return matchers;
+}
+
 const fileKey = (citation: Evidence): string => JSON.stringify([citation.repo, citation.file]);
 
 interface Draft {
@@ -124,13 +146,13 @@ export function buildConcepts(profile: ResolvedProfile): { concepts: ExplainConc
     if (draft === undefined) {
       drafts.set(key, {
         name: service.catalogName ?? service.name, kind: "service", supporting,
-        citations: [...service.evidence], matchers: serviceNamePatterns(service.name, service.catalogName),
+        citations: [...service.evidence], matchers: serviceMatchers(service.name, service.catalogName),
         catalogName: service.catalogName, tags: [], titleOnly: false,
       });
     } else {
       draft.supporting = draft.supporting && supporting;
       draft.citations.push(...service.evidence);
-      draft.matchers.push(...serviceNamePatterns(service.name, service.catalogName));
+      draft.matchers.push(...serviceMatchers(service.name, service.catalogName));
     }
   }
   const uncovered: UncoveredConcept[] = [];
@@ -232,11 +254,10 @@ export interface ExplainSelection {
 interface Option {
   session: ExplainSession;
   match: ConceptMatch;
-  score: number;
+  /** Compared in this order, never added: a title beats an abstract whatever else is true. */
+  introduction: boolean;
+  format: number;
 }
-
-const FORMAT_SCALE = 10;
-const INTRO_BONUS = 0.75;
 
 /**
  * Picks sessions round-robin across concepts in centrality order, the best session per concept each
@@ -253,18 +274,22 @@ export function selectExplain(
 ): { selected: ExplainSelection[]; uncovered: UncoveredConcept[] } {
   const introductoryBand = (session: ExplainSession): boolean =>
     session.record.levelBand !== null && INTRODUCTORY_BANDS.includes(session.record.levelBand);
-  const scoreOf = (session: ExplainSession, match: ConceptMatch): number => {
-    const format = session.record.type === null ? 0 : (typeWeights.get(session.record.type) ?? 0);
-    return match.strength + (match.boosted ? 1 : 0) + (INTRO_CUE.test(session.record.title) ? INTRO_BONUS : 0) + format / FORMAT_SCALE;
-  };
   const bestFirst = (a: Option, b: Option): number =>
-    b.score - a.score || b.session.rank - a.session.rank || a.session.key.localeCompare(b.session.key);
+    b.match.strength - a.match.strength
+    || Number(b.match.boosted) - Number(a.match.boosted)
+    || Number(b.introduction) - Number(a.introduction)
+    || b.format - a.format
+    || b.session.rank - a.session.rank
+    || a.session.key.localeCompare(b.session.key);
   const options = new Map<ExplainConcept, Option[]>(concepts.map(concept => [concept, []]));
   const advanced = new Map<ExplainConcept, Option[]>(concepts.map(concept => [concept, []]));
   for (const session of sessions) {
     const target = introductoryBand(session) ? options : session.record.levelBand === ADVANCED_BAND ? advanced : undefined;
     for (const match of target === undefined ? [] : session.matches) {
-      target!.get(match.concept)?.push({ session, match, score: scoreOf(session, match) });
+      target!.get(match.concept)?.push({
+        session, match, introduction: INTRO_CUE.test(session.record.title),
+        format: session.record.type === null ? 0 : (typeWeights.get(session.record.type) ?? 0),
+      });
     }
   }
   const queues = new Map<ExplainConcept, Option[]>();
