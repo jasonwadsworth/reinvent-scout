@@ -56,7 +56,7 @@ const EXPLAINER = /\bhow (?:to|do|does|can|should)\b|\bworks\b/i;
  * Partners only"), so most attendees cannot use them as an introduction. */
 const PARTNER = /^AWS Partner:/i;
 /** A news, launch or recap session lists changes; it does not teach the technology. */
-const NEWS = /\bwhat[’']s new\b|\bnew\b|\byear in review\b|\bthe latest\b|\bannouncements?\b|\brecap\b|\blaunch(?:es|ed)\b/i;
+const NEWS = /\bwhat[’']s new\b|\b\w+[’']s new\b|\bnew (?:features?|capabilit(?:y|ies)|instances?|models?|execution|silicon|releases?|launches|services?)\b|\byear in review\b|\bthe latest\b|\bannouncements?\b|\brecap\b|\blaunch(?:es|ed)\b/i;
 /** Modernization and migration sessions are about tooling that moves code onto the concept. */
 const MODERNIZATION = /\bmoderni[sz]\w*|\bmigrat\w*|\btransform(?:ation|ing)?\b/i;
 /** A customer story told in the abstract: the session is what one team built, not how the thing works. */
@@ -64,7 +64,7 @@ const CUSTOMER_STORY = /\bhow (?:a |one |our )?customers?\b|\[customer\]/i;
 /** Games and exam prep are competitions and test practice, not explanations. */
 const NON_EXPLANATORY_TYPES: readonly string[] = ["Gamified learning", "Exam prep"];
 /** Certification and training paths teach the exam, not the technology. */
-const CERTIFICATION = /\bcertif\w*|\bproficien\w*|\bexam\b/i;
+const CERTIFICATION = /\bcertification\b|\bcertified\b|\bcertify\b|\bproficien\w*|\bexam\b/i;
 /** What a title says when the session is about building or designing the thing, not applying it. */
 const BUILD_CUE = /\b(?:build(?:ing)?|architect\w*|patterns?|best practices|design(?:ing)?|getting started|introduction|fundamentals|basics|101|how to|what is)\b/i;
 /** A title that reads as an introduction ranks ahead of one that does not. */
@@ -111,6 +111,8 @@ function isGapOrDeadCode(name: string): boolean {
 }
 
 const PREFIX = /^(?:Amazon|AWS)\s+/i;
+const PREPOSITIONS: readonly string[] = ["for", "on", "with", "of", "in", "and"];
+const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
  * How a session names a service beyond `serviceNamePatterns`: the distinctive last word of a
@@ -118,18 +120,35 @@ const PREFIX = /^(?:Amazon|AWS)\s+/i;
  * ordinary one such as "Service"), and a name that needs its prefix when the prefix is shared
  * across a coordinated list ("Amazon Polly and Transcribe").
  */
-function serviceMatchers(name: string, catalogName: string | null): RegExp[] {
+function serviceMatchers(name: string, catalogName: string | null, tails: readonly string[]): RegExp[] {
   const matchers = serviceNamePatterns(name, catalogName);
   const stripped = (catalogName ?? name).replace(/\s*\(.*\)\s*$/, "").replace(PREFIX, "").trim();
   const words = stripped.split(/\s+/);
   const last = words[words.length - 1] ?? "";
-  if (words.length > 1 && /^[A-Z][a-z]+[A-Z]\w*$/.test(last)) {
+  // "PostgreSQL" is not the name of "RDS for PostgreSQL": the tail must not sit behind a preposition.
+  if (words.length > 1 && !words.some(word => PREPOSITIONS.includes(word.toLowerCase())) && /^[A-Z][a-z]+[A-Z]\w*$/.test(last)) {
     matchers.push(new RegExp(`(?<![\\w-])${last}(?![\\w-])`));
   }
-  if (words.length === 1 && PREFIX.test(catalogName ?? name) && /^[A-Z][a-z]+$/.test(last)) {
-    matchers.push(new RegExp(`\\b(?:Amazon|AWS) (?:[A-Z][\\w-]*(?:, | and | or |, and |, or ))+${last}(?![\\w-])`));
+  if (words.length === 1 && PREFIX.test(catalogName ?? name) && /^[A-Z][a-z]+$/.test(last) && tails.length > 0) {
+    const known = tails.map(escapeRegExp).join("|");
+    // Every earlier item must be a known service, and the name must end the phrase: "Amazon Bedrock and
+    // Connect Your Data" is a title, not a list of services.
+    matchers.push(new RegExp(`\\b(?:Amazon|AWS) (?:(?:${known})(?:, | and | or |, and |, or ))+${last}(?![\\w-]| [A-Z])`));
   }
   return matchers;
+}
+
+/** Short names of catalog services ("Polly", "SQS"): the display name and its parenthesized form, unprefixed. */
+function serviceTails(catalogServices: readonly string[]): string[] {
+  const tails = new Set<string>();
+  for (const service of catalogServices) {
+    const parenthesized = /\(([^)]+)\)\s*$/.exec(service)?.[1];
+    for (const form of [service.replace(/\s*\(.*\)\s*$/, ""), parenthesized]) {
+      const tail = form?.replace(PREFIX, "").trim();
+      if (tail !== undefined && tail.length > 1) tails.add(tail);
+    }
+  }
+  return [...tails];
 }
 
 /** "ecs" for "Amazon Elastic Container Service (Amazon ECS)": the parenthesized short name, lowercase. */
@@ -153,8 +172,9 @@ interface Draft {
 
 /** The profile's concepts, most central first, and the patterns that cannot be matched at all. A
  * platform service, a gap pattern and dead code are not something the code is built from. */
-export function buildConcepts(profile: ResolvedProfile): { concepts: ExplainConcept[]; uncovered: UncoveredConcept[] } {
+export function buildConcepts(profile: ResolvedProfile, catalogServices: readonly string[] = []): { concepts: ExplainConcept[]; uncovered: UncoveredConcept[] } {
   const drafts = new Map<string, Draft>();
+  const tails = serviceTails(catalogServices);
   for (const service of profile.services) {
     if (service.catalogName !== null && PLATFORM_SERVICES.includes(service.catalogName)) continue;
     const key = `service:${(service.catalogName ?? service.name).toLowerCase()}`;
@@ -163,13 +183,13 @@ export function buildConcepts(profile: ResolvedProfile): { concepts: ExplainConc
     if (draft === undefined) {
       drafts.set(key, {
         name: service.catalogName ?? service.name, kind: "service", supporting,
-        citations: [...service.evidence], matchers: serviceMatchers(service.name, service.catalogName),
+        citations: [...service.evidence], matchers: serviceMatchers(service.name, service.catalogName, tails),
         catalogName: service.catalogName, tags: [], titleOnly: false,
       });
     } else {
       draft.supporting = draft.supporting && supporting;
       draft.citations.push(...service.evidence);
-      draft.matchers.push(...serviceMatchers(service.name, service.catalogName));
+      draft.matchers.push(...serviceMatchers(service.name, service.catalogName, tails));
     }
   }
   const uncovered: UncoveredConcept[] = [];

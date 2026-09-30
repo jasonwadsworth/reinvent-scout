@@ -179,11 +179,27 @@ describe("matchConcepts", () => {
     expect(strengths(queue, { title: "Queue basics" })).toEqual([]);
   });
 
-  it("matches a name that needs its prefix when the prefix is shared across a coordinated list", () => {
-    const transcribe = buildConcepts(profile([{ name: "Amazon Transcribe" }])).concepts;
+  it("matches a name that needs its prefix when the prefix is shared across a list of known services", () => {
+    const known = ["Amazon Polly", "Amazon Transcribe", "Amazon Bedrock", "Amazon Connect", "Amazon Simple Queue Service (Amazon SQS)"];
+    const transcribe = buildConcepts(profile([{ name: "Amazon Transcribe" }]), known).concepts;
     expect(strengths(transcribe, { title: "Build voice AI with Amazon Polly and Transcribe" })).toEqual([["Amazon Transcribe", 3, "Amazon Polly and Transcribe"]]);
     expect(strengths(transcribe, { title: "Build voice AI with Amazon Polly, Transcribe" })).toHaveLength(1);
     expect(strengths(transcribe, { title: "Please transcribe this and Transcribe that" })).toEqual([]);
+    expect(strengths(transcribe, { title: "Amazon SQS and Transcribe" })).toHaveLength(1);
+    const connect = buildConcepts(profile([{ name: "Amazon Connect" }]), known).concepts;
+    expect(strengths(connect, { title: "Using Amazon Bedrock and Connect Your Data" }), "title case").toEqual([]);
+    expect(strengths(connect, { title: "Amazon Foo and Connect" }), "unknown service").toEqual([]);
+    expect(strengths(connect, { title: "Amazon Polly and Connect" })).toHaveLength(1);
+    expect(strengths(connect, { title: "Amazon Polly and Connect it up" })).toHaveLength(1);
+  });
+
+  it("takes the camel-case tail only from a name without for, on or with", () => {
+    const postgres = buildConcepts(profile([{ name: "Amazon RDS for PostgreSQL" }])).concepts;
+    expect(strengths(postgres, { title: "PostgreSQL tuning" })).toEqual([]);
+    const otel = buildConcepts(profile([{ name: "AWS Distro for OpenTelemetry (ADOT)", catalogName: "AWS Distro for OpenTelemetry (ADOT)" }])).concepts;
+    expect(strengths(otel, { title: "OpenTelemetry basics" })).toEqual([]);
+    const on = buildConcepts(profile([{ name: "Amazon Foo on EventBridge" }])).concepts;
+    expect(strengths(on, { title: "EventBridge basics" })).toEqual([]);
   });
 
   it("does not read the word lambda as the service", () => {
@@ -219,11 +235,17 @@ describe("matchConcepts", () => {
     for (const title of [
       "Modernizing your compute stack with DynamoDB's new execution models", "New silicon, new instances, DynamoDB", "DynamoDB launches",
       "Modernize legacy applications with DynamoDB", "Migration strategies for DynamoDB", "DynamoDB transformation roadmap",
-      "DynamoDB certification path", "DynamoDB exam prep", "Proficiency in DynamoDB",
+      "DynamoDB certification path", "Build, optimize and certify DynamoDB", "Certified DynamoDB engineer", "DynamoDB exam prep", "Proficiency in DynamoDB",
     ]) {
       expect(strengths(dynamo, { title }), title).toEqual([]);
     }
     expect(strengths(dynamo, { title: "Renewing DynamoDB tables" })).toHaveLength(1);
+    for (const title of ["New to DynamoDB?", "Learn new DynamoDB skills", "A new developer's guide to DynamoDB", "Managing certificates with DynamoDB"]) {
+      expect(strengths(dynamo, { title }), title).toHaveLength(1);
+    }
+    for (const title of ["DynamoDB's new features", "New silicon, new instances, DynamoDB", "New capabilities in DynamoDB", "DynamoDB and the new models", "What\u2019s new in DynamoDB", "DynamoDB's new toys", "New silicon for DynamoDB", "Lambda's new execution model with DynamoDB"]) {
+      expect(strengths(dynamo, { title }), title).toEqual([]);
+    }
   });
 
   it("never explains from a news or recap session", () => {
@@ -336,6 +358,12 @@ describe("selectExplain", () => {
     ], concepts);
     expect(selected.map(entry => entry.key)).toEqual(["L1"]);
     expect(uncovered[0]).toEqual({ concept: "Amazon DynamoDB", kind: "service", reason: 'no introductory (100/200) session is about it; the closest is a 300-level one: D3 "DynamoDB design"' });
+  });
+
+  it("gives no bonus for a duration claim in the title", () => {
+    expect(order([
+      session("A-PLN", "Lambda in the enterprise"), session("Z-DUR", "Launch a Lambda app in under 5 minutes"),
+    ])).toEqual(["A-PLN", "Z-DUR"]);
   });
 
   it("prefers a title that reads as an introduction, after strength and boost", () => {

@@ -397,7 +397,7 @@ alone never admits a session. Services match by catalog name and short form ("Am
 `genai-single-call`, `streaming`, `data-lake`. `agentic` and `genai-single-call` are so widespread
 that only a title that says how to build or design them admits (for example "Building agents in
 production"). A pattern with any other name cannot be matched and comes back in `uncovered`; prefer
-the names above where they fit. A sponsored session, a feature-news or launch session ("What's new", anything titled "new"),
+the names above where they fit. A sponsored session, a feature-news or launch session ("What's new", "new features", "new instances"),
 a modernization or migration session, a certification or exam session, a customer story ("How X
 scaled Y", or an abstract that says "how a customer ..."), a game or exam-prep session and an "AWS
 Partner:" bootcamp (attendance is restricted to AWS Partners) are never used to explain a concept.

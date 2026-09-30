@@ -83,21 +83,21 @@ I first graded these outputs with a looser rubric (78% tuning, 100% holdout); th
 
 ### Precision (before -> after)
 
-| Profile | Before (reviewer, a828a6d) | After |
+Grades after: the lead's calls for the two disputed sessions (ARC203 "What SOA taught us about building agents in production" is a lessons-learned talk, WEAK; CON202 "Launch a production container app in under 5 minutes" is a hands-on introduction, GENUINE). The range is the honest spread: the lower bound also grades CON202 WEAK (the reviewer's earlier call), and tracking's AIM212 WEAK (AgentCore-specific); the upper bound is my earlier grade of ARC203 as GENUINE.
+
+| Profile | Before (reviewer, a828a6d) | After (lead's grades) |
 |---|---|---|
 | hallway | 3/5 | 2/2 |
-| kirocrew | 4/10 | 6/8 |
-| adaptative-http | 6/8 | 4/4 |
+| kirocrew | 4/10 | 6/9 |
+| adaptative-http | 6/8 | 5/5 |
 | policy-tracker | 3/5 | 2/2 |
-| career-ops | 1/8 | 1/3 |
-| **Tuning** | **17/36 = 47%** | **15/19 = 79%** |
+| career-ops | 1/8 | 0/3 |
+| **Tuning** | **17/36 = 47%** | **15/21 = 71%** (range 13/21 = 62% to 17/21 = 81%) |
 | conformity | 3/5 | 2/2 |
 | tracking | 2/4 | 4/5 |
-| **Holdout** | **5/9 = 56%** | **6/7 = 86%** |
+| **Holdout** | **5/9 = 56%** | **6/7 = 86%** (lower bound 5/7 = 71%) |
 
-The original baseline (before any change on this plan) was 28% tuning and 35% holdout under my looser grading; the reviewer's rubric would only lower those. The holdout is not blind: I printed all seven profiles while tuning. The list got shorter (36 to 19 returned on tuning) and `uncovered` grew; that is deliberate.
-
-Grades that carry the result: WEAK are ARC204 (agents cost, kirocrew and career-ops), AIM212 (AgentCore-specific, graded weak for the `agentic` pattern but genuine for tracking, where AgentCore is an evidenced service) and NET219 (VPC Lattice networking). GENUINE include SVS202, SVS203, CON202, CMP203, AIM217, TNC201, ARC203, TNC216, TNC220. SVS207, API201, SVS206, SVS208, DVT202, DVT204 and DVT206 no longer appear.
+career-ops is 0 to 1 of 3: ARC204 (agent cost) and AIM212 (AgentCore-specific) are weak, and ARC203 is a lessons-learned talk; it is the profile the lens serves worst, because its concepts are non-AWS tools the conference does not cover. The original baseline (before any change on this plan) was 28% tuning and 35% holdout under my looser grading. The holdout is not blind: I printed all seven profiles while tuning. Lists got shorter (36 to 21 returned on tuning) and `uncovered` grew; that is deliberate.
 
 ### Coverage (top 5 concepts; a genuine introduction, or in `uncovered`)
 
@@ -109,23 +109,23 @@ Grades that carry the result: WEAK are ARC204 (agents cost, kirocrew and career-
 
 ### Ceiling
 
-The catalog has about 399 level 100/200 sessions. After the rubric's exclusions, no introductory session names DynamoDB, EventBridge, API Gateway, Cognito, CloudFront, AppSync, SES, Bedrock or Lambda as its subject, so those concepts are uncovered by design. career-ops (1/3) cannot go higher: the three sessions left are agent-building talks and only ARC203 is not product- or cost-specific. Excluding "a different product applied to the concept" for a broad pattern would need the catalog service list inside `matchConcepts`, which the session `services` field cannot supply (it is empty for AIM212 and ARC203), so I stopped there.
+The catalog has about 399 level 100/200 sessions. After the rubric's exclusions, no introductory session names DynamoDB, EventBridge, API Gateway, Cognito, CloudFront, AppSync, SES, Bedrock or Lambda as its subject, so those concepts are uncovered by design. career-ops (0 to 1 of 3) cannot go higher: the three sessions left are agent talks and none is a clean introduction. Excluding "a different product applied to the concept" for a broad pattern would need the catalog service list inside `matchConcepts`, which the session `services` field cannot supply (it is empty for AIM212 and ARC203), so I stopped there.
 
 ### Sabotage list
 
-Each applied alone, the suite run, the named test went red, reverted. Concepts: platform exclusion; gap and dead-code filter; distinct-file centrality; supporting weight; unmapped pattern report; citation merge across spellings; pattern-first tie-break; ecs/eks merge into the service (merge, phrase, citations). Matching: abstract 2 to 1 mentions; listing detection off; vocabulary off; overlap dedupe; ampersand normalization; abstract corroboration; boost; camel-case last word ("AgentCore") and its ordinary-word guard; prefix shared across a list ("Amazon Polly and Transcribe"); each curated phrase (API Gateway). Skips: sponsored; partner; story and its explainer exemption; news (`new`, launch); modernization, migration, transform; certification, proficiency, exam; customer story in the abstract (and the `[Customer]` marker); Gamified learning and Exam prep types; broad-term title-only, build cue and the `agents?` plural. Selection: round-robin loop, first-round covered skip, taken-queue shift, position order; lexicographic order (strength, then boost, then introduction cue, then format, then relevance), each key removed in turn; level filter; 300 title gate and 300 band gate in the uncovered reason. Output: response `uncovered` (full and truncated), unmapped append, limit slice, score sum, repeat grouping, other lenses without `uncovered`, abstract read, human `Uncovered:` line, `kind` on uncovered entries.
+Each applied alone, the suite run, the named test went red, reverted. Concepts: platform exclusion; gap and dead-code filter; distinct-file centrality; supporting weight; unmapped pattern report; citation merge across spellings; pattern-first tie-break; ecs/eks merge into the service (merge, phrase, citations). Matching: abstract 2 to 1 mentions; listing detection off; vocabulary off; overlap dedupe; ampersand normalization; abstract corroboration; boost; camel-case last word ("AgentCore") and its ordinary-word guard; prefix shared across a list of known catalog services ("Amazon Polly and Transcribe"), including the title-case rejection ("Amazon Bedrock and Connect Your Data") and the unknown-service rejection; the camel-case tail refused behind for/on/with ("RDS for PostgreSQL", ADOT); the "in under N minutes" cue pinned absent; each curated phrase (API Gateway). Skips: sponsored; feature news is matched only in its news sense ("what's new", "X's new", new features, capabilities, instances, models, execution, silicon, releases, services; launches), so "New to X?" and "Learn new ... skills" survive; partner; story and its explainer exemption; news (`new`, launch); modernization, migration, transform; certification, certified, certify, proficiency, exam (not "certificates"); customer story in the abstract (and the `[Customer]` marker); Gamified learning and Exam prep types; broad-term title-only, build cue and the `agents?` plural. Selection: round-robin loop, first-round covered skip, taken-queue shift, position order; lexicographic order (strength, then boost, then introduction cue, then format, then relevance), each key removed in turn; level filter; 300 title gate and 300 band gate in the uncovered reason. Output: response `uncovered` (full and truncated), unmapped append, limit slice, score sum, repeat grouping, other lenses without `uncovered`, abstract read, human `Uncovered:` line, `kind` on uncovered entries.
 
 ### Decisions made during implementation
 
 - **300-level sessions are reported, not listed** (approved by the lead; the listing path was deleted). `uncovered` names the closest 300-level session only when its title names the concept.
 - **Abstract-only matches need corroboration** (listed service or matching tag); **broad terms** (`agentic`, `genai-single-call`) need a title that names them and says how to build or design them.
-- **Skipped in this lens** (title or type markers, no session codes): sponsored; feature news and launches (any title with "new", "launches"); modernization, migration and transformation; certification, proficiency, exam; "How X ..." customer stories except "how to", "how it works" and questions; customer stories told in the abstract ("how a customer", "[Customer]"); "AWS Partner:" bootcamps (attendance is restricted to AWS Partners); Gamified learning and Exam prep types.
+- **Skipped in this lens** (title or type markers, no session codes): sponsored; feature news in its news sense and launches (a bare "new" is not enough); modernization, migration and transformation; certification, certified, certify, proficiency, exam (not "certificates"); "How X ..." customer stories except "how to", "how it works" and questions; customer stories told in the abstract ("how a customer", "[Customer]"); "AWS Partner:" bootcamps (attendance is restricted to AWS Partners); Gamified learning and Exam prep types.
 - **Ranking is lexicographic**, not additive: strength, boost, introduction cue, format, relevance. Introduction cues are general markers only (getting started, introduction, intro to, fundamentals, basics, 101, beginners, from scratch, your first); "in under N minutes", "where do" and "first N application" were removed as fitted to single titles.
-- **Service names** also match the camel-case last word of a multi-word name (AgentCore) and a prefix shared across a coordinated list.
+- **Service names** also match the camel-case last word of a multi-word name that has no for/on/with/of/in/and in it (AgentCore; not PostgreSQL for "RDS for PostgreSQL", which removes 79 distinct catalog sessions from that rule: PostgreSQL 39, OpenTelemetry 37, OpenZFS 3), and a prefix shared across a coordinated list whose items are all known catalog services and whose last item is not followed by a capitalized word.
 - **`ecs` and `eks` patterns merge into the ECS and EKS service** of the same short name: one reason line, one turn.
 - **`uncovered` entries carry `kind`** (`service` or `pattern`) so a service and a pattern with the same name are distinguishable.
 - `uncovered` exists only under `explain`; `serviceNamePatterns` is exported from `stack-fit.ts`; `lens-signals.ts` is untouched.
 
 ### Commits
 
-See `git log origin/main..HEAD`. `npm run check` is green at the last commit: 1194 tests.
+See `git log origin/main..HEAD`. `npm run check` is green at the last commit: 1196 tests.

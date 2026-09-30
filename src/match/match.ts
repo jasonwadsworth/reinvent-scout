@@ -405,7 +405,7 @@ function matchExplain(
   limit: number | undefined,
 ): MatchResult {
   const { typeWeights } = getLensProfile("explain");
-  const { concepts, uncovered: unmapped } = buildConcepts(profile);
+  const { concepts, uncovered: unmapped } = buildConcepts(profile, [...new Set(index.flatMap((record) => record.services))]);
   const scored: ScoredRecord[] = [];
   for (const record of index) {
     const matches = matchConcepts(concepts, record, rawById.get(record.sessionId)?.abstract ?? "");
