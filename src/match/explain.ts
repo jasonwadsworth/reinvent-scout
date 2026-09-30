@@ -180,20 +180,22 @@ function isBoosted(concept: ExplainConcept, record: IndexRecord): boolean {
 }
 
 /** The concepts a session is about: it names the concept in its title, or at least twice in its
- * abstract, outside a listing. A tag or a listed service can lift a match, never make one. */
+ * abstract, outside a listing. An abstract alone must be corroborated by a listed service or a
+ * matching tag, which never make a match on their own. */
 export function matchConcepts(concepts: readonly ExplainConcept[], record: IndexRecord, abstract: string): ConceptMatch[] {
   if (SPONSORED.test(record.title) || NEWS.test(record.title)) return [];
   const matches: ConceptMatch[] = [];
   for (const concept of concepts) {
     const inTitle = mentions(concept, record.title)[0];
     const inAbstract = mentions(concept, abstract);
+    const boosted = isBoosted(concept, record);
     const admitted = concept.titleOnly
       ? (BUILD_CUE.test(record.title) ? inTitle : undefined)
-      : inTitle ?? (inAbstract.length >= ABSTRACT_MENTIONS ? inAbstract[0] : undefined);
+      : inTitle ?? (boosted && inAbstract.length >= ABSTRACT_MENTIONS ? inAbstract[0] : undefined);
     if (admitted === undefined) continue;
     matches.push({
       concept, strength: inTitle === undefined ? ABSTRACT_STRENGTH : TITLE_STRENGTH,
-      phrase: admitted[0], boosted: isBoosted(concept, record),
+      phrase: admitted[0], boosted,
     });
   }
   return matches;

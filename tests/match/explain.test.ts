@@ -95,14 +95,18 @@ describe("matchConcepts", () => {
     expect(strengths(dynamo, { title: "Getting started with DynamoDB" })).toEqual([["Amazon DynamoDB", 3, "DynamoDB"]]);
   });
 
-  it("admits a session that names the concept twice in its abstract, and not once", () => {
-    const title = { title: "Building data-driven apps" };
+  it("admits a session that names the concept twice in its abstract and corroborates it, and not once", () => {
+    const title = { title: "Building data-driven apps", services: ["Amazon DynamoDB"] };
     expect(strengths(dynamo, title, "You will use DynamoDB for storage.")).toEqual([]);
     expect(strengths(dynamo, title, "You will use DynamoDB for storage. DynamoDB scales.")).toEqual([["Amazon DynamoDB", 2, "DynamoDB"]]);
   });
 
+  it("does not admit on an abstract alone that no service or tag corroborates", () => {
+    expect(strengths(dynamo, { title: "Building data-driven apps" }, "You will use DynamoDB for storage. DynamoDB scales.")).toEqual([]);
+  });
+
   it("counts a full name and the short form inside it as one mention", () => {
-    expect(strengths(dynamo, { title: "Data at scale" }, "Learn Amazon DynamoDB.")).toEqual([]);
+    expect(strengths(dynamo, { title: "Data at scale", services: ["Amazon DynamoDB"] }, "Learn Amazon DynamoDB.")).toEqual([]);
   });
 
   it("never admits on a listed service or a tag alone", () => {
@@ -113,7 +117,7 @@ describe("matchConcepts", () => {
 
   it("does not count a mention inside an enumeration of names", () => {
     const abstract = "It covers Amazon S3, DynamoDB, and Amazon SQS. Also Kinesis, DynamoDB or Amazon RDS.";
-    expect(strengths(dynamo, { title: "Storage options" }, abstract)).toEqual([]);
+    expect(strengths(dynamo, { title: "Storage options", services: ["Amazon DynamoDB"] }, abstract)).toEqual([]);
     expect(strengths(dynamo, { title: "DynamoDB, Amazon S3, and Amazon RDS" })).toEqual([]);
   });
 
@@ -237,8 +241,8 @@ describe("selectExplain", () => {
   it("ranks a concept's sessions by title over abstract, then a listed service, then format, then relevance", () => {
     const abstract = "Lambda runs code. Lambda scales.";
     expect(order([
-      session("ABS", "Compute talk", { abstract }),
-      session("TTL", "Lambda talk"),
+      session("ABS", "Compute talk", { abstract, services: ["AWS Lambda"] }),
+      session("TTL", "Lambda talk", { services: ["AWS Lambda"] }),
     ])).toEqual(["TTL", "ABS"]);
     expect(order([
       session("A-PLN", "Lambda plain"), session("Z-LST", "Lambda listed", { services: ["AWS Lambda"] }),
@@ -347,8 +351,9 @@ describe("explainReason", () => {
     const concepts = withEvidence([{ repo: "repo", file: "a.ts" }]);
     const title = reasonFor(concepts).weight;
     const listed = reasonFor(concepts, false, { title: "DynamoDB basics", services: ["Amazon DynamoDB"] }).weight;
-    const [abstractOnly] = matchConcepts(concepts, record({ title: "Data" }), "DynamoDB here. DynamoDB there.");
+    const [abstractOnly] = matchConcepts(concepts, record({ title: "Data", services: ["Amazon DynamoDB"] }), "DynamoDB here. DynamoDB there.");
     expect(listed).toBeGreaterThan(title);
-    expect(title).toBeGreaterThan(explainReason({ ...abstractOnly!, fallback: false }, 1).weight);
+    expect(explainReason({ ...abstractOnly!, fallback: false }, 1).weight).toBeLessThan(listed);
+    expect(explainReason({ ...abstractOnly!, boosted: false, fallback: false }, 1).weight).toBeLessThan(title);
   });
 });

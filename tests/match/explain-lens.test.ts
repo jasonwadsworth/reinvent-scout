@@ -31,7 +31,8 @@ describe("the explain lens", () => {
     const result = run(profile(["Amazon DynamoDB"]), [
       session("NAM100", "Getting started with DynamoDB"),
       session("TAG100", "Databases for everyone", { services: ["Amazon DynamoDB"], topics: ["Databases"] }),
-      session("ABS100", "Data at scale", { abstract: "You will use DynamoDB tables. DynamoDB streams too." }),
+      session("ABS100", "Data at scale", { services: ["Amazon DynamoDB"], abstract: "You will use DynamoDB tables. DynamoDB streams too." }),
+      session("BAR100", "Data at rest", { abstract: "You will use DynamoDB tables. DynamoDB streams too." }),
     ]);
     expect(codes(result).sort()).toEqual(["ABS100", "NAM100"]);
   });
