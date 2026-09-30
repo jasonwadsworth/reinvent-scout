@@ -2,6 +2,7 @@ import type { IndexRecord } from "../catalog/index-record.js";
 import type { Evidence, ResolvedProfile } from "../profile/profile.js";
 import { getLensProfile } from "./lens.js";
 import { unlistedMatches } from "./listing.js";
+import type { Reason } from "./score.js";
 import { PLATFORM_SERVICES, serviceNamePatterns } from "./stack-fit.js";
 
 /** A thing in the profile a newcomer would want explained: a core service (or, at half weight, a
@@ -179,7 +180,8 @@ export function matchConcepts(concepts: readonly ExplainConcept[], record: Index
   return matches;
 }
 
-const INTRODUCTORY_BANDS: readonly number[] = [100, 200];
+/** Level 100 and 200: what the Explain lens is for. */
+const INTRODUCTORY_BANDS: readonly number[] = getLensProfile("explain").levelBands ?? [];
 const FALLBACK_BAND = 300;
 const NOT_COVERED_REASON = "no introductory (100/200) or 300-level session is about it";
 
@@ -271,4 +273,37 @@ export function selectExplain(
     .filter(concept => options.get(concept)!.length === 0)
     .map(concept => ({ concept: concept.name, reason: NOT_COVERED_REASON }));
   return { selected, uncovered };
+}
+
+const BASE_WEIGHT = 20;
+const STRENGTH_WEIGHT = 10;
+const LISTED_CITATIONS = 3;
+
+function citationKey(citation: Evidence): string {
+  return JSON.stringify([citation.repo, citation.file, citation.line, citation.snippet, citation.note]);
+}
+
+/** "src/db/table.ts:14", with the repo in front when the profile spans several. */
+function place(citation: Evidence, repoCount: number): string {
+  const file = repoCount > 1 ? `${citation.repo}/${citation.file}` : citation.file;
+  return citation.line === undefined ? file : `${file}:${citation.line}`;
+}
+
+/** Why a session is listed: what it explains, the phrase that says so, and where the code uses it. */
+export function explainReason(match: SelectedMatch, repoCount: number): Reason {
+  const unique = new Map<string, Evidence>();
+  for (const citation of match.concept.citations) {
+    if (!unique.has(citationKey(citation))) unique.set(citationKey(citation), { ...citation });
+  }
+  const citations = [...unique.values()];
+  const places = citations.slice(0, LISTED_CITATIONS).map(citation => place(citation, repoCount));
+  const more = citations.length - LISTED_CITATIONS;
+  const where = places.length === 0 ? "" : `, which this code uses at ${places.join(", ")}${more > 0 ? ` and ${more} more` : ""}`;
+  const fallback = match.fallback ? " No introductory session covers it, so this 300-level one is included." : "";
+  return {
+    kind: "explainsConcept",
+    detail: `Explains ${match.concept.name} ("${match.phrase}")${where}.${fallback}`,
+    evidence: match.phrase, profileEvidence: citations,
+    weight: BASE_WEIGHT + STRENGTH_WEIGHT * (match.strength + (match.boosted ? 1 : 0)),
+  };
 }

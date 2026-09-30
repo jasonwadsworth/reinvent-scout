@@ -135,7 +135,10 @@ function formatCandidateWithReasons(candidate: MatchCandidate, abstract?: string
 }
 
 function formatHumanResult(result: MatchResult, abstracts?: ReadonlyMap<string, string | null>): string {
-  const skipped = result.skippedRules.map((skip) => `Skipped: ${skip.rule} (${skip.reason})`);
+  const skipped = [
+    ...result.skippedRules.map((skip) => `Skipped: ${skip.rule} (${skip.reason})`),
+    ...(result.uncovered ?? []).map((entry) => `Uncovered: ${entry.concept} (${entry.reason})`),
+  ];
   if (result.candidates.length === 0) {
     return [NO_CANDIDATES_MESSAGE, ...skipped].join("\n");
   }

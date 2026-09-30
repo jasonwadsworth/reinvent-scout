@@ -8,7 +8,7 @@ import { getOwnTermCount, tokenize, type IndexRecord } from "../catalog/index-re
  * touching this module's arithmetic.
  */
 export interface Reason {
-  kind: "service" | "topic" | "areaOfInterest" | "text" | "level" | "format" | "pillarGap" | "migrationPath";
+  kind: "service" | "topic" | "areaOfInterest" | "text" | "level" | "format" | "pillarGap" | "migrationPath" | "explainsConcept";
   /** A one-line, human-readable explanation, e.g. `Uses Amazon DynamoDB, which this session
    * covers.` */
   detail: string;
@@ -18,7 +18,7 @@ export interface Reason {
   /** The specific value that matched -- a catalog service name, a topic, or the query terms a
    * text match found -- so the detail can be checked against the session's own real fields. */
   evidence: string;
-  /** Source citations for a pillarGap or migrationPath reason. */
+  /** Source citations for a pillarGap, migrationPath or explainsConcept reason. */
   profileEvidence?: Evidence[];
 }
 

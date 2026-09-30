@@ -1,4 +1,5 @@
 import { toPublicIndexRecord } from "../catalog/index-record.js";
+import type { UncoveredConcept } from "./explain.js";
 import type { SkippedRule } from "./lens-signals.js";
 import type { MatchCandidate, MatchResult } from "./match.js";
 
@@ -56,6 +57,9 @@ export interface MatchSessionsResponse {
   hint?: string;
   /** Next-level paths skipped because the profile already made the move. */
   skippedRules: SkippedRule[];
+  /** Explain only, always present there: profile concepts no session could be matched to. Absent
+   * under the other lenses, whose output is unchanged. */
+  uncovered?: UncoveredConcept[];
 }
 
 /** Builds one candidate-count's worth of response. Kept as the one place that decides the shape
@@ -68,6 +72,7 @@ function buildResponse(
   totalMatched: number,
   truncated: boolean,
   skippedRules: SkippedRule[],
+  uncovered: UncoveredConcept[] | undefined,
 ): MatchSessionsResponse {
   const omitted = totalMatched - candidates.length;
   return {
@@ -78,6 +83,7 @@ function buildResponse(
     omitted,
     ...(truncated ? { hint: truncationHint(omitted) } : {}),
     skippedRules,
+    ...(uncovered === undefined ? {} : { uncovered }),
   };
 }
 
@@ -91,9 +97,9 @@ export function buildMatchResponse(
   toCandidate: (candidate: MatchCandidate) => Record<string, unknown> = toLeanCandidate,
 ): MatchSessionsResponse {
   const leanCandidates = result.candidates.map(toCandidate);
-  const { skippedRules } = result;
+  const { skippedRules, uncovered } = result;
   const totalMatched = leanCandidates.length;
-  const everything = buildResponse(leanCandidates, requested, totalMatched, false, skippedRules);
+  const everything = buildResponse(leanCandidates, requested, totalMatched, false, skippedRules, uncovered);
   if (fits(everything)) {
     return everything;
   }
@@ -106,13 +112,13 @@ export function buildMatchResponse(
   // or left out entirely -- never partially serialized to make room.
   const included: Record<string, unknown>[] = [];
   for (const candidate of leanCandidates) {
-    const trial = buildResponse([...included, candidate], requested, totalMatched, true, skippedRules);
+    const trial = buildResponse([...included, candidate], requested, totalMatched, true, skippedRules, uncovered);
     if (!fits(trial)) {
       break;
     }
     included.push(candidate);
   }
 
-  return buildResponse(included, requested, totalMatched, true, skippedRules);
+  return buildResponse(included, requested, totalMatched, true, skippedRules, uncovered);
 }
 

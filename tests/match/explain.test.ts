@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Session } from "../../src/api/types.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
-import { buildConcepts, matchConcepts, selectExplain, type ExplainSession } from "../../src/match/explain.js";
+import { buildConcepts, explainReason, matchConcepts, selectExplain, type ExplainSession } from "../../src/match/explain.js";
 import type { ResolvedProfile } from "../../src/profile/profile.js";
 
 const cite = (file: string, line = 1, repo = "repo") => ({ repo, file, line });
@@ -223,5 +223,52 @@ describe("selectExplain", () => {
   it("does not report a concept only a 300 session covers", () => {
     const { uncovered } = selectExplain([session("D3", "DynamoDB design", { level: "300 - Advanced" })], concepts);
     expect(uncovered.map(entry => entry.concept)).toEqual(["AWS Lambda", "serverless"]);
+  });
+});
+
+describe("explainReason", () => {
+  const withEvidence = (citations: Array<{ repo: string; file: string; line?: number }>) => {
+    const built = profile([{ name: "Amazon DynamoDB" }]);
+    built.services[0]!.evidence = citations;
+    return buildConcepts(built).concepts;
+  };
+  const reasonFor = (concepts: ReturnType<typeof buildConcepts>["concepts"], fallback = false, session: Parameters<typeof record>[0] = { title: "DynamoDB basics" }) => {
+    const [match] = matchConcepts(concepts, record(session), "");
+    return explainReason({ ...match!, fallback }, 1);
+  };
+
+  it("names the concept, the code that uses it and the session phrase", () => {
+    const reason = reasonFor(withEvidence([{ repo: "repo", file: "src/db/table.ts", line: 14 }]));
+    expect(reason.kind).toBe("explainsConcept");
+    expect(reason.detail).toBe('Explains Amazon DynamoDB ("DynamoDB"), which this code uses at src/db/table.ts:14.');
+    expect(reason.evidence).toBe("DynamoDB");
+    expect(reason.profileEvidence).toEqual([{ repo: "repo", file: "src/db/table.ts", line: 14 }]);
+  });
+
+  it("lists at most three citations and counts the rest, each place once", () => {
+    const reason = reasonFor(withEvidence([
+      { repo: "repo", file: "a.ts", line: 1 }, { repo: "repo", file: "a.ts", line: 1 }, { repo: "repo", file: "b.ts" },
+      { repo: "repo", file: "c.ts", line: 3 }, { repo: "repo", file: "d.ts", line: 4 }, { repo: "repo", file: "e.ts", line: 5 },
+    ]));
+    expect(reason.detail).toContain("which this code uses at a.ts:1, b.ts, c.ts:3 and 2 more");
+    expect(reason.profileEvidence).toHaveLength(5);
+  });
+
+  it("prefixes the repo when the profile has several", () => {
+    const [match] = matchConcepts(withEvidence([{ repo: "api", file: "a.ts", line: 1 }]), record({ title: "DynamoDB basics" }), "");
+    expect(explainReason({ ...match!, fallback: false }, 2).detail).toContain("at api/a.ts:1");
+  });
+
+  it("marks a 300-level fallback in the detail", () => {
+    expect(reasonFor(withEvidence([{ repo: "repo", file: "a.ts" }]), true).detail).toContain("No introductory session covers it, so this 300-level one is included.");
+  });
+
+  it("weighs a title hit above an abstract hit and a boost above neither", () => {
+    const concepts = withEvidence([{ repo: "repo", file: "a.ts" }]);
+    const title = reasonFor(concepts).weight;
+    const listed = reasonFor(concepts, false, { title: "DynamoDB basics", services: ["Amazon DynamoDB"] }).weight;
+    const [abstractOnly] = matchConcepts(concepts, record({ title: "Data" }), "DynamoDB here. DynamoDB there.");
+    expect(listed).toBeGreaterThan(title);
+    expect(title).toBeGreaterThan(explainReason({ ...abstractOnly!, fallback: false }, 1).weight);
   });
 });
