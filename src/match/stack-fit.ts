@@ -42,6 +42,16 @@ export const PREFIX_REQUIRED_SERVICE_NAMES: readonly string[] = [
   "transcribe", "polly", "translate", "comprehend", "forecast", "personalize",
 ];
 
+/**
+ * Technologies outside the AWS service list that sessions are about, found in catalog titles: a session titled about one
+ * is about it, not about the code's own stack, unless the profile uses it. Case-sensitive whole words.
+ */
+export const OFF_STACK_TOOLS: readonly string[] = [
+  "Terraform", "Pulumi", "Kafka", "Kubernetes", "Spark", "Flink", "Snowflake", "Databricks", "MicroVMs", "OpenTelemetry",
+  "Datadog", "Splunk", "Redis", "PostgreSQL", "MongoDB", "Iceberg", "PyTorch", "SAP", "Oracle", "VMware", "OpenAI", "Strands",
+  "Salesforce", "ServiceNow", "CrowdStrike", "Vercel", "Karpenter",
+];
+
 const stripPrefix = (name: string): string => name.replace(/^(?:Amazon|AWS)\s+/i, "");
 const requiresPrefix = (name: string): boolean => PREFIX_REQUIRED_SERVICE_NAMES.includes(name.toLowerCase());
 
