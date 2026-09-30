@@ -84,4 +84,75 @@ Update the example profile and the pinned content tests.
 
 ## Results
 
-(implementer appends)
+### What was built
+
+- **Schema.** `footprint` on services and patterns: an optional non-negative integer (`src/profile/profile.ts`), no schema version bump (like `role`). A profile without one parses unchanged.
+- **Centrality.** `log2(1 + n) * weight`, where `n` is the footprint, else the distinct cited files. One decision the plan leaves open: the log is applied only when the profile carries at least one footprint; a profile with none keeps the raw cited-file count. Applying the log to a cited count changes every centrality sum and so the order, which would break the plan's "exactly today's output" rule. Among several spellings of one service, or a service and its pattern twin (ecs), the largest footprint is taken. Interests stay at 1.
+- **Rare listed services.** A profile service a session names (listed or not) that fewer than 3% of catalog sessions name (`RARE_SERVICE_FRACTION`, counted by text, so "Claude Code" works) adds a strength-1 match to a session already admitted; it never admits one. Lambda in a setup list adds none. Like the log, it applies only to a profile with footprints, for the same backward-compatibility reason.
+- **Profiling guide.** "Footprint" section in `reference/profiling.md` (what to count, what to exclude, a search recipe per kind, that it is an estimate, an example), the example profile, the README, and pinned content tests.
+
+### Footprints measured
+
+From the repos alone, before any match output, with one search per concept (`<scratchpad>/rank/fp.mjs`, the guide's recipes): the project's tracked files, minus tests, fixtures, docs, generated code, lockfiles and `package.json`, then one regex per service (SDK client import, CDK construct, CloudFormation or Terraform type, CLI call, IAM action) and per pattern (handler files for `serverless`, publish/route/consume files for `event-driven`, Dockerfiles and task definitions for `containers`, and so on). The profiles are `<scratchpad>/rank/<name>-profile-fp.json`; counts in `footprints.json`. Largest counts:
+
+- **hallway** (133 source files after exclusions): api 23, AWS AppSync 20, AWS Amplify 20, AWS Lambda 15, serverless 15, Amazon DynamoDB 12, Amazon Cognito 7, Amazon EventBridge 5
+- **kirocrew** (1951 source files after exclusions): Kiro 334, agentic 251, AWS Systems Manager 79, containers 60, Amazon CloudFront 25, AWS CloudFormation 16, Amazon S3 16, iac-cloudformation 16
+- **adaptative-http** (14 source files after exclusions): AWS CDK 7, iac-cdk 7, Elastic Load Balancing 5, Amazon VPC 5, AWS Lambda 4, AWS Fargate 4, serverless 4, Amazon ECS 3
+- **policy-tracker** (1898 source files after exclusions): multi-account 471, Security & Identity 372, AWS Lambda 278, serverless 278, Amazon Cognito 234, Amazon CloudWatch 226, AWS CDK 219, iac-cdk 219
+- **career-ops** (62 source files after exclusions): GitHub Actions 8, Playwright 7, Claude Code 5, Google Gemini API 2, genai-single-call 2, agentic 1
+- **conformity** (330 source files after exclusions): AWS Lambda 78, serverless 78, Amazon DynamoDB 75, Powertools for AWS Lambda 74, Security & Identity 49, api 38, AWS CDK 36, iac-cdk 36
+- **tracking** (181 source files after exclusions): Security & Identity 21, Amazon DynamoDB 20, Amazon Cognito 20, api 20, single-table-design 17, scheduled-jobs 15, AWS Lambda 11, serverless 11
+
+Two recipes were tightened after a first pass that applied the guide too loosely (and before any match output): "Polly" and "Transcribe" as bare words counted every speech file (20 and 50; the SDK-client recipe gives 2 and 3), and `\bagent\b` and `FROM [a-z]` counted every file (768 and 1382; now 251 and 60).
+
+### Backward compatibility
+
+The original `gaps/` profiles at `--limit 100`: `all`, `explain`, `fix` and `next-level` are byte-identical to main (b3007c7) on all 7 profiles, 28/28. `fix` and `next-level` on the `-fp` profiles are also byte-identical to main (14/14), so a footprint changes neither.
+
+### Precision (GENUINE of the top 10, graded strictly like the reviewer)
+
+| Profile | main, gaps profile | footprints |
+|---|---|---|
+| hallway | 8 | 7 |
+| kirocrew | 3 | 5 |
+| adaptative-http | 4 | 3 |
+| policy-tracker | 7 | 5 |
+| career-ops | 1 | 3 |
+| **Tuning** | **23/50 = 46%** | **23/50 = 46%** |
+| conformity | not graded here | 6 |
+| tracking | not graded here | 4 |
+| **Holdout** | | **10/20 = 50%** |
+
+**The 70% target is not met.** Footprints fix what they were meant to fix and leave precision where it was:
+
+- **kirocrew:** its Kiro sessions reach the top 10 (IND420, OPN314 "Kiro Crew: Architecture of an open source AI coding agent built on Kiro", DVT320, DVT406, SVS318, MAM324), from #20-33. 3/10 to 5/10. The other five are MAM313 and MAM324 (migration and a customer story told with Kiro in the abstract), SVS302, CMP319 and SVS332.
+- **career-ops:** AIM307 and AIM416 are back (ranks 4 and 5), with OPN310 at 1: 3/10. The rest are agent talks that list Claude Code (COP319, CON303, CMP302, CMP349, ANT410) and two generic AI sessions.
+- **BIZ302:** out of kirocrew's top 10.
+- **hallway, adaptative-http, policy-tracker:** slightly worse. With real centralities the generic serverless sessions that match Lambda, serverless, EventBridge and DynamoDB together sum highest, and those are the pattern the reviewer grades weak (SVS302 Terraform, SVS321 Kafka, SVS333 MicroVMs, SVS332 Lambda Managed Instances, SVS318 Kiro): every one of these profiles really is a serverless profile, so the ranking is right about the stack and wrong about the content.
+
+### Ranking variants tried (not kept)
+
+All four were scored against the same grades with the footprint profiles; none beat the plan's order (23/50):
+
+- centrality = the largest centrality among the concepts named in the title, then the sum: 15/50;
+- summing only the concepts matched in the title or twice in the abstract: 12/50;
+- the largest centrality of any matched concept, then the sum: 23/50, no change;
+- each concept's centrality times its inverse frequency in the catalog (how many sessions name it): 23/50, no change.
+
+The difference between a genuine and a weak pick for these profiles is not how central the matched concepts are; it is what else the session is about (Terraform, Kafka, MicroVMs, Kiro), which no concept weight sees.
+
+### Explain
+
+Explain uses the same centrality. With footprints it returns the same sessions in a different order: hallway, policy-tracker, conformity swap SVS202 and SVS203; kirocrew and adaptative-http reorder their lists (kirocrew's first five are now TNC201, ARC204, CON202, CMP203, SVS203); career-ops and tracking are unchanged. Without footprints explain is byte-identical.
+
+### Regressions and budget
+
+`fix` and `next-level` byte-identical; `match_sessions` `lens: "all"`, `limit: 100` on the `-fp` profiles is 29.6 to 30.6 KB (limit 30720), `isError` false; the MCP candidates are an exact prefix of the CLI's 50 once the dropped ranking reasons are ignored (kirocrew, career-ops, hallway checked).
+
+### Sabotage
+
+Each alone, a named test went red: each schema field and its integer and non-negative checks; the log; the legacy raw count for an unmeasured profile; the footprint over the cited count and the cited-count fallback; the supporting half; the maximum across spellings, through the service merge, the pattern twin and a pattern's own footprint; a pattern footprint alone making a profile measured; the rare set applying only to a measured profile and being passed to `matchAllConcepts`; the 3% fraction; listed mentions counting toward rarity; a rare service not added twice, nor a common one added; strength one; never admitting a session alone.
+
+### Commits
+
+See `git log origin/main..HEAD`. `npm run check` is green: 1372 tests.
