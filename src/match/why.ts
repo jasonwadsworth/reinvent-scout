@@ -310,10 +310,11 @@ export function allWhy(reasons: readonly Reason[], profile: ResolvedProfile, tex
   const chosen = bestSite(found(named));
   let site = chosen?.found;
   if (site === undefined || site.listed) {
-    // A concept the session says outside a list beats the named ones it only lists; with neither, any mention.
+    // A concept the session says outside a list beats the named ones it only lists. A concept no reason
+    // points at is never swapped in on a mention inside a list.
     const known = new Set(ranked.map(concept => concept.name));
     const others = found([...ranked.slice(CONCEPT_REASONS), ...otherConcepts(profile).filter(concept => !known.has(concept.name))]);
-    const taken = bestSite(others.filter(entry => !entry.found.listed)) ?? (site === undefined ? bestSite(others) : undefined);
+    const taken = bestSite(others.filter(entry => !entry.found.listed));
     if (taken !== undefined) {
       named = [first, taken.concept];
       site = taken.found;

@@ -385,6 +385,14 @@ describe("the why block", () => {
         expect(why.sessionSays).toBe("Building on Amazon DynamoDB");
       });
 
+      it("never swaps in a concept no reason points at on a mention inside a list", () => {
+        const withPattern = profileOf([{ name: "serverless", evidence: [cite("app.ts", 5)] }], [service("AWS Lambda"), service("Amazon DynamoDB")]);
+        const reasons = [reason("service", "AWS Lambda", 50), reason("service", "Amazon DynamoDB", 40)];
+        const why = allWhy(reasons, withPattern, { title: "Platforms", abstract: "We cover serverless, containers, and event-driven designs." });
+        expect(why.summary).toBe("Matches your AWS Lambda and Amazon DynamoDB.");
+        expect(why).not.toHaveProperty("sessionSays");
+      });
+
       it("never swaps in a gap pattern", () => {
         const withGap = profileOf([{ name: "gap-no-dlq", evidence: [cite("rules.ts", 4)] }], [service("AWS Lambda")]);
         const why = allWhy([reason("service", "AWS Lambda", 50)], withGap, { title: "gap-no-dlq and dead-letter queues", abstract: "" });
