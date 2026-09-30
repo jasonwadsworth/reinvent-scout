@@ -156,3 +156,52 @@ Each alone, a named test went red: each schema field and its integer and non-neg
 ### Commits
 
 See `git log origin/main..HEAD`. `npm run check` is green: 1372 tests.
+
+## Round 2: off-stack primary subject
+
+### What was built
+
+An admitted session is demoted when its title names a technology the profile does not use, with the reason "about Terraform, which this code does not use" (shown in `why` as "ranked lower: ..."). `all` only; explain, fix and next-level are byte-identical to main on the `gaps/` profiles (21/21), and `all` on a profile without footprints is no longer byte-identical (this demotion changes it, as intended).
+
+- **Technology** = a catalog service the profile does not name, matched only by unmistakable forms (the full name and its parenthesized short form in any case; the name without "Amazon"/"AWS" only when it is a product word such as DynamoDB or ElastiCache, never an ordinary word or acronym: a first version matched "CLI" and "Transform" and demoted OPN310), plus a curated list `OFF_STACK_TOOLS` next to `PREFIX_REQUIRED_SERVICE_NAMES` in `stack-fit.ts`, built from catalog titles (Terraform, Kafka, Kubernetes, Spark, Snowflake, Databricks, MicroVMs, OpenTelemetry, Datadog, Splunk, Redis, PostgreSQL, MongoDB, Iceberg, PyTorch, SAP, Oracle, VMware, OpenAI, Strands, Salesforce, ServiceNow, CrowdStrike, Vercel, Karpenter; Pulumi and Flink are in the lead's list but in no title). A tool is used when a profile service's name or catalog name contains it (Terraform; the EKS catalog name for Kubernetes) or a pattern's wording matches it (`eks` for Kubernetes).
+- **Not demoted:** a title that compares or moves between technologies ("vs", "versus", "compare", "between", "from ... to", "instead of").
+- **Why the exemption is narrow.** The brief says not to demote when the title also names a profile concept more strongly. Taken literally that spares SVS302: "Building serverless applications with Terraform" also names serverless in the title. Only comparisons are exempt.
+
+### Precision (GENUINE of the top 10, strict and consistent)
+
+My earlier round graded some generic Lambda talks differently per profile; from here one rule applies: a generic serverless or Lambda-at-scale talk is genuine only when Lambda or serverless is among the profile's top three concepts by footprint. The table re-grades the earlier outputs by the same rule.
+
+| Profile | main, no footprint | footprint only | + off-stack (no footprint) | + off-stack, with footprint |
+|---|---|---|---|---|
+| hallway | 8 | 7 | 9 | 9 |
+| kirocrew | 3 | 5 | 4 | 5 |
+| adaptative-http | 4 | 3 | 4 | 4 |
+| policy-tracker | 7 | 5 | 8 | 9 |
+| career-ops | 1 | 3 | 1 | 3 |
+| **Tuning** | **23/50 = 46%** | **23/50 = 46%** | **26/50 = 52%** | **30/50 = 60%** |
+| conformity | | | 9 | 9 |
+| tracking | | | 4 | 5 |
+| **Holdout** | | | 13/20 = 65% | **14/20 = 70%** |
+
+**Tuning is 60%, not 70%.** Off-stack adds 3 to 7 points over either alone, and footprint plus the rare-listed-service rule add 4 more on top of it, so both are kept.
+
+### Ablations
+
+- **Footprint in the ranking, with off-stack on:** 30/50 against 26/50 without footprints. Net positive, kept.
+- **Rare listed services alone:** with footprints but without the rule 28/50 (hallway 8, policy 9, career-ops 1); with it 30/50. The rule restores AIM307 and AIM416 and is net positive, kept.
+- **Other ranking changes tried on top, none better:** capping a concept at three of the top ten counting every concept named in the title (25/50, no better).
+
+### Remaining weak picks and their cause (fp, top 10)
+
+- **adaptative-http (4):** SVS318 (Kiro generating serverless apps; Kiro is a supporting service with footprint 0), SVS344 (.NET modernizing), SVS335, SVS332 (generic Lambda-at-scale; Lambda has 4 of the repo's 14 files), API302, TNC338 (a certification bootcamp). The stack is ECS and a load balancer, but the catalog has far more serverless content than ECS content, and sessions matching serverless, Lambda and EventBridge together sum highest.
+- **kirocrew (5):** MAM313 and MAM324 are migration and a customer story (Nissan) that mention Kiro in the abstract; CMP319, SVS332 and NET319 match on a side concept. The catalog's own topic "Migration & Modernization" would demote MAM313 and MAM324, but also MAM331 (landing zones), which the review said to keep, so no rule was added.
+- **career-ops (3):** OPN310, AIM307 and AIM416 are genuine; the rest list Claude Code among several agent CLIs or are generic agent or LLM talks.
+- **hallway (9), policy-tracker (9):** API401 ("Modernize with Event-Driven Architecture", a modernization talk) on both.
+
+### Regressions and budget
+
+`explain`, `fix`, `next-level` byte-identical to main on the `gaps/` profiles (21/21), `fix` and `next-level` on the `-fp` profiles too. `match_sessions` `lens: "all"`, `limit: 100` on the `-fp` profiles: 30.1 to 30.7 KB (limit 30720), `isError` false; MCP candidates are an exact prefix of the CLI's 50 ignoring dropped ranking reasons (kirocrew, career-ops checked).
+
+### Sabotage (round 2)
+
+Each alone, a named test went red: the used-service filter, a tool named by a service, a tool worded by a pattern, the curated list, the catalog services, the comparison exemption (and its "vs" and "from ... to" forms), the reason text, product-word bare names, the parenthesized short form, and the wiring in `matchAll`.
