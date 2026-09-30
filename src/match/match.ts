@@ -8,6 +8,7 @@ import type { Venue } from "../catalog/venue.js";
 import type { ResolvedProfile } from "../profile/profile.js";
 import { getLensProfile, type Lens } from "./lens.js";
 import { buildCorpusStats, scoreSession, type MatchQuery, type Reason } from "./score.js";
+import { allWhy, explainWhy, lensWhy, type Why } from "./why.js";
 
 /** A core service listed by fewer than this fraction of catalog sessions is distinctive enough to
  * fit a Fix session on its own. */
@@ -52,6 +53,8 @@ export interface MatchCandidate {
   offerings: MatchOffering[];
   /** Fix and Next-level only: the source pattern names of every rule that admitted this session. */
   lensRules?: string[];
+  /** Why this session is recommended, in the profile's and the session's own words. */
+  why: Why;
 }
 
 export interface MatchResult {
@@ -70,7 +73,7 @@ interface LensInfo {
   relevance: number;
 }
 
-interface GroupedCandidate extends MatchCandidate {
+interface GroupedCandidate extends Omit<MatchCandidate, "why"> {
   lens?: LensInfo;
   explain?: ConceptMatch[];
 }
@@ -265,7 +268,26 @@ function roundToTwoDecimals(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-function roundCandidate(candidate: GroupedCandidate): MatchCandidate {
+/** The abstract of the sitting that scored, which the quote and the lens signals were matched against. */
+type AbstractOf = (record: IndexRecord) => string;
+
+function whyFor(candidate: GroupedCandidate, lens: Lens, profile: ResolvedProfile, abstractOf: AbstractOf): Why {
+  const text = { title: candidate.record.title, abstract: abstractOf(candidate.record) };
+  if (lens === "all") {
+    return allWhy(candidate.reasons, profile, text);
+  }
+  if (lens === "explain") {
+    const taken = candidate.explain?.[0];
+    if (taken === undefined) throw new Error(`explain candidate ${candidate.code} has no concept it was taken for`);
+    return explainWhy(taken, profile, text);
+  }
+  if (candidate.lens === undefined || candidate.lens.hits.length === 0) {
+    throw new Error(`${lens} candidate ${candidate.code} has no rule that admitted it`);
+  }
+  return lensWhy(lens, candidate.lens.hits, profile, text);
+}
+
+function roundCandidate(candidate: GroupedCandidate, why: Why): MatchCandidate {
   return {
     code: candidate.code,
     record: candidate.record,
@@ -276,6 +298,7 @@ function roundCandidate(candidate: GroupedCandidate): MatchCandidate {
     })),
     offerings: candidate.offerings,
     ...(candidate.lens === undefined ? {} : { lensRules: candidate.lens.hits.map((hit) => hit.rule) }),
+    why,
   };
 }
 
@@ -403,6 +426,7 @@ function matchExplain(
   query: MatchQuery,
   corpusStats: ReturnType<typeof buildCorpusStats>,
   limit: number | undefined,
+  abstractOf: AbstractOf,
 ): MatchResult {
   const { typeWeights } = getLensProfile("explain");
   const { concepts, uncovered: unmapped } = buildConcepts(profile, knownServices(profile, index));
@@ -422,7 +446,7 @@ function matchExplain(
   );
   const candidates = selected.map((entry) => explainCandidate(byCode.get(entry.key)!, entry.matches, profile, typeWeights));
   return {
-    candidates: (limit === undefined ? candidates : candidates.slice(0, limit)).map(roundCandidate),
+    candidates: (limit === undefined ? candidates : candidates.slice(0, limit)).map(candidate => roundCandidate(candidate, whyFor(candidate, "explain", profile, abstractOf))),
     skippedRules: [],
     uncovered: [...uncovered, ...unmapped],
   };
@@ -453,7 +477,7 @@ function explainCandidate(
       evidence: group.record.type!,
     });
   }
-  return { ...group, reasons, score: reasons.reduce((sum, reason) => sum + reason.weight, 0) };
+  return { ...group, explain: [...matches], reasons, score: reasons.reduce((sum, reason) => sum + reason.weight, 0) };
 }
 
 /** `matchSessions` plus what the ranking itself decided to skip -- see `MatchResult`. */
@@ -466,9 +490,8 @@ export function matchSessionsDetailed(
   const lensProfile = getLensProfile(lens);
   const index = requireCurrentIndex(deps);
   const query = buildMatchQuery(profile);
-  const rawById = lens !== "all"
-    ? new Map((readRaw(deps) ?? []).map(session => [session.sessionId, session]))
-    : undefined;
+  const rawById = new Map((readRaw(deps) ?? []).map(session => [session.sessionId, session]));
+  const abstractOf: AbstractOf = record => rawById.get(record.sessionId)?.abstract ?? "";
   // Built once, over the whole loaded catalog, and reused for every candidate below -- inverse
   // document frequency is a corpus-wide statistic, not a per-record one; computing it fresh per
   // record would be both wasteful and simply wrong, since it needs to see every document to know
@@ -476,7 +499,7 @@ export function matchSessionsDetailed(
   const corpusStats = buildCorpusStats(index);
 
   if (lens === "explain") {
-    return matchExplain(profile, index, rawById!, query, corpusStats, options.limit);
+    return matchExplain(profile, index, rawById, query, corpusStats, options.limit, abstractOf);
   }
 
   // Fix has to be pickier than Next-level: its phrases (alarms, tests, IAM) appear in talks about any
@@ -538,7 +561,7 @@ export function matchSessionsDetailed(
 
   const limited = options.limit === undefined ? ordered : ordered.slice(0, options.limit);
   return {
-    candidates: limited.map(roundCandidate),
+    candidates: limited.map(candidate => roundCandidate(candidate, whyFor(candidate, lens, profile, abstractOf))),
     skippedRules: isLens ? lensSkippedRules(profile, lens) : [],
   };
 }

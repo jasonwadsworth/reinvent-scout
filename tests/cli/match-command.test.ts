@@ -124,7 +124,9 @@ describe("match command", () => {
     const human = harness(home.path);
     await human.run(["match", "--profile", profileFilePath, "--lens", lens!]);
     expect(human.printed.join("\n")).toContain("repo/src/agent.ts:17");
-    expect(human.printed.join("\n")).toContain(wording);
+    const verbose = harness(home.path);
+    await verbose.run(["match", "--profile", profileFilePath, "--lens", lens!, "--verbose"]);
+    expect(verbose.printed.join("\n")).toContain(wording);
   });
   it.each(LENSES)("accepts shared lens %s", async lens => {
     seedFixtureCatalog(home.path);

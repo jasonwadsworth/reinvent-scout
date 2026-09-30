@@ -2,6 +2,16 @@ import { toPublicIndexRecord } from "../catalog/index-record.js";
 import type { UncoveredConcept } from "./explain.js";
 import type { SkippedRule } from "./lens-signals.js";
 import type { MatchCandidate, MatchResult } from "./match.js";
+import type { Reason } from "./score.js";
+
+/** Reasons that only explain the ranking (a shared service, topic, wording, level or format). The
+ * lens reasons (`pillarGap`, `migrationPath`, `explainsConcept`) carry every source that admitted a
+ * candidate, so they are not ranking reasons. */
+const LENS_REASON_KINDS: readonly Reason["kind"][] = ["pillarGap", "migrationPath", "explainsConcept"];
+
+export function isRankingReason(reason: Reason): boolean {
+  return !LENS_REASON_KINDS.includes(reason.kind);
+}
 
 /** The MCP-facing candidate shape, deliberately leaner than the CLI's own (which reuses the full
  * `toPublicIndexRecord` -- reasonable for a human terminal, too heavy for metered agent context
@@ -25,6 +35,7 @@ export function toLeanCandidate(candidate: MatchCandidate): Record<string, unkno
     title: record.title,
     type: record.type,
     levelBand: record.levelBand,
+    why: candidate.why,
     score: candidate.score,
     reasons: candidate.reasons,
     offerings: candidate.offerings,
@@ -55,6 +66,9 @@ export interface MatchSessionsResponse {
    * it as one would tell a caller candidates were dropped for size when none were. */
   omitted: number;
   hint?: string;
+  /** Present (`true`) only when the response would not fit its budget with every candidate's ranking
+   * reasons, so they were left off all of them; `why` and the lens reasons are intact. */
+  rankingReasonsOmitted?: true;
   /** Next-level paths skipped because the profile already made the move. */
   skippedRules: SkippedRule[];
   /** Explain only, always present there: profile concepts no session could be matched to. Absent
@@ -73,6 +87,7 @@ function buildResponse(
   truncated: boolean,
   skippedRules: SkippedRule[],
   uncovered: UncoveredConcept[] | undefined,
+  rankingReasonsOmitted = false,
 ): MatchSessionsResponse {
   const omitted = totalMatched - candidates.length;
   return {
@@ -82,6 +97,7 @@ function buildResponse(
     requested,
     omitted,
     ...(truncated ? { hint: truncationHint(omitted) } : {}),
+    ...(rankingReasonsOmitted ? { rankingReasonsOmitted: true as const } : {}),
     skippedRules,
     ...(uncovered === undefined ? {} : { uncovered }),
   };
@@ -104,21 +120,31 @@ export function buildMatchResponse(
     return everything;
   }
 
-  // Not everything fits -- greedily include candidates in ranked order (the same order
+  // Not everything fits. What explains a candidate to the reader is `why` and the lens reasons; the
+  // ranking reasons only explain the ranking, so they go first, from every candidate, before any
+  // candidate is left out.
+  const withoutRanking = result.candidates.map(candidate =>
+    toCandidate({ ...candidate, reasons: candidate.reasons.filter(reason => !isRankingReason(reason)) }));
+  const trimmed = buildResponse(withoutRanking, requested, totalMatched, false, skippedRules, uncovered, true);
+  if (fits(trimmed)) {
+    return trimmed;
+  }
+
+  // Still not everything fits -- greedily include candidates in ranked order (the same order
   // matchSessions already ranked them in; never reordered or re-scored here), each checked as a
   // whole prospective response against the budget (using the same truncated:true/hint shape the
   // final response will have, so the check is honest about the overhead that shape itself costs),
   // stopping before the first one that would push the response over. A candidate is either whole
   // or left out entirely -- never partially serialized to make room.
   const included: Record<string, unknown>[] = [];
-  for (const candidate of leanCandidates) {
-    const trial = buildResponse([...included, candidate], requested, totalMatched, true, skippedRules, uncovered);
+  for (const candidate of withoutRanking) {
+    const trial = buildResponse([...included, candidate], requested, totalMatched, true, skippedRules, uncovered, true);
     if (!fits(trial)) {
       break;
     }
     included.push(candidate);
   }
 
-  return buildResponse(included, requested, totalMatched, true, skippedRules, uncovered);
+  return buildResponse(included, requested, totalMatched, true, skippedRules, uncovered, true);
 }
 

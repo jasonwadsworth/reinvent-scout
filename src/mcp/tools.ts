@@ -281,7 +281,10 @@ function registerMatchSessionsTool(server: McpServer, deps: McpToolDeps): void {
     {
       description:
         "Rank the local catalog against a resolved tech profile and return the top candidates, " +
-        "each with its score, reasons and every scheduled offering. Never includes abstracts. " +
+        "each with a `why` (summary, yourCode citations, and a sessionSays quote from the session), " +
+        "its score, reasons and every scheduled offering. Never includes full abstracts (`why.sessionSays` quotes one sentence). " +
+        "When the response would not fit its budget, every candidate's ranking reasons are dropped first " +
+        "(`rankingReasonsOmitted`), before any candidate is left out. " +
         "A response that would exceed the size budget is truncated (see the truncated/returned/" +
         "requested/hint fields) rather than ever partially serializing a candidate. " +
         "Under the explain lens the response also lists `uncovered` concepts: parts of the profile " +

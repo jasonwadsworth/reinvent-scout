@@ -775,3 +775,52 @@ it("executes the documented plan-confirm-reserve-cancel contracts using plan-ret
     await client.close(); await server.close();
   } finally { home.cleanup(); }
 });
+
+describe("why documentation", () => {
+  const readmeMd = readFileSync(join(here, "..", "..", "README.md"), "utf8");
+  const step6 = skillMd.slice(skillMd.indexOf("6. Present the candidates"), skillMd.indexOf("7. For reservations"));
+  const presenting = skillMd.slice(skillMd.indexOf("## Presenting reasons and evidence"), skillMd.indexOf("## What this build does not do"));
+
+  it("tells the agent, in step 6, to lead each candidate with why.summary and sessionSays and cite yourCode", () => {
+    for (const text of ["`why.summary`", "`why.sessionSays`", "`why.yourCode`"]) expect(step6, text).toContain(text);
+    expect(step6.indexOf("`why.summary`")).toBeLessThan(step6.indexOf("`offerings`"));
+    expect(step6).not.toMatch(/every `reasons` entry/);
+  });
+
+  it("does not have the agent read out ranking reasons unless asked", () => {
+    expect(presenting).toMatch(/ranking reasons/i);
+    expect(presenting).toMatch(/unless (?:the user )?asks?/i);
+    expect(presenting).not.toMatch(/always show it, not just the score/);
+  });
+
+  it("documents the why block, its omissions and the budget order in workflow.md", () => {
+    for (const text of ["`why`", "`summary`", "`yourCode`", "`more`", "`sessionSays`", "`rankingReasonsOmitted`", "`--verbose`"]) {
+      expect(workflowMd, text).toContain(text);
+    }
+    expect(extractSection(workflowMd, "## 6. Present candidates")).toContain("`why.summary`");
+  });
+
+  it("shows a why in the documented match_sessions example, with exactly the keys the tool returns", () => {
+    const example = JSON.parse([...extractSection(workflowMd, "## 5. `match_sessions`").matchAll(/```json\n([\s\S]*?)```/g)][0]![1]!) as { candidates: Array<Record<string, unknown>> };
+    const why = example.candidates[0]!.why as Record<string, unknown>;
+    expect(Object.keys(why).sort()).toEqual(["sessionSays", "summary", "yourCode"]);
+    expect(Object.keys(example.candidates[0]!).sort()).toEqual(["code", "levelBand", "offerings", "reasons", "score", "sessionId", "title", "type", "why"]);
+  });
+
+  it("says the summary names the strongest rule, not the first", () => {
+    expect(presenting).toContain("names only the strongest");
+    expect(presenting).not.toContain("names only the first");
+  });
+
+  it("says CLI --json differs from MCP only by the ranking reasons MCP may drop, and that no full abstract is included", () => {
+    const cli = workflowMd.slice(workflowMd.indexOf("The CLI prints the same object"), workflowMd.indexOf("## 6. Present candidates"));
+    expect(cli).toContain("`rankingReasonsOmitted`");
+    expect(workflowMd).not.toContain("Never includes abstracts.");
+    expect(workflowMd).toContain("Never includes full abstracts");
+  });
+
+  it("documents --verbose in the README", () => {
+    expect(readmeMd).toContain("--verbose");
+    expect(readmeMd).toContain("rankingReasonsOmitted");
+  });
+});

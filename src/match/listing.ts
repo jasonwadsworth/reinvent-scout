@@ -37,6 +37,11 @@ export function unlistedMatches(pattern: RegExp, text: string, vocabulary?: RegE
   return partitionMatches(pattern, text, vocabulary).unlisted;
 }
 
+/** The matches of `pattern` in `text` that do sit inside an enumeration of three or more names. */
+export function listedMatches(pattern: RegExp, text: string, vocabulary?: RegExp): RegExpExecArray[] {
+  return partitionMatches(pattern, text, vocabulary).listed;
+}
+
 /** Whether `text` names `pattern` only inside enumerations: at least one match, none outside. */
 export function onlyListed(pattern: RegExp, text: string, vocabulary?: RegExp): boolean {
   const { listed, unlisted } = partitionMatches(pattern, text, vocabulary);

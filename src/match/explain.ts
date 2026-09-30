@@ -1,8 +1,9 @@
 import type { IndexRecord } from "../catalog/index-record.js";
 import type { Evidence, ResolvedProfile } from "../profile/profile.js";
 import { getLensProfile } from "./lens.js";
-import { unlistedMatches } from "./listing.js";
+import { listedMatches, unlistedMatches } from "./listing.js";
 import type { Reason } from "./score.js";
+import type { MatchSite } from "./why.js";
 import { PLATFORM_SERVICES, serviceNamePatterns } from "./stack-fit.js";
 
 /** A thing in the profile a newcomer would want explained: a core service (or, at half weight, a
@@ -23,6 +24,8 @@ export interface ExplainConcept {
   tags: readonly string[];
   /** Only a title that names the concept and says how to build or design it admits a session. */
   titleOnly: boolean;
+  /** The profile's own words for how the code uses it: a service's `usage`, else a pattern's `note`. */
+  note?: string;
 }
 
 export interface UncoveredConcept {
@@ -40,6 +43,8 @@ export interface ConceptMatch {
   phrase: string;
   /** The session also lists the service or carries a matching tag. Never admits on its own. */
   boosted: boolean;
+  /** Where `phrase` sits in the title or abstract, for quoting the sentence that says it. */
+  site: MatchSite;
 }
 
 const SUPPORTING_WEIGHT = 0.5;
@@ -98,6 +103,11 @@ const PATTERN_PHRASES: ReadonlyMap<string, PatternEntry> = new Map([
   ["streaming", { phrase: /\bstreaming\b|\bKinesis\b|\bKafka\b/i, tags: [] }],
   ["data-lake", { phrase: /\bdata lakes?\b|\blakehouse\b/i, tags: [] }],
 ]);
+
+/** How a session words a pattern of the profile, or `undefined` for a pattern with no defined wording. */
+export function patternPhrase(name: string): RegExp | undefined {
+  return PATTERN_PHRASES.get(name.toLowerCase())?.phrase;
+}
 
 /** Every phrase above, so a lowercase list of them ("serverless, containers, and event-driven") is
  * read as a list of names rather than prose. */
@@ -168,6 +178,7 @@ interface Draft {
   catalogName: string | null;
   tags: readonly string[];
   titleOnly: boolean;
+  note?: string;
 }
 
 /** The profile's concepts, most central first, and the patterns that cannot be matched at all. A
@@ -185,9 +196,11 @@ export function buildConcepts(profile: ResolvedProfile, catalogServices: readonl
         name: service.catalogName ?? service.name, kind: "service", supporting,
         citations: [...service.evidence], matchers: serviceMatchers(service.name, service.catalogName, tails),
         catalogName: service.catalogName, tags: [], titleOnly: false,
+        ...(service.usage === undefined ? {} : { note: service.usage }),
       });
     } else {
       draft.supporting = draft.supporting && supporting;
+      if (draft.note === undefined && service.usage !== undefined) draft.note = service.usage;
       draft.citations.push(...service.evidence);
       draft.matchers.push(...serviceMatchers(service.name, service.catalogName, tails));
     }
@@ -204,6 +217,7 @@ export function buildConcepts(profile: ResolvedProfile, catalogServices: readonl
     if (twin !== undefined) {
       // The pattern and the service are one concept (ecs and Amazon ECS): one citation list, one turn.
       twin.citations.push(...pattern.evidence);
+      if (twin.note === undefined && pattern.note !== undefined) twin.note = pattern.note;
       twin.matchers.push(entry.phrase);
       twin.tags = [...twin.tags, ...entry.tags];
       continue;
@@ -211,9 +225,10 @@ export function buildConcepts(profile: ResolvedProfile, catalogServices: readonl
     const key = `pattern:${pattern.name.toLowerCase()}`;
     const draft = drafts.get(key);
     if (draft === undefined) {
-      drafts.set(key, { name: pattern.name, kind: "pattern", supporting: false, citations: [...pattern.evidence], matchers: [entry.phrase], catalogName: null, tags: entry.tags, titleOnly: entry.broad === true });
+      drafts.set(key, { name: pattern.name, kind: "pattern", supporting: false, citations: [...pattern.evidence], matchers: [entry.phrase], catalogName: null, tags: entry.tags, titleOnly: entry.broad === true, ...(pattern.note === undefined ? {} : { note: pattern.note }) });
     } else {
       draft.citations.push(...pattern.evidence);
+      if (draft.note === undefined && pattern.note !== undefined) draft.note = pattern.note;
     }
   }
   const concepts = [...drafts.values()].map((draft): ExplainConcept => {
@@ -222,6 +237,7 @@ export function buildConcepts(profile: ResolvedProfile, catalogServices: readonl
       name: draft.name, kind: draft.kind, weight,
       centrality: new Set(draft.citations.map(fileKey)).size * weight,
       citations: draft.citations, matchers: draft.matchers, catalogName: draft.catalogName, tags: draft.tags, titleOnly: draft.titleOnly,
+      ...(draft.note === undefined ? {} : { note: draft.note }),
     };
   });
   concepts.sort((a, b) => b.centrality - a.centrality || b.weight - a.weight
@@ -229,12 +245,25 @@ export function buildConcepts(profile: ResolvedProfile, catalogServices: readonl
   return { concepts, uncovered };
 }
 
-/** Where `concept` is named in `text` outside an enumeration, each place once even when two of its
- * spellings overlap ("Amazon DynamoDB" and "DynamoDB"). */
-function mentions(concept: ExplainConcept, text: string): RegExpExecArray[] {
+/** `mentionsOf` reads " & " as " and " (two characters longer); this maps a match offset in that
+ * reading back to the original text, so a quote is cut from what the session actually says. */
+function originalIndex(text: string, spokenIndex: number): number {
+  let shift = 0;
+  for (const ampersand of text.matchAll(/ & /g)) {
+    if (ampersand.index + shift + " and ".length > spokenIndex) break;
+    shift += 2;
+  }
+  return spokenIndex - shift;
+}
+
+/** Where any of `matchers` names something in `text` outside an enumeration (or, with `inEnumeration`,
+ * only inside one), each place once even
+ * when two of its spellings overlap ("Amazon DynamoDB" and "DynamoDB"), at offsets in `text` itself. */
+export function mentionsOf(matchers: readonly RegExp[], text: string, inEnumeration = false): RegExpExecArray[] {
   // "Lambda, DynamoDB & SQS" is an enumeration like the "and" form.
   const spoken = text.replace(/ & /g, " and ");
-  const all = concept.matchers.flatMap(matcher => unlistedMatches(matcher, spoken, PATTERN_VOCABULARY));
+  const find = inEnumeration ? listedMatches : unlistedMatches;
+  const all = matchers.flatMap(matcher => find(matcher, spoken, PATTERN_VOCABULARY));
   all.sort((a, b) => a.index - b.index || b[0].length - a[0].length);
   const distinct: RegExpExecArray[] = [];
   let end = 0;
@@ -243,13 +272,23 @@ function mentions(concept: ExplainConcept, text: string): RegExpExecArray[] {
     distinct.push(match);
     end = match.index + match[0].length;
   }
-  return distinct;
+  return distinct.map(match => Object.assign(match, { index: originalIndex(text, match.index) }));
+}
+
+function mentions(concept: ExplainConcept, text: string): RegExpExecArray[] {
+  return mentionsOf(concept.matchers, text);
 }
 
 function isBoosted(concept: ExplainConcept, record: IndexRecord): boolean {
   if (concept.catalogName !== null && record.services.includes(concept.catalogName)) return true;
   const wanted = new Set(concept.tags.map(tag => tag.toLowerCase()));
   return [...record.topics, ...record.areasOfInterest].some(value => wanted.has(value.toLowerCase()));
+}
+
+/** What the session says about the concept: the abstract sentence naming it when there is one, else the title. */
+function quotedSite(inTitle: RegExpExecArray | undefined, inAbstract: RegExpExecArray | undefined): MatchSite {
+  const quoted = inAbstract ?? inTitle!;
+  return { inTitle: inAbstract === undefined, index: quoted.index, length: quoted[0].length };
 }
 
 /** The concepts a session is about: it names the concept in its title, or at least twice in its
@@ -271,6 +310,7 @@ export function matchConcepts(concepts: readonly ExplainConcept[], record: Index
     matches.push({
       concept, strength: inTitle === undefined ? ABSTRACT_STRENGTH : TITLE_STRENGTH,
       phrase: admitted[0], boosted,
+      site: quotedSite(inTitle, inAbstract[0]),
     });
   }
   return matches;

@@ -42,9 +42,11 @@ explained shortlist.
    remediation (`"fix"`), or migration options (`"next-level"`). Fix uses only supported,
    evidence-bearing gap patterns; Next-level uses `serverless`, `ecs`, or `genai-single-call`.
    See the exact vocabulary and trade-offs in `reference/profiling.md`.
-6. Present the candidates to the user: title, format and level, every `reasons` entry (why it
-   matched) and every `offerings` entry (when and where each sitting happens) -- not just a bare
-   title and score. If the response came back `truncated`, say so and offer to narrow the request
+6. Present the candidates to the user. Lead each one with its title, format and level, then
+   `why.summary` and, when present, the `why.sessionSays` quote; cite `why.yourCode` (repo, file and
+   line, plus `why.more` cut ones) so the user can open the code, then every `offerings` entry
+   (when and where each sitting happens). Do not read out ranking `reasons` unless the user asks.
+   If the response came back `truncated`, say so and offer to narrow the request
    (a narrower lens or a more specific profile -- **not** a smaller `limit`, which only returns
    fewer of the exact same top-ranked candidates and can never reach the ones already omitted)
    rather than silently showing a partial list as if it were everything.
@@ -74,14 +76,19 @@ each `isError` message means and how to react to it.
 
 ## Presenting reasons and evidence
 
-A candidate's `reasons` field is the whole point of matching from a profile instead of a keyword
-search -- always show it, not just the score. Each reason's own `evidence` field (see
-`reference/workflow.md`) is the matched catalog value (a service or topic name, or matched query
-terms), not a file. Fix and Next-level reasons also carry `profileEvidence`: show its repo/file/line
-citations alongside the catalog signal. For ordinary service reasons, go back to the *profile you wrote* and find the
-evidence entry you cited for that same service, then mention it
-("relevant because your API cites `@aws-sdk/client-dynamodb` in `src/handlers/create-order.ts`") --
-that traceability is exactly what agent-authored, evidence-backed profiles buy over a black-box
+A candidate's `why` is what to say about it: `summary` (what it covers, in the profile's own
+words), `yourCode` (the profile's citations for it) and `sessionSays` (a sentence the session
+itself says, quoted, absent when nothing can be quoted). Lead with it; it is built from the profile
+you wrote and the session's text, so it is as good as your notes and citations are. Its
+`reasons` are the ranking reasons (`service`, `topic`, `areaOfInterest`, `text`, `level`,
+`format`): a shared service or matched wording says why the session ranked where it did, not why it
+is worth attending, so do not read them out unless the user asks how the ranking works. Each
+reason's own `evidence` field (see `reference/workflow.md`) is the matched catalog value, not a
+file. Fix and Next-level reasons (`pillarGap`, `migrationPath`) also carry `profileEvidence` with
+every source that admitted the session; when `why.summary` names only the strongest (the first on a tie) of several rules
+(`(+N more)`), mention the others from those reasons. If a response came back with
+`rankingReasonsOmitted`, the ranking reasons were dropped to fit the budget; `why` is unaffected.
+`why.yourCode` is the traceability that agent-authored, evidence-backed profiles buy over a black-box
 score.
 
 Say “not evident in the cited scope” for an absence; this is not proof the whole system lacks it.

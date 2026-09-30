@@ -31,6 +31,7 @@ interface MatchCommandOptions {
   limit: string;
   json: boolean;
   includeAbstracts: boolean;
+  verbose: boolean;
 }
 
 const DEFAULT_MATCH_LIMIT = 30;
@@ -109,8 +110,20 @@ function formatOfferingLine(offering: MatchCandidate["offerings"][number]): stri
   return `    ${parts.join(" -- ")}`;
 }
 
+/** The `why` block as the lines under the title: what the candidate covers, where the profile's
+ * code shows it, and the session's own sentence. */
+function formatWhyLines(why: MatchCandidate["why"]): string[] {
+  const code = why.yourCode.map(citation => `${citation.repo}/${citation.file}${citation.line === undefined ? "" : `:${citation.line}`}`);
+  return [
+    `  Why: ${why.summary}`,
+    ...(code.length === 0 ? [] : [`  Your code: ${code.join(", ")}${why.more === undefined ? "" : ` (+${why.more} more)`}`]),
+    ...(why.sessionSays === undefined ? [] : [`  Session: "${why.sessionSays}"`]),
+  ];
+}
+
 /** The candidate's own line (headed by its `code`, not any one sitting's own abbreviation -- see
- * `match/match.ts`'s repeat grouping), each reason's `detail` indented beneath it -- the scorer
+ * `match/match.ts`'s repeat grouping), its `why` block directly under it, then its `Rules:`; each reason's
+ * `detail` is indented beneath only under `--verbose`, since `why` already says it -- the scorer
  * exists to be explainable (see `match/score.ts`'s `Reason`), so the human-readable table must
  * actually show why a session was suggested, not only its score -- and every one of its offerings
  * (day, time, venue, room) beneath that, so a repeat's every sitting is visible even though the
@@ -118,23 +131,23 @@ function formatOfferingLine(offering: MatchCandidate["offerings"][number]): stri
  * `--include-abstracts`; `null`/absent otherwise), prints beneath the offerings, mirroring
  * `catalog.ts`'s `formatSearchResultWithAbstract` -- a session with no abstract on record still
  * gets its ordinary line, never invented text. */
-function formatCandidateWithReasons(candidate: MatchCandidate, abstract?: string | null): string {
+function formatCandidateWithReasons(candidate: MatchCandidate, verbose: boolean, abstract?: string | null): string {
   const line = formatCandidateLine(candidate);
-  const reasonLines = candidate.reasons.flatMap((reason) => [
+  const reasonLines = (verbose ? candidate.reasons : []).flatMap((reason) => [
     `  - ${reason.detail}`,
     ...(reason.profileEvidence ?? []).map(citation =>
       `    Source: ${citation.repo}/${citation.file}${citation.line === undefined ? "" : `:${citation.line}`}`),
   ]);
   const offeringLines = candidate.offerings.map(formatOfferingLine);
   const ruleLines = candidate.lensRules === undefined ? [] : [`  Rules: ${candidate.lensRules.join(", ")}`];
-  const parts = [line, ...ruleLines, ...reasonLines, "  Offerings:", ...offeringLines];
+  const parts = [line, ...formatWhyLines(candidate.why), ...ruleLines, ...reasonLines, "  Offerings:", ...offeringLines];
   if (abstract !== undefined && abstract !== null && abstract !== "") {
     parts.push(`  ${abstract}`);
   }
   return parts.join("\n");
 }
 
-function formatHumanResult(result: MatchResult, abstracts?: ReadonlyMap<string, string | null>): string {
+function formatHumanResult(result: MatchResult, verbose: boolean, abstracts?: ReadonlyMap<string, string | null>): string {
   const skipped = [
     ...result.skippedRules.map((skip) => `Skipped: ${skip.rule} (${skip.reason})`),
     ...(result.uncovered ?? []).map((entry) => `Uncovered: ${entry.concept} (${entry.reason})`),
@@ -143,7 +156,7 @@ function formatHumanResult(result: MatchResult, abstracts?: ReadonlyMap<string, 
     return [NO_CANDIDATES_MESSAGE, ...skipped].join("\n");
   }
   const blocks = result.candidates.map((candidate) =>
-    formatCandidateWithReasons(candidate, abstracts?.get(candidate.record.sessionId) ?? null));
+    formatCandidateWithReasons(candidate, verbose, abstracts?.get(candidate.record.sessionId) ?? null));
   return [blocks.join("\n\n"), ...skipped].join("\n\n");
 }
 
@@ -159,6 +172,7 @@ export function registerMatchCommands(program: Command, deps: MatchCommandDeps =
     .option("--lens <lens>", `one of ${LENSES.join(", ")}`, "all")
     .option("--limit <n>", "maximum number of candidates", String(DEFAULT_MATCH_LIMIT))
     .option("--include-abstracts", "include each session's abstract in the output")
+    .option("--verbose", "also show every reason in the table: the lens reasons with their sources and the ranking reasons")
     .option("--json", "print machine-readable JSON instead of a human-readable table")
     .action((options: MatchCommandOptions) => {
       const storeRoot = resolveStoreRoot();
@@ -187,7 +201,7 @@ export function registerMatchCommands(program: Command, deps: MatchCommandDeps =
           print(JSON.stringify(buildMatchResponse(result, limit, undefined, toCandidate)));
           return;
         }
-        print(formatHumanResult(result, abstracts));
+        print(formatHumanResult(result, options.verbose === true, abstracts));
       } catch (err) {
         if (err instanceof z.ZodError) {
           print(formatZodError(err));
