@@ -36,6 +36,10 @@ interface SignalRule {
   /** Fix only: tools whose own sessions this rule takes when the profile uses the tool too, on the
    * same terms as `remedyServices` (phrase in the title or twice in the abstract). */
   toolServices?: readonly string[];
+  /** A session tagged with an AI area (Agentic AI, Generative AI) is about building or running
+   * agents, not about this rule's gap in an ordinary application, so it is admitted only for a
+   * profile that has an AI pattern itself. */
+  aiProfileOnly?: boolean;
   /** Tags, topics and services that add one strength to a text hit but never admit on their own. */
   services?: readonly string[];
   topics?: readonly string[];
@@ -49,6 +53,10 @@ const SOURCE_STACK_SERVICES = 2;
  * at the few words before the first abstract match. */
 const GAP_CUE = /\b(?:missing|without|lack(?:s|ing)?|absent|forgotten)\b(?: [\w-]+){0,2} $/i;
 const GAP_CUE_WINDOW = 30;
+/** Areas that mark a session as about AI agents or applications. */
+export const AI_AREAS: readonly string[] = ["Agentic AI", "Generative AI"];
+/** Patterns that say the profile is itself an AI product. */
+const AI_PATTERNS: readonly string[] = ["agentic", "genai-single-call"];
 const BASE_WEIGHT = 20;
 const STRENGTH_WEIGHT = 10;
 
@@ -64,6 +72,11 @@ const RULES: readonly SignalRule[] = [
   { source: "gap-no-load-tests", lens: "fix", detail: "Performance Efficiency: load tests are not evident in the cited scope.", phrase: /\b(?:load|performance|stress) test(?:s|ing)?\b/i },
   { source: "gap-no-cost-monitoring", lens: "fix", detail: "Cost Optimization: cost monitoring is not evident in the cited scope.", phrase: /\b(?:cost[- ](?:monitoring|allocation|anomal(?:y|ies)|visibility)|(?:AWS|cost) budgets?|budgets? (?:and|for) (?:\w+ )?costs?)\b/i, remedyServices: ["AWS Billing and Cost Management"] },
   { source: "gap-no-resource-rightsizing", lens: "fix", detail: "Sustainability: resource rightsizing is not evident in the cited scope.", phrase: /\b(?:right[- ]?sizing|right[- ]?size)\b/i },
+  // Tracing tools by name: bare "tracing" is ray tracing and stack traces.
+  { source: "gap-no-tracing", lens: "fix", detail: "Operational Excellence: distributed tracing is not evident in the cited scope.", phrase: /\b(?:distributed tracing|end-to-end tracing|AWS X-Ray|OpenTelemetry|OTel|trace propagation)\b/i, remedyServices: ["AWS Distro for OpenTelemetry"], aiProfileOnly: true },
+  // Pipeline language only: bare "pipelines" is data pipelines, "deployment pipelines" is blue/green and canary strategy talks, and "delivery" or "integration" alone is everything.
+  { source: "gap-no-ci", lens: "fix", detail: "Operational Excellence: a CI/CD pipeline is not evident in the cited scope.", phrase: /\b(?:CI\/CD|continuous (?:integration|delivery|deployment)|(?:release|delivery) pipelines?)\b/i, remedyServices: ["AWS CodePipeline", "AWS CodeBuild", "AWS CodeDeploy"], aiProfileOnly: true },
+  { source: "gap-no-graviton", lens: "fix", detail: "Sustainability: Arm-based (Graviton) compute is not evident in the cited scope.", phrase: /\b(?:Graviton\d*|arm64)\b/i, remedyServices: ["Amazon EC2 - Graviton"], aiProfileOnly: true },
   {
     source: "serverless", lens: "next-level", destination: "containers",
     sourceText: /\b(?:Lambda|serverless|functions?)\b/i,
@@ -164,6 +177,10 @@ function ruleVocabulary(rule: SignalRule): RegExp | undefined {
   return new RegExp(sources.join("|"), "i");
 }
 
+function isAiSession(record: IndexRecord): boolean {
+  return record.areasOfInterest.some(area => AI_AREAS.some(ai => ai.toLowerCase() === area.toLowerCase()));
+}
+
 function mentionsSource(rule: SignalRule, record: IndexRecord, abstract: string, fitsStack: StackFit): boolean {
   if (rule.sourceText === undefined) return true;
   const vocabulary = ruleVocabulary(rule);
@@ -180,7 +197,8 @@ interface Signal {
  * abstract = 2, once = 1; a gap cue before the phrase and a matching tag, topic or service each add
  * 1, but a text hit is required. Title
  * and abstract are matched separately so a phrase cannot bridge them. */
-function catalogSignal(rule: SignalRule, record: IndexRecord, abstract: string, fitsStack: StackFit, onStack: boolean): Signal | undefined {
+function catalogSignal(rule: SignalRule, record: IndexRecord, abstract: string, fitsStack: StackFit, onStack: boolean, profile: ResolvedProfile): Signal | undefined {
+  if (rule.aiProfileOnly === true && isAiSession(record) && !AI_PATTERNS.some(name => hasPattern(profile, name))) return undefined;
   if (rule.reverse?.test(record.title) === true || rule.reverse?.test(abstract) === true) return undefined;
   if (!mentionsSource(rule, record, abstract, fitsStack)) return undefined;
   const vocabulary = ruleVocabulary(rule);
@@ -222,7 +240,7 @@ export function scoreLensSignals(
     if (rule.lens !== lens) continue;
     const citations = activeCitations(rule, profile);
     if (citations.length === 0) continue;
-    const signal = catalogSignal(rule, record, abstract, fitsStack, onStack);
+    const signal = catalogSignal(rule, record, abstract, fitsStack, onStack, profile);
     if (signal === undefined) continue;
     const unique = new Map<string, Evidence>();
     for (const citation of citations) {
