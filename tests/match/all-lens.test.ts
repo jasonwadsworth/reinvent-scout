@@ -74,6 +74,14 @@ describe("the all lens", () => {
     expect(sponsored.why.summary).toBe("Matches your AWS Lambda; ranked lower: sponsored session.");
   });
 
+  it("demotes a session titled about agents when the profile has no agentic pattern, and not when it has", () => {
+    const sessions = [session("AGT300", "Building agentic apps on Lambda"), session("LAM300", "Lambda in practice")];
+    expect(codes(run(profile(["AWS Lambda"]), sessions))).toEqual(["LAM300", "AGT300"]);
+    expect(run(profile(["AWS Lambda"]), sessions).candidates.map(candidate => candidate.demoted)).toEqual([undefined, "about agents, which this code does not use"]);
+    const agentic = run(profile(["AWS Lambda"], ["agentic"]), sessions);
+    expect(agentic.candidates.map(candidate => candidate.demoted)).toEqual([undefined, undefined]);
+  });
+
   it("ranks a session about the code's central concept above one about a rare concept", () => {
     const p = profile(["AWS Lambda", "Amazon Cognito"]);
     p.services[0]!.evidence = [cite("a.ts"), cite("b.ts"), cite("c.ts")];

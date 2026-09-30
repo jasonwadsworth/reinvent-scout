@@ -195,6 +195,12 @@ describe("rankAll", () => {
       expect(ranked).toEqual(["L0", "L1", "L2", "D0", "D1", "C0", "Q0", "L3", "L4", "L5"]);
     });
 
+    it("keeps the rest in rank order after the top ten, however many of a concept follow", () => {
+      const quads = (prefix: string, concept: ProfileConcept, count: number) => Array.from({ length: count }, (_, index) => session(`${prefix}${index}`, [match(concept)]));
+      const ranked = rankAll([...quads("L", l, 4), ...quads("D", d, 4), ...quads("C", c, 4), ...quads("Q", q, 4)]).map(entry => entry.key);
+      expect(ranked).toEqual(["L0", "L1", "L2", "D0", "D1", "D2", "C0", "C1", "C2", "Q0", "Q1", "Q2", "Q3", "L3", "D3", "C3"]);
+    });
+
     it("counts only the primary concept of a session toward the cap", () => {
       const secondary = Array.from({ length: 4 }, (_, index) => session(`S${index}`, [match(d), match(l, 1)]));
       const ranked = rankAll([...secondary, session("Q0", [match(q)]), session("C0", [match(c)]), session("L0", [match(l)])]).map(entry => entry.key);
@@ -209,6 +215,15 @@ describe("rankAll", () => {
 });
 
 describe("allReason", () => {
+  it("lists each place the code uses the concept once, however many times the profile cites it", () => {
+    const p = profile([{ name: "Amazon DynamoDB", files: ["a.ts", "a.ts", "b.ts"] }]);
+    const [concept] = buildConcepts(p).concepts;
+    const found = matchAllConcepts([concept!], record({ title: "DynamoDB data modeling" }), "")[0]!;
+    const reason = allReason(found, 1);
+    expect(reason.profileEvidence).toEqual([cite("a.ts"), cite("b.ts")]);
+    expect(reason.detail).toBe('Matches Amazon DynamoDB ("DynamoDB"), which this code uses at a.ts:1, b.ts:1.');
+  });
+
   it("names the concept, the phrase and where the code uses it", () => {
     const [concept] = conceptsOf([{ name: "Amazon DynamoDB", files: ["a.ts"] }]);
     const found = matchAllConcepts([concept!], record({ title: "DynamoDB data modeling" }), "")[0]!;

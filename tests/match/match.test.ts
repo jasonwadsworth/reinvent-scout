@@ -658,7 +658,7 @@ describe("matchSessions grouping repeat sessions by base code", () => {
     // and clip the two-member group in half.
     const groupA1: Session = {
       sessionId: "a1",
-      abbreviation: "GRP100-R",
+      abbreviation: "GRP300-R",
       title: "Highest scoring Lambda talk",
       services: ["AWS Lambda"],
       abstract: "lambda lambda lambda",
@@ -667,7 +667,7 @@ describe("matchSessions grouping repeat sessions by base code", () => {
     const groupA2: Session = {
       ...groupA1,
       sessionId: "a2",
-      abbreviation: "GRP100-R1",
+      abbreviation: "GRP300-R1",
       title: `${groupA1.title} [REPEAT]`,
       sessionTime: { date: "2026-12-02", time: "10:00", length: "60" },
     };
@@ -680,7 +680,7 @@ describe("matchSessions grouping repeat sessions by base code", () => {
     };
     const groupC: Session = {
       sessionId: "c1",
-      abbreviation: "GRP300",
+      abbreviation: "GRP100",
       title: "Lowest scoring Lambda talk",
       services: ["AWS Lambda"],
     };
@@ -703,7 +703,7 @@ describe("matchSessions grouping repeat sessions by base code", () => {
     const results = matchSessions(profile, { storeRoot: home.path }, { limit: 2 });
 
     expect(results).toHaveLength(2);
-    expect(results.map((r) => r.code)).toEqual(["GRP100", "GRP200"]);
+    expect(results.map((r) => r.code)).toEqual(["GRP300", "GRP200"]);
     // The two-member group must still carry both its offerings, not just whichever raw row
     // happened to fall inside the old, ungrouped limit.
     expect(results[0]!.offerings).toHaveLength(2);
