@@ -46,6 +46,12 @@ const ABSTRACT_STRENGTH = 2;
 const ABSTRACT_MENTIONS = 2;
 /** A sponsored session is the sponsor's pitch for its own product, not an introduction to a technology. */
 const SPONSORED = /\(sponsored by /i;
+/** A customer story ("How customers scaled X") tells what one team did rather than teaching X; "how
+ * to", "how it works" and questions stay. */
+const STORY = /(?:^|[:\-–—]\s+)how\b/i;
+const EXPLAINER = /\bhow (?:to|do|does|can|should)\b|\bworks\b/i;
+/** AWS Partner sessions train partners on the partner program, not newcomers to a codebase. */
+const PARTNER = /^AWS Partner:/i;
 /** A news or recap session lists changes; it does not teach the technology. */
 const NEWS = /\bwhat[’']s new\b|\byear in review\b|\bthe latest\b|\bannouncements?\b|\brecap\b/i;
 /** What a title says when the session is about building or designing the thing, not applying it. */
@@ -183,7 +189,8 @@ function isBoosted(concept: ExplainConcept, record: IndexRecord): boolean {
  * abstract, outside a listing. An abstract alone must be corroborated by a listed service or a
  * matching tag, which never make a match on their own. */
 export function matchConcepts(concepts: readonly ExplainConcept[], record: IndexRecord, abstract: string): ConceptMatch[] {
-  if (SPONSORED.test(record.title) || NEWS.test(record.title)) return [];
+  if (SPONSORED.test(record.title) || NEWS.test(record.title) || PARTNER.test(record.title)
+    || (STORY.test(record.title) && !EXPLAINER.test(record.title))) return [];
   const matches: ConceptMatch[] = [];
   for (const concept of concepts) {
     const inTitle = mentions(concept, record.title)[0];

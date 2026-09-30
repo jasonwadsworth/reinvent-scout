@@ -164,6 +164,15 @@ describe("matchConcepts", () => {
     expect(strengths(dynamo, { title: "Data at scale (sponsored by Acme)" }, "DynamoDB here. DynamoDB there.")).toEqual([]);
   });
 
+  it("never explains from a customer story or partner enablement session", () => {
+    for (const title of ["How AI-native startups run DynamoDB in production", "Beyond the pilot: How customers scaled DynamoDB", "AWS Partner: Build with DynamoDB"]) {
+      expect(strengths(dynamo, { title }), title).toEqual([]);
+    }
+    for (const title of ["How to model data in DynamoDB", "How DynamoDB works", "DynamoDB: how does it scale?"]) {
+      expect(strengths(dynamo, { title }), title).toHaveLength(1);
+    }
+  });
+
   it("never explains from a news or recap session", () => {
     for (const title of ["What's new in DynamoDB", "DynamoDB: a year in review", "The latest DynamoDB announcements", "DynamoDB recap"]) {
       expect(strengths(dynamo, { title }), title).toEqual([]);
