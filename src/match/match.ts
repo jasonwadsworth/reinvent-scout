@@ -17,7 +17,7 @@ import { allWhy, explainWhy, lensWhy, type Why } from "./why.js";
 const RARE_SERVICE_FRACTION = 0.03;
 
 export interface MatchOptions {
-  /** Defaults to `"all"` -- no level restriction, no format preference. */
+  /** Defaults to `"all"`: the sessions about what the profile's code is built on, at any level. */
   lens?: Lens;
   /** Caps the number of candidates (groups, not raw sittings -- see `MatchCandidate.offerings`)
    * returned, after ranking. */
@@ -368,18 +368,12 @@ function interleaveByRule(candidates: readonly GroupedCandidate[]): GroupedCandi
 }
 
 /**
- * Ranks the local catalog against a resolved profile, applying `options.lens`'s level-band
- * restriction (a session with no level band on record is excluded whenever the lens restricts by
- * level, never assumed to satisfy it) and format preference (an additional `"format"` reason,
- * appended on top of `scoreSession`'s own reasons) before sorting.
- *
- * A session with nothing to say for it -- no service, topic, area-of-interest, or text signal at
- * all from `scoreSession` -- is excluded entirely, before the lens's format bonus is even
- * considered, rather than returned at the bottom with a `0`. The format bonus is a tiebreak among
- * sessions that already share a real signal with the profile, never a standalone reason to include
- * one that shares nothing with it -- gating on it too would let a session earn a place purely by
- * being the lens's favored type. This is also what makes a profile with no signals at all return an
- * empty list instead of every session in the catalog in an arbitrary order.
+ * Ranks the local catalog against a resolved profile under `options.lens`. All and Explain admit a
+ * session only for a concept of the profile it names (see `concepts.ts`, `all.ts`, `explain.ts`);
+ * Fix and Next-level admit it on a rule's signal (see `lens-signals.ts`), and add `scoreSession`'s
+ * relevance to the score. A session with nothing to say for it is never returned, rather than
+ * returned at the bottom with a `0`, which is also why a profile with no concepts returns an empty
+ * list instead of every session in the catalog in an arbitrary order.
  *
  * Every repeat sitting of the same talk (see `baseSessionCode`) is collapsed into one
  * `MatchCandidate` before ranking, so `options.limit` counts distinct talks, not raw sittings, and
@@ -387,10 +381,11 @@ function interleaveByRule(candidates: readonly GroupedCandidate[]): GroupedCandi
  * same talk occupying several slots under different suffixes. `catalog search` is deliberately
  * left ungrouped -- it's a raw listing, not a ranked set of choices to pick between.
  *
- * Ties break first on whether the group's best-scoring sitting is actually scheduled (`startDate`
- * present) -- an otherwise-equal group with nothing yet scheduled ranks below one that does, since
- * there's nothing yet to act on for it -- and then on `code`, the same deterministic tiebreak
- * `catalog/query.ts`'s local search uses on `abbreviation`.
+ * Fix and Next-level ties break first on whether the group's best-scoring sitting is actually
+ * scheduled (`startDate` present) -- an otherwise-equal group with nothing yet scheduled ranks below
+ * one that does, since there's nothing yet to act on for it -- and then on `code`, the same
+ * deterministic tiebreak `catalog/query.ts`'s local search uses on `abbreviation`. All ends its
+ * ordering the same way.
  *
  * Throws `CatalogMissingError`/`CatalogUnusableError` exactly like `queryCatalog`, since there's
  * nothing to rank against until a catalog has been synced.
@@ -572,10 +567,7 @@ export function matchSessionsDetailed(
       }
     }
 
-    const lensBase = lens === "fix" || lens === "next-level"
-      ? scoreLensSignals(record, profile, lens, rawById?.get(record.sessionId)?.abstract, fitsStack)
-      : undefined;
-    const base = lensBase ?? scoreSession(record, query, corpusStats);
+    const base = scoreLensSignals(record, profile, lens, rawById.get(record.sessionId)?.abstract, fitsStack);
     // Gated on the scorer's own score, before the lens's format bonus is even considered -- a
     // format preference is a tiebreak among sessions that already share a real signal with the
     // profile (a service, a topic, an area of interest, or free-text overlap), never a standalone
@@ -588,13 +580,9 @@ export function matchSessionsDetailed(
 
     let score = base.score;
     const reasons = [...base.reasons];
-    let lensInfo: LensInfo | undefined;
-    if (lensBase !== undefined) {
-      const relevance = scoreSession(record, query, corpusStats);
-      score += relevance.score;
-      reasons.push(...relevance.reasons);
-      lensInfo = { hits: lensBase.hits, relevance: relevance.score };
-    }
+    const relevance = scoreSession(record, query, corpusStats);
+    score += relevance.score;
+    reasons.push(...relevance.reasons);
 
     const formatBonus = record.type !== null ? lensProfile.typeWeights.get(record.type) : undefined;
     if (formatBonus !== undefined) {
@@ -607,17 +595,16 @@ export function matchSessionsDetailed(
       score += formatBonus;
     }
 
-    scoredRecords.push({ record, score, reasons, ...(lensInfo === undefined ? {} : { lens: lensInfo }) });
+    scoredRecords.push({ record, score, reasons, lens: { hits: base.hits, relevance: relevance.score } });
   }
 
   const candidates = groupByCode(scoredRecords);
 
-  const isLens = lens === "fix" || lens === "next-level";
-  const ordered = isLens ? interleaveByRule(candidates) : candidates.sort(compareByScore);
+  const ordered = interleaveByRule(candidates);
 
   const limited = options.limit === undefined ? ordered : ordered.slice(0, options.limit);
   return {
     candidates: limited.map(candidate => roundCandidate(candidate, whyFor(candidate, lens, profile, abstractOf))),
-    skippedRules: isLens ? lensSkippedRules(profile, lens) : [],
+    skippedRules: lensSkippedRules(profile, lens),
   };
 }
