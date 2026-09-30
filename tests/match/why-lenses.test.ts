@@ -88,6 +88,39 @@ describe("the why block", () => {
     });
   });
 
+  describe("summaries read cleanly", () => {
+    const dlq = (note: string) => profileOf([{ name: "gap-no-dlq", note, evidence: [cite("rules.ts", 4)] }]);
+    const talk = session("DLQ100", "Dead-letter queues in depth");
+
+    it("ends a long note on a clause, with one ellipsis and no doubled period", () => {
+      const note = `Rules ${"target Step Functions and ".repeat(4)}set no deadLetterQueue or retry policy on the target, so a failed delivery is dropped without any record at all`;
+      const summary = run(dlq(note), [talk], "fix").candidates[0]!.why.summary;
+      expect(summary.endsWith("target…")).toBe(true);
+      expect(summary).not.toContain("…." );
+    });
+
+    it("keeps the more count after an ellipsis", () => {
+      const p = profileOf([
+        { name: "gap-no-dlq", note: `word ${"long ".repeat(60)}`, evidence: [cite("rules.ts", 4)] },
+        { name: "gap-no-alarms", note: "no alarms", evidence: [cite("alarms.ts", 9)] },
+      ]);
+      const summary = run(p, [session("BOTH100", "Dead-letter queues", { abstract: "Wire up CloudWatch alarms. Add CloudWatch alarms everywhere." })], "fix").candidates[0]!.why.summary;
+      expect(summary).toMatch(/…  ?\(\+1 more\)\.$|… \(\+1 more\)\.$/);
+    });
+
+    it("does not nest parentheses when a next-level note has its own", () => {
+      const p = profileOf([{ name: "serverless", note: "Every handler is a Lambda function (behind API Gateway) with no servers.", evidence: [cite("fn.ts", 5)] }], [service("AWS Lambda")]);
+      const talk2 = session("CON200", "Running containers on Fargate", { services: ["AWS Lambda"], abstract: "Start from Lambda functions and grow into containers." });
+      expect(run(p, [talk2], "next-level").candidates[0]!.why.summary).toBe("Next step from serverless (Every handler is a Lambda function with no servers) toward containers.");
+    });
+
+    it("names an explained service without its catalog acronym", () => {
+      const p = profileOf([], [service("Amazon Simple Queue Service (Amazon SQS)", { usage: "Work queues" })]);
+      const why = run(p, [session("SQS100", "Getting started with Amazon SQS", { services: [] })], "explain").candidates[0]!.why;
+      expect(why.summary).toBe("Explains Amazon Simple Queue Service, which this code uses: Work queues.");
+    });
+  });
+
   describe("next-level", () => {
     const movers = (patternNote?: string, evidence: Evidence[] = [cite("fn.ts", 5)]) =>
       profileOf([{ name: "serverless", ...(patternNote === undefined ? {} : { note: patternNote }), evidence }], [service("AWS Lambda")]);
@@ -167,8 +200,8 @@ describe("the why block", () => {
 
     it("names the two strongest matched services, the strongest with the code's note", () => {
       const why = run(profileOf([], [sqs, lambda]), [talk()], "all").candidates[0]!.why;
-      expect(why.summary).toBe("Matches your AWS Lambda (Cognito triggers and stream processors) and Amazon Simple Queue Service (Amazon SQS).");
-      expect(why.yourCode).toEqual([{ repo: "repo", file: "fn/a.ts", line: 8 }, { repo: "repo", file: "fn/b.ts", line: 2 }]);
+      expect(why.summary).toBe("Matches your AWS Lambda (Cognito triggers and stream processors) and Amazon Simple Queue Service.");
+      expect(why.yourCode).toEqual([{ repo: "repo", file: "fn/a.ts", line: 8 }, { repo: "repo", file: "Amazon Simple Queue Service (Amazon SQS).ts", line: 3 }, { repo: "repo", file: "fn/b.ts", line: 2 }]);
       expect(why.sessionSays).toBe("Building on AWS Lambda");
     });
 
@@ -254,10 +287,29 @@ describe("the why block", () => {
         expect(why.summary).toBe("Matches your AWS Lambda and Amazon DynamoDB.");
       });
 
-      it("quotes only for the concepts it names", () => {
+      it("quotes only for a concept the summary names, swapping in a weaker matched one the session does say", () => {
         const reasons = [reason("service", "AWS Lambda", 50), reason("service", "Amazon DynamoDB", 40), reason("service", "Amazon Cognito", 30)];
-        expect(allWhy(reasons, profile, { title: "Sign-in with Amazon Cognito", abstract: "" }).sessionSays).toBeUndefined();
-        expect(allWhy(reasons, profile, { title: "Sign-in with Amazon DynamoDB", abstract: "" }).sessionSays).toBe("Sign-in with Amazon DynamoDB");
+        expect(allWhy(reasons, profile, { title: "Sign-in", abstract: "" })).not.toHaveProperty("sessionSays");
+        const swapped = allWhy(reasons, profile, { title: "Sign-in with Amazon Cognito", abstract: "" });
+        expect(swapped.summary).toBe("Matches your AWS Lambda and Amazon Cognito.");
+        expect(swapped.sessionSays).toBe("Sign-in with Amazon Cognito");
+        const kept = allWhy(reasons, profile, { title: "Sign-in with Amazon DynamoDB", abstract: "" });
+        expect(kept.summary).toBe("Matches your AWS Lambda and Amazon DynamoDB.");
+        expect(kept.sessionSays).toBe("Sign-in with Amazon DynamoDB");
+      });
+
+      it("swaps in a profile pattern the session names though no reason points at it, title first", () => {
+        const withPatterns = profileOf([{ name: "event-driven", evidence: [cite("bus.ts", 6)] }, { name: "serverless", evidence: [cite("app.ts", 5)] }], [service("AWS Lambda")]);
+        const why = allWhy([reason("service", "AWS Lambda", 50)], withPatterns, { title: "Testing serverless applications", abstract: "We cover event-driven flows. Then event-driven again." });
+        expect(why.summary).toBe("Matches your AWS Lambda and serverless.");
+        expect(why.sessionSays).toBe("Testing serverless applications");
+        expect(why.yourCode).toEqual([{ repo: "repo", file: "AWS Lambda.ts", line: 3 }, { repo: "repo", file: "app.ts", line: 5 }]);
+      });
+
+      it("never swaps in a gap pattern", () => {
+        const withGap = profileOf([{ name: "gap-no-dlq", evidence: [cite("rules.ts", 4)] }], [service("AWS Lambda")]);
+        const why = allWhy([reason("service", "AWS Lambda", 50)], withGap, { title: "gap-no-dlq and dead-letter queues", abstract: "" });
+        expect(why.summary).toBe("Matches your AWS Lambda.");
       });
     });
   });

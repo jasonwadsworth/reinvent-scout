@@ -26,6 +26,12 @@ describe("trimNote", () => {
     expect(trimmed.slice(0, -1).trimEnd().endsWith("word")).toBe(true);
   });
 
+  it("prefers ending a long note on a clause break past its midpoint", () => {
+    const long = `${"word ".repeat(30)}end of clause, ${"other ".repeat(20)}tail`;
+    const trimmed = trimNote(long)!;
+    expect(trimmed.endsWith("end of clause…")).toBe(true);
+  });
+
   it("returns undefined for a missing or empty note", () => {
     expect(trimNote(undefined)).toBeUndefined();
     expect(trimNote("   ")).toBeUndefined();
