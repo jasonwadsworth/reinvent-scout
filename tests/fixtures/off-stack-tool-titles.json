@@ -1,0 +1,358 @@
+{
+ "Terraform": [
+  {
+   "code": "COM302",
+   "title": "The judgment gap: when Terraform scans clean but fails the audit"
+  },
+  {
+   "code": "COP350-S",
+   "title": "5 Questions Terraform, OpenTofu, and CloudFormation Can't Answer (sponsored by Spacelift, Inc.)"
+  },
+  {
+   "code": "SVS302",
+   "title": "Building serverless applications with Terraform"
+  }
+ ],
+ "Kafka": [
+  {
+   "code": "ANT409",
+   "title": "From self-managed to AWS managed: agentic AI for Kafka and MQ migrations"
+  },
+  {
+   "code": "SVS321",
+   "title": "Serverless streaming data processing with AWS Lambda and Apache Kafka"
+  }
+ ],
+ "Kubernetes": [
+  {
+   "code": "CON201",
+   "title": "The future of Kubernetes on AWS"
+  },
+  {
+   "code": "COP306",
+   "title": "Cut through Kubernetes signal overload with unified observability"
+  },
+  {
+   "code": "CON302",
+   "title": "Hybrid Kubernetes made simple: EKS Hybrid Nodes gateway for on-prem and edge AI"
+  }
+ ],
+ "Spark": [
+  {
+   "code": "ANT422",
+   "title": "Accelerating Apache Spark 4.0 workloads with AWS Analytics"
+  },
+  {
+   "code": "ANT338",
+   "title": "Boost Apache Spark performance and reduce costs with AWS Analytics"
+  },
+  {
+   "code": "ANT424",
+   "title": "Simplify Data Analytics operations with AI-powered Apache Spark agents on AWS"
+  }
+ ],
+ "Snowflake": [
+  {
+   "code": "AIM294-S",
+   "title": "Snowflake: Build a Multi-Engine Architecture on A single AI Ready Governed Data Copy (sponsored by Snowflake)"
+  },
+  {
+   "code": "AIM295-S",
+   "title": "Build an Agentic Enterprise to Enable Autonomous Action (sponsored by Snowflake)"
+  },
+  {
+   "code": "BIZ307",
+   "title": "Architect AI-powered analytics with Amazon Quick and Snowflake"
+  }
+ ],
+ "Databricks": [
+  {
+   "code": "MAM215-S",
+   "title": "One Data Foundation for Agentic AI and Real-Time Analytics on AWS (sponsored by Databricks)"
+  },
+  {
+   "code": "AIM251-S",
+   "title": "Give AI Agents Business Context with Genie One and Genie Ontology (sponsored by Databricks)"
+  },
+  {
+   "code": "CMP204-S",
+   "title": "Reshaping Agentic AI and Business Analytics with Databricks on Intel (sponsored by Intel)"
+  }
+ ],
+ "OpenTelemetry": [
+  {
+   "code": "COP336",
+   "title": "Elevate your observability with OpenTelemetry on AWS"
+  },
+  {
+   "code": "OPN201-S",
+   "title": "Observe me that: Easy OpenTelemetry monitoring for your systems (sponsored by Dash0)"
+  },
+  {
+   "code": "COP308",
+   "title": "Turn raw telemetry into answers with OpenTelemetry"
+  }
+ ],
+ "Datadog": [
+  {
+   "code": "STG203-S",
+   "title": "How A+E Global Media Manages Storage Sprawl and Optimizes Cost (sponsored by Datadog)"
+  },
+  {
+   "code": "SEC212-S",
+   "title": "What Breaks First: Detection Engineering Lessons at AWS Scale (sponsored by Datadog)"
+  },
+  {
+   "code": "AIM238-S",
+   "title": "Closing the Loop: How Cognition’s AI Continuously Improves Itself (sponsored by Datadog)"
+  }
+ ],
+ "Splunk": [
+  {
+   "code": "AIM244-S",
+   "title": "Solving Problems Faster with AI SRE​ (sponsored by Splunk, a Cisco Company)"
+  },
+  {
+   "code": "AIM109-S",
+   "title": "Build Trust in AI with Agent Observability​ (sponsored by Splunk, a Cisco Company)"
+  },
+  {
+   "code": "ANT202-S",
+   "title": "Stop Moving AWS Data. Turn It into Action with Splunk​ (sponsored by Splunk, a Cisco Company)"
+  }
+ ],
+ "Redis": [
+  {
+   "code": "AIM256-S",
+   "title": "1 Customer, 1 Context, From all the Channels: (sponsored by Redis)"
+  },
+  {
+   "code": "DVT213-S",
+   "title": "Building an Open and Real-time Fraud and Decisioning Engine with Mastercard and Redis (sponsored by Redis)"
+  }
+ ],
+ "PostgreSQL": [
+  {
+   "code": "DAT410",
+   "title": "Build agentic hybrid retrieval with Amazon Aurora PostgreSQL"
+  },
+  {
+   "code": "DAT402",
+   "title": "Essentials for migrating from Oracle to Amazon Aurora PostgreSQL"
+  },
+  {
+   "code": "DAT404",
+   "title": "AI agents for PostgreSQL replication and partitioning"
+  }
+ ],
+ "MongoDB": [
+  {
+   "code": "AIM246-S",
+   "title": "Context to Action: Turning Agent Memory into a Customer Retention Lever (sponsored by MongoDB)"
+  },
+  {
+   "code": "AIM258-S",
+   "title": "Ask the News: Making Decades of Publisher Content Instantly Searchable (sponsored by MongoDB)"
+  },
+  {
+   "code": "AIM263-S",
+   "title": "Why Multi-Agent Systems Fail in Production (And How to Fix It) (sponsored by MongoDB)"
+  }
+ ],
+ "Iceberg": [
+  {
+   "code": "ANT301",
+   "title": "Graviton. Serverless. Apache Iceberg. Your guide to a modern data warehouse strategy"
+  },
+  {
+   "code": "ANT303",
+   "title": "Accelerate analytics and AI with an open lakehouse architecture on Apache Iceberg"
+  },
+  {
+   "code": "ANT314",
+   "title": "Accelerating data analytics on Apache Iceberg with Amazon S3 Tables"
+  }
+ ],
+ "PyTorch": [
+  {
+   "code": "AIM339",
+   "title": "Build nanochat models with PyTorch and Trainium-Easier than you think"
+  },
+  {
+   "code": "AIM323",
+   "title": "Serving World Model at scale with AWS Trainium and Native PyTorch"
+  },
+  {
+   "code": "CMP350",
+   "title": "PyTorch optimizations: Faster AI and lower costs with AWS Graviton"
+  }
+ ],
+ "SAP": [
+  {
+   "code": "CMP305",
+   "title": "Run your largest SAP HANA on AWS: EC2 High Memory deep dive"
+  },
+  {
+   "code": "MAM220",
+   "title": "A Unified AWS Data and AI Strategy for SAP Customers"
+  },
+  {
+   "code": "MAM221",
+   "title": "Accelerating AI-powered business transformation and SAP Modernization"
+  }
+ ],
+ "Oracle": [
+  {
+   "code": "DAT101-S",
+   "title": "Multicloud in the Real World: Financial Services, Healthcare, and Manufacturing (sponsored by Oracle)"
+  },
+  {
+   "code": "API202-S",
+   "title": "Bring Oracle Databases to AWS Without Starting Over (sponsored by Oracle)"
+  },
+  {
+   "code": "DAT402",
+   "title": "Essentials for migrating from Oracle to Amazon Aurora PostgreSQL"
+  }
+ ],
+ "VMware": [
+  {
+   "code": "MAM325",
+   "title": "Amazon EVS: How to deploy & operate your VMware stack in the cloud"
+  },
+  {
+   "code": "MAM330",
+   "title": "Architect and optimize your VMware environment on Amazon EVS"
+  },
+  {
+   "code": "MAM415",
+   "title": "Large-scale VMware exit: engineering a 10,000+ server migration wave engine"
+  }
+ ],
+ "Strands": [
+  {
+   "code": "AIM341",
+   "title": "Migrating a Managed Assistant API to Strands Agents SDK"
+  },
+  {
+   "code": "OPN406",
+   "title": "Cut token costs by 50%: Building context efficient agents with Strands"
+  },
+  {
+   "code": "AIM407",
+   "title": "Build a production multi-Agent Systems with Strands"
+  }
+ ],
+ "Salesforce": [
+  {
+   "code": "AIM119-S",
+   "title": "Boost Performance: Salesforce, Slack and AWS Headless Connectivity (sponsored by Salesforce)"
+  },
+  {
+   "code": "AIM120-S",
+   "title": "Future-Proof Your Customer Service with Salesforce, Slack and AWS (sponsored by Salesforce)"
+  },
+  {
+   "code": "AIM116-S",
+   "title": "Fuel Intelligent AI Agents with Trusted Enterprise Context (sponsored by Salesforce)"
+  }
+ ],
+ "ServiceNow": [
+  {
+   "code": "AIM124-S",
+   "title": "ServiceNow: The AI Control Tower for Business Reinvention (sponsored by ServiceNow)"
+  },
+  {
+   "code": "SEC104-S",
+   "title": "Armis from ServiceNow:  See Everything, Know What Matters: Powered by AWS (sponsored by ServiceNow)"
+  }
+ ],
+ "CrowdStrike": [
+  {
+   "code": "AIM213",
+   "title": "Scalable LLM inference, easy on the ops: CrowdStrike on SageMaker AI"
+  },
+  {
+   "code": "AIM223-S",
+   "title": "Scaling AI Defenses with AWS and CrowdStrike (sponsored by CrowdStrike)"
+  },
+  {
+   "code": "SEC101-S",
+   "title": "15 Minutes Is Too Late: Stop AWS Intrusions with CrowdStrike’s Cloud SOC Agent (sponsored by CrowdStrike)"
+  }
+ ],
+ "Vercel": [
+  {
+   "code": "BIZ207-S",
+   "title": "Building AI Agents with Vercel and AWS (sponsored by Vercel)"
+  },
+  {
+   "code": "AIM277-S",
+   "title": "Running Vercel in Your Own AWS Account (sponsored by Vercel)"
+  }
+ ],
+ "Karpenter": [
+  {
+   "code": "CON411",
+   "title": "Scale, optimize and deploy inference with Karpenter and EKS Auto Mode"
+  },
+  {
+   "code": "CON342-S",
+   "title": "How Hertz Made Karpenter Smarter with autonomous AI-Driven Optimization (sponsored by Cast AI)"
+  }
+ ],
+ "Dynatrace": [
+  {
+   "code": "COP207-S",
+   "title": "From AI-Assisted Engineering to Autonomous Operations (sponsored by Dynatrace)"
+  },
+  {
+   "code": "DVT211-S",
+   "title": "Shipping AI Code with Confidence Using Bluebox by Dynatrace and AWS Kiro (sponsored by Dynatrace)"
+  },
+  {
+   "code": "GHJ303-S",
+   "title": "AWS GameDay - Developer Productivity & DevOps ft. Dynatrace"
+  }
+ ],
+ "New Relic": [
+  {
+   "code": "AIM104-S",
+   "title": "Autonomous AI Ops with AWS DevOps Agent and New Relic Autopilot (sponsored by New Relic)"
+  },
+  {
+   "code": "GHJ301-S",
+   "title": "AWS GameDay - Agentic AI & AI Application Monitoring ft. New Relic"
+  }
+ ],
+ "PagerDuty": [
+  {
+   "code": "AIM107-S",
+   "title": "Trust the Agent, Keep the Keys: The Journey to Autonomous Operations (sponsored by PagerDuty)"
+  },
+  {
+   "code": "AIM237-S",
+   "title": "3 a.m. and Already Fixed: How PagerDuty’s SRE Agent Is Rewriting Incident Response (sponsored by PagerDuty)"
+  }
+ ],
+ "Confluent": [
+  {
+   "code": "AIM259-S",
+   "title": "Don’t blame the model, it’s a context problem (sponsored by Confluent)"
+  },
+  {
+   "code": "ARC209-S",
+   "title": "Make streaming data AI-ready before it goes stale (sponsored by Confluent)"
+  }
+ ],
+ "Hugging Face": [
+  {
+   "code": "AIM349",
+   "title": "Build production AI assistant with Hugging Face Libraries and models"
+  },
+  {
+   "code": "OPN312",
+   "title": "Hugging Face on AWS: AI Model Deployment at Scale"
+  }
+ ]
+}

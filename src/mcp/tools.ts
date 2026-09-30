@@ -289,7 +289,7 @@ function registerMatchSessionsTool(server: McpServer, deps: McpToolDeps): void {
         "requested/hint fields) rather than ever partially serializing a candidate. " +
         "Under the explain lens the response also lists `uncovered` concepts: parts of the profile " +
         "no introductory session is about. Under the all lens a candidate that follows the others " +
-        "(sponsored, news, customer story, migration tooling, industry, off-topic agents) carries `demoted`, the reason.",
+        "(sponsored, news, customer story, migration tooling, industry, off-topic agents, a technology the code does not use) carries `demoted`, the reason.",
       inputSchema: MatchSessionsInputSchema,
     },
     async ({ profile, lens, limit }) => {

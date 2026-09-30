@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Session } from "../../src/api/types.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { absentBroadTopics, admitConcepts, buildConcepts, interestConcepts, type ConceptMatch, type ProfileConcept } from "../../src/match/concepts.js";
-import { allReason, demotionReason, industryTerms, matchAllConcepts, offStackTopics, rankAll, rareProfileServices, type AllSession, type DemotionContext } from "../../src/match/all.js";
+import { allReason, demotionReason, industryTerms, matchAllConcepts, rankAll, rareProfileServices, type AllSession, type DemotionContext } from "../../src/match/all.js";
 import type { ResolvedProfile } from "../../src/profile/profile.js";
 
 const cite = (file: string) => ({ repo: "repo", file, line: 1 });
@@ -411,67 +411,5 @@ describe("rare services named in a list", () => {
     expect([...found].map(concept => concept.name)).toEqual(["Claude Code"]);
     const inAbstract = rareProfileServices(concepts, records, candidate => ["Topic 55", "Topic 56"].includes(candidate.title) ? "Kiro CLI, Claude Code, and Codex." : "", 0.03);
     expect([...inAbstract]).toEqual([]);
-  });
-});
-
-describe("off-stack technologies", () => {
-  const catalog = ["AWS Lambda", "Amazon Managed Streaming for Apache Kafka (Amazon MSK)", "Amazon Kinesis", "AWS Fargate", "AWS Amplify", "Amazon Connect", "Amazon Elastic Kubernetes Service (Amazon EKS)"];
-  const p = profile([{ name: "AWS Lambda" }, { name: "Amazon Kinesis" }, { name: "Claude Code" }], [{ name: "serverless" }]);
-  const topics = offStackTopics(p, catalog);
-  const reason = (title: string, context: DemotionContext = { offStack: topics }) => demotionReason(record({ title }), "", context);
-
-  it("lists the catalog's services and the curated tools the profile does not use, and not the ones it does", () => {
-    const labels = topics.map(topic => topic.label);
-    expect(labels).toContain("AWS Fargate");
-    expect(labels).toContain("Terraform");
-    expect(labels).not.toContain("AWS Lambda");
-    expect(labels).not.toContain("Amazon Kinesis");
-  });
-
-  it("demotes a title that names a technology the profile does not use, and says which", () => {
-    expect(reason("Building serverless applications with Terraform")).toBe("about Terraform, which this code does not use");
-    expect(reason("Serverless streaming with Lambda and Apache Kafka")).toBe("about Kafka, which this code does not use");
-    expect(reason("Lambda MicroVMs: secure sandboxes")).toBe("about MicroVMs, which this code does not use");
-    expect(reason("Serverless containers on AWS Fargate")).toBe("about AWS Fargate, which this code does not use");
-  });
-
-  it("names a service by its full name or short form, and by its bare name only when that is a product word", () => {
-    const cat = ["Amazon DynamoDB", "AWS Transform", "AWS Command Line Interface (AWS CLI)", "AWS Context Engine", "Kiro", "Amazon Simple Queue Service (Amazon SQS)"];
-    const t = offStackTopics(profile([], []), cat);
-    const named = (title: string) => t.filter(topic => topic.phrases.some(phrase => phrase.test(title))).map(topic => topic.label);
-    expect(named("Fast DynamoDB bulk operations")).toEqual(["Amazon DynamoDB"]);
-    expect(named("Amazon SQS patterns")).toEqual(["Amazon Simple Queue Service"]);
-    expect(named("Spec-driven development with Kiro")).toEqual(["Kiro"]);
-    expect(named("Transform your SaaS for the agentic era")).toEqual([]);
-    expect(named("CLI Agent Orchestrator")).toEqual([]);
-    expect(named("Context is everything")).toEqual([]);
-    expect(named("AWS Transform for mainframes")).toEqual(["AWS Transform"]);
-  });
-
-  it("leaves a title that names only what the profile uses, or no technology", () => {
-    expect(reason("Lambda and Kinesis in practice")).toBeUndefined();
-    expect(reason("Serverless at scale")).toBeUndefined();
-    expect(reason("Connect your systems")).toBeUndefined();
-    expect(reason("Building serverless applications with Terraform", {})).toBeUndefined();
-  });
-
-  it("counts a tool the profile names, by its service, its catalog name or a pattern's wording, as used", () => {
-    const used = offStackTopics(profile([{ name: "Terraform" }, { name: "Amazon Elastic Kubernetes Service (Amazon EKS)" }], []), catalog).map(topic => topic.label);
-    expect(used).not.toContain("Terraform");
-    expect(used).not.toContain("Kubernetes");
-    expect(offStackTopics(profile([], [{ name: "eks" }]), catalog).map(topic => topic.label)).not.toContain("Kubernetes");
-    expect(offStackTopics(profile([{ name: "AWS Lambda" }], []), catalog).map(topic => topic.label)).toContain("Kubernetes");
-  });
-
-  it("does not demote a comparison or a move from the technology to one the profile uses", () => {
-    expect(reason("Lambda vs Terraform: which to pick")).toBeUndefined();
-    expect(reason("Migrating from Kafka to Kinesis")).toBeUndefined();
-    expect(reason("Comparing Fargate and Lambda")).toBeUndefined();
-    expect(reason("Choosing between Terraform and Lambda")).toBeUndefined();
-  });
-
-  it("takes a tool of the curated list only as a whole word", () => {
-    expect(reason("Apache Spark jobs")).toBe("about Spark, which this code does not use");
-    expect(reason("Sparkling new builds")).toBeUndefined();
   });
 });

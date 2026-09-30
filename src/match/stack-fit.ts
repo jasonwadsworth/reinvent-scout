@@ -43,13 +43,16 @@ export const PREFIX_REQUIRED_SERVICE_NAMES: readonly string[] = [
 ];
 
 /**
- * Technologies outside the AWS service list that sessions are about, found in catalog titles: a session titled about one
- * is about it, not about the code's own stack, unless the profile uses it. Case-sensitive whole words.
+ * Third-party tools and platforms (not AWS services) that catalog titles are about, for the All lens's off-stack demotion: a
+ * session titled about one is about it, not about the code's stack, unless the profile uses it. Criterion for an entry: the
+ * name appears, as a whole word, in the titles of at least two distinct catalog sessions (repeat sittings count once);
+ * `tests/fixtures/off-stack-tool-titles.json` records the sessions and a test checks it. Model vendors and hardware are
+ * not tools or platforms here, and AWS features (Lambda MicroVMs) are services. Case-sensitive whole words.
  */
 export const OFF_STACK_TOOLS: readonly string[] = [
-  "Terraform", "Pulumi", "Kafka", "Kubernetes", "Spark", "Flink", "Snowflake", "Databricks", "MicroVMs", "OpenTelemetry",
-  "Datadog", "Splunk", "Redis", "PostgreSQL", "MongoDB", "Iceberg", "PyTorch", "SAP", "Oracle", "VMware", "OpenAI", "Strands",
-  "Salesforce", "ServiceNow", "CrowdStrike", "Vercel", "Karpenter",
+  "Terraform", "Kafka", "Kubernetes", "Spark", "Snowflake", "Databricks", "OpenTelemetry", "Datadog", "Splunk", "Redis",
+  "PostgreSQL", "MongoDB", "Iceberg", "PyTorch", "SAP", "Oracle", "VMware", "Strands", "Salesforce", "ServiceNow",
+  "CrowdStrike", "Vercel", "Karpenter", "Dynatrace", "New Relic", "PagerDuty", "Confluent", "Hugging Face",
 ];
 
 const stripPrefix = (name: string): string => name.replace(/^(?:Amazon|AWS)\s+/i, "");

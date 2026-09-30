@@ -1,11 +1,10 @@
 import type { IndexRecord } from "../catalog/index-record.js";
 import {
-  admitConcepts, BUILD_CUE, CERTIFICATION, EXPLAINER, mentionsOf, namedStorySubjects, NEWS, PARTNER, patternPhrase, SPONSORED, STORY, TITLE_STRENGTH, usedAt,
+  admitConcepts, BUILD_CUE, CERTIFICATION, EXPLAINER, mentionsOf, namedStorySubjects, NEWS, PARTNER, SPONSORED, STORY, TITLE_STRENGTH, usedAt,
   type AbsentTopic, type Admission, type ConceptMatch, type ProfileConcept,
 } from "./concepts.js";
-import type { ResolvedProfile } from "../profile/profile.js";
 import type { Reason } from "./score.js";
-import { OFF_STACK_TOOLS } from "./stack-fit.js";
+import { offStackAbout, type OffStack } from "./off-stack.js";
 
 /** The All lens asks "which sessions are about what this code is built on", at any level: a concept
  * counts when the title names it or the abstract does, corroborated when it does so only once. */
@@ -84,46 +83,10 @@ export interface DemotionContext {
   services?: readonly string[];
   /** Words the catalog's industry names are made of (see `industryTerms`). */
   industries?: readonly string[];
-  /** Technologies the profile does not use (see `offStackTopics`): a title about one is about it, not about the code. */
-  offStack?: readonly OffStackTopic[];
+  /** Technologies the profile does not use (see `offStackOf`): a title about one is about it, not about the code. */
+  offStack?: OffStack;
 }
 
-/** A technology a title can be about, and how a title words it. */
-export interface OffStackTopic {
-  label: string;
-  phrases: readonly RegExp[];
-}
-
-const shortName = (catalogName: string): string => catalogName.replace(/\s*\(.*\)\s*$/, "");
-
-/** How a title names a catalog service when it is unmistakable: the full name and its parenthesized short form in any
- * case, and the name without "Amazon" or "AWS" only when it is a product word (DynamoDB, ElastiCache, S3), never an
- * ordinary word or an acronym ("Transform", "Context", "CLI"). */
-function distinctiveForms(catalogName: string): RegExp[] {
-  const parenthesized = /^(.*?)\s*\(([^)]+)\)\s*$/.exec(catalogName);
-  const wholes = (parenthesized === null ? [catalogName] : [parenthesized[1]!, parenthesized[2]!]).map(whole => whole.trim());
-  const bare = wholes.map(whole => whole.replace(/^(?:Amazon|AWS)\s+/i, "")).filter((stripped, index) => stripped !== wholes[index] && (/[a-z][A-Z]/.test(stripped) || /\d/.test(stripped)));
-  const word = (text: string, flags: string): RegExp => new RegExp(`(?<![\\w-])${escapeRegExp(text)}(?![\\w-])`, flags);
-  return [...wholes.map(whole => word(whole, "i")), ...bare.map(text => word(text, ""))];
-}
-
-/** The catalog's services, and the curated tools, that the profile does not use. A service is used when the profile names it
- * (by its catalog name); a tool when a service of the profile names it (Terraform, or the EKS catalog name for Kubernetes)
- * or a pattern of the profile words it ("eks" for Kubernetes). */
-export function offStackTopics(profile: ResolvedProfile, catalogServices: readonly string[]): OffStackTopic[] {
-  const used = new Set(profile.services.flatMap(service => service.catalogName === null ? [] : [service.catalogName]));
-  const services = [...new Set(catalogServices)].filter(name => !used.has(name))
-    .map((name): OffStackTopic => ({ label: shortName(name), phrases: distinctiveForms(name) }));
-  const profileNames = profile.services.flatMap(service => [service.name, ...(service.catalogName === null ? [] : [service.catalogName])]);
-  const tools = OFF_STACK_TOOLS.filter(tool => {
-    const word = new RegExp(`(?<![\\w-])${escapeRegExp(tool)}(?![\\w-])`);
-    return !profileNames.some(name => word.test(name)) && !profile.patterns.some(pattern => patternPhrase(pattern.name)?.test(tool) === true);
-  }).map((tool): OffStackTopic => ({ label: tool, phrases: [new RegExp(`(?<![\\w-])${escapeRegExp(tool)}(?![\\w-])`)] }));
-  return [...services, ...tools];
-}
-
-/** A comparison, or a move from the technology to another, is about both. */
-const COMPARISON = /\bvs\.?\s|\bversus\b|\bcompar(?:e|es|ing|ison)\b|\bbetween\b|\bfrom\b.+\bto\b|\binstead of\b/i;
 
 const INDUSTRY_FILLER: readonly string[] = ["and", "services", "goods", "life", "sciences"];
 
@@ -148,9 +111,9 @@ function titleStory(title: string, services: readonly string[]): boolean {
  * migration tooling, a session made for an industry, or a talk about a broad topic (agents, generative AI) the
  * code does not use. Still worth listing for someone who has the basics. */
 export function demotionReason(record: IndexRecord, abstract: string, context: DemotionContext = {}): string | undefined {
-  const { absent = [], services = [], industries = [], offStack = [] } = context;
+  const { absent = [], services = [], industries = [], offStack } = context;
   const about = absent.find(topic => topic.phrase.test(record.title));
-  const tool = COMPARISON.test(record.title) ? undefined : offStack.find(topic => topic.phrases.some(phrase => phrase.test(record.title)));
+  const tool = offStack === undefined ? undefined : offStackAbout(record.title, offStack);
   // An industry session applies technology to a vertical's problem: the title names the vertical, or does not say it is about building
   // or designing the technology (as "Build a flash-sale control plane with CloudFront" does).
   const industry = record.industries.length > 0
@@ -163,8 +126,7 @@ export function demotionReason(record: IndexRecord, abstract: string, context: D
     story ? "customer story" : undefined,
     MIGRATION_PROGRAM.test(record.title) ? "modernization or migration session" : undefined,
     industry ? "industry session" : undefined,
-    about === undefined ? undefined : `about ${about.label}, which this code does not use`,
-    tool === undefined ? undefined : `about ${tool.label}, which this code does not use`,
+    about === undefined && tool === undefined ? undefined : `about ${[about?.label, tool].filter(label => label !== undefined).join(" and ")}, which this code does not use`,
   ].filter((reason): reason is string => reason !== undefined);
   return reasons.length === 0 ? undefined : reasons.join(" and ");
 }
