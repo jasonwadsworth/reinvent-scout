@@ -60,7 +60,7 @@ describe("the all lens", () => {
     expect(codes(result)).toEqual(["OKK300"]);
   });
 
-  it("ranks a demoted session after an undemoted one with the same coverage, and says why", () => {
+  it("ranks a demoted session after an undemoted one, and says why", () => {
     const result = run(profile(["AWS Lambda"]), [
       session("SPN300-S", "Lambda at scale (sponsored by Acme)"),
       session("NEW300", "What's new in Lambda"),
@@ -71,7 +71,7 @@ describe("the all lens", () => {
     const reasons = Object.fromEntries(result.candidates.map(candidate => [candidate.code, toLeanCandidate(candidate).demoted]));
     expect(reasons).toEqual({ OKK300: undefined, NEW300: "news or launch session", "SPN300-S": "sponsored session", STO300: "customer story" });
     const sponsored = result.candidates.find(candidate => candidate.code === "SPN300-S")!;
-    expect(sponsored.why.summary).toBe("Matches your AWS Lambda, though it is a sponsored session.");
+    expect(sponsored.why.summary).toBe("Matches your AWS Lambda; ranked lower: sponsored session.");
   });
 
   it("ranks a session about the code's central concept above one about a rare concept", () => {

@@ -80,6 +80,8 @@ interface PatternEntry {
   /** A term so widespread that a session mentioning it is rarely about it: only a title that names
    * it and says how to build or design it (see `BUILD_CUE`) admits. */
   broad?: boolean;
+  /** What a session about a broad term is about, for a profile that has no such pattern. */
+  label?: string;
 }
 
 /**
@@ -97,8 +99,8 @@ const PATTERN_PHRASES: ReadonlyMap<string, PatternEntry> = new Map([
   ["containers", { phrase: /\bcontainer(?:s|ized|ization)?\b/i, tags: ["Containers"] }],
   ["ecs", { phrase: /\bECS\b|\bElastic Container Service\b/i, tags: ["Containers"] }],
   ["eks", { phrase: /\bEKS\b|\bKubernetes\b|\bElastic Kubernetes Service\b/i, tags: ["Kubernetes", "Containers"] }],
-  ["agentic", { phrase: /\bagentic\b|\b(?:AI )?agents?\b|\bmulti[- ]agent\b/i, tags: ["Agentic AI"], broad: true }],
-  ["genai-single-call", { phrase: /\bgenerative AI\b|\bGenAI\b|\bLLMs?\b|\bfoundation models?\b/i, tags: ["Generative AI"], broad: true }],
+  ["agentic", { phrase: /\bagentic\b|\b(?:AI )?agents?\b|\bmulti[- ]agent\b/i, tags: ["Agentic AI"], broad: true, label: "agents" }],
+  ["genai-single-call", { phrase: /\bgenerative AI\b|\bGenAI\b|\bLLMs?\b|\bfoundation models?\b/i, tags: ["Generative AI"], broad: true, label: "generative AI" }],
   ["streaming", { phrase: /\bstreaming\b|\bKinesis\b|\bKafka\b/i, tags: [] }],
   ["data-lake", { phrase: /\bdata lakes?\b|\blakehouse\b/i, tags: [] }],
 ]);
@@ -111,6 +113,20 @@ export function patternPhrase(name: string): RegExp | undefined {
 /** Every phrase above, so a lowercase list of them ("serverless, containers, and event-driven") is
  * read as a list of names rather than prose. */
 const PATTERN_VOCABULARY = new RegExp([...PATTERN_PHRASES.values()].map(entry => `(?:${entry.phrase.source})`).join("|"), "i");
+
+/** A broad topic (agents, generative AI) the profile has no pattern for, and how a title words it. */
+export interface AbsentTopic {
+  label: string;
+  phrase: RegExp;
+}
+
+/** The broad topics the profile's code does not evidence: a session titled about one is about that
+ * topic, not about the code. */
+export function absentBroadTopics(concepts: readonly ProfileConcept[]): AbsentTopic[] {
+  const evidenced = new Set(concepts.filter(concept => concept.kind === "pattern").map(concept => concept.name.toLowerCase()));
+  return [...PATTERN_PHRASES.entries()].flatMap(([name, entry]) =>
+    entry.broad === true && entry.label !== undefined && !evidenced.has(name) ? [{ label: entry.label, phrase: entry.phrase }] : []);
+}
 
 const NO_PHRASE_REASON = "no session phrase is defined for this pattern, so no session can be matched to it";
 

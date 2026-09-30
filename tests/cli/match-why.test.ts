@@ -77,7 +77,7 @@ describe("match --lens fix: the why block in the terminal", () => {
     const pitch: Session = { ...dlqTalk, sessionId: "s2", abbreviation: "LAM302-S", title: "Run Lambda faster (sponsored by Acme)", abstract: "Nothing more." };
     const text = await run([cite("rules.ts", 179)], ["--lens", "all"], [pitch]);
     const lines = text.split("\n");
-    expect(lines[1]).toBe("  Why: Matches your AWS Lambda, though it is a sponsored session.");
+    expect(lines[1]).toBe("  Why: Matches your AWS Lambda; ranked lower: sponsored session.");
     expect(lines[2]).toBe("  Your code: tracker/fn.ts:1");
     expect(lines[3]).toBe('  Session: "Run Lambda faster (sponsored by Acme)"');
     expect(lines[4]).toBe("  Demoted: sponsored session");

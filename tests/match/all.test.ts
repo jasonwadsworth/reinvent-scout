@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Session } from "../../src/api/types.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
-import { admitConcepts, buildConcepts, type ConceptMatch, type ProfileConcept } from "../../src/match/concepts.js";
+import { absentBroadTopics, admitConcepts, buildConcepts, type ConceptMatch, type ProfileConcept } from "../../src/match/concepts.js";
 import { allReason, demotionReason, matchAllConcepts, rankAll, type AllSession } from "../../src/match/all.js";
 import type { ResolvedProfile } from "../../src/profile/profile.js";
 
@@ -82,7 +82,7 @@ describe("matchAllConcepts", () => {
 });
 
 describe("demotionReason", () => {
-  const reason = (session: Parameters<typeof record>[0], abstract = "") => demotionReason(record(session), abstract);
+  const reason = (session: Parameters<typeof record>[0], abstract = "", absent: ReturnType<typeof absentBroadTopics> = []) => demotionReason(record(session), abstract, absent);
 
   it("names a sponsored session by its title or by its -S code", () => {
     expect(reason({ title: "Scale it (sponsored by Acme)" })).toBe("sponsored session");
@@ -104,8 +104,39 @@ describe("demotionReason", () => {
     expect(reason({ title: "Acme: How to scale on Lambda" })).toBeUndefined();
   });
 
+  it("names a modernization or migration session", () => {
+    expect(reason({ title: "Modernizing .NET to Serverless" })).toBe("modernization or migration session");
+    expect(reason({ title: "Automating migrations at scale" })).toBe("modernization or migration session");
+  });
+
+  it("names a session made for an industry", () => {
+    expect(reason({ title: "Automate dispute resolution", industries: ["Financial Services"] })).toBe("industry session");
+    expect(reason({ title: "Automate dispute resolution", industries: [] })).toBeUndefined();
+  });
+
+  it("names a title about a broad topic the profile does not use, and no other", () => {
+    const absent = absentBroadTopics(conceptsOf([{ name: "AWS Lambda" }], [{ name: "genai-single-call" }]));
+    expect(reason({ title: "Building agentic apps on Lambda" }, "", absent)).toBe("about agents, which this code does not use");
+    expect(reason({ title: "Multi-agent systems" }, "", absent)).toBe("about agents, which this code does not use");
+    expect(reason({ title: "LLM apps on Lambda" }, "", absent)).toBeUndefined();
+    expect(reason({ title: "Lambda in practice" }, "Agents are everywhere.", absent)).toBeUndefined();
+    expect(reason({ title: "Building agentic apps on Lambda" }, "", [])).toBeUndefined();
+  });
+
   it("joins every reason that applies, sponsored first", () => {
     expect(reason({ title: "What's new (sponsored by Acme)" })).toBe("sponsored session and news or launch session");
+  });
+});
+
+describe("absentBroadTopics", () => {
+  it("lists the broad topics the profile has no pattern for", () => {
+    expect(absentBroadTopics(conceptsOf([{ name: "AWS Lambda" }], [])).map(topic => topic.label)).toEqual(["agents", "generative AI"]);
+    expect(absentBroadTopics(conceptsOf([], [{ name: "agentic" }])).map(topic => topic.label)).toEqual(["generative AI"]);
+    expect(absentBroadTopics(conceptsOf([], [{ name: "agentic" }, { name: "genai-single-call" }]))).toEqual([]);
+  });
+
+  it("does not count a service of the same name as the pattern", () => {
+    expect(absentBroadTopics(conceptsOf([{ name: "agentic" }], [])).map(topic => topic.label)).toEqual(["agents", "generative AI"]);
   });
 });
 
@@ -118,22 +149,25 @@ describe("rankAll", () => {
     ({ key, record: record({ title: key }), matches, relevance: 0, ...extra });
   const keys = (sessions: AllSession[]) => rankAll(sessions).map(entry => entry.key);
 
-  it("ranks by the summed centrality of the matched concepts first", () => {
-    expect(keys([session("ONE", [match(sqs)]), session("TWO", [match(ddb)]), session("THREE", [match(lam)]), session("FIVE", [match(lam, 1), match(ddb, 1)])]))
+  it("ranks by the strongest match first: a session that names a concept in its title before one that only has it in the abstract", () => {
+    expect(keys([session("ABSTRACT", [match(lam, 2), match(ddb, 2)]), session("TITLE", [match(sqs, 3)])])).toEqual(["TITLE", "ABSTRACT"]);
+  });
+
+  it("ranks by the summed centrality of the matched concepts within a strength", () => {
+    expect(keys([session("ONE", [match(sqs)]), session("TWO", [match(ddb)]), session("THREE", [match(lam)]), session("FIVE", [match(lam), match(ddb)])]))
       .toEqual(["FIVE", "THREE", "TWO", "ONE"]);
   });
 
-  it("puts a demoted session after every undemoted one with the same coverage, not before a better-covered one", () => {
+  it("puts every demoted session after every undemoted one, whatever it covers", () => {
     expect(keys([
       session("PITCH", [match(lam)], { demoted: "sponsored session" }),
       session("PLAIN", [match(lam)]),
       session("MORE", [match(lam), match(ddb, 1)], { demoted: "customer story" }),
       session("LESS", [match(ddb)]),
-    ])).toEqual(["MORE", "PLAIN", "PITCH", "LESS"]);
+    ])).toEqual(["PLAIN", "LESS", "MORE", "PITCH"]);
   });
 
-  it("breaks a centrality tie by the strongest match, then the number of concepts, then relevance, then key", () => {
-    expect(keys([session("WEAK", [match(lam, 1)]), session("STRONG", [match(lam, 3)])])).toEqual(["STRONG", "WEAK"]);
+  it("breaks a centrality tie by the number of concepts, then relevance, then key", () => {
     // lam alone and ddb + sqs both sum to 3, both strongest 3: the session about more concepts first.
     expect(keys([session("ONE", [match(lam)]), session("TWO", [match(ddb), match(sqs)])])).toEqual(["TWO", "ONE"]);
     expect(keys([session("B", [match(lam)], { relevance: 1 }), session("A", [match(lam)], { relevance: 2 }), session("C", [match(lam)], { relevance: 2 })]))

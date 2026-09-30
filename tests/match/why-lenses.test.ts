@@ -291,7 +291,7 @@ describe("the why block", () => {
 
     it("says what a demoted session is", () => {
       const why = run(profileOf([], [lambda]), [talk({ title: "What's new in AWS Lambda" })], "all").candidates[0]!.why;
-      expect(why.summary).toBe("Matches your AWS Lambda (Cognito triggers and stream processors), though it is a news or launch session.");
+      expect(why.summary).toBe("Matches your AWS Lambda (Cognito triggers and stream processors); ranked lower: news or launch session.");
     });
 
     it("has nothing to say for a candidate no concept admitted", () => {

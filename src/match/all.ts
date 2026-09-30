@@ -1,7 +1,7 @@
 import type { IndexRecord } from "../catalog/index-record.js";
 import {
-  admitConcepts, CERTIFICATION, CUSTOMER_STORY, EXPLAINER, NEWS, PARTNER, SPONSORED, STORY, usedAt,
-  type Admission, type ConceptMatch, type ProfileConcept,
+  admitConcepts, CERTIFICATION, CUSTOMER_STORY, EXPLAINER, MODERNIZATION, NEWS, PARTNER, SPONSORED, STORY, usedAt,
+  type AbsentTopic, type Admission, type ConceptMatch, type ProfileConcept,
 } from "./concepts.js";
 import type { Reason } from "./score.js";
 
@@ -23,13 +23,18 @@ export function matchAllConcepts(concepts: readonly ProfileConcept[], record: In
 /** A sponsored code ends in "-S" (and, for a repeat, a number). */
 const SPONSORED_CODE = /-S\d*$/;
 
-/** Why a session ranks after the others that cover the same ground: a vendor's pitch, a news or launch
- * talk, or what one customer built. Still worth listing for someone who has the basics. */
-export function demotionReason(record: IndexRecord, abstract: string): string | undefined {
+/** Why a session ranks after every other: a vendor's pitch, a news or launch talk, what one customer built,
+ * tooling that moves code onto the concept, a session made for an industry, or a talk about a broad
+ * topic (agents, generative AI) the code does not use. Still worth listing for someone who has the basics. */
+export function demotionReason(record: IndexRecord, abstract: string, absent: readonly AbsentTopic[] = []): string | undefined {
+  const about = absent.find(topic => topic.phrase.test(record.title));
   const reasons = [
     SPONSORED.test(record.title) || SPONSORED_CODE.test(record.abbreviation ?? "") ? "sponsored session" : undefined,
     NEWS.test(record.title) ? "news or launch session" : undefined,
     (STORY.test(record.title) && !EXPLAINER.test(record.title)) || CUSTOMER_STORY.test(abstract) ? "customer story" : undefined,
+    MODERNIZATION.test(record.title) ? "modernization or migration session" : undefined,
+    record.industries.length > 0 ? "industry session" : undefined,
+    about === undefined ? undefined : `about ${about.label}, which this code does not use`,
   ].filter((reason): reason is string => reason !== undefined);
   return reasons.length === 0 ? undefined : reasons.join(" and ");
 }
@@ -68,10 +73,10 @@ const TOP_SHARE = 3;
 const MIN_CONCEPTS_FOR_CAP = 4;
 
 /**
- * Orders sessions by, in sequence: the summed centrality of the concepts they are about (the code's
- * central concepts first), demoted sessions after the rest at the same centrality, the strongest match,
- * the number of concepts, and relevance (then a scheduled session before an unscheduled one, then the
- * key). Each key is compared only when the ones before it tie; none is
+ * Orders sessions by, in sequence: demoted sessions after every other; the strongest match (a title that
+ * names a concept before an abstract that only does); the summed centrality of the concepts they are
+ * about (the code's central concepts first); the number of concepts; relevance; a scheduled session
+ * before an unscheduled one; the key. Each key is compared only when the ones before it tie; none is
  * added to another. Then no concept is the main subject of more than three of the first ten, unless
  * fewer than four concepts have any session; what the cap holds back follows in order.
  */
@@ -85,9 +90,9 @@ export function rankAll(sessions: readonly AllSession[]): RankedAll[] {
     };
   });
   ranked.sort((a, b) =>
-    b.centrality - a.centrality
-    || Number(a.session.demoted !== undefined) - Number(b.session.demoted !== undefined)
+    Number(a.session.demoted !== undefined) - Number(b.session.demoted !== undefined)
     || b.strongest - a.strongest
+    || b.centrality - a.centrality
     || b.matches.length - a.matches.length
     || b.session.relevance - a.session.relevance
     || Number(b.session.record.startDate !== null) - Number(a.session.record.startDate !== null)
