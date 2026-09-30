@@ -184,8 +184,8 @@ Report them to the user as parts of their code the catalog has no introduction f
 lens" in `reference/profiling.md`. Candidates come round-robin across concepts, not by score.
 
 Under `all`, a candidate that is sponsored, news or launch, a customer story, modernization or
-migration, made for an industry, or about agents or generative AI when the profile has no such pattern
-carries `demoted` (a short reason, absent otherwise). Every demoted candidate follows every other one. The
+migration, made for an industry, about agents or generative AI when the profile has no such pattern, or titled about a technology
+the profile does not use (a catalog service or a tool such as Terraform or Kafka) carries `demoted` (a short reason, absent otherwise). Every demoted candidate follows every other one. The
 order is: title before abstract, then a session about the code's evidenced concepts before one about only a stated interest, then how central the concepts are to the code, then how many there are,
 then relevance; no concept is the main subject of more than three of the first ten while four or more
 concepts have sessions.

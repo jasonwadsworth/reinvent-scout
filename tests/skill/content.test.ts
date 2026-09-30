@@ -851,6 +851,12 @@ describe("the footprint documentation", () => {
       expect(text, expected).toContain(expected);
     }
   });
+  it("documents the off-stack technology demotion", () => {
+    const text = collapse(profilingMd);
+    for (const expected of ["names a specific technology your profile does not use", "ranked lower: about Terraform, which this code does not use", "a comparison"]) expect(text, expected).toContain(expected);
+    expect(collapse(workflowMd)).toContain("titled about a technology the profile does not use");
+    expect(collapse(readmeMd)).toContain("about a technology the code does not use");
+  });
   it("shows a footprint in the profile example and the readme", () => {
     expect(profilingMd).toContain('"footprint": 9');
     expect(profilingMd).toContain('"footprint": 6');
