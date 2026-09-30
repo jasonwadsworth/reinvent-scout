@@ -206,12 +206,12 @@ the narrowing mentioned in the `note`.
 
 ## What counts as each newer gap
 
-Six more gaps have a fixed definition, so two people profiling the same repository record the same
+Three more gaps have a fixed definition, so two people profiling the same repository record the same
 ones. Each needs a code citation of the thing that *lacks* the practice. A gap that is only partly
 true is still recordable: cite the part that lacks it and say which part in the `note`. A practice
 that is wired in but switched off (`Disabled`, `false`, a retention of 0, an association that
 exists only in a comment) is the gap, and you cite the line that switches it off. A practice that
-is present but weak (a rule in count-only mode, a cache with a one-second lifetime) is not this
+is present but weak (tracing sampled at a low rate, a pipeline that runs one test) is not this
 gap.
 
 - **`gap-no-tracing`** (Operational Excellence). The repository deploys a request path that crosses
@@ -228,24 +228,6 @@ gap.
   CircleCI or Jenkins file. Cite the IaC entry point. A pipeline that only runs tests still counts
   as CI, so it is not this gap. If the pipeline could live in a different repository, say so in the
   `note` and record it only when the repository is the deployable unit.
-- **`gap-no-backups`** (Reliability). A store that holds the system of record has no backup: a
-  DynamoDB table without point-in-time recovery (`pointInTimeRecovery` unset or false) and covered by
-  no AWS Backup plan, an RDS or Aurora instance with `backupRetention` of 0, or a stateful store with
-  neither a backup plan nor a snapshot policy. Cite the table or instance. Tables that only hold
-  data you can rebuild (a cache, a derived index) are not this gap; say in the `note` why the store
-  is the system of record.
-- **`gap-no-waf`** (Security). An internet-facing HTTP entry point has no web ACL: a CloudFront
-  distribution, a public load balancer, a REST API or AppSync API with no `WebACL` and no
-  association (`CfnWebACL`, `WebAclAssociation`, `webAclId`, `aws_wafv2_web_acl_association`)
-  anywhere in the repository. Cite the entry point. API Gateway HTTP APIs cannot take a web ACL, so
-  an HTTP API is this gap only when it is fronted by a CloudFront distribution that has none. A
-  private API or an internal load balancer is not this gap.
-- **`gap-no-caching`** (Performance Efficiency). A public GET route whose response is the same for
-  every caller (a catalog, a listing, configuration) reads its data store or an upstream API on
-  every request, and nothing on the path caches it: no CloudFront distribution, no API Gateway
-  stage cache, no ElastiCache or DAX, no `Cache-Control` response header, no memoization in the
-  function. Cite the handler line that does the read. A route whose response depends on the caller,
-  a write path and an admin route are not this gap.
 - **`gap-no-graviton`** (Sustainability). The repository deploys production compute and every
   resource in the cited scope runs on x86: Lambda functions with no `architecture` (the default
   is x86_64), ECS task definitions with `X86_64` or no `runtimePlatform`, EC2 instance types with no
@@ -418,9 +400,6 @@ not a complete assessment or a claim that every repository has these gaps.
 | `gap-no-resource-rightsizing` | Sustainability | Resource rightsizing |
 | `gap-no-tracing` | Operational Excellence | Distributed or end-to-end tracing, AWS X-Ray, OpenTelemetry (bare "tracing" does not count) |
 | `gap-no-ci` | Operational Excellence | CI/CD, continuous integration, delivery or deployment, release and delivery pipelines (bare "pipelines" and deployment strategies do not count) |
-| `gap-no-backups` | Reliability | AWS Backup, point-in-time recovery, backup plans, vaults or policies, immutable and cross-Region backups (bare "backup" does not count) |
-| `gap-no-waf` | Security | AWS WAF, web application firewalls (a migration from a third-party WAF does not count) |
-| `gap-no-caching` | Performance Efficiency | Caching layers and strategies, edge, in-memory, application, read or response caching, cache hits (semantic and prompt caching do not count) |
 | `gap-no-graviton` | Sustainability | Graviton, arm64 |
 
 `gap-no-alarms` means no alarm that notifies a person. An alarm that only drives automation
@@ -469,9 +448,8 @@ which covers Budgets and Cost Explorer) needs fewer of your services: each remed
 counts as one of the two, so IAM alone, which is on almost every security talk, is not enough, but
 IAM with Access Analyzer, or IAM with one of your core services, is. A session about the fix is not
 about the stack the gap sits in. The newer gaps use the same path with their own remedy services:
-`gap-no-tracing` (AWS Distro for OpenTelemetry), `gap-no-ci` (CodePipeline, CodeBuild, CodeDeploy),
-`gap-no-backups` (AWS Backup), `gap-no-waf` (AWS WAF), `gap-no-caching` (ElastiCache, CloudFront)
-and `gap-no-graviton` (EC2 - Graviton). The six newer gaps also skip a session tagged Agentic AI or Generative AI unless your profile has an
+`gap-no-tracing` (AWS Distro for OpenTelemetry), `gap-no-ci` (CodePipeline, CodeBuild, CodeDeploy)
+and `gap-no-graviton` (EC2 - Graviton). The three newer gaps also skip a session tagged Agentic AI or Generative AI unless your profile has an
 `agentic` or `genai-single-call` pattern: a talk about securing or observing agents is not about the
 gap in an ordinary application. A `gap-no-tests` session about testing infrastructure code with a
 tool your profile lists (CDK, even as a supporting service) fits the same way. A profile with no core service (none listed, or

@@ -34,15 +34,6 @@ const CASES: GapCase[] = [
   { rule: "gap-no-ci", listed: "Lambda, SQS and CI/CD", pillar: "Operational Excellence", remedy: "AWS CodePipeline",
     titles: ["CI/CD on AWS", "Continuous delivery for serverless", "Modernize your release pipelines", "Continuous integration in practice"],
     common: ["Pipelines", "Data pipelines at scale", "Continuous learning", "Delivery of packages", "Integration patterns"] },
-  { rule: "gap-no-backups", listed: "Lambda, SQS and AWS Backup", pillar: "Reliability", remedy: "AWS Backup",
-    titles: ["AWS Backup for centralized protection", "Point-in-time recovery for your tables", "Backup plans that hold up", "Immutable backups against ransomware"],
-    common: ["Backup", "Back up your laptop", "Backups", "Recovery", "Backup singers"] },
-  { rule: "gap-no-waf", listed: "Lambda, SQS and AWS WAF", pillar: "Security", remedy: "AWS WAF",
-    titles: ["AWS WAF for your APIs", "Bot defense with WAF", "Web application firewalls in practice"],
-    common: ["Firewalls", "Wafer fabrication", "Waffles", "Application security", "Firewall rules"] },
-  { rule: "gap-no-caching", listed: "Lambda, SQS and Edge Caching", pillar: "Performance Efficiency", remedy: "Amazon ElastiCache",
-    titles: ["Caching strategies for read-heavy APIs", "An in-memory cache in front of your database", "Edge caching with CloudFront", "Cache hit ratios that pay off"],
-    common: ["Cache", "Cashing checks", "Semantic caching for prompts", "Prompt caching", "Caches"] },
   { rule: "gap-no-graviton", listed: "Lambda, SQS and Graviton", pillar: "Sustainability", remedy: "Amazon EC2 - Graviton",
     titles: ["Moving to arm64", "Graviton for Lambda", "Reducing cost with Graviton5", "Graviton 4 migration"],
     common: ["ARM holdings", "Gravity", "Armed forces"] },
@@ -116,16 +107,6 @@ describe("AI-tagged sessions for the older rules", () => {
   it("are not gated: only the newer rules use the AI gate", () => {
     const record = buildIndexRecord({ sessionId: "x", title: "Dead-letter queues", areasOfInterest: ["Agentic AI"] });
     expect(scoreLensSignals(record, stacked("gap-no-dlq"), "fix").score).toBe(50);
-  });
-});
-
-describe("gap-no-waf and migrations from another provider", () => {
-  const score = (title: string) => scoreLensSignals(buildIndexRecord({ sessionId: "x", title }), stacked("gap-no-waf"), "fix").score;
-  it.each(["Migrating from 3rd-party CDN and WAF to AWS", "Moving from a third-party WAF to AWS WAF"])("rejects %s", title => {
-    expect(score(title)).toBe(0);
-  });
-  it("still admits a WAF session that mentions a third party", () => {
-    expect(score("AWS WAF rules for third-party integrations")).toBe(50);
   });
 });
 

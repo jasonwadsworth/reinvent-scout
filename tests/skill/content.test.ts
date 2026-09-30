@@ -693,7 +693,7 @@ describe("lens-precision guidance in profiling.md", () => {
 
 describe("newer gap guidance in profiling.md", () => {
   const collapsed = profilingMd.replace(/\s+/g, " ");
-  const gaps = ["gap-no-tracing", "gap-no-ci", "gap-no-backups", "gap-no-waf", "gap-no-caching", "gap-no-graviton"];
+  const gaps = ["gap-no-tracing", "gap-no-ci", "gap-no-graviton"];
   it.each(gaps)("defines %s, says what does not count, and lists it in the rules table", name => {
     const entry = new RegExp(`- \\*\\*\`${name}\`\\*\\* \\(([A-Za-z ]+)\\)\\. (.*?)(?= - \\*\\*\`gap-|## Interests)`).exec(collapsed);
     expect(entry, name).not.toBeNull();
@@ -709,7 +709,7 @@ describe("newer gap guidance in profiling.md", () => {
     expect(collapsed).toContain("skip a session tagged Agentic AI or Generative AI unless your profile has an `agentic` or `genai-single-call` pattern");
   });
   it("names the remedy services of the newer gaps in the stack-fit paragraph", () => {
-    for (const service of ["AWS Distro for OpenTelemetry", "CodePipeline", "AWS Backup", "AWS WAF", "ElastiCache", "EC2 - Graviton"]) {
+    for (const service of ["AWS Distro for OpenTelemetry", "CodePipeline", "EC2 - Graviton"]) {
       expect(collapsed).toContain(service);
     }
   });
