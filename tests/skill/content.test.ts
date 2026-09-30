@@ -841,3 +841,14 @@ describe("the all lens documentation", () => {
     expect(readmeMd).toContain("`demoted`");
   });
 });
+
+describe("the off-stack documentation", () => {
+  const readmeMd = readFileSync(join(here, "..", "..", "README.md"), "utf8");
+  const collapse = (text: string): string => text.replace(/\s+/g, " ");
+  it("documents the off-stack technology demotion", () => {
+    const text = collapse(profilingMd);
+    for (const expected of ["names a specific technology your profile does not use", "ranked lower: about Terraform, which this code does not use", "a comparison"]) expect(text, expected).toContain(expected);
+    expect(collapse(workflowMd)).toContain("titled about a technology the profile does not use");
+    expect(collapse(readmeMd)).toContain("about a technology the code does not use");
+  });
+});

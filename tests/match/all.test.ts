@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Session } from "../../src/api/types.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { absentBroadTopics, admitConcepts, buildConcepts, interestConcepts, type ConceptMatch, type ProfileConcept } from "../../src/match/concepts.js";
-import { allReason, demotionReason, industryTerms, matchAllConcepts, rankAll, type AllSession, type DemotionContext } from "../../src/match/all.js";
+import { allReason, demotionReason, industryTerms, matchAllConcepts, rankAll, rareProfileServices, type AllSession, type DemotionContext } from "../../src/match/all.js";
 import type { ResolvedProfile } from "../../src/profile/profile.js";
 
 const cite = (file: string) => ({ repo: "repo", file, line: 1 });
@@ -376,5 +376,40 @@ describe("interest concepts", () => {
   it("quotes nothing for a tag-only match, and the abstract sentence when it also names the interest", () => {
     const tagged = matchAllConcepts(withInterests(["Edge Computing"]), record({ title: "Faster pages", areasOfInterest: ["Edge Computing"] }), "")[0]!;
     expect(tagged.site.index).toBe(-1);
+  });
+});
+
+describe("rare services named in a list", () => {
+  const p = profile([{ name: "AWS Lambda" }, { name: "Claude Code", files: ["a.ts", "b.ts"] }], [{ name: "serverless" }]);
+  const concepts = buildConcepts(p).concepts;
+  const byName = (name: string) => concepts.find(concept => concept.name === name)!;
+  const rare = new Set([byName("Claude Code")]);
+  const shape = (session: Parameters<typeof record>[0], abstract: string, rareSet = rare) =>
+    matchAllConcepts(concepts, record(session), abstract, rareSet).map(match => [match.concept.name, match.strength]);
+
+  it("adds a rare service named only in a list to a session already about a concept, at strength one", () => {
+    expect(shape({ title: "Serverless in practice" }, "Kiro CLI, Claude Code, and Codex work side by side.")).toEqual([["serverless", 3], ["Claude Code", 1]]);
+  });
+
+  it("adds nothing for a common service in a list, nor for a rare one the session does not name", () => {
+    expect(shape({ title: "Serverless in practice" }, "Kiro CLI, AWS Lambda, and Amazon S3 work side by side.")).toEqual([["serverless", 3]]);
+    expect(shape({ title: "Serverless in practice" }, "Nothing else here.")).toEqual([["serverless", 3]]);
+    expect(shape({ title: "Serverless in practice" }, "Kiro CLI, Claude Code, and Codex.", new Set())).toEqual([["serverless", 3]]);
+  });
+
+  it("never admits a session by itself", () => {
+    expect(shape({ title: "Developer tools" }, "Kiro CLI, Claude Code, and Codex work side by side.")).toEqual([]);
+  });
+
+  it("does not add the service twice when it already matched", () => {
+    expect(shape({ title: "Claude Code in practice" }, "Kiro CLI, Claude Code, and Codex.")).toEqual([["Claude Code", 3]]);
+  });
+
+  it("finds the services named in under 3% of the catalog sessions, listed or not, by their text", () => {
+    const records = Array.from({ length: 100 }, (_, index) => record({ title: index < 2 ? "Claude Code tips" : index < 10 ? "Lambda tips" : `Topic ${index}`, abbreviation: `S${index}` }));
+    const found = rareProfileServices(concepts, records, () => "", 0.03);
+    expect([...found].map(concept => concept.name)).toEqual(["Claude Code"]);
+    const inAbstract = rareProfileServices(concepts, records, candidate => ["Topic 55", "Topic 56"].includes(candidate.title) ? "Kiro CLI, Claude Code, and Codex." : "", 0.03);
+    expect([...inAbstract]).toEqual([]);
   });
 });

@@ -440,8 +440,11 @@ area-of-interest tag equal to it, admits a session, and those rank after session
 never returned.
 
 **Demotion.** A sponsored session, a feature-news or launch session, a customer story (including a named company's migration or scaling told in the abstract, "Honeycomb spends ..."), a modernization or
-migration session, a session made for an industry, and a session titled about agents or generative AI when
-your profile has no `agentic` or `genai-single-call` pattern are returned after every other session, each
+migration session, a session made for an industry, a session titled about agents or generative AI when
+your profile has no `agentic` or `genai-single-call` pattern, and a session whose title names a specific technology your
+profile does not use (a catalog service such as AWS Fargate, or a common tool such as Terraform, Kafka, Kubernetes, Spark,
+MicroVMs or OpenTelemetry; "ranked lower: about Terraform, which this code does not use") are returned after every other
+session, except a comparison ("X vs Y", "from X to Y"), each
 with a `demoted` reason, because an experienced reader may still want them.
 
 **Order.** A title that names a concept comes before an abstract that only does; a session about your evidenced

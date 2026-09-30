@@ -1,6 +1,7 @@
 import { buildStackFit, hasCoreService, PREFIX_REQUIRED_SERVICE_NAMES } from "./stack-fit.js";
 import { absentBroadTopics, buildConcepts, interestConcepts, serviceTails, type ConceptMatch, type UncoveredConcept } from "./concepts.js";
-import { allReason, demotionReason, industryTerms, matchAllConcepts, rankAll } from "./all.js";
+import { allReason, demotionReason, industryTerms, matchAllConcepts, rankAll, rareProfileServices } from "./all.js";
+import { offStackOf } from "./off-stack.js";
 import { explainReason, matchConcepts, selectExplain } from "./explain.js";
 import { activeLensRules, scoreLensSignals, skippedLensRules, type LensHit, type SkippedRule } from "./lens-signals.js";
 import { readRaw, type CatalogStoreDeps } from "../catalog/store.js";
@@ -475,11 +476,13 @@ function matchAll(
   const services = knownServices(profile, index);
   const { concepts: evidenced } = buildConcepts(profile, services, { architecturePhrases: true });
   const concepts = [...evidenced, ...interestConcepts(profile, evidenced)];
-  const context = { absent: absentBroadTopics(concepts), services: serviceTails(services), industries: industryTerms(index) };
+  const context = { absent: absentBroadTopics(concepts), services: serviceTails(services), industries: industryTerms(index), offStack: offStackOf(profile, index.flatMap((record) => record.services)) };
+  // A rare service a session only lists adds weight to a session that is already about something.
+  const rare = rareProfileServices(concepts, index, abstractOf, RARE_SERVICE_FRACTION);
   const scored: ScoredRecord[] = [];
   for (const record of index) {
     const abstract = rawById.get(record.sessionId)?.abstract ?? "";
-    const matches = matchAllConcepts(concepts, record, abstract);
+    const matches = matchAllConcepts(concepts, record, abstract, rare);
     if (matches.length === 0) continue;
     const demoted = demotionReason(record, abstract, context);
     scored.push({ record, score: scoreSession(record, query, corpusStats).score, reasons: [], explain: matches, ...(demoted === undefined ? {} : { demoted }) });

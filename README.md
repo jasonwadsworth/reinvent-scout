@@ -261,7 +261,7 @@ validate` uses. Options:
   title or abstract (a tag or a listed service alone never admits one; the exception is a stated
   `interest`, which an exact topic or area-of-interest tag also admits), ranked by how central those
   concepts are to your code. Sponsored, news or launch, customer-story, modernization, industry and
-  off-topic agent sessions are not dropped but follow the rest, each with a `demoted` reason. Or
+  off-topic agent sessions and sessions about a technology the code does not use are not dropped but follow the rest, each with a `demoted` reason. Or
   `explain`, which lists introductory sessions
   (level bands 100 and 200) that are about the services and patterns your profile evidences. A
   session is admitted only if it names the concept in its title or at least twice in its abstract,

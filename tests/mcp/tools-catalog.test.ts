@@ -430,6 +430,12 @@ describe("match_sessions tool", () => {
     home.cleanup();
   });
 
+  it("names every kind of demotion in the match_sessions description", async () => {
+    const client = await connectedClient({ resolveStoreRoot: () => home.path });
+    const { tools } = await client.listTools();
+    const description = tools.find(tool => tool.name === "match_sessions")!.description!;
+    for (const kind of ["sponsored", "news", "customer story", "migration tooling", "industry", "off-topic agents", "a technology the code does not use"]) expect(description).toContain(kind);
+  });
   it("advertises the shared lens enum", async () => {
     const client = await connectedClient({ resolveStoreRoot: () => home.path });
     const { tools } = await client.listTools();

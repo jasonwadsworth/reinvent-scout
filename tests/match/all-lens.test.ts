@@ -137,6 +137,27 @@ describe("the all lens", () => {
     expect(Object.fromEntries(result.candidates.map(candidate => [candidate.code, candidate.demoted]))).toEqual({ GOV300: "industry session", RET300: undefined });
   });
 
+  it("lets a rare service a session only lists add weight, and a common one none", () => {
+    const raw = [
+      session("AAA300", "Serverless platform notes", { abstract: "Serverless design. Serverless again. Kiro CLI, Claude Code, and Codex." }),
+      session("BBB300", "Serverless platform notes two", { abstract: "Serverless design. Serverless again. Kiro CLI, AWS Lambda, and Codex." }),
+    ];
+    const p = profile(["AWS Lambda", "Claude Code"], ["serverless"]);
+    const filler = Array.from({ length: 60 }, (_, i) => session(`ZZZ${i}`, `Filler ${i}`, { abstract: i < 10 ? "AWS Lambda everywhere." : "" }));
+    const weights = Object.fromEntries(run(p, [...raw, ...filler]).candidates.map(candidate => [candidate.code, candidate.reasons.length]));
+    expect(weights).toEqual({ AAA300: 2, BBB300: 1 });
+  });
+
+  it("demotes a session titled about a technology the code does not use, and not when the profile uses it", () => {
+    const sessions = [session("TER300", "Building serverless applications with Terraform"), session("LAM300", "Building serverless applications")];
+    const result = run(profile(["AWS Lambda"], ["serverless"]), sessions);
+    expect(Object.fromEntries(result.candidates.map(candidate => [candidate.code, candidate.demoted]))).toEqual({ LAM300: undefined, TER300: "about Terraform, which this code does not use" });
+    expect(result.candidates.find(candidate => candidate.code === "TER300")!.why.summary).toContain("ranked lower: about Terraform, which this code does not use");
+    expect(codes(result)).toEqual(["LAM300", "TER300"]);
+    const uses = run(profile(["AWS Lambda", "Terraform"], ["serverless"]), sessions);
+    expect(uses.candidates.map(candidate => candidate.demoted)).toEqual([undefined, undefined]);
+  });
+
   it("ranks a session about the code's central concept above one about a rare concept", () => {
     const p = profile(["AWS Lambda", "Amazon Cognito"]);
     p.services[0]!.evidence = [cite("a.ts"), cite("b.ts"), cite("c.ts")];
