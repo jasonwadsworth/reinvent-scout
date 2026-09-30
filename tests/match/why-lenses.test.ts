@@ -58,8 +58,20 @@ describe("the why block", () => {
       expect(Object.keys(why.yourCode[0]!)).not.toContain("line");
     });
 
-    it("quotes the title when the phrase is in the title", () => {
-      const why = run(dlq("x"), [session("DLQ100", "Dead-letter queues in depth", { abstract: "Unrelated. We also mention redrive twice, redrive again." })], "fix").candidates[0]!.why;
+    it("quotes the title only when the abstract has no sentence with the phrase", () => {
+      const why = run(dlq("x"), [session("DLQ100", "Dead-letter queues in depth", { abstract: "Unrelated remarks only." })], "fix").candidates[0]!.why;
+      expect(why.sessionSays).toBe("Dead-letter queues in depth");
+    });
+
+    it("prefers the abstract sentence over the title when both hold the phrase", () => {
+      const abstract = "Intro remarks. Learn to recover with dead-letter queues and redrive. Closing.";
+      const why = run(dlq("x"), [session("DLQ100", "Dead-letter queues in depth", { abstract })], "fix").candidates[0]!.why;
+      expect(why.sessionSays).toBe("Learn to recover with dead-letter queues and redrive.");
+    });
+
+    it("skips a listed abstract mention and falls back to the title when no unlisted one exists", () => {
+      const abstract = "We compare Kinesis, Lambda, DLQs and Step Functions side by side.";
+      const why = run(dlq("x"), [session("DLQ100", "Dead-letter queues in depth", { abstract })], "fix").candidates[0]!.why;
       expect(why.sessionSays).toBe("Dead-letter queues in depth");
     });
 
@@ -137,7 +149,7 @@ describe("the why block", () => {
       const why = run(movers("every handler is a Lambda function behind API Gateway."), [containerTalk], "next-level").candidates[0]!.why;
       expect(why.summary).toBe("Next step from serverless (every handler is a Lambda function behind API Gateway) toward containers.");
       expect(why.yourCode).toEqual([{ repo: "repo", file: "fn.ts", line: 5 }]);
-      expect(why.sessionSays).toBe("Running containers on Fargate");
+      expect(why.sessionSays).toBe("Start from Lambda functions and grow into containers.");
     });
 
     it("uses the evidence note when the pattern has none", () => {
@@ -178,6 +190,12 @@ describe("the why block", () => {
       const why = run(p, [session("SLS100", "Serverless basics", { services: [] })], "explain").candidates[0]!.why;
       expect(why.summary).toBe("Explains serverless, which this code uses: No servers anywhere: Lambda, SQS and API Gateway only.");
       expect(why.yourCode).toEqual([{ repo: "repo", file: "app.ts", line: 5 }]);
+    });
+
+    it("prefers the abstract sentence over a title that also names the concept", () => {
+      const abstract = "Opening remarks about data at scale for everyone. You will use DynamoDB tables here. More.";
+      const why = run(ddb("Data store"), [session("DDB100", "Getting started with DynamoDB", { services: ["Amazon DynamoDB"], abstract })], "explain").candidates[0]!.why;
+      expect(why.sessionSays).toBe("You will use DynamoDB tables here.");
     });
 
     it("quotes the abstract sentence holding the concept when the title does not name it", () => {
@@ -265,9 +283,9 @@ describe("the why block", () => {
       expect("sessionSays" in run(p, [listed], "all").candidates[0]!.why).toBe(false);
     });
 
-    it("prefers the title over an earlier-reading abstract sentence", () => {
-      const why = run(profileOf([], [lambda]), [talk({ abstract: "AWS Lambda first. Then more." })], "all").candidates[0]!.why;
-      expect(why.sessionSays).toBe("Building on AWS Lambda");
+    it("prefers an abstract sentence over a title naming the same service", () => {
+      const why = run(profileOf([], [lambda]), [talk({ abstract: "Intro. Handlers run on AWS Lambda here. Then more." })], "all").candidates[0]!.why;
+      expect(why.sessionSays).toBe("Handlers run on AWS Lambda here.");
     });
 
     it("finds a pattern with no defined session wording by its own name", () => {
@@ -311,12 +329,19 @@ describe("the why block", () => {
         expect(kept.sessionSays).toBe("Sign-in with Amazon DynamoDB");
       });
 
-      it("swaps in a profile pattern the session names though no reason points at it, title first", () => {
+      it("swaps in a profile pattern the session names though no reason points at it, abstract first", () => {
         const withPatterns = profileOf([{ name: "event-driven", evidence: [cite("bus.ts", 6)] }, { name: "serverless", evidence: [cite("app.ts", 5)] }], [service("AWS Lambda")]);
         const why = allWhy([reason("service", "AWS Lambda", 50)], withPatterns, { title: "Testing serverless applications", abstract: "We cover event-driven flows. Then event-driven again." });
-        expect(why.summary).toBe("Matches your AWS Lambda and serverless.");
-        expect(why.sessionSays).toBe("Testing serverless applications");
-        expect(why.yourCode).toEqual([{ repo: "repo", file: "AWS Lambda.ts", line: 3 }, { repo: "repo", file: "app.ts", line: 5 }]);
+        expect(why.summary).toBe("Matches your AWS Lambda and event-driven.");
+        expect(why.sessionSays).toBe("We cover event-driven flows.");
+        expect(why.yourCode).toEqual([{ repo: "repo", file: "AWS Lambda.ts", line: 3 }, { repo: "repo", file: "bus.ts", line: 6 }]);
+      });
+
+      it("quotes the named concept that the abstract says, not the first one only the title names", () => {
+        const reasons = [reason("service", "AWS Lambda", 50), reason("service", "Amazon DynamoDB", 40)];
+        const why = allWhy(reasons, profile, { title: "Building on AWS Lambda", abstract: "Intro. Tables live in Amazon DynamoDB here. Done." });
+        expect(why.summary).toBe("Matches your AWS Lambda and Amazon DynamoDB.");
+        expect(why.sessionSays).toBe("Tables live in Amazon DynamoDB here.");
       });
 
       it("never swaps in a gap pattern", () => {

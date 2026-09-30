@@ -240,9 +240,9 @@ function otherConcepts(profile: ResolvedProfile): NamedConcept[] {
   return [...patterns, ...services];
 }
 
-/** The first place a concept is named outside an enumeration: in the title if there, else the abstract. */
+/** The first place a concept is named outside an enumeration: in the abstract if there, else the title. */
 function siteOf(matchers: readonly RegExp[], text: SessionText): MatchSite | undefined {
-  for (const [inTitle, where] of [[true, text.title], [false, text.abstract]] as const) {
+  for (const [inTitle, where] of [[false, text.abstract], [true, text.title]] as const) {
     const first = mentionsOf(matchers, where)[0];
     if (first !== undefined) return { inTitle, index: first.index, length: first[0].length };
   }
@@ -276,12 +276,13 @@ export function allWhy(reasons: readonly Reason[], profile: ResolvedProfile, tex
     return withQuote({ summary: sentence(summary), yourCode: [] }, site === undefined ? undefined : quoteSite(text, site));
   }
   let named = ranked.slice(0, CONCEPT_REASONS);
-  let site = named.map(concept => siteOf(concept.matchers, text)).find(found => found !== undefined);
+  const namedSites = named.flatMap(concept => siteOf(concept.matchers, text) ?? []);
+  let site = namedSites.find(found => !found.inTitle) ?? namedSites[0];
   if (site === undefined) {
     const known = new Set(ranked.map(concept => concept.name));
     const taken = [...ranked.slice(CONCEPT_REASONS), ...otherConcepts(profile).filter(concept => !known.has(concept.name))]
       .flatMap(concept => { const found = siteOf(concept.matchers, text); return found === undefined ? [] : [{ concept, found }]; })
-      .sort((a, b) => Number(b.found.inTitle) - Number(a.found.inTitle))[0];
+      .sort((a, b) => Number(a.found.inTitle) - Number(b.found.inTitle))[0];
     if (taken !== undefined) {
       named = [first, taken.concept];
       site = taken.found;

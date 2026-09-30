@@ -283,6 +283,12 @@ function isBoosted(concept: ExplainConcept, record: IndexRecord): boolean {
   return [...record.topics, ...record.areasOfInterest].some(value => wanted.has(value.toLowerCase()));
 }
 
+/** What the session says about the concept: the abstract sentence naming it when there is one, else the title. */
+function quotedSite(inTitle: RegExpExecArray | undefined, inAbstract: RegExpExecArray | undefined): MatchSite {
+  const quoted = inAbstract ?? inTitle!;
+  return { inTitle: inAbstract === undefined, index: quoted.index, length: quoted[0].length };
+}
+
 /** The concepts a session is about: it names the concept in its title, or at least twice in its
  * abstract, outside a listing. An abstract alone must be corroborated by a listed service or a
  * matching tag, which never make a match on their own. */
@@ -302,7 +308,7 @@ export function matchConcepts(concepts: readonly ExplainConcept[], record: Index
     matches.push({
       concept, strength: inTitle === undefined ? ABSTRACT_STRENGTH : TITLE_STRENGTH,
       phrase: admitted[0], boosted,
-      site: { inTitle: inTitle !== undefined, index: admitted.index, length: admitted[0].length },
+      site: quotedSite(inTitle, inAbstract[0]),
     });
   }
   return matches;
