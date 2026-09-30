@@ -204,6 +204,17 @@ describe("matchConcepts", () => {
     }
   });
 
+  it("never explains from a customer story told in the abstract, or a game or exam session", () => {
+    const listed = { title: "Building web apps", services: ["Amazon DynamoDB"] };
+    for (const abstract of ["In this talk hear how a customer built it. DynamoDB. DynamoDB.", "See how [Customer] built it. DynamoDB. DynamoDB.", "Learn how customers scaled. DynamoDB. DynamoDB."]) {
+      expect(strengths(dynamo, listed, abstract), abstract).toEqual([]);
+    }
+    expect(strengths(dynamo, listed, "Learn how to build. DynamoDB. DynamoDB.")).toHaveLength(1);
+    for (const type of ["Gamified learning", "Exam prep"]) {
+      expect(strengths(dynamo, { title: "DynamoDB challenge", type }), type).toEqual([]);
+    }
+  });
+
   it("never explains from a feature-news, modernization or certification session", () => {
     for (const title of [
       "Modernizing your compute stack with DynamoDB's new execution models", "New silicon, new instances, DynamoDB", "DynamoDB launches",

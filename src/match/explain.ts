@@ -59,6 +59,10 @@ const PARTNER = /^AWS Partner:/i;
 const NEWS = /\bwhat[’']s new\b|\bnew\b|\byear in review\b|\bthe latest\b|\bannouncements?\b|\brecap\b|\blaunch(?:es|ed)\b/i;
 /** Modernization and migration sessions are about tooling that moves code onto the concept. */
 const MODERNIZATION = /\bmoderni[sz]\w*|\bmigrat\w*|\btransform(?:ation|ing)?\b/i;
+/** A customer story told in the abstract: the session is what one team built, not how the thing works. */
+const CUSTOMER_STORY = /\bhow (?:a |one |our )?customers?\b|\[customer\]/i;
+/** Games and exam prep are competitions and test practice, not explanations. */
+const NON_EXPLANATORY_TYPES: readonly string[] = ["Gamified learning", "Exam prep"];
 /** Certification and training paths teach the exam, not the technology. */
 const CERTIFICATION = /\bcertif\w*|\bproficien\w*|\bexam\b/i;
 /** What a title says when the session is about building or designing the thing, not applying it. */
@@ -232,6 +236,7 @@ function isBoosted(concept: ExplainConcept, record: IndexRecord): boolean {
  * abstract, outside a listing. An abstract alone must be corroborated by a listed service or a
  * matching tag, which never make a match on their own. */
 export function matchConcepts(concepts: readonly ExplainConcept[], record: IndexRecord, abstract: string): ConceptMatch[] {
+  if (CUSTOMER_STORY.test(abstract) || (record.type !== null && NON_EXPLANATORY_TYPES.includes(record.type))) return [];
   if (SPONSORED.test(record.title) || [NEWS, MODERNIZATION, CERTIFICATION, PARTNER].some(pattern => pattern.test(record.title))
     || (STORY.test(record.title) && !EXPLAINER.test(record.title))) return [];
   const matches: ConceptMatch[] = [];
