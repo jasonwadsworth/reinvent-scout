@@ -67,10 +67,11 @@ describe("matchAllConcepts", () => {
     expect(shape(both, { title: "Agents on Lambda" })).toEqual([["agentic", 3], ["AWS Lambda", 3]]);
   });
 
-  it("admits a broad term alone when the session names a service of the profile, even in a list, and counts that service as named", () => {
+  it("admits a broad term alone when the session names a service of the profile, even in a list, and counts it as named only outside a list", () => {
     const tools = buildConcepts(profile([{ name: "Claude Code" }], [{ name: "agentic" }])).concepts;
     const listed = "It coordinates Kiro CLI, Claude Code, and Codex as a team.";
-    expect(shape(tools, { title: "Agent orchestrator for developer CLIs" }, listed)).toEqual([["agentic", 3], ["Claude Code", 1]]);
+    expect(shape(tools, { title: "Agent orchestrator for developer CLIs" }, listed)).toEqual([["agentic", 3]]);
+    expect(shape(tools, { title: "Agent orchestrator for developer CLIs" }, "Claude Code runs the agents.")).toEqual([["agentic", 3], ["Claude Code", 1]]);
     expect(shape(tools, { title: "Agent orchestrator for developer CLIs" }, "It coordinates other tools.")).toEqual([]);
     expect(shape(tools, { title: "Orchestrator for developer CLIs" }, listed)).toEqual([]);
   });
@@ -192,8 +193,8 @@ describe("demotionReason", () => {
   });
 
   it("takes the words of the industry names, not their filler", () => {
-    const terms = industryTerms([record({ title: "x", industries: ["Media & Entertainment", "Financial Services", "Retail & Consumer Goods"] })]);
-    expect(terms).toEqual(["media", "entertainment", "financial", "retail", "consumer"]);
+    const terms = industryTerms([record({ title: "x", industries: ["Media & Entertainment", "Financial Services", "Retail & Consumer Goods", "Healthcare & Life Sciences", "Energy & Utilities", "Travel."] })]);
+    expect(terms).toEqual(["media", "entertainment", "financial", "retail", "consumer", "healthcare", "energy", "utilities", "travel"]);
   });
 
   it("names a title about a broad topic the profile does not use, and no other", () => {
@@ -296,7 +297,13 @@ describe("rankAll", () => {
     it("keeps the rest in rank order after the top ten, however many of a concept follow", () => {
       const quads = (prefix: string, concept: ProfileConcept, count: number) => Array.from({ length: count }, (_, index) => session(`${prefix}${index}`, [match(concept)]));
       const ranked = rankAll([...quads("L", l, 4), ...quads("D", d, 4), ...quads("C", c, 4), ...quads("Q", q, 4)]).map(entry => entry.key);
-      expect(ranked).toEqual(["L0", "L1", "L2", "D0", "D1", "D2", "C0", "C1", "C2", "Q0", "Q1", "Q2", "Q3", "L3", "D3", "C3"]);
+      expect(ranked).toEqual(["L0", "L1", "L2", "D0", "D1", "D2", "C0", "C1", "C2", "Q0", "L3", "D3", "C3", "Q1", "Q2", "Q3"]);
+    });
+
+    it("puts the sessions the cap held back ahead of every demoted one", () => {
+      const pitch = session("PITCH", [match(d, 3)], { demoted: "sponsored session" });
+      const ranked = rankAll([...lams, ...others, pitch]).map(entry => entry.key);
+      expect(ranked).toEqual(["L0", "L1", "L2", "D0", "D1", "C0", "Q0", "L3", "L4", "L5", "PITCH"]);
     });
 
     it("counts only the primary concept of a session toward the cap", () => {

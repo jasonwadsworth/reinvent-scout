@@ -15,10 +15,13 @@ function excluded(record: IndexRecord): boolean {
   return record.type === "Exam prep" || [PARTNER, CERTIFICATION].some(pattern => pattern.test(record.title));
 }
 
-/** The services of the profile the session names, anywhere and in a list or not. */
-function namedProfileServices(concepts: readonly ProfileConcept[], record: IndexRecord, abstract: string): ProfileConcept[] {
-  return concepts.filter(concept => concept.kind === "service"
-    && [record.title, abstract].some(text => mentionsOf(concept.matchers, text).length + mentionsOf(concept.matchers, text, true).length > 0));
+/** The services of the profile the session names: `any` anywhere, in a list or not; `outsideLists` only where it is not
+ * one name among an enumeration. */
+function namedProfileServices(concepts: readonly ProfileConcept[], record: IndexRecord, abstract: string): { any: ProfileConcept[]; outsideLists: ProfileConcept[] } {
+  const services = concepts.filter(concept => concept.kind === "service");
+  const outside = (concept: ProfileConcept): boolean => [record.title, abstract].some(text => mentionsOf(concept.matchers, text).length > 0);
+  const listed = (concept: ProfileConcept): boolean => [record.title, abstract].some(text => mentionsOf(concept.matchers, text, true).length > 0);
+  return { any: services.filter(concept => outside(concept) || listed(concept)), outsideLists: services.filter(outside) };
 }
 
 /** The concepts a session is about, none when it cannot be attended as such. */
@@ -30,8 +33,9 @@ export function matchAllConcepts(concepts: readonly ProfileConcept[], record: In
   // of the profile (even in a list), which is what ties the topic to this code. That service then counts as named.
   if (matches.length > 0 && matches.every(match => match.concept.titleOnly)) {
     const named = namedProfileServices(concepts, record, abstract);
-    if (!BUILD_CUE.test(record.title) && named.length === 0) return [];
-    return [...matches, ...named.map((concept): ConceptMatch => ({
+    if (!BUILD_CUE.test(record.title) && named.any.length === 0) return [];
+    // A service named only in a list may admit the session but adds no weight to it.
+    return [...matches, ...named.outsideLists.map((concept): ConceptMatch => ({
       concept, strength: 1, phrase: concept.name, boosted: false, site: { inTitle: false, index: -1, length: 0 },
     }))];
   }
@@ -60,10 +64,12 @@ export interface DemotionContext {
   industries?: readonly string[];
 }
 
+const INDUSTRY_FILLER: readonly string[] = ["and", "services", "goods", "life", "sciences"];
+
 /** The words of the catalog's industry names ("Media & Entertainment" gives media and entertainment). */
 export function industryTerms(records: readonly IndexRecord[]): string[] {
   const words = records.flatMap(record => record.industries).flatMap(name => name.toLowerCase().split(/[^a-z]+/));
-  return [...new Set(words.filter(word => word.length >= 5 && !["services", "goods"].includes(word)))];
+  return [...new Set(words.filter(word => word !== "" && !INDUSTRY_FILLER.includes(word)))];
 }
 
 function namesService(text: string, services: readonly string[]): boolean {
@@ -145,7 +151,8 @@ const MIN_CONCEPTS_FOR_CAP = 4;
  * about (the code's central concepts first); the number of concepts; relevance; a scheduled session
  * before an unscheduled one; the key. Each key is compared only when the ones before it tie; none is
  * added to another. Then no concept is the main subject of more than three of the first ten, unless
- * fewer than four concepts have any session; what the cap holds back follows in order.
+ * fewer than four concepts have any session. After the ten come the sessions the cap held back and the rest
+ * of the undemoted ones, in rank order; the demoted sessions come last, in rank order.
  */
 export function rankAll(sessions: readonly AllSession[]): RankedAll[] {
   const ranked = sessions.map((session): Ranked => {
@@ -169,18 +176,18 @@ export function rankAll(sessions: readonly AllSession[]): RankedAll[] {
   const admitted = new Set(ranked.flatMap(entry => entry.matches.map(match => match.concept)));
   const capped = admitted.size >= MIN_CONCEPTS_FOR_CAP;
   const top: Ranked[] = [];
-  const held: Ranked[] = [];
+  const rest: Ranked[] = [];
   const share = new Map<ProfileConcept, number>();
-  for (const entry of ranked) {
+  for (const entry of ranked.filter(candidate => candidate.session.demoted === undefined)) {
     const main = entry.matches[0]!.concept;
-    if (capped && top.length < TOP && (share.get(main) ?? 0) >= TOP_SHARE) {
-      held.push(entry);
+    if (top.length >= TOP || (capped && (share.get(main) ?? 0) >= TOP_SHARE)) {
+      rest.push(entry);
       continue;
     }
-    if (top.length < TOP) share.set(main, (share.get(main) ?? 0) + 1);
+    share.set(main, (share.get(main) ?? 0) + 1);
     top.push(entry);
   }
-  return [...top, ...held].map(entry => ({ key: entry.session.key, matches: entry.matches }));
+  return [...top, ...rest, ...ranked.filter(candidate => candidate.session.demoted !== undefined)].map(entry => ({ key: entry.session.key, matches: entry.matches }));
 }
 
 

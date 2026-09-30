@@ -430,8 +430,10 @@ sessions of any level and format, so it does not ask for an introduction.
 outside an enumeration of names, or once outside one when the session also lists the service or carries a
 matching tag. A tag or a listed service alone never admits a session. A session matched only through
 patterns (no service of yours among them) needs a pattern named in its title. `agentic` and
-`genai-single-call` are too widespread to count alone: a title that names them admits a session only beside
-another concept of yours, so a profile whose only concepts are those two gets nothing. Each entry of the
+`genai-single-call` are too widespread to count on a bare title: alone, a title that names them admits a session only
+if it also says how to build or design it ("Building ...", "Best practices for ...") or the session names one of your
+services (even in a list, which admits it but adds no weight to it; outside a list the service counts as a second
+concept). A profile whose only concepts are those two therefore gets a short list of such sessions, not every agent talk. Each entry of the
 profile's `interests` is a concept too (centrality 1, nothing cited): a title that names it, or a topic or
 area-of-interest tag equal to it, admits a session, and those rank after sessions about your evidenced concepts.
 `intents` and shared wording are not used. An "AWS Partner:" bootcamp and a certification or exam session are
