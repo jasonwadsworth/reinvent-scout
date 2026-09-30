@@ -94,16 +94,16 @@ describe("the explain lens", () => {
   });
 
   it("covers a service named after a shared prefix when the other service is only in the profile", () => {
-    const result = run(profile(["Amazon Polly", "Amazon Transcribe"]), [session("VOI200", "Build voice apps with Amazon Polly and Transcribe")]);
+    const result = run(profile(["Amazon Kinesis", "Amazon Transcribe"]), [session("VOI200", "Build voice apps with Amazon Kinesis and Transcribe")]);
     expect(codes(result)).toEqual(["VOI200"]);
     expect(result.uncovered).toEqual([]);
-    expect(result.candidates[0]!.reasons.filter(reason => reason.kind === "explainsConcept").map(reason => reason.detail.split(" (")[0])).toEqual(["Explains Amazon Polly", "Explains Amazon Transcribe"]);
+    expect(result.candidates[0]!.reasons.filter(reason => reason.kind === "explainsConcept").map(reason => reason.detail.split(" (")[0])).toEqual(["Explains Amazon Kinesis", "Explains Amazon Transcribe"]);
   });
 
   it("covers a service named after a shared prefix when the other service is only in the catalog vocabulary", () => {
     const result = run(profile(["Amazon Transcribe"]), [
-      session("VOI200", "Build voice apps with Amazon Polly and Transcribe"),
-      session("OTH200", "Something else entirely", { services: ["Amazon Polly"] }),
+      session("VOI200", "Build voice apps with Amazon Rekognition and Transcribe"),
+      session("OTH200", "Something else entirely", { services: ["Amazon Rekognition"] }),
     ]);
     expect(codes(result)).toEqual(["VOI200"]);
     expect(result.uncovered).toEqual([]);
