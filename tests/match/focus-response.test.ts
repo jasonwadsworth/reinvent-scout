@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import type { FocusCandidate, FocusResult } from "../../src/match/focus.js";
-import { buildFocusResponse } from "../../src/match/response.js";
+import type { MapTopic, ProfileMap } from "../../src/match/map.js";
+import { buildFocusResponse, buildMapResponse } from "../../src/match/response.js";
 
 const candidate = (code: string, extra: Partial<FocusCandidate> = {}): FocusCandidate => ({
   code,
@@ -53,5 +54,33 @@ describe("buildFocusResponse", () => {
     const response = buildFocusResponse(result([2, 2]), fitsUnder(1));
     expect(response.results.every(entry => entry.candidates.length === 0)).toBe(true);
     expect(response.omitted).toBe(4);
+  });
+});
+
+describe("buildMapResponse", () => {
+  const topic = (id: string): MapTopic => ({
+    id, label: id, note: "n".repeat(120), evidence: [{ repo: "r", file: "a.ts", line: 1 }, { repo: "r", file: "b.ts", line: 2 }], more: 4,
+    goals: [{ goal: "deepen", sessions: 3 }],
+  });
+  const map: ProfileMap = { services: [topic("service:A"), topic("service:B")], patterns: [topic("pattern:c")], gaps: [], nextSteps: [] };
+  const size = (value: unknown): number => JSON.stringify(value).length;
+
+  it("keeps the whole map when it fits", () => {
+    expect(buildMapResponse(map)).toBe(map);
+  });
+
+  it("trims to one place per topic first, then to none without the more count, then without notes, and never drops a topic or a goal", () => {
+    const one = buildMapResponse(map, value => size(value) < size(map));
+    expect(one.services[0]!.evidence).toHaveLength(1);
+    expect(one.services[0]!.more).toBe(4);
+    expect(one.services[0]!.note).toBeDefined();
+    const none = buildMapResponse(map, value => size(value) < size(one));
+    expect(none.services[0]!.evidence).toEqual([]);
+    expect(none.services[0]).not.toHaveProperty("more");
+    expect(none.services[0]!.note).toBeDefined();
+    const bare = buildMapResponse(map, () => false);
+    expect(bare.services[0]).not.toHaveProperty("note");
+    expect(bare.services.map(entry => entry.id)).toEqual(["service:A", "service:B"]);
+    expect(bare.services[0]!.goals).toEqual([{ goal: "deepen", sessions: 3 }]);
   });
 });
