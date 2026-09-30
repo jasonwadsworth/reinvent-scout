@@ -205,3 +205,47 @@ My earlier round graded some generic Lambda talks differently per profile; from 
 ### Sabotage (round 2)
 
 Each alone, a named test went red: the used-service filter, a tool named by a service, a tool worded by a pattern, the curated list, the catalog services, the comparison exemption (and its "vs" and "from ... to" forms), the reason text, product-word bare names, the parenthesized short form, and the wiring in `matchAll`.
+
+## Round 3: PR 12 review
+
+### Footprint removed
+
+The counts were not reproducible between two measurers (policy-tracker SES 210 against 61, Cognito 234 against 44, kirocrew containers 60 against 1) and the ranking had a cliff around the Kiro count. Removed entirely: the schema field, the log2 centrality, the guide section, the example values, the README line and the `-fp` handling. Centrality is the distinct cited-file count again, exactly as on main. The Round 1 and Round 2 sections above are kept as the record of why; their footprint numbers no longer describe the code.
+
+**Kept:** the rare-listed-service rule, now applied to every profile (it was gated on footprints). On the original profiles it is a tie on its own (off-stack alone 25/50, with the rule 25/50), but it is what puts AIM307 and AIM416 back in career-ops (1/10 to 3/10) and costs hallway and policy-tracker about one weak swap each. Kept as instructed.
+
+### Off-stack fixes (new module `src/match/off-stack.ts`)
+
+1. **"(US)".** A parenthesized short form counts only when it carries its own "Amazon" or "AWS" ("Amazon EKS"); "US" of "AWS GovCloud (US)" is dropped. Tests: "Taught Us", "for us", "about us" stay undemoted.
+2. **Longest name wins.** Of two overlapping off-stack names the longer wins, and a match that overlaps a used service's name is not off-stack. A profile using Amazon Bedrock AgentCore is not demoted for "Amazon Bedrock" inside "Amazon Bedrock AgentCore"; a profile using only Lambda still gets "Amazon Bedrock AgentCore".
+3. **Comparisons.** The vs, versus, compare, between, from-to and instead-of frames exempt a title only when it names two technologies (services or tools, used or not). "From Zero to 20,000 Desktops" names one and is demoted.
+4. **Used family.** A technology that overlaps or directly touches (only whitespace or a hyphen between) a service the profile uses is not off-stack: "Amazon Aurora PostgreSQL" for an Aurora profile. Platform services (`PLATFORM_SERVICES`, including IAM) are never off-stack.
+5. **`OFF_STACK_TOOLS`.** Criterion, stated in the comment and checked by a test against `tests/fixtures/off-stack-tool-titles.json` (catalog sessions per tool): a third-party tool or platform named as a whole word in the titles of at least two distinct catalog sessions (repeat sittings count once). Model vendors, hardware and AWS features are out. Removed: MicroVMs (a Lambda feature) and Pulumi (no title). Flink is in one title (OPN303) and does not qualify. Final list, with the distinct sessions per tool: Terraform 3, Kafka 2, Kubernetes 8, Spark 4, Snowflake 3, Databricks 3, OpenTelemetry 8, Datadog 5, Splunk 4, Redis 2, PostgreSQL 10, MongoDB 5, Iceberg 17, PyTorch 4, SAP 14, Oracle 8, VMware 5, Strands 9, Salesforce 4, ServiceNow 2, CrowdStrike 4, Vercel 2, Karpenter 2, Dynatrace 3, New Relic 2, PagerDuty 2, Confluent 2, Hugging Face 2. OpenAI was dropped (a model vendor).
+6. **Tests that went green under sabotage before** now go red: title-only scope, the 3% threshold (a common service named in 16% of sessions), the catalog-name branch of used-tool detection, "instead of", the digit and case forms. One mutant stays equivalent: a tool matched only through a service's catalog name is also shadowed by that service's own used forms.
+7. **Docs.** With footprint gone the profiling guide has no ranking claim to restate; it describes the off-stack demotion. The `match_sessions` description names every demotion kind, pinned by a test. The reason joins the two "does not use" clauses once ("about agents and Terraform, which this code does not use").
+
+### Results on the original `gaps/` profiles (graded strictly, like the reviewer)
+
+Same strict rule for both columns: a generic serverless or Lambda-at-scale talk (ARC325 and the like are not; SVS335, SVS332 and SVS343 are) is graded genuine only where Lambda or serverless is central to the profile; hallway and policy-tracker are given with and without counting those generic talks.
+
+| Profile | main | this branch |
+|---|---|---|
+| hallway | 8 (6 without generic) | 9 (6 without generic) |
+| kirocrew | 3 | 3 |
+| adaptative-http | 4 | 3 |
+| policy-tracker | 8 (7) | 7 (6) |
+| career-ops | 1 | 3 |
+| **Tuning** | **24/50 (21)** | **25/50 (21)** |
+| conformity | 7 | 8 (7) |
+| tracking | 3 | 4 |
+| **Holdout** | **10/20** | **12/20** |
+
+The precision target is not met and the change over main is within noise on tuning (+1, or none without the generic talks), better on the holdout and on career-ops. Footprint was the only lever that moved kirocrew; without it kirocrew's top 10 is main's (SVS306, SVS318, SVS324 genuine; the rest generic serverless talks and a Lambda MicroVMs pair that is no longer demoted).
+
+### Regressions
+
+`explain`, `fix` and `next-level` are byte-identical to main on all 7 `gaps/` profiles (21/21). `all` differs on every profile (off-stack demotion and the rare-service rule). `match_sessions` `lens: "all"`, `limit: 100` is 29.6 to 30.6 KB of result (limit 30720); CLI and MCP candidates agree (kirocrew, career-ops) once dropped ranking reasons are ignored.
+
+### Sabotage
+
+Each alone, a named test went red: the parenthesized-form prefix (two ways), each bare-form rule (camel, digit, product words only, case), the whole-name case, the tool case, platform services, the used-service filter, tool detection by service name and by pattern, longest name, overlap and touching shadows (and the hyphen and gap rules), the two-technology rule and each comparison frame, title-only scope, the joined reason, and the threshold at the `matchAll` call.
