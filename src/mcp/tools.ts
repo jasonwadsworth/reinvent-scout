@@ -283,7 +283,9 @@ function registerMatchSessionsTool(server: McpServer, deps: McpToolDeps): void {
         "Rank the local catalog against a resolved tech profile and return the top candidates, " +
         "each with its score, reasons and every scheduled offering. Never includes abstracts. " +
         "A response that would exceed the size budget is truncated (see the truncated/returned/" +
-        "requested/hint fields) rather than ever partially serializing a candidate.",
+        "requested/hint fields) rather than ever partially serializing a candidate. " +
+        "Under the explain lens the response also lists `uncovered` concepts: parts of the profile " +
+        "no introductory session is about.",
       inputSchema: MatchSessionsInputSchema,
     },
     async ({ profile, lens, limit }) => {

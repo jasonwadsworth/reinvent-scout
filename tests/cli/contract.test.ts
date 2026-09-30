@@ -58,6 +58,17 @@ describe("CLI and MCP share one contract", () => {
     expect(fromCli).toEqual(fromMcp);
     expect(Object.keys(fromCli).sort()).toEqual(["candidates", "omitted", "requested", "returned", "skippedRules", "truncated"]);
   });
+  it("match --json prints the object match_sessions returns for the explain lens, with the uncovered list", async () => {
+    const fromCli = JSON.parse(await cli(registerMatchCommands, ["match", "--profile", profilePath, "--lens", "explain", "--limit", "5", "--json"]));
+    const fromMcp = await mcp("match_sessions", { profile, lens: "explain", limit: 5 });
+    expect(fromCli).toEqual(fromMcp);
+    expect(Object.keys(fromCli).sort()).toEqual(["candidates", "omitted", "requested", "returned", "skippedRules", "truncated", "uncovered"]);
+    expect(fromCli.uncovered.map((entry: { concept: string }) => entry.concept)).toContain("genai-single-call");
+  });
+  it("shows uncovered concepts in human output for the explain lens", async () => {
+    const human = await cli(registerMatchCommands, ["match", "--profile", profilePath, "--lens", "explain"]);
+    expect(human).toContain("Uncovered: ");
+  });
   it("reports skipped paths and per-candidate lens rules in both", async () => {
     const fromCli = JSON.parse(await cli(registerMatchCommands, ["match", "--profile", profilePath, "--lens", "next-level", "--json"]));
     expect(fromCli.skippedRules).toEqual([{ rule: "genai-single-call", reason: "profile already has agentic" }]);

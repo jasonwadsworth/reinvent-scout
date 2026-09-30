@@ -77,6 +77,21 @@ function profileForms(name: string, catalogName: string | null, catalog: readonl
   return [{ text: whole, caseSensitive: catalogName?.toLowerCase() !== whole.toLowerCase() }];
 }
 
+/** Every way a text can name a service: the catalog display name, its parenthesized and
+ * prefix-stripped short forms, and the profile's own spelling (see `catalogForms` and
+ * `profileForms` for what each form accepts). One case-insensitive and one case-sensitive pattern,
+ * either absent when no form needs it. */
+export function serviceNamePatterns(name: string, catalogName: string | null): RegExp[] {
+  const fromCatalog = catalogName === null ? [] : catalogForms(catalogName);
+  const forms = [...fromCatalog, ...profileForms(name, catalogName, fromCatalog)];
+  const alternation = (caseSensitive: boolean): RegExp | undefined => {
+    const texts = [...new Set(forms.filter(form => form.caseSensitive === caseSensitive).map(form => form.text))];
+    return texts.length === 0 ? undefined
+      : new RegExp(`(?<![\\w-])(?:${texts.map(escapeRegExp).join("|")})(?![\\w-])`, caseSensitive ? "" : "i");
+  };
+  return [alternation(false), alternation(true)].filter((pattern): pattern is RegExp => pattern !== undefined);
+}
+
 /**
  * Platform services: what nearly every AWS workload runs on rather than what the product is built
  * from. Sharing CloudWatch or S3 with a session says nothing about the stack, so they never count
@@ -150,14 +165,7 @@ export function buildStackFit(profile: ResolvedProfile, options: StackFitOptions
     const key = service.catalogName ?? service.name.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    const fromCatalog = service.catalogName === null ? [] : catalogForms(service.catalogName);
-    const forms = [...fromCatalog, ...profileForms(service.name, service.catalogName, fromCatalog)];
-    const alternation = (caseSensitive: boolean): RegExp | undefined => {
-      const texts = [...new Set(forms.filter(form => form.caseSensitive === caseSensitive).map(form => form.text))];
-      return texts.length === 0 ? undefined
-        : new RegExp(`(?<![\\w-])(?:${texts.map(escapeRegExp).join("|")})(?![\\w-])`, caseSensitive ? "" : "i");
-    };
-    const patterns = [alternation(false), alternation(true)].filter((pattern): pattern is RegExp => pattern !== undefined);
+    const patterns = serviceNamePatterns(service.name, service.catalogName);
     services.push({
       catalogName: service.catalogName,
       named: text => patterns.some(pattern => pattern.test(text)),

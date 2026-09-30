@@ -147,12 +147,18 @@ offering you mean when calling `favorite_sessions`, not `code`.
 Each `reasons` entry is `{ "kind": ..., "detail": string, "weight": number, "evidence": string }`.
 `kind` is one of `service`, `topic`, `areaOfInterest`, `text`, `level`, `format`, `pillarGap` or
 `migrationPath` (the last two only under the Fix and Next-level lenses, and they also carry
-`profileEvidence`). `weight` is
+`profileEvidence`) or `explainsConcept` (Explain lens only: the concept the session explains and
+the profile files that use it, also carried as `profileEvidence`). `weight` is
 that reason's own contribution to `score` (every reason's `weight` sums to `score` exactly).
 `evidence` is the specific catalog value that matched -- a service name, a topic, or the matched
 query terms -- not a file path; when presenting a service reason to the user, the file citation
 comes from the *profile's own* evidence for that service (see `reference/profiling.md`), not from
 this field.
+
+Under `explain`, the response also has `uncovered` (always present, usually `[]`): the profile's
+concepts that no introductory session is about, as `{ "concept": "Amazon Cognito", "kind": "service", "reason": ... }` (`kind` is `service` or `pattern`).
+Report them to the user as parts of their code the catalog has no introduction for; see "The explain
+lens" in `reference/profiling.md`. Candidates come round-robin across concepts, not by score.
 
 Fix and Next-level results are ordered by interleaving the rules' ranked lists, not by score, so
 scores can appear out of order.

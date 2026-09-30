@@ -379,9 +379,44 @@ and which have it; cite the ones you inspected.
 
 ## The explain lens
 
-`lens: "explain"` is not evidence-driven. It restricts to level 100 and 200 sessions and favors
-lecture formats (Breakout session, Chalk talk) so a foundational session can be recommended for a
-concept in the profile. It needs no gap or path patterns.
+`lens: "explain"` answers "which introductory sessions would teach me what this code is built on?".
+It needs no gap or path patterns; it works from the services and patterns you already recorded.
+
+**Concepts.** Each core service and each pattern that is not a gap (`gap-*`) or `dead-code` is a
+concept to explain. A supporting service counts at half weight. Platform services (CloudWatch, S3,
+IAM and the rest of the platform list) are not concepts. Concepts are ranked by centrality, the
+number of distinct files you cited for them, so cite the files that really use each one; a concept
+you cite once ranks below one you cite in five places.
+
+**Admission.** A session explains a concept only if it names the concept in its title, or
+at least twice in its abstract outside an enumeration (three or more names in a row), and an abstract-only
+match also needs the session to list the service or carry a matching tag. A tag or a listed service
+alone never admits a session. Services match by catalog name and short form ("Amazon DynamoDB",
+"DynamoDB", "ECS"). Patterns match through a curated phrase list: `serverless`, `event-driven`,
+`api`, `multi-tenant`, `multi-account`, `iac-cdk`, `containers`, `ecs`, `eks`, `agentic`,
+`genai-single-call`, `streaming`, `data-lake`. `agentic` and `genai-single-call` are so widespread
+that only a title that says how to build or design them admits (for example "Building agents in
+production"). A pattern with any other name cannot be matched and comes back in `uncovered`; prefer
+the names above where they fit. A sponsored session, a feature-news or launch session ("What's new", "new features", "new instances"),
+a modernization or migration session, a certification or exam session, a customer story ("How X
+scaled Y", or an abstract that says "how a customer ..."), a game or exam-prep session and an "AWS
+Partner:" bootcamp (attendance is restricted to AWS Partners) are never used to explain a concept.
+
+**Selection.** Only level 100 and 200 sessions are listed. They are picked round-robin across the
+concepts in centrality order, the best session per concept each round, so the top of the list covers
+as many concepts as possible before any concept repeats. Ties prefer a session that lists the
+service or has a matching tag, then an introduction-style title, then a Breakout session or Chalk
+talk. Each candidate's `explainsConcept` reason names the concept, the phrase that matched and the
+files in your profile that use it, so the file citations you record are what the user reads.
+
+**`uncovered`.** The response always carries `uncovered`, `[]` when nothing is missing. Each entry is
+`{ "concept", "reason" }` for a concept no introductory session is about. When a 300-level
+session names the concept in its title, the reason names that session (a 300-level session that only
+mentions the concept in its abstract is not named), so you can offer it while saying it is not an
+introduction. Each entry has a `kind` (`service` or `pattern`) because a service and a pattern can
+share a name. Tell the user which parts of their code the catalog has no introduction for instead of
+padding the list with weaker sessions; an empty `candidates` with a full `uncovered` is a valid
+answer (a codebase built on tools the conference does not cover).
 
 ## Supported evidence lenses
 

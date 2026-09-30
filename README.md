@@ -249,14 +249,15 @@ between.
 it is, it's resolved through the exact same validation and catalog-name resolution `profile
 validate` uses. Options:
 
-- `--lens <lens>` -- `all` (default, no restriction) or `explain`, which narrows results to
-  foundational and intermediate sessions (level bands 100 and 200) and favors lecture-style formats
-  (`Breakout session`, `Chalk talk`) -- the shape of session that best suits someone new to a
-  service or pattern. A session with no level on record at all is excluded under `explain`, the
-  same way `catalog search --level` already treats an unknown level band, since there's no evidence
-  either way that it qualifies. `fix` selects sessions addressing evidenced gaps; `next-level`
-  selects sessions about supported migration destinations. These two lenses have no level or
-  format preference and leave `all`/`explain` behavior unchanged.
+- `--lens <lens>` -- `all` (default, no restriction) or `explain`, which lists introductory sessions
+  (level bands 100 and 200) that are about the services and patterns your profile evidences. A
+  session is admitted only if it names the concept in its title or at least twice in its abstract,
+  and candidates come round-robin across concepts, most-cited first, so the list covers your code
+  before repeating a concept. Each reason names the concept and the files that use it. The response
+  also carries `uncovered`, the concepts no introductory session is about, each with a reason. A
+  session with no level on record is excluded. `fix` selects sessions addressing evidenced gaps;
+  `next-level` selects sessions about supported migration destinations. These two lenses have no
+  level or format preference and leave `all` unchanged.
 - `--limit <n>` -- cap the number of candidates (default 30, maximum 100).
 - `--include-abstracts` -- include each session's abstract text in the output.
 - `--json` -- machine-readable output: an array of resolved sessions, each with its own `score`

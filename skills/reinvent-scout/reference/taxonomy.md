@@ -25,7 +25,8 @@ The `type` a session carries (surfaced as `type` on a `match_sessions` candidate
 - Workshop
 
 The Explain lens (see `reference/workflow.md`) favors Breakout sessions and Chalk talks -- formats
-built for explaining a concept -- over a Workshop or Lab, which assume more hands-on context.
+built for explaining a concept -- over a Workshop or Lab, which assume more hands-on context. The
+preference is only a tiebreak among sessions that already explain the same concept equally well.
 
 ## Levels
 

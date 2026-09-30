@@ -74,29 +74,24 @@ describe("matchSessions", () => {
     expect(results[0]?.record.abbreviation).toBe("API318");
   });
 
-  it("restricts the explain lens to level bands 100 and 200", () => {
+  it("lists only introductory sessions under the explain lens", () => {
+    const sessions: Session[] = [
+      { sessionId: "intro", abbreviation: "INT200", title: "Going serverless", level: "200 - Intermediate" },
+      { sessionId: "advanced", abbreviation: "ADV300", title: "Serverless internals", level: "300 - Advanced" },
+      { sessionId: "expert", abbreviation: "EXP400", title: "Serverless at the limit", level: "400 - Expert" },
+    ];
     writeCatalog(
-      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
+      { raw: sessions, index: sessions.map(buildIndexRecord), meta: sampleMeta({ totalCount: 3, count: 3 }) },
       { storeRoot: home.path },
     );
 
     const profile = resolvedProfile({
-      services: [
-        { name: "lambda", evidence: [{ repo: ".", file: "x" }], catalogName: "AWS Lambda" },
-      ],
+      patterns: [{ name: "serverless", evidence: [{ repo: ".", file: "x" }] }],
     });
 
     const results = matchSessions(profile, { storeRoot: home.path }, { lens: "explain" });
 
-    for (const result of results) {
-      expect(result.record.levelBand).not.toBeNull();
-      expect([100, 200]).toContain(result.record.levelBand);
-    }
-    // API201 (Lambda, level 200, Breakout session) is a genuine fixture match at an allowed band.
-    expect(results.map((r) => r.record.abbreviation)).toContain("API201");
-    // API402 and COM320 (Lambda, level 400/300) must be excluded by the lens's level restriction.
-    expect(results.map((r) => r.record.abbreviation)).not.toContain("API402");
-    expect(results.map((r) => r.record.abbreviation)).not.toContain("COM320");
+    expect(results.map((r) => r.record.abbreviation)).toEqual(["INT200"]);
   });
 
   it("excludes a session with no level band under a level-restricting lens", () => {
@@ -106,7 +101,7 @@ describe("matchSessions", () => {
     const noLevelSession: Session = {
       sessionId: "no-level-session",
       abbreviation: "NOLVL1",
-      title: "A session with no level at all",
+      title: "A session about Lambda with no level at all",
       services: ["AWS Lambda"],
     };
     writeCatalog(
@@ -133,7 +128,7 @@ describe("matchSessions", () => {
     const breakout: Session = {
       sessionId: "breakout",
       abbreviation: "BRK100",
-      title: "Foundations of the platform",
+      title: "Foundations of Lambda",
       type: "Breakout session",
       level: "100 - Foundational",
       services: ["AWS Lambda"],
@@ -141,7 +136,7 @@ describe("matchSessions", () => {
     const lab: Session = {
       sessionId: "lab",
       abbreviation: "LAB100",
-      title: "Foundations of the platform",
+      title: "Foundations of Lambda",
       type: "Lab",
       level: "100 - Foundational",
       services: ["AWS Lambda"],
@@ -231,7 +226,7 @@ describe("matchSessions", () => {
 
     const profile = resolvedProfile({
       patterns: [
-        { name: "kubernetes operator", evidence: [{ repo: ".", file: "x" }] },
+        { name: "eks", evidence: [{ repo: ".", file: "x" }] },
       ],
     });
 
@@ -406,7 +401,7 @@ describe("matchSessions", () => {
     const noLevelSession: Session = {
       sessionId: "no-level-session",
       abbreviation: "NOLVL1",
-      title: "A session with no level at all",
+      title: "A session about Lambda with no level at all",
       services: ["AWS Lambda"],
     };
     writeCatalog(
@@ -684,7 +679,7 @@ describe("matchSessions", () => {
     const session: Session = {
       sessionId: "s1",
       abbreviation: "CON100",
-      title: "Something matching the profile",
+      title: "Something matching the profile on Lambda",
       type: "constructor",
       level: "200 - Intermediate",
       services: ["AWS Lambda"],
@@ -1096,13 +1091,16 @@ describe("evidence lenses end to end", () => {
     expect(result[0]!.reasons.filter(reason => reason.kind === "pillarGap").every(reason => JSON.stringify(reason.profileEvidence) === JSON.stringify(evidence))).toBe(true);
     expect(result[0]!.offerings.map(offering => offering.sessionId).sort()).toEqual(["strong", "weak"]);
   });
-  it("leaves all and explain reason/score contracts unchanged", () => {
+  it("leaves the all reason/score contract unchanged and explains the source session", () => {
     seed(sessions.filter(session => session.sessionId === "source" || session.sessionId === "alien"));
     const plain = resolvedProfile({ services: [{ name: "lambda", catalogName: "AWS Lambda", evidence }] });
     const all = matchSessions(plain, { storeRoot: home.path });
     const explain = matchSessions(plain, { storeRoot: home.path }, { lens: "explain" });
     expect(all.map(result => [result.code, result.score, result.reasons])).toEqual([["SRC100", 51.11, [{ kind: "service", detail: "Uses AWS Lambda, which this session covers.", weight: 50, evidence: "AWS Lambda" }, { kind: "text", detail: "Text overlap on: lambda.", weight: 1.11, evidence: "lambda" }]]]);
-    expect(explain.map(result => [result.code, result.score, result.reasons])).toEqual([["SRC100", 56.11, [...all[0]!.reasons, { kind: "format", detail: "Breakout session sessions are favored under the explain lens.", weight: 5, evidence: "Breakout session" }]]]);
+    expect(explain.map(result => [result.code, result.score, result.reasons])).toEqual([["SRC100", 65, [
+      { kind: "explainsConcept", detail: 'Explains AWS Lambda ("Lambda"), which this code uses at stack.ts:12.', weight: 60, evidence: "Lambda", profileEvidence: evidence },
+      { kind: "format", detail: "Breakout session sessions are favored under the explain lens.", weight: 5, evidence: "Breakout session" },
+    ]]]);
   });
 });
 

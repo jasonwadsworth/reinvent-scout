@@ -1,4 +1,5 @@
-import { buildStackFit, hasCoreService } from "./stack-fit.js";
+import { buildStackFit, hasCoreService, PREFIX_REQUIRED_SERVICE_NAMES } from "./stack-fit.js";
+import { buildConcepts, explainReason, matchConcepts, selectExplain, type ConceptMatch, type UncoveredConcept } from "./explain.js";
 import { activeLensRules, scoreLensSignals, skippedLensRules, type LensHit, type SkippedRule } from "./lens-signals.js";
 import { readRaw, type CatalogStoreDeps } from "../catalog/store.js";
 import { baseSessionCode, requireCurrentIndex } from "../catalog/query.js";
@@ -58,6 +59,9 @@ export interface MatchResult {
   /** Next-level paths the profile evidences but already completed, e.g. "profile already has
    * agentic" -- always present, empty when nothing was skipped. */
   skippedRules: SkippedRule[];
+  /** Explain only, always present there: concepts of the profile no session could be matched to,
+   * each with the reason. Absent under every other lens. */
+  uncovered?: UncoveredConcept[];
 }
 
 /** What interleaving needs from the winning sitting of a lens candidate. */
@@ -68,6 +72,7 @@ interface LensInfo {
 
 interface GroupedCandidate extends MatchCandidate {
   lens?: LensInfo;
+  explain?: ConceptMatch[];
 }
 
 /** Appends `value` to `list` only the first time its case-insensitive form is seen -- used for
@@ -168,6 +173,7 @@ interface ScoredRecord {
   score: number;
   reasons: Reason[];
   lens?: LensInfo;
+  explain?: ConceptMatch[];
 }
 
 /** The real catalog marks *some* (not all) repeat sittings' titles with a trailing " [REPEAT]" --
@@ -243,6 +249,7 @@ function groupByCode(scoredRecords: readonly ScoredRecord[]): GroupedCandidate[]
       reasons: winner.reasons,
       offerings,
       ...(winner.lens === undefined ? {} : { lens: winner.lens }),
+      ...(winner.explain === undefined ? {} : { explain: winner.explain }),
     });
   }
   return candidates;
@@ -383,6 +390,72 @@ function lensSkippedRules(profile: ResolvedProfile, lens: "fix" | "next-level"):
   ];
 }
 
+/**
+ * The Explain lens: the sessions that teach the technologies and architecture the profile is built
+ * on (see `explain.ts`). Repeat sittings are grouped before selection, so a talk counts once, and
+ * each candidate's reasons name the concept and the code that uses it. A profile concept no session
+ * is about comes back in `uncovered` rather than being filled with weaker matches.
+ */
+function matchExplain(
+  profile: ResolvedProfile,
+  index: readonly IndexRecord[],
+  rawById: ReadonlyMap<string, { abstract?: string }>,
+  query: MatchQuery,
+  corpusStats: ReturnType<typeof buildCorpusStats>,
+  limit: number | undefined,
+): MatchResult {
+  const { typeWeights } = getLensProfile("explain");
+  const { concepts, uncovered: unmapped } = buildConcepts(profile, knownServices(profile, index));
+  const scored: ScoredRecord[] = [];
+  for (const record of index) {
+    const matches = matchConcepts(concepts, record, rawById.get(record.sessionId)?.abstract ?? "");
+    if (matches.length > 0) {
+      scored.push({ record, score: scoreSession(record, query, corpusStats).score, reasons: [], explain: matches });
+    }
+  }
+  const groups = groupByCode(scored);
+  const byCode = new Map(groups.map((group) => [group.code, group]));
+  const { selected, uncovered } = selectExplain(
+    groups.map((group) => ({ key: group.code, record: group.record, matches: group.explain!, rank: group.score })),
+    concepts,
+    typeWeights,
+  );
+  const candidates = selected.map((entry) => explainCandidate(byCode.get(entry.key)!, entry.matches, profile, typeWeights));
+  return {
+    candidates: (limit === undefined ? candidates : candidates.slice(0, limit)).map(roundCandidate),
+    skippedRules: [],
+    uncovered: [...uncovered, ...unmapped],
+  };
+}
+
+/** Services a title can list next to another ("Amazon Polly and Transcribe"): the catalog's own service
+ * vocabulary, the profile's, and the ordinary-word names (Glue, Backup, ...), since the catalog does not
+ * list every service a profile names. */
+function knownServices(profile: ResolvedProfile, index: readonly IndexRecord[]): string[] {
+  const fromProfile = profile.services.flatMap((service) => [service.name, ...(service.catalogName === null ? [] : [service.catalogName])]);
+  const ordinaryWords = PREFIX_REQUIRED_SERVICE_NAMES.map((name) => name.charAt(0).toUpperCase() + name.slice(1));
+  return [...new Set([...index.flatMap((record) => record.services), ...fromProfile, ...ordinaryWords])];
+}
+
+function explainCandidate(
+  group: GroupedCandidate,
+  matches: readonly ConceptMatch[],
+  profile: ResolvedProfile,
+  typeWeights: ReadonlyMap<string, number>,
+): GroupedCandidate {
+  const reasons: Reason[] = matches.map((match) => explainReason(match, profile.repos.length));
+  const formatBonus = group.record.type === null ? undefined : typeWeights.get(group.record.type);
+  if (formatBonus !== undefined) {
+    reasons.push({
+      kind: "format",
+      detail: `${group.record.type} sessions are favored under the explain lens.`,
+      weight: formatBonus,
+      evidence: group.record.type!,
+    });
+  }
+  return { ...group, reasons, score: reasons.reduce((sum, reason) => sum + reason.weight, 0) };
+}
+
 /** `matchSessions` plus what the ranking itself decided to skip -- see `MatchResult`. */
 export function matchSessionsDetailed(
   profile: ResolvedProfile,
@@ -393,7 +466,7 @@ export function matchSessionsDetailed(
   const lensProfile = getLensProfile(lens);
   const index = requireCurrentIndex(deps);
   const query = buildMatchQuery(profile);
-  const rawById = lens === "fix" || lens === "next-level"
+  const rawById = lens !== "all"
     ? new Map((readRaw(deps) ?? []).map(session => [session.sessionId, session]))
     : undefined;
   // Built once, over the whole loaded catalog, and reused for every candidate below -- inverse
@@ -401,6 +474,10 @@ export function matchSessionsDetailed(
   // record would be both wasteful and simply wrong, since it needs to see every document to know
   // how rare a term actually is.
   const corpusStats = buildCorpusStats(index);
+
+  if (lens === "explain") {
+    return matchExplain(profile, index, rawById!, query, corpusStats, options.limit);
+  }
 
   // Fix has to be pickier than Next-level: its phrases (alarms, tests, IAM) appear in talks about any
   // stack, so one shared near-universal service such as CloudWatch is not evidence of fit.
