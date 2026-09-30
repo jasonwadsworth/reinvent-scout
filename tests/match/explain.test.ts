@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Session } from "../../src/api/types.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
-import { buildConcepts, matchConcepts } from "../../src/match/explain.js";
+import { buildConcepts, matchConcepts, selectExplain, type ExplainSession } from "../../src/match/explain.js";
 import type { ResolvedProfile } from "../../src/profile/profile.js";
 
 const cite = (file: string, line = 1, repo = "repo") => ({ repo, file, line });
@@ -133,5 +133,95 @@ describe("matchConcepts", () => {
     expect(plain[0]!.boosted).toBe(false);
     const tagged = matchConcepts(serverless, record({ title: "Going serverless", topics: ["Serverless"] }), "");
     expect(tagged[0]!.boosted).toBe(true);
+  });
+});
+
+describe("selectExplain", () => {
+  const concepts = buildConcepts(profile(
+    [{ name: "AWS Lambda", files: ["a.ts", "b.ts", "c.ts"] }, { name: "Amazon DynamoDB", files: ["a.ts", "b.ts"] }],
+    [{ name: "serverless", files: ["a.ts"] }],
+  )).concepts;
+  const session = (code: string, title: string, options: { level?: string; type?: string; abstract?: string; rank?: number; services?: string[] } = {}): ExplainSession => {
+    const built = record({
+      title, abbreviation: code, level: options.level ?? "200 - Intermediate",
+      ...(options.type === undefined ? {} : { type: options.type }),
+      ...(options.services === undefined ? {} : { services: options.services }),
+    });
+    return { key: code, record: built, matches: matchConcepts(concepts, built, options.abstract ?? ""), rank: options.rank ?? 0 };
+  };
+  const order = (sessions: ExplainSession[]) => selectExplain(sessions, concepts).selected.map(entry => entry.key);
+
+  it("takes the best session per concept each round, in centrality order", () => {
+    expect(order([
+      session("L1", "Lambda basics"), session("L2", "More Lambda"), session("L3", "Lambda again"),
+      session("D1", "DynamoDB basics"), session("S1", "Going serverless"),
+    ])).toEqual(["L1", "D1", "S1", "L2", "L3"]);
+  });
+
+  it("does not spend a covered concept's first turn on a second session", () => {
+    expect(order([
+      session("LD", "Lambda and DynamoDB together", { rank: 5 }), session("D2", "DynamoDB deep dive"), session("L2", "Lambda tips"),
+    ])).toEqual(["LD", "L2", "D2"]);
+  });
+
+  it("lists every concept a session covers, the one it was taken for first", () => {
+    const { selected } = selectExplain([session("LD", "Lambda and DynamoDB together")], concepts);
+    expect(selected[0]!.matches.map(match => match.concept.name)).toEqual(["AWS Lambda", "Amazon DynamoDB"]);
+  });
+
+  it("puts the concept a session was taken for first, ahead of a more central one it also covers", () => {
+    const { selected } = selectExplain([
+      session("L1", "Lambda basics", { rank: 9 }), session("LD", "Lambda and DynamoDB together"),
+    ], concepts);
+    expect(selected.map(entry => entry.key)).toEqual(["L1", "LD"]);
+    expect(selected[1]!.matches.map(match => match.concept.name)).toEqual(["Amazon DynamoDB", "AWS Lambda"]);
+  });
+
+  it("ranks a concept's sessions by title over abstract, then a listed service, then format, then relevance", () => {
+    const abstract = "Lambda runs code. Lambda scales.";
+    expect(order([
+      session("ABS", "Compute talk", { abstract }),
+      session("TTL", "Lambda talk"),
+    ])).toEqual(["TTL", "ABS"]);
+    expect(order([
+      session("A-PLN", "Lambda plain"), session("Z-LST", "Lambda listed", { services: ["AWS Lambda"] }),
+    ])).toEqual(["Z-LST", "A-PLN"]);
+    expect(order([
+      session("A-WRK", "Lambda workshop", { type: "Workshop" }), session("Z-BRK", "Lambda breakout", { type: "Breakout session" }),
+    ])).toEqual(["Z-BRK", "A-WRK"]);
+    expect(order([
+      session("A-LOW", "Lambda low", { rank: 1 }), session("Z-HIGH", "Lambda high", { rank: 9 }),
+    ])).toEqual(["Z-HIGH", "A-LOW"]);
+  });
+
+  it("allows one 300 session for a concept with no 100/200 session, and marks it", () => {
+    const { selected } = selectExplain([
+      session("D3", "DynamoDB design", { level: "300 - Advanced" }), session("D3B", "DynamoDB modeling", { level: "300 - Advanced" }),
+      session("L1", "Lambda basics"),
+    ], concepts);
+    expect(selected.map(entry => entry.key)).toEqual(["L1", "D3"]);
+    expect(selected[1]!.matches.map(match => match.fallback)).toEqual([true]);
+    expect(selected[0]!.matches.map(match => match.fallback)).toEqual([false]);
+  });
+
+  it("does not take a 300 session for a concept an introductory session covers", () => {
+    expect(order([session("L1", "Lambda basics"), session("L3", "Lambda internals", { level: "300 - Advanced" })])).toEqual(["L1"]);
+  });
+
+  it("ignores sessions with no level band and 400 level sessions", () => {
+    expect(order([session("L4", "Lambda expert", { level: "400 - Expert" }), session("L0", "Lambda unknown", { level: "" })])).toEqual([]);
+  });
+
+  it("reports a concept with no qualifying session as uncovered, in centrality order", () => {
+    const { uncovered } = selectExplain([session("L1", "Lambda basics")], concepts);
+    expect(uncovered).toEqual([
+      { concept: "Amazon DynamoDB", reason: "no introductory (100/200) or 300-level session is about it" },
+      { concept: "serverless", reason: "no introductory (100/200) or 300-level session is about it" },
+    ]);
+  });
+
+  it("does not report a concept only a 300 session covers", () => {
+    const { uncovered } = selectExplain([session("D3", "DynamoDB design", { level: "300 - Advanced" })], concepts);
+    expect(uncovered.map(entry => entry.concept)).toEqual(["AWS Lambda", "serverless"]);
   });
 });

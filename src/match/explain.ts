@@ -1,5 +1,6 @@
 import type { IndexRecord } from "../catalog/index-record.js";
 import type { Evidence, ResolvedProfile } from "../profile/profile.js";
+import { getLensProfile } from "./lens.js";
 import { unlistedMatches } from "./listing.js";
 import { PLATFORM_SERVICES, serviceNamePatterns } from "./stack-fit.js";
 
@@ -176,4 +177,98 @@ export function matchConcepts(concepts: readonly ExplainConcept[], record: Index
     });
   }
   return matches;
+}
+
+const INTRODUCTORY_BANDS: readonly number[] = [100, 200];
+const FALLBACK_BAND = 300;
+const NOT_COVERED_REASON = "no introductory (100/200) or 300-level session is about it";
+
+/** A catalog session (repeat sittings already grouped) with the concepts it is about. */
+export interface ExplainSession {
+  key: string;
+  record: IndexRecord;
+  matches: ConceptMatch[];
+  /** Breaks ties between equally strong matches: how relevant the session is to the profile. */
+  rank: number;
+}
+
+export interface SelectedMatch extends ConceptMatch {
+  /** A 300-level session taken because no introductory one covers the concept. */
+  fallback: boolean;
+}
+
+export interface ExplainSelection {
+  key: string;
+  /** Every concept the session explains; the one it was taken for comes first. */
+  matches: SelectedMatch[];
+}
+
+interface Option {
+  session: ExplainSession;
+  match: SelectedMatch;
+  score: number;
+}
+
+const FORMAT_SCALE = 10;
+
+/**
+ * Picks sessions round-robin across concepts in centrality order, the best session per concept each
+ * round, so a short list covers as many concepts as it can. A concept a session already explains
+ * does not take another session in the first round. Sessions at level 100 or 200 come first; a
+ * concept none of them covers may take one 300-level session. A concept with no session at all is
+ * reported as uncovered.
+ */
+export function selectExplain(
+  sessions: readonly ExplainSession[],
+  concepts: readonly ExplainConcept[],
+  typeWeights: ReadonlyMap<string, number> = getLensProfile("explain").typeWeights,
+): { selected: ExplainSelection[]; uncovered: UncoveredConcept[] } {
+  const introductoryBand = (session: ExplainSession): boolean =>
+    session.record.levelBand !== null && INTRODUCTORY_BANDS.includes(session.record.levelBand);
+  const eligible = sessions.filter(session => introductoryBand(session) || session.record.levelBand === FALLBACK_BAND);
+  const introductory = new Set(eligible
+    .filter(introductoryBand)
+    .flatMap(session => session.matches.map(match => match.concept)));
+  const options = new Map<ExplainConcept, Option[]>(concepts.map(concept => [concept, []]));
+  for (const session of eligible) {
+    const fallback = session.record.levelBand === FALLBACK_BAND;
+    for (const match of session.matches) {
+      if (fallback && introductory.has(match.concept)) continue;
+      const format = session.record.type === null ? 0 : (typeWeights.get(session.record.type) ?? 0);
+      options.get(match.concept)?.push({
+        session, match: { ...match, fallback },
+        score: match.strength + (match.boosted ? 1 : 0) + format / FORMAT_SCALE,
+      });
+    }
+  }
+  const queues = new Map<ExplainConcept, Option[]>();
+  for (const [concept, list] of options) {
+    list.sort((a, b) => b.score - a.score || b.session.rank - a.session.rank || a.session.key.localeCompare(b.session.key));
+    queues.set(concept, list[0]?.match.fallback === true ? list.slice(0, 1) : [...list]);
+  }
+
+  const selected: ExplainSelection[] = [];
+  const taken = new Set<string>();
+  const covered = new Set<ExplainConcept>();
+  const order = new Map(concepts.map((concept, index) => [concept, index]));
+  for (let round = 0; [...queues.values()].some(queue => queue.length > 0); round++) {
+    for (const concept of concepts) {
+      if (round === 0 && covered.has(concept)) continue;
+      const queue = queues.get(concept)!;
+      while (queue.length > 0 && taken.has(queue[0]!.session.key)) queue.shift();
+      const option = queue.shift();
+      if (option === undefined) continue;
+      taken.add(option.session.key);
+      const positionOf = (match: SelectedMatch): number => match.concept === option.match.concept ? -1 : order.get(match.concept)!;
+      const matches = option.session.matches
+        .flatMap(match => options.get(match.concept)?.find(entry => entry.session === option.session)?.match ?? [])
+        .sort((a, b) => positionOf(a) - positionOf(b));
+      for (const match of matches) covered.add(match.concept);
+      selected.push({ key: option.session.key, matches });
+    }
+  }
+  const uncovered = concepts
+    .filter(concept => options.get(concept)!.length === 0)
+    .map(concept => ({ concept: concept.name, reason: NOT_COVERED_REASON }));
+  return { selected, uncovered };
 }
