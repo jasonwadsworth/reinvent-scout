@@ -3,6 +3,7 @@ import type { Evidence, ResolvedProfile } from "../profile/profile.js";
 import type { Reason, ScoredSession } from "./score.js";
 import type { StackFit } from "./stack-fit.js";
 import { onlyListed, unlistedMatches } from "./listing.js";
+import type { MatchSite } from "./why.js";
 
 type SignalLens = "fix" | "next-level";
 interface SignalRule {
@@ -124,6 +125,10 @@ export const LENS_RULE_SELECTORS = RULES.map(rule => ({
 export interface LensHit {
   rule: string;
   strength: number;
+  /** The first unlisted match of the rule's phrase: what the session says about the rule. */
+  site: MatchSite;
+  /** Next-level only: the pattern this path moves toward. */
+  destination?: string;
 }
 
 export interface LensScored extends ScoredSession {
@@ -154,6 +159,12 @@ export function skippedLensRules(profile: ResolvedProfile, lens: SignalLens): Sk
     .filter(rule => rule.lens === lens && rule.destination !== undefined
       && hasPattern(profile, rule.source) && hasPattern(profile, rule.destination))
     .map(rule => ({ rule: rule.source, reason: `profile already has ${rule.destination}` }));
+}
+
+/** A rule's own plain-language description ("Reliability: dead-letter handling is not evident in
+ * the cited scope."), for a summary whose gap pattern carries no note of its own. */
+export function lensRuleDetail(source: string): string | undefined {
+  return RULES.find(rule => rule.source === source)?.detail;
 }
 
 /** Rules the profile activates under this lens: source pattern cited, destination not yet reached. */
@@ -191,6 +202,7 @@ function mentionsSource(rule: SignalRule, record: IndexRecord, abstract: string,
 interface Signal {
   evidence: string;
   strength: number;
+  site: MatchSite;
 }
 
 /** Strength comes from the session's own text: phrase in the title = 3, at least twice in the
@@ -220,7 +232,8 @@ function catalogSignal(rule: SignalRule, record: IndexRecord, abstract: string, 
     && GAP_CUE.test(abstract.slice(Math.max(0, abstractMatch.index - GAP_CUE_WINDOW), abstractMatch.index));
   const strength = text + (cued ? 1 : 0) + (boosted(rule, record) ? 1 : 0);
   if (strength < (rule.minStrength ?? 2)) return undefined;
-  return { evidence: (titleMatch ?? abstractMatch)![0], strength };
+  const matched = (titleMatch ?? abstractMatch)!;
+  return { evidence: matched[0], strength, site: { inTitle: titleMatch !== undefined, index: matched.index, length: matched[0].length } };
 }
 
 /** Evidence-bearing exact pattern names activate rules; `fitsStack` (see `buildStackFit`) rejects
@@ -247,7 +260,10 @@ export function scoreLensSignals(
       const key = JSON.stringify([citation.repo, citation.file, citation.line, citation.snippet, citation.note]);
       if (!unique.has(key)) unique.set(key, { ...citation });
     }
-    hits.push({ rule: rule.source, strength: signal.strength });
+    hits.push({
+      rule: rule.source, strength: signal.strength, site: signal.site,
+      ...(rule.destination === undefined ? {} : { destination: rule.destination }),
+    });
     reasons.push({
       kind: lens === "fix" ? "pillarGap" : "migrationPath",
       detail: `${rule.source}: ${rule.detail} Session signal: "${signal.evidence}" (strength ${signal.strength}).`,

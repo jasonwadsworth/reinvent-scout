@@ -153,7 +153,10 @@ describe("Fix signals", () => {
   });
   it("reports which rule admitted the session and at what strength", () => {
     const result = scoreLensSignals(record("CloudWatch alarms and dead-letter queues"), profile("gap-no-dlq", "gap-no-alarms"), "fix");
-    expect(result.hits).toEqual([{ rule: "gap-no-dlq", strength: 3 }, { rule: "gap-no-alarms", strength: 3 }]);
+    expect(result.hits).toEqual([
+      { rule: "gap-no-dlq", strength: 3, site: { inTitle: true, index: 22, length: 18 } },
+      { rule: "gap-no-alarms", strength: 3, site: { inTitle: true, index: 0, length: 17 } },
+    ]);
   });
 });
 
