@@ -23,10 +23,13 @@ import {
   ValidationError,
 } from "../core/errors.js";
 import { matchSessionsDetailed } from "../match/match.js";
+import { DEFAULT_PER_TOPIC, matchFocus, MAX_FOCUS_CHOICES, MAX_PER_TOPIC } from "../match/focus.js";
+import { mapProfile } from "../match/map.js";
+import { GOALS } from "../match/topics.js";
 import { LENSES, type Lens } from "../match/lens.js";
 import { resolveProfile } from "../profile/profile.js";
 import { buildValidateReport } from "../profile/report.js";
-import { buildMatchResponse } from "../match/response.js";
+import { buildFocusResponse, buildMapResponse, buildMatchResponse } from "../match/response.js";
 import { favoriteSessions, unfavoriteSession } from "../schedule/favorites.js";
 import { mergeAndSortScheduleEntries, timezoneWarnings, type MergedScheduleEntry } from "../schedule/merge.js";
 import { getSchedule } from "../schedule/schedule.js";
@@ -255,6 +258,10 @@ const MatchSessionsInputSchema = z.strictObject({
    * candidates should get the largest sensible set rather than a validation error it has to
    * retry past. */
   limit: z.number().int().positive().optional(),
+  /** What to look for: topics from `map_profile`, each with a goal. Replaces `lens`. */
+  focus: z.array(z.strictObject({ topic: z.string().min(1), goal: z.enum(GOALS) })).min(1).max(MAX_FOCUS_CHOICES).optional(),
+  /** With `focus`: how many sessions each choice lists. */
+  perTopic: z.number().int().min(1).max(MAX_PER_TOPIC).optional(),
 });
 
 /**
@@ -281,6 +288,8 @@ function registerMatchSessionsTool(server: McpServer, deps: McpToolDeps): void {
     {
       description:
         "Rank the local catalog against a resolved tech profile and return the top candidates, " +
+        "or, with a `focus` (topics from `map_profile`, each with a goal: understand, deepen or improve; 1 to 6, and `perTopic` sessions each), " +
+        "a short list per choice instead of a lens, as `{ results: [{ topic, goal, total, candidates, reason? }], truncated, omitted }`. " +
         "each with a `why` (summary, yourCode citations, and a sessionSays quote from the session), " +
         "its score, reasons and every scheduled offering. Never includes full abstracts (`why.sessionSays` quotes one sentence). " +
         "When the response would not fit its budget, every candidate's ranking reasons are dropped first " +
@@ -292,10 +301,20 @@ function registerMatchSessionsTool(server: McpServer, deps: McpToolDeps): void {
         "(sponsored, news, customer story, migration tooling, industry, off-topic agents, a technology the code does not use) carries `demoted`, the reason.",
       inputSchema: MatchSessionsInputSchema,
     },
-    async ({ profile, lens, limit }) => {
+    async ({ profile, lens, limit, focus, perTopic }) => {
       const storeRoot = deps.resolveStoreRoot();
       try {
+        if (focus !== undefined && lens !== undefined) {
+          throw new ValidationError("focus and lens cannot be used together: a focus names its own goal for each topic.");
+        }
+        if (focus === undefined && perTopic !== undefined) {
+          throw new ValidationError("perTopic needs a focus.");
+        }
         const resolved = resolveProfileAgainstCatalog(profile, storeRoot);
+        if (focus !== undefined) {
+          const focused = matchFocus(resolved, { storeRoot }, focus, { perTopic: perTopic ?? DEFAULT_PER_TOPIC });
+          return textResult(buildFocusResponse(focused, value => envelopeBytes(value) <= RESPONSE_BYTE_BUDGET));
+        }
         const cappedLimit = Math.min(limit ?? DEFAULT_MATCH_SESSIONS_LIMIT, MAX_MATCH_SESSIONS_LIMIT);
         const result = matchSessionsDetailed(resolved, { storeRoot }, {
           ...(lens === undefined ? {} : { lens: lens as Lens }),
@@ -303,6 +322,28 @@ function registerMatchSessionsTool(server: McpServer, deps: McpToolDeps): void {
         });
         const response = buildMatchResponse(result, cappedLimit, value => envelopeBytes(value) <= RESPONSE_BYTE_BUDGET);
         return textResult(response);
+      } catch (err) {
+        return toToolError(err);
+      }
+    },
+  );
+}
+
+function registerMapProfileTool(server: McpServer, deps: McpToolDeps): void {
+  server.registerTool(
+    "map_profile",
+    {
+      description:
+        "Show what a tech profile found in the code as topics the user can choose from: services, patterns, supported gaps and next steps, " +
+        "each with an `id`, a one-sentence note, where the code uses it, and the goals that apply (understand, deepen, improve) with how many " +
+        "sessions each would return (0 is a dead end). Present it, ask which topics and goals the user cares about, then call `match_sessions` with a `focus`.",
+      inputSchema: ValidateProfileInputSchema,
+    },
+    async ({ profile }) => {
+      const storeRoot = deps.resolveStoreRoot();
+      try {
+        const resolved = resolveProfileAgainstCatalog(profile, storeRoot);
+        return textResult(buildMapResponse(mapProfile(resolved, { storeRoot }), value => envelopeBytes(value) <= RESPONSE_BYTE_BUDGET));
       } catch (err) {
         return toToolError(err);
       }
@@ -714,6 +755,7 @@ export function registerTools(server: McpServer, deps: McpToolDeps): void {
   registerCatalogSyncTool(server, deps);
   registerValidateProfileTool(server, deps);
   registerMatchSessionsTool(server, deps);
+  registerMapProfileTool(server, deps);
   registerGetScheduleTool(server, deps);
   registerFavoriteSessionsTool(server, deps);
   registerUnfavoriteSessionTool(server, deps);

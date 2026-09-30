@@ -34,9 +34,18 @@ explained shortlist.
    (service names, pattern names, unresolved names, counts) -- not the profile itself, and not
    something to pass anywhere else. Fix anything it flags as a schema error (it names the
    offending entry) and validate again. An unresolved service name is not an error -- keep going,
-   but it's worth a passing mention to the user.
+   but it's worth a passing mention to the user. Then call `map_profile` with the same profile and
+   **show the user the map**: one line per topic, grouped as services, patterns, gaps and next steps,
+   each with the goals that have sessions (`understand` for introductions, `deepen` for sessions at
+   any level, `improve` for a gap or a next step). Skip a goal marked 0 sessions and say a dead end
+   is a dead end. Then **ask what they care about**: up to about five topics and a goal for each, in
+   plain words ("understand DynamoDB, improve the dead-letter gap"). Do not guess for them.
 5. Call `match_sessions` with **the profile you wrote in step 3** -- never with `validate_profile`'s
-   own report, which is a different, smaller shape `match_sessions` doesn't accept. Default to the
+   own report, which is a different, smaller shape `match_sessions` doesn't accept -- and, when the
+   user chose, a `focus`: their choices as `{ "topic": <id from the map>, "goal": ... }` (one to six;
+   `perTopic` caps each list, default 5). That returns a short ranked list per choice. `focus` replaces
+   `lens`; send one or the other. If the user just wants recommendations and does not want to choose,
+   fall back to a lens. Default to the
    `"all"` lens (the sessions about the services and patterns their code is built on, any level; a
    candidate with a `demoted` reason is a sponsored, news, customer-story, modernization, industry,
    off-topic agent or off-stack technology session, so say so when you present it) unless the user wants foundational sessions (`"explain"`, which also returns
@@ -51,7 +60,11 @@ explained shortlist.
    If the response came back `truncated`, say so and offer to narrow the request
    (a narrower lens or a more specific profile -- **not** a smaller `limit`, which only returns
    fewer of the exact same top-ranked candidates and can never reach the ones already omitted)
-   rather than silently showing a partial list as if it were everything.
+   rather than silently showing a partial list as if it were everything. A focused response is
+   grouped per choice (`results[]`, each with its `topic`, `goal` and candidates): present it the same
+   way, one heading per choice, sessions led by their `why`; say how many more there are when `total`
+   exceeds what is listed, say why when a choice has none (`reason`), and mention `alsoMatches` when
+   a session serves another choice too.
 7. For reservations, call `plan_schedule` with a priority-ordered shortlist of offering IDs.
    Present its selected offerings, alternatives, refusals and time-only limits. Ask for confirmation before reserving
    those exact returned IDs with `reserve_sessions`. A plan never reserves seats or proves travel

@@ -50,8 +50,7 @@ export function mapProfile(profile: ResolvedProfile, deps: CatalogStoreDeps): Pr
 const bare = (text: string): string => text.replace(/\s*\([^()]*\)\s*$/, "").replace(/^(?:Amazon|AWS)\s+/i, "").trim().toLowerCase();
 
 /** A topic id from what a person typed: the id itself, or its bare label ("DynamoDB", "gap-no-dlq") when exactly one topic has it. */
-export function resolveTopic(map: ProfileMap, text: string): string {
-  const all = [...map.services, ...map.patterns, ...map.gaps, ...map.nextSteps];
+export function resolveTopic(all: readonly { id: string; label: string }[], text: string): string {
   const exact = all.find(topic => topic.id === text);
   if (exact !== undefined) return exact.id;
   const wanted = bare(text);

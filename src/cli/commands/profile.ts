@@ -13,6 +13,8 @@ import { parseProfile, resolveProfile, type ResolvedProfile } from "../../profil
 import { buildValidateReport } from "../../profile/report.js";
 import { readProfileFile, saveProfileFile } from "../../profile/store.js";
 import { formatZodError } from "../zod-errors.js";
+import { loadResolvedProfile } from "../profile-input.js";
+import { mapProfile, type MapTopic, type ProfileMap } from "../../match/map.js";
 
 export interface ProfileCommandDeps {
   /** Defaults to the real store root (`ensureStoreRoot`). Inject a fixed path in tests so
@@ -55,7 +57,26 @@ function readRawProfile(content: string): unknown {
   }
 }
 
-/** Registers `profile` and its `validate` and `save` subcommands. */
+function formatGoals(topic: MapTopic): string {
+  if (topic.skipped !== undefined) return `skipped: ${topic.skipped}`;
+  return topic.goals.map(goal => `${goal.goal} (${goal.sessions} session${goal.sessions === 1 ? "" : "s"})`).join(", ");
+}
+
+function formatTopic(topic: MapTopic): string {
+  const places = topic.evidence.map(place => `${place.repo}/${place.file}${place.line === undefined ? "" : `:${place.line}`}`);
+  return [
+    `  ${topic.id}${topic.pillar === undefined ? "" : ` (${topic.pillar})`}${topic.note === undefined ? "" : ` -- ${topic.note}`}`,
+    ...(places.length === 0 ? [] : [`    Your code: ${places.join(", ")}${topic.more === undefined ? "" : ` (+${topic.more} more)`}`]),
+    `    ${formatGoals(topic)}`,
+  ].join("\n");
+}
+
+function formatMap(map: ProfileMap): string {
+  const sections: Array<[string, MapTopic[]]> = [["Services", map.services], ["Patterns", map.patterns], ["Gaps", map.gaps], ["Next steps", map.nextSteps]];
+  return sections.filter(([, topics]) => topics.length > 0).map(([name, topics]) => [`${name}:`, ...topics.map(formatTopic)].join("\n")).join("\n\n");
+}
+
+/** Registers `profile` and its `validate`, `save` and `map` subcommands. */
 export function registerProfileCommands(program: Command, deps: ProfileCommandDeps = {}): Command {
   const print = deps.print ?? ((message: string) => process.stdout.write(`${message}\n`));
   const resolveStoreRoot = deps.resolveStoreRoot ?? (() => ensureStoreRoot());
@@ -136,6 +157,31 @@ export function registerProfileCommands(program: Command, deps: ProfileCommandDe
           return;
         }
         if (err instanceof ValidationError) {
+          print(err.message);
+          process.exitCode = 1;
+          return;
+        }
+        throw err;
+      }
+    });
+
+  profile
+    .command("map")
+    .description("Show what the profile found in the code, as topics to choose from with `match --focus`.")
+    .requiredOption("--profile <file|name>", "a profile file path, or a name saved with `profile save`")
+    .option("--json", "print machine-readable JSON instead of a readable list")
+    .action((options: { profile: string; json?: boolean }) => {
+      const storeRoot = resolveStoreRoot();
+      try {
+        const map = mapProfile(loadResolvedProfile(options.profile, storeRoot), { storeRoot });
+        print(options.json === true ? JSON.stringify(map) : formatMap(map));
+      } catch (err) {
+        if (err instanceof z.ZodError) {
+          print(formatZodError(err));
+          process.exitCode = 1;
+          return;
+        }
+        if (err instanceof CatalogMissingError || err instanceof CatalogUnusableError || err instanceof ValidationError) {
           print(err.message);
           process.exitCode = 1;
           return;

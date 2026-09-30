@@ -1,8 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
 import type { Command } from "commander";
 import { z } from "zod";
-import { catalogServiceNames } from "../../catalog/query.js";
-import { buildServiceAliasIndex } from "../../catalog/service-aliases.js";
 import { readRaw } from "../../catalog/store.js";
 import {
   CatalogMissingError,
@@ -11,11 +8,13 @@ import {
 } from "../../core/errors.js";
 import { ensureStoreRoot } from "../../core/paths.js";
 import { LENSES, type Lens } from "../../match/lens.js";
+import { DEFAULT_PER_TOPIC, matchFocus, profileTopics, type FocusCandidate, type FocusEntry, type FocusResult } from "../../match/focus.js";
+import { resolveTopic } from "../../match/map.js";
+import { GOALS, type Goal } from "../../match/topics.js";
 import { matchSessionsDetailed, type MatchCandidate, type MatchResult } from "../../match/match.js";
-import { buildMatchResponse, toLeanCandidate } from "../../match/response.js";
-import { resolveProfile } from "../../profile/profile.js";
-import { readProfileFile } from "../../profile/store.js";
+import { buildFocusResponse, buildMatchResponse, toLeanCandidate, toLeanFocusCandidate } from "../../match/response.js";
 import { formatZodError } from "../zod-errors.js";
+import { loadResolvedProfile } from "../profile-input.js";
 
 export interface MatchCommandDeps {
   /** Defaults to the real store root (`ensureStoreRoot`). Inject a fixed path in tests so
@@ -32,6 +31,8 @@ interface MatchCommandOptions {
   json: boolean;
   includeAbstracts: boolean;
   verbose: boolean;
+  focus?: string;
+  perTopic?: string;
 }
 
 const DEFAULT_MATCH_LIMIT = 30;
@@ -56,29 +57,41 @@ function parseLens(raw: string): Lens {
   return raw as Lens;
 }
 
-function readRawProfile(content: string): unknown {
-  try {
-    return JSON.parse(content);
-  } catch {
-    throw new ValidationError("The profile file is not valid JSON.");
-  }
+/** "service:Amazon DynamoDB:understand,gap-no-dlq:improve" into choices; the goal is after the last colon, and a topic may be a
+ * bare label ("DynamoDB") that names exactly one topic. */
+function parseFocus(text: string, topics: readonly { id: string; label: string }[]): Array<{ topic: string; goal: Goal }> {
+  return text.split(",").map(part => part.trim()).filter(part => part !== "").map(part => {
+    const colon = part.lastIndexOf(":");
+    const goal = colon === -1 ? "" : part.slice(colon + 1).trim().toLowerCase();
+    if (colon === -1 || !(GOALS as readonly string[]).includes(goal)) {
+      throw new ValidationError(`--focus entries look like "<topic>:<goal>" with a goal of ${GOALS.join(", ")}; got "${part}".`);
+    }
+    return { topic: resolveTopic(topics, part.slice(0, colon).trim()), goal: goal as Goal };
+  });
 }
 
-/**
- * Loads a profile's raw JSON content from `--profile <file|name>`: an existing filesystem path is
- * read directly, and anything else is looked up as a name previously saved with `profile save`.
- * The name form goes through `readProfileFile` -- the exact same `profilePath`/
- * `SAFE_PROFILE_NAME_PATTERN` guard `profile save` and `profile validate --name` already enforce
- * -- rather than a second, hand-rolled safety check here that could drift out of sync with it.
- * Since a saved name can never contain a path separator, this can't be tricked into resolving a
- * traversal attempt as a name: `existsSync` either finds the real file the caller pointed at, or
- * the value is rejected by the same pattern every other saved-name caller enforces.
- */
-function loadProfileContent(profileArg: string, storeRoot: string): string {
-  if (existsSync(profileArg)) {
-    return readFileSync(profileArg, "utf8");
+function parsePerTopic(raw: string): number {
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1 || value > 10) {
+    throw new ValidationError(`--per-topic must be a whole number from 1 to 10, got "${raw}".`);
   }
-  return readProfileFile(profileArg, { storeRoot });
+  return value;
+}
+
+const GOAL_HEADINGS: Record<Goal, string> = { understand: "Understand", deepen: "Go deeper on", improve: "Improve" };
+
+function formatFocusEntry(entry: FocusEntry, verbose: boolean, abstracts?: ReadonlyMap<string, string | null>): string {
+  const heading = `${GOAL_HEADINGS[entry.goal]} ${entry.topic} -- ${entry.candidates.length} of ${entry.total} session${entry.total === 1 ? "" : "s"}`;
+  if (entry.candidates.length === 0) return [heading, `  No sessions: ${entry.reason ?? "none match"}`].join("\n");
+  const blocks = entry.candidates.map((candidate: FocusCandidate) => [
+    formatCandidateWithReasons(candidate, verbose, abstracts?.get(candidate.record.sessionId) ?? null),
+    ...(candidate.alsoMatches === undefined ? [] : [`  Also matches: ${candidate.alsoMatches.join(", ")}`]),
+  ].join("\n"));
+  return [heading, ...blocks].join("\n\n");
+}
+
+function formatFocusResult(result: FocusResult, verbose: boolean, abstracts?: ReadonlyMap<string, string | null>): string {
+  return result.results.map(entry => formatFocusEntry(entry, verbose, abstracts)).join("\n\n\n");
 }
 
 function formatCandidateLine(candidate: MatchCandidate): string {
@@ -169,23 +182,46 @@ export function registerMatchCommands(program: Command, deps: MatchCommandDeps =
     .command("match")
     .description("Rank the local catalog against an agent-authored tech profile.")
     .requiredOption("--profile <file|name>", "a profile file path, or a name saved with `profile save`")
+    .option("--focus <choices>", `what to look for, as "<topic>:<goal>" pairs separated by commas (goals: ${GOALS.join(", ")}); topics are listed by \`profile map\``)
+    .option("--per-topic <n>", `with --focus, how many sessions each choice lists (default ${DEFAULT_PER_TOPIC}, maximum 10)`)
     .option("--lens <lens>", `one of ${LENSES.join(", ")}`, "all")
     .option("--limit <n>", "maximum number of candidates", String(DEFAULT_MATCH_LIMIT))
     .option("--include-abstracts", "include each session's abstract in the output")
     .option("--verbose", "also show every reason in the table: the lens reasons with their sources and the ranking reasons")
     .option("--json", "print machine-readable JSON instead of a human-readable table")
-    .action((options: MatchCommandOptions) => {
+    .action((options: MatchCommandOptions, command: Command) => {
       const storeRoot = resolveStoreRoot();
 
       try {
+        if (options.focus !== undefined) {
+          if (command.getOptionValueSource("lens") !== "default") {
+            throw new ValidationError("--focus and --lens cannot be used together: a focus names its own goal for each topic.");
+          }
+          const focused = loadResolvedProfile(options.profile, storeRoot);
+          const choices = parseFocus(options.focus, profileTopics(focused, { storeRoot }));
+          const perTopic = options.perTopic === undefined ? undefined : parsePerTopic(options.perTopic);
+          const focusResult = matchFocus(focused, { storeRoot }, choices, perTopic === undefined ? {} : { perTopic });
+          const focusAbstracts = options.includeAbstracts
+            ? new Map((readRaw({ storeRoot }) ?? []).map((s) => [s.sessionId, s.abstract ?? null]))
+            : undefined;
+          if (options.json) {
+            const toCandidate = (candidate: FocusCandidate): Record<string, unknown> => ({
+              ...toLeanFocusCandidate(candidate),
+              ...(focusAbstracts === undefined ? {} : { abstract: focusAbstracts.get(candidate.record.sessionId) ?? null }),
+            });
+            print(JSON.stringify(buildFocusResponse(focusResult, undefined, toCandidate)));
+            return;
+          }
+          print(formatFocusResult(focusResult, options.verbose === true, focusAbstracts));
+          return;
+        }
+        if (options.perTopic !== undefined) {
+          throw new ValidationError("--per-topic needs --focus.");
+        }
         const lens = parseLens(options.lens);
         const limit = parseMatchLimit(options.limit);
 
-        const content = loadProfileContent(options.profile, storeRoot);
-        const rawProfile = readRawProfile(content);
-        const serviceNames = catalogServiceNames({ storeRoot });
-        const serviceAliasIndex = buildServiceAliasIndex(serviceNames);
-        const resolvedProfile = resolveProfile(rawProfile, serviceAliasIndex);
+        const resolvedProfile = loadResolvedProfile(options.profile, storeRoot);
 
         const result = matchSessionsDetailed(resolvedProfile, { storeRoot }, { lens, limit });
 

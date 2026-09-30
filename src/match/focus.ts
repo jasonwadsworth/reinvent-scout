@@ -111,6 +111,11 @@ export function createFocusEngine(profile: ResolvedProfile, deps: CatalogStoreDe
   };
 }
 
+/** The profile's topics, without counting sessions: what a typed topic name is resolved against. */
+export function profileTopics(profile: ResolvedProfile, deps: CatalogStoreDeps): Topic[] {
+  return buildTopics(profile, knownServices(profile, requireCurrentIndex(deps)));
+}
+
 const ids = (topics: readonly Topic[]): string => topics.map(topic => topic.id).join(", ");
 
 function validate(topics: readonly Topic[], choices: readonly FocusChoice[], perTopic: number): Topic[] {
