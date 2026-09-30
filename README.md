@@ -254,7 +254,12 @@ between.
 it is, it's resolved through the exact same validation and catalog-name resolution `profile
 validate` uses. Options:
 
-- `--lens <lens>` -- `all` (default, no restriction) or `explain`, which lists introductory sessions
+- `--lens <lens>` -- `all` (default) lists the sessions about what your code is built on, at any level and in
+  any format: a session is admitted only if it names one of your profile's services or patterns in its
+  title or abstract (a tag or a listed service alone never admits one), ranked by how central those
+  concepts are to your code. Sponsored, news or launch, customer-story, modernization, industry and
+  off-topic agent sessions are not dropped but follow the rest, each with a `demoted` reason. Or
+  `explain`, which lists introductory sessions
   (level bands 100 and 200) that are about the services and patterns your profile evidences. A
   session is admitted only if it names the concept in its title or at least twice in its abstract,
   and candidates come round-robin across concepts, most-cited first, so the list covers your code
@@ -262,7 +267,7 @@ validate` uses. Options:
   also carries `uncovered`, the concepts no introductory session is about, each with a reason. A
   session with no level on record is excluded. `fix` selects sessions addressing evidenced gaps;
   `next-level` selects sessions about supported migration destinations. These two lenses have no
-  level or format preference and leave `all` unchanged.
+  level or format preference.
 - `--limit <n>` -- cap the number of candidates (default 30, maximum 100).
 - `--include-abstracts` -- include each session's abstract text in the output.
 - `--json` -- machine-readable output: an array of resolved sessions, each with its own `score`

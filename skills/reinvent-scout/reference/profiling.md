@@ -418,6 +418,31 @@ share a name. Tell the user which parts of their code the catalog has no introdu
 padding the list with weaker sessions; an empty `candidates` with a full `uncovered` is a valid
 answer (a codebase built on tools the conference does not cover).
 
+## The all lens
+
+`lens: "all"` (the default) answers "which sessions are about the technologies and architecture this code
+is built on?". It works from the same concepts as the explain lens (core services, supporting ones at half
+weight, and non-gap patterns; platform services are not concepts) and needs no gap or path patterns. It lists
+sessions of any level and format, so it does not ask for an introduction.
+
+**Admission.** A session is about a concept when its title names it, or its abstract names it at least twice
+outside an enumeration of names, or once outside one when the session also lists the service or carries a
+matching tag. A tag or a listed service alone never admits a session. `agentic` and `genai-single-call` are
+admitted only by a title that names them. A profile with no concept a session names gets nothing: `all` does
+not fall back to shared wording, your `interests` or your `intents`. An "AWS Partner:" bootcamp and a
+certification or exam session are never returned.
+
+**Demotion.** A sponsored session, a feature-news or launch session, a customer story, a modernization or
+migration session, a session made for an industry, and a session titled about agents or generative AI when
+your profile has no `agentic` or `genai-single-call` pattern are returned after every other session, each
+with a `demoted` reason, because an experienced reader may still want them.
+
+**Order.** A title that names a concept comes before an abstract that only does; then the summed centrality of
+the concepts (the distinct files you cited, so cite the files that really use each one), then the number of
+concepts, then relevance to the whole profile. No concept is the main subject of more than three of the first ten
+while four or more concepts have sessions; what that holds back follows the ten in order. Each candidate's
+`why` names the concepts it was admitted for and quotes the sentence that says so.
+
 ## Supported evidence lenses
 
 Fix is a curated starting vocabulary spanning the [six Well-Architected pillars](https://docs.aws.amazon.com/wellarchitected/latest/framework/the-pillars-of-the-framework.html).

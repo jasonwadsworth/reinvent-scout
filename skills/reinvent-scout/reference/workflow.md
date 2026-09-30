@@ -89,12 +89,13 @@ offending entry -- fix the *profile object* and call `validate_profile` again wi
 ## 5. `match_sessions`
 
 Arguments: `{ "profile": <profile object>, "lens"?: "all" | "explain" | "fix" | "next-level", "limit"?: number }`.
-`lens` defaults to `"all"` (no restriction). `limit` defaults to 25 and is silently capped at 50 --
+`lens` defaults to `"all"`: the sessions about the services and patterns the profile's code is built on,
+at any level and in any format (see "The all lens" in `reference/profiling.md`). `limit` defaults to 25 and is silently capped at 50 --
 asking for more never errors, it just gets the largest sensible set. Fix requires an exact supported
 cited gap and a remediation signal; Next-level requires a cited source pattern, a destination
 signal, and a mention of the source side. Both need the session to fit the profile's stack (see
 `reference/profiling.md`) and have neutral level/format preferences. Unknown patterns or an alien
-catalog return no candidates. Ordinary profile matches rank already eligible sessions only. Under
+catalog return no candidates. Under
 Fix and Next-level, each activated rule gets its own ranked list and the lists are interleaved, so
 every cited rule with an admitted session appears near the top rather than being buried by general
 relevance.
@@ -153,8 +154,8 @@ Each candidate's `why` is `{ "summary": string, "yourCode": [{ "repo", "file", "
 built from the profile and the session's own title or abstract (never model text). `summary` is one
 sentence naming what the candidate covers: under `fix` the gap and its note (`Covers your
 gap-no-dlq: ...`), under `next-level` the source pattern and destination, under `explain` the
-concept and how the code uses it, under `all` the one or two strongest services or patterns
-matched. `yourCode` lists up to three deduped citations in profile order; `more` counts the ones
+concept and how the code uses it, under `all` the one or two concepts of the profile the session was admitted for, most about first
+(`Matches your AWS Lambda (...) and serverless`), with `; ranked lower: sponsored session` when it is demoted. `yourCode` lists up to three deduped citations in profile order; `more` counts the ones
 left out and is absent when none were. `sessionSays` is the abstract sentence that says it (the title only when the abstract has none),
 trimmed to about 160 characters, and is absent (not empty) when nothing could be quoted. Lead with
 `why.summary` and `sessionSays` when presenting, and cite `yourCode`.
@@ -165,10 +166,12 @@ candidates left out (`truncated`). The CLI's `--verbose` flag shows every reason
 human table (they are always in `--json`); it has no effect on `--json`.
 
 Each `reasons` entry is `{ "kind": ..., "detail": string, "weight": number, "evidence": string }`.
-`kind` is one of `service`, `topic`, `areaOfInterest`, `text`, `level`, `format`, `pillarGap` or
-`migrationPath` (the last two only under the Fix and Next-level lenses, and they also carry
-`profileEvidence`) or `explainsConcept` (Explain lens only: the concept the session explains and
-the profile files that use it, also carried as `profileEvidence`). `weight` is
+`kind` is one of `service`, `topic`, `areaOfInterest`, `text`, `level`, `format` (the ranking reasons of
+the Fix and Next-level lenses), `pillarGap` or `migrationPath` (the Fix and Next-level lenses only, and
+they also carry `profileEvidence`), `explainsConcept` (Explain lens only: the concept the session
+explains and the profile files that use it, also carried as `profileEvidence`) or `matchesConcept`
+(All lens only: the concept the session is about, the phrase that says so and the files that use it,
+also carried as `profileEvidence`; `why` already says it, so MCP drops it first when the response is tight). `weight` is
 that reason's own contribution to `score` (every reason's `weight` sums to `score` exactly).
 `evidence` is the specific catalog value that matched -- a service name, a topic, or the matched
 query terms -- not a file path; when presenting a service reason to the user, the file citation
@@ -179,6 +182,13 @@ Under `explain`, the response also has `uncovered` (always present, usually `[]`
 concepts that no introductory session is about, as `{ "concept": "Amazon Cognito", "kind": "service", "reason": ... }` (`kind` is `service` or `pattern`).
 Report them to the user as parts of their code the catalog has no introduction for; see "The explain
 lens" in `reference/profiling.md`. Candidates come round-robin across concepts, not by score.
+
+Under `all`, a candidate that is sponsored, news or launch, a customer story, modernization or
+migration, made for an industry, or about agents or generative AI when the profile has no such pattern
+carries `demoted` (a short reason, absent otherwise). Every demoted candidate follows every other one. The
+order is: title before abstract, then how central the concepts are to the code, then how many there are,
+then relevance; no concept is the main subject of more than three of the first ten while four or more
+concepts have sessions.
 
 Fix and Next-level results are ordered by interleaving the rules' ranked lists, not by score, so
 scores can appear out of order.
