@@ -78,6 +78,21 @@ describe("profile map and match --focus", () => {
     expect(text).toContain("  Why: Covers your gap-no-dlq");
   });
 
+  it("notes the later choice a listed session also matches", async () => {
+    const shared = [...CATALOG, session("LAM201", "Lambda and DynamoDB together")];
+    writeCatalog({ raw: shared, index: shared.map(buildIndexRecord), meta: { schemaVersion: CURRENT_SCHEMA_VERSION, eventId: "reinvent2026", syncedAt: 1, totalCount: shared.length, count: shared.length, includedAbstracts: true, timezone: null } }, { storeRoot: home.path });
+    const { text } = await run(["match", "--profile", file, "--focus", "Lambda:deepen,DynamoDB:deepen"]);
+    expect(text).toContain("  Also matches: service:Amazon DynamoDB");
+  });
+
+  it("says in the map that a next step was already taken, and what it is skipped for", async () => {
+    writeFileSync(file, JSON.stringify({ ...PROFILE, patterns: [...PROFILE.patterns, { name: "genai-single-call", evidence: [cite("g.ts", 1)] }, { name: "agentic", evidence: [cite("a.ts", 1)] }] }));
+    const { text } = await run(["profile", "map", "--profile", file]);
+    expect(text).toContain("Next steps:\n");
+    expect(text).toContain("  path:genai-single-call");
+    expect(text).toContain("    skipped: profile already has agentic");
+  });
+
   it("says why a choice has no sessions", async () => {
     const { text } = await run(["match", "--profile", file, "--focus", "pattern:serverless:understand"]);
     expect(text).toContain("Understand pattern:serverless -- 0 of 0 sessions");
@@ -100,7 +115,7 @@ describe("profile map and match --focus", () => {
       [["--focus", "DynamoDB:improve"], /does not apply/],
       [["--focus", "DynamoDB:deepen", "--lens", "all"], /cannot be used together/],
       [["--per-topic", "3"], /needs --focus/],
-      [["--focus", "DynamoDB:deepen", "--per-topic", "11"], /from 1 to 10/],
+      [["--focus", "DynamoDB:deepen", "--per-topic", "11"], /--per-topic must be a whole number from 1 to 10/],
     ];
     for (const [args, message] of cases) {
       const { text, exitCode } = await run(["match", "--profile", file, ...args]);

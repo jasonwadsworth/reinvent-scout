@@ -38,6 +38,7 @@ const CATALOG: Session[] = [
   session("PIT300", "Lambda at scale (sponsored by Acme)", { level: "300 - Advanced" }),
   session("SPN300", "Dead-letter queues, the sponsored edition (sponsored by Acme)", { level: "300 - Advanced", services: ["AWS Lambda", "Amazon DynamoDB"], abstract: "Recover with dead-letter queues and redrive." }),
   session("PAS300", "Reliability patterns", { level: "300 - Advanced", services: ["AWS Lambda", "Amazon DynamoDB"], abstract: "Use dead-letter queues and redrive policies when a batch fails." }),
+  session("TST300", "Automated testing for Lambda applications", { level: "300 - Advanced", services: ["AWS Lambda", "Amazon DynamoDB"] }),
   session("ABS300", "Data at scale", { level: "300 - Advanced", services: ["Amazon DynamoDB"], abstract: "You will use DynamoDB tables. DynamoDB streams too." }),
 ];
 
@@ -58,6 +59,17 @@ describe("mapProfile and matchFocus", () => {
       expect(map.patterns.map(topic => topic.id).sort()).toEqual(["pattern:event-driven", "pattern:serverless"]);
       expect(map.gaps.map(topic => topic.id)).toEqual(["gap:gap-no-dlq"]);
       expect(map.nextSteps.map(topic => topic.id)).toEqual(["path:serverless"]);
+    });
+
+    it("orders services and patterns by how many files cite them, core services before supporting ones, and lists a pattern once", () => {
+      seed();
+      const p = base();
+      p.services.push({ name: "Amazon Polly", catalogName: "Amazon Polly", role: "supporting", evidence: [cite("p1.ts"), cite("p2.ts"), cite("p3.ts"), cite("p4.ts"), cite("p5.ts")] });
+      p.patterns.find(pattern => pattern.name === "event-driven")!.evidence.push(cite("e1.ts"), cite("e2.ts"));
+      p.patterns.push({ name: "Serverless", evidence: [cite("again.ts")] });
+      const map = mapProfile(p, deps());
+      expect(map.services.map(topic => topic.label)).toEqual(["AWS Lambda", "Amazon DynamoDB", "Amazon Polly", "Amazon Simple Queue Service"]);
+      expect(map.patterns.map(topic => topic.id)).toEqual(["pattern:event-driven", "pattern:serverless"]);
     });
 
     it("describes a topic: label, one-sentence note, up to three places and how many more, and the goals that apply", () => {
@@ -123,7 +135,7 @@ describe("mapProfile and matchFocus", () => {
     it("deepen: sessions of any level admitted by that concept, leaving out the demoted ones", () => {
       seed();
       const [entry] = matchFocus(base(), deps(), [{ topic: "service:AWS Lambda", goal: "deepen" }]).results;
-      expect(codes(entry!).sort()).toEqual(["LAM200", "LAM201"]);
+      expect(codes(entry!).sort()).toEqual(["LAM200", "LAM201", "TST300"]);
       expect(codes(entry!)).not.toContain("DDB300");
       expect(codes(entry!)).not.toContain("PIT300");
     });
@@ -154,6 +166,15 @@ describe("mapProfile and matchFocus", () => {
       const [entry] = matchFocus(base(), deps(), [{ topic: "gap:gap-no-dlq", goal: "improve" }]).results;
       expect(codes(entry!)).not.toContain("SPN300");
       expect(entry!.total).toBe(1);
+    });
+
+    it("improve a gap: a session another gap's rule admitted is not listed under it", () => {
+      seed();
+      const p = base();
+      p.patterns.push({ name: "gap-no-tests", evidence: [cite("t.ts")] });
+      const { results } = matchFocus(p, deps(), [{ topic: "gap:gap-no-dlq", goal: "improve" }, { topic: "gap:gap-no-tests", goal: "improve" }]);
+      expect(codes(results[0]!)).toEqual(["DLQ300"]);
+      expect(codes(results[1]!)).toEqual(["TST300"]);
     });
 
     it("improve a path: only that next-level rule's sessions", () => {
@@ -196,6 +217,11 @@ describe("mapProfile and matchFocus", () => {
       seed();
       expect(() => matchFocus(base(), deps(), [{ topic: "service:Nope", goal: "deepen" }])).toThrow(ValidationError);
       expect(() => matchFocus(base(), deps(), [{ topic: "service:Nope", goal: "deepen" }])).toThrow(/service:Nope.*service:AWS Lambda.*gap:gap-no-dlq/s);
+    });
+
+    it("refuses a goal that is not one of the three", () => {
+      seed();
+      expect(() => matchFocus(base(), deps(), [{ topic: "service:AWS Lambda", goal: "dance" as never }])).toThrow(/Unknown goal "dance"/);
     });
 
     it("refuses a goal that does not apply to the topic", () => {
