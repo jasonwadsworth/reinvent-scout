@@ -435,6 +435,19 @@ describe("off-stack technologies", () => {
     expect(reason("Serverless containers on AWS Fargate")).toBe("about AWS Fargate, which this code does not use");
   });
 
+  it("names a service by its full name or short form, and by its bare name only when that is a product word", () => {
+    const cat = ["Amazon DynamoDB", "AWS Transform", "AWS Command Line Interface (AWS CLI)", "AWS Context Engine", "Kiro", "Amazon Simple Queue Service (Amazon SQS)"];
+    const t = offStackTopics(profile([], []), cat);
+    const named = (title: string) => t.filter(topic => topic.phrases.some(phrase => phrase.test(title))).map(topic => topic.label);
+    expect(named("Fast DynamoDB bulk operations")).toEqual(["Amazon DynamoDB"]);
+    expect(named("Amazon SQS patterns")).toEqual(["Amazon Simple Queue Service"]);
+    expect(named("Spec-driven development with Kiro")).toEqual(["Kiro"]);
+    expect(named("Transform your SaaS for the agentic era")).toEqual([]);
+    expect(named("CLI Agent Orchestrator")).toEqual([]);
+    expect(named("Context is everything")).toEqual([]);
+    expect(named("AWS Transform for mainframes")).toEqual(["AWS Transform"]);
+  });
+
   it("leaves a title that names only what the profile uses, or no technology", () => {
     expect(reason("Lambda and Kinesis in practice")).toBeUndefined();
     expect(reason("Serverless at scale")).toBeUndefined();
