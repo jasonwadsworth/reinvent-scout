@@ -49,7 +49,7 @@ const SPONSORED = /\(sponsored by /i;
 /** A news or recap session lists changes; it does not teach the technology. */
 const NEWS = /\bwhat[’']s new\b|\byear in review\b|\bthe latest\b|\bannouncements?\b|\brecap\b/i;
 /** What a title says when the session is about building or designing the thing, not applying it. */
-const BUILD_CUE = /\b(?:build(?:ing)?|architect\w*|patterns?|best practices|design(?:ing)?|getting started|introduction|fundamentals|basics|101|first|where do|how to|what is|guide)\b/i;
+const BUILD_CUE = /\b(?:build(?:ing)?|architect\w*|patterns?|best practices|design(?:ing)?|getting started|introduction|fundamentals|basics|101|where do|how to|what is)\b/i;
 /** A title that reads as an introduction ranks ahead of one that does not. */
 const INTRO_CUE = /\b(?:getting started|introduction|intro to|fundamentals|basics|101|beginners?|from scratch|your first|first \w+ application|in under \d+ minutes)\b/i;
 

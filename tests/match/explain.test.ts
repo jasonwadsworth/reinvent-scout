@@ -175,6 +175,8 @@ describe("matchConcepts", () => {
     expect(strengths(agentic, { title: "Where do agents fit?" })).toEqual([["agentic", 3, "agents"]]);
     expect(strengths(agentic, { title: "AWS AI agents accelerate SAP migration" })).toEqual([]);
     expect(strengths(agentic, { title: "Agentic modernization with United Airlines" })).toEqual([]);
+    expect(strengths(agentic, { title: "Govern AI agents by hacking one first" })).toEqual([]);
+    expect(strengths(agentic, { title: "A guide to agents" })).toEqual([]);
     expect(strengths(agentic, { title: "Data pipelines" }, abstract)).toEqual([]);
     const genai = buildConcepts(profile([], [{ name: "genai-single-call" }])).concepts;
     expect(strengths(genai, { title: "Data pipelines" }, "Generative AI is here. Use generative AI wisely.")).toEqual([]);
