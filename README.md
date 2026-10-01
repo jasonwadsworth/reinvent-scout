@@ -225,8 +225,8 @@ reinvent-scout match --profile my-profile.json
 Finds the sessions about what your code is built on: a session is admitted only when it names one of
 the profile's services or patterns (or one of its stated `interests`) in its title or abstract, and candidates
 are ranked by how central those concepts are to your code. Each candidate carries a `why` (the concepts it
-matches, where your code uses them, and the session's own sentence that says so), a `score` and `reasons`,
-plus every scheduled `offerings` (day, time, venue, room), so you (or an agent) can see exactly why a session
+matches, where your code uses them, and the session's own sentence that says so, preferring one about what you will learn, build or see over the abstract's opener), a `score` and `reasons`,
+plus every scheduled `offerings` (day, time and end time when the catalog has a length, venue, room; overlap and "can I attend both" are `plan_schedule` questions, never guessed from the times), so you (or an agent) can see exactly why a session
 was suggested and when to actually attend it -- this is real output for a serverless profile against the real
 catalog (`--verbose` adds the reasons):
 
@@ -304,7 +304,7 @@ how many sessions each would return (0 is a dead end):
 `match --focus` takes one to six `<topic>:<goal>` pairs (a bare label such as `DynamoDB` or `ECS` works when only one topic that supports the goal
 has it) and lists up to `--per-topic` (default 5, at most 10) sessions per choice, each with its `why`. A session listed under an earlier choice is
 left out of later ones and notes `Also matches:`; one an earlier choice ranked past its cap stays available to a later choice, and a choice
-emptied by earlier ones says which. A choice with no sessions says why. The text map prints each topic's label and id, the destination of a next
+emptied by earlier ones says which. A choice with no sessions says why. The text map prints each topic's label and id, a "Not shown" line naming the platform services (S3, KMS, CDK, CloudWatch, ...) the profile has and the map leaves out by design (`omittedPlatformServices` in the JSON), the destination of a next
 step, and one line per goal for the topics with no sessions (with the closest 300-level session where there is one) instead of a zero on every
 topic. `--focus` replaces `--lens` and `--limit` (use `--per-topic`); `--json` prints the same object the MCP
 `match_sessions` tool returns for a `focus`, and `map_profile` returns the map.
@@ -499,7 +499,7 @@ CLI. It never writes anything but protocol traffic to its stdout; every diagnost
 Seven tools are registered, and every one of them holds its response to a 30 KB budget -- the
 catalog and the attendee's own data stay local; only a bounded summary ever reaches agent context:
 
-- `status` -- signed-in state and local catalog state. Call this first.
+- `status` -- signed-in state and local catalog state. Call this first. Not being signed in is a state, not an error: mapping and matching need only a synced catalog; sign in only to sync or to use the schedule.
 - `catalog_sync` -- returns counts only, never session data.
 - `validate_profile` -- resolves an agent-authored profile's service names against the catalog.
 - `match_sessions` -- ranks the catalog against a resolved profile. At any limit or profile

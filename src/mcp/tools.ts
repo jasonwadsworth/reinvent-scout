@@ -63,6 +63,11 @@ function errorResult(message: string): ToolTextResult {
   return { content: [{ type: "text", text: message }], isError: true };
 }
 
+/** What `status` says when nobody is signed in: not a failure, with when signing in is needed and that the agent can do it itself. */
+const SIGN_IN_HINT =
+  "Not signed in. Mapping and matching need only a synced catalog. Sign in only to run `catalog_sync` or to use the schedule, favorite and reservation tools: " +
+  "run `reinvent-scout auth login` yourself in the shell (the skill can run it for you), then try again.";
+
 /**
  * Amendment 3 (lead review): the skill runs in a shell, so the agent can run `auth login` itself
  * rather than telling a human to go to a terminal -- this exact instruction is asserted again by
@@ -130,25 +135,26 @@ function registerStatusTool(server: McpServer, deps: McpToolDeps): void {
     "status",
     {
       description:
-        "Report whether a session is signed in and the local catalog's state. Call this first.",
+        "Report whether a session is signed in and the local catalog's state. Call this first. Not being signed in is not an error: with a catalog present you can profile, map and match without signing in; " +
+        "sign in only to sync the catalog or touch the schedule.",
       inputSchema: z.strictObject({}),
     },
     async () => {
       const storeRoot = deps.resolveStoreRoot();
       const tokenState = readTokenStore({ storeRoot });
+      const now = deps.now ?? Date.now;
+      const catalog = summarizeCatalogState(getCatalogState({ storeRoot, now }));
 
+      // Browsing (profile, map, match) needs only a synced catalog, so no sign-in is a state to report, with what signing in is for.
       if (tokenState.status === "absent" || tokenState.status === "corrupt") {
-        return errorResult(NO_SESSION_MESSAGE);
+        return textResult({ signedIn: false, catalog, signIn: SIGN_IN_HINT });
       }
 
-      const now = deps.now ?? Date.now;
       const expiresAt = tokenState.tokens.obtainedAt + tokenState.tokens.expiresIn * 1000;
-      const catalogState = getCatalogState({ storeRoot, now });
-
       return textResult({
         signedIn: true,
         accessTokenExpiresAt: new Date(expiresAt).toISOString(),
-        catalog: summarizeCatalogState(catalogState),
+        catalog,
       });
     },
   );

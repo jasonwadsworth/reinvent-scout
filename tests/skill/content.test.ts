@@ -1,4 +1,6 @@
 import { PLATFORM_SERVICES } from "../../src/match/stack-fit.js";
+import { patternPhrase } from "../../src/match/concepts.js";
+import { LENS_RULE_SELECTORS } from "../../src/match/lens-signals.js";
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -403,6 +405,54 @@ describe("reference/taxonomy.md vocabulary", () => {
   });
 });
 
+describe("the sessionSays quote", () => {
+  it("documents that a sentence about what the attendee will do is preferred, with the first match as the fallback", () => {
+    const text = workflowMd.replace(/\s+/g, " ");
+    for (const expected of ["one that says what the attendee will learn, build or see", "is preferred over a marketing opener", "the first sentence that names it is the fallback"]) expect(text, expected).toContain(expected);
+    expect(readFileSync(join(here, "..", "..", "README.md"), "utf8").replace(/\s+/g, " ")).toContain("preferring one about what you will learn, build or see over the abstract's opener");
+  });
+});
+
+describe("offering end times and conflicts", () => {
+  it("tells the agent to use plan_schedule for any overlap question and never infer it from the times", () => {
+    const flow = extractSection(skillMd, "## The flow").replace(/\s+/g, " ");
+    expect(flow).toContain("Never judge yourself whether two sessions overlap or whether the user can attend both: that is a `plan_schedule` question, whatever the times look like, and `plan_schedule` needs a sign-in");
+    expect(flow).toContain("with its `endTime` when it has one");
+    const text = workflowMd.replace(/\s+/g, " ");
+    for (const expected of ["\"startTime\": \"10:30\", \"endTime\": \"11:30\"", "An offering also has `endTime` (`startTime` plus the catalog's length", "is the first thing left off, before ranking reasons and before any candidate", "which checks time overlap (not travel or seats)", "(it needs a sign-in)", "Never infer that two sittings overlap or do not, or answer \"can I attend both\", from these times", "call `plan_schedule` with the offerings"]) {
+      expect(text, expected).toContain(expected);
+    }
+    expect(readFileSync(join(here, "..", "..", "README.md"), "utf8").replace(/\s+/g, " ")).toContain("overlap and \"can I attend both\" are `plan_schedule` questions, never guessed from the times");
+  });
+});
+
+describe("platform services the map leaves out", () => {
+  it("tells the agent to say which platform services are not shown, in the skill, workflow.md and the readme", () => {
+    expect(extractSection(skillMd, "## The flow").replace(/\s+/g, " ")).toContain("when `omittedPlatformServices` is not empty, the one line saying which platform services are not shown and why");
+    const text = workflowMd.replace(/\s+/g, " ");
+    for (const expected of ["\"omittedPlatformServices\": [...]", "`omittedPlatformServices` names the ones this profile has by short name", "Not shown: S3, KMS (platform services nearly every workload uses; they don't narrow sessions)", "Supporting services that are not platform services (SQS, WAF, SNS) stay listed"]) {
+      expect(text, expected).toContain(expected);
+    }
+    expect(readFileSync(join(here, "..", "..", "README.md"), "utf8").replace(/\s+/g, " ")).toContain("a \"Not shown\" line naming the platform services");
+  });
+});
+
+describe("sign-in is not needed to browse", () => {
+  const flow = (): string => extractSection(skillMd, "## The flow").replace(/\s+/g, " ");
+  it("tells the agent to profile, map and match without signing in when the catalog is present, and to sign in only to sync or touch the schedule", () => {
+    for (const expected of ["Not being signed in is not an error", "returns `signedIn: false` with the catalog state", "Browsing needs no sign-in", "or `\"stale\"` with `reason: \"age\"`", "`\"stale\"` for `reason: \"schema-version\"`", "call `catalog_sync` with `reindex: true`: it rebuilds the local index from what is already stored and needs no sign-in", "(steps 6 and 7)", "go straight to profiling, mapping and matching without signing in",
+      "Sign in only when you need a real fetch from the catalog sync (step 2) or the schedule, favorite, reservation and `plan_schedule` tools (steps 6 and 7)", "run `reinvent-scout auth login` yourself in the shell"]) {
+      expect(flow(), expected).toContain(expected);
+    }
+  });
+  it("documents status's signedIn false result and which tools need no sign-in in workflow.md", () => {
+    const text = workflowMd.replace(/\s+/g, " ");
+    for (const expected of ["`status` is not an error: it returns `{ \"signedIn\": false,", "no `accessTokenExpiresAt`", "`validate_profile`, `map_profile`, `match_sessions` and `list_filters` do not need a sign-in", "only for `catalog_sync` and the schedule, favorite and reservation tools"]) {
+      expect(text, expected).toContain(expected);
+    }
+  });
+});
+
 describe("SKILL.md auth login instructions", () => {
   it("tells the agent how to run auth login itself rather than deferring to the user", () => {
     expect(skillMd).toMatch(/run\s+`reinvent-scout auth login`\s+yourself/);
@@ -451,7 +501,7 @@ describe("reference file existence", () => {
 });
 
 describe("reference/profiling.md worked example", () => {
-  it("validates, every service resolves against the catalog, and every topic-spelled pattern is a real catalog topic", () => {
+  it("validates, every service resolves against the catalog, and every pattern it records is matchable", () => {
     // Mirrors tests/docs.test.ts's own README-example check -- the same "the worked example must
     // actually work, not just read plausibly" guard, applied to profiling.md's own example instead.
     const profileBlocks = [...profilingMd.matchAll(/```json\n([\s\S]*?)```/g)]
@@ -474,14 +524,50 @@ describe("reference/profiling.md worked example", () => {
     const resolved = resolveProfile(profileBlocks[0], serviceAliasIndex);
     expect(resolved.unresolvedServices).toEqual([]);
 
-    // "Security & Identity" is deliberately spelled to match a real catalog Topic exactly (see
-    // profiling.md's own "Naming patterns" rule) -- pin that it actually is one, against the same
-    // real-catalog vocabulary reference/taxonomy.md's own Topics list is checked against, not just
-    // the small 61-session fixture.
+    // Every pattern the worked example records is one the lenses and the map can match.
     const patterns = (profileBlocks[0] as { patterns: Array<{ name: string }> }).patterns;
-    const topicSpelledPattern = patterns.find((p) => p.name === "Security & Identity");
-    expect(topicSpelledPattern).toBeDefined();
-    expect(vocabulary.topics).toContain("Security & Identity");
+    expect(patterns.length).toBeGreaterThan(0);
+    for (const pattern of patterns) expect(isMatchablePattern(pattern.name), pattern.name).toBe(true);
+  });
+});
+
+/** A pattern name the lenses and the map can use: it has a phrase entry in `concepts.ts`, or it is a Fix gap or Next-level source (or `dead-code`). */
+function isMatchablePattern(name: string): boolean {
+  return patternPhrase(name) !== undefined || LENS_RULE_SELECTORS.some((rule) => rule.source === name.toLowerCase()) || name.toLowerCase() === "dead-code";
+}
+
+/** Every pattern name a profiling guide recommends: the starting vocabulary, the curated phrase list, and each pattern its worked example records. */
+function recommendedPatternNames(guide: string): string[] {
+  // Every backticked token, whatever its spelling: a topic-spelled name ("Security & Identity") is exactly the dead end this guards against.
+  const names = (text: string): string[] => [...text.matchAll(/`([^`]+)`/g)].map((match) => match[1]!);
+  const vocabulary = /starting vocabulary[^\n]*\n\n([\s\S]*?)\n\n/.exec(guide)?.[1] ?? "";
+  const curated = /Patterns match through a curated phrase list:([\s\S]*?)\./.exec(guide)?.[1] ?? "";
+  const example = [...guide.matchAll(/"patterns": \[([\s\S]*?)\n  \]/g)].flatMap((match) => [...match[1]!.matchAll(/"name": "([^"]+)"/g)].map((entry) => entry[1]!));
+  return [...new Set([...names(vocabulary), ...names(curated), ...example])];
+}
+
+describe("profiling.md's recommended pattern names", () => {
+  it("are all names the lenses and the map can match", () => {
+    const recommended = recommendedPatternNames(profilingMd);
+    // Sanity: the extraction finds the three places, or it would pass vacuously.
+    for (const expected of ["serverless", "event-driven", "multi-account", "multi-tenant", "iac-cdk", "data-lake", "gap-no-dlq"]) expect(recommended, expected).toContain(expected);
+    expect(recommended.filter((name) => !isMatchablePattern(name))).toEqual([]);
+  });
+
+  it("flags a recommended name the lenses cannot match", () => {
+    const guide = "Use this starting vocabulary:\n\n`serverless`, `iac-terraform`.\n\nNext.\n\nPatterns match through a curated phrase list: `serverless`, `data-lake`.";
+    expect(recommendedPatternNames(guide).filter((name) => !isMatchablePattern(name))).toEqual(["iac-terraform"]);
+  });
+
+  it("flags a recommended name that is not kebab-case, such as a catalog topic's spelling", () => {
+    const guide = "Use this starting vocabulary:\n\n`serverless`, `Security & Identity`.\n\nNext.";
+    expect(recommendedPatternNames(guide).filter((name) => !isMatchablePattern(name))).toEqual(["Security & Identity"]);
+  });
+
+  it("does not tell the profiler to spell a pattern with a catalog topic's exact spelling", () => {
+    expect(profilingMd).not.toContain("exact spelling");
+    expect(profilingMd).not.toContain("Security & Identity\" is a pattern");
+    expect(profilingMd).toContain("A user's topical interests belong in `interests`");
   });
 });
 

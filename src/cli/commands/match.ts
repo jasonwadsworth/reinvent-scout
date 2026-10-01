@@ -116,7 +116,8 @@ function formatCandidateLine(candidate: MatchCandidate): string {
 function formatOfferingLine(offering: MatchCandidate["offerings"][number]): string {
   const parts = [offering.startDate ?? "unscheduled"];
   if (offering.startTime !== null) {
-    parts.push(offering.startTime);
+    // The start with its end when the catalog has a length, so a reader never has to guess whether two sittings overlap.
+    parts.push(offering.endTime === undefined ? offering.startTime : `${offering.startTime}-${offering.endTime}${offering.endDate === undefined ? "" : ` (ends ${offering.endDate})`}`);
   }
   if (offering.venue !== null) {
     parts.push(offering.venue);

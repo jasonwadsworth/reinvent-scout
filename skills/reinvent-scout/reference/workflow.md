@@ -17,14 +17,16 @@ Arguments: none.
 }
 ```
 
+With no signed-in session (or unreadable stored tokens) `status` is not an error: it returns `{ "signedIn": false, "catalog": { ... }, "signIn": "Not signed in. ..." }`, with no `accessTokenExpiresAt`.
+Browsing needs only a synced catalog: `validate_profile`, `map_profile`, `match_sessions` and `list_filters` do not need a sign-in. Sign in (run `reinvent-scout auth login` yourself) only for
+`catalog_sync` and the schedule, favorite and reservation tools.
+
 `catalog.status` is one of:
 
 - `"missing"` -- nothing has been synced yet; call `catalog_sync`.
 - `"stale"` -- `{ "status": "stale", "reason": "schema-version" | "age" | "corrupt", "syncedAt"?: number }`; call `catalog_sync` (`reindex: true` is enough for `"schema-version"` alone -- see `catalog_sync` below).
 - `"fresh"` -- `{ "status": "fresh", "syncedAt": number, "count": number }`; no sync needed.
 
-If no session is stored, `status` itself returns `isError: true` with the same message named in
-"Error handling" below.
 
 ## 2. `catalog_sync`
 
@@ -89,10 +91,11 @@ offending entry -- fix the *profile object* and call `validate_profile` again wi
 ## 4a. `map_profile`
 
 Arguments: `{ "profile": <the profile object>, "preferences"?: <preferences, as in `match_sessions`> }`. Returns what the profile found, grouped, for the user to choose from:
-`{ "services": [...], "patterns": [...], "gaps": [...], "nextSteps": [...] }`. Every topic is
+`{ "services": [...], "patterns": [...], "gaps": [...], "nextSteps": [...], "omittedPlatformServices": [...] }`. Every topic is
 `{ "id", "label", "note"?, "evidence": [{ "repo", "file", "line"? }], "more"?, "pillar"?, "skipped"?, "goals": [{ "goal", "sessions" }] }`.
 `id` is stable (`service:Amazon DynamoDB`, `pattern:event-driven`, `gap:gap-no-dlq`, `path:genai-single-call`) and is what
-`match_sessions`' `focus` takes. Services list core before supporting (platform services are left out); a gap is a supported
+`match_sessions`' `focus` takes. Services list core before supporting. Platform services (S3, KMS, CDK, CloudWatch, IAM and the like: what nearly every workload uses, so they do not narrow sessions) are left out by design, and
+`omittedPlatformServices` names the ones this profile has by short name (`["S3", "KMS"]`, empty when none); the text map says "Not shown: S3, KMS (platform services nearly every workload uses; they don't narrow sessions)". Supporting services that are not platform services (SQS, WAF, SNS) stay listed; a gap is a supported
 gap pattern with its Well-Architected `pillar`; a next step is a migration path the profile activates, or one it skipped because it
 already has the destination (`skipped` says why, and it has no goals). The goals are `understand` (introductory sessions, level 100/200),
 `deepen` (sessions at any level whose title names the topic, leaving out the ones the All lens demotes) for services and patterns, and `improve` for a gap or a next step; `sessions` counts what that
@@ -174,7 +177,7 @@ relevance.
         { "kind": "service", "detail": "Uses Amazon Redshift, which this session covers.", "weight": 50, "evidence": "Amazon Redshift" }
       ],
       "offerings": [
-        { "sessionId": "1780441461150001GGoc", "abbreviation": "ANT301", "startDate": "2026-11-30", "startTime": "10:30", "venue": "MGM Grand", "room": "Level 3 | Chairman's 363 | Content Hub | White Theater" }
+        { "sessionId": "1780441461150001GGoc", "abbreviation": "ANT301", "startDate": "2026-11-30", "startTime": "10:30", "endTime": "11:30", "venue": "MGM Grand", "room": "Level 3 | Chairman's 363 | Content Hub | White Theater" }
       ]
     }
   ],
@@ -203,7 +206,10 @@ otherwise exceed the size budget:
 `code` is a session's base code with any repeat suffix removed -- the stable id across every
 sitting of the same talk. `offerings` lists every scheduled sitting (a repeat conference talk given
 twice has two), each with its own date, time, venue and room; use the `sessionId` from the specific
-offering you mean when calling `favorite_sessions`, not `code`.
+offering you mean when calling `favorite_sessions`, not `code`. An offering also has `endTime` (`startTime` plus the catalog's length, the same local time; `endDate` too when it runs past midnight) when the catalog has a length and the sitting a start time, and no
+`endTime` otherwise. Under a tight response budget `endTime` is the first thing left off, before ranking reasons and before any candidate, so its absence says nothing about the session. It is for showing when a sitting ends.
+**Never infer that two sittings overlap or do not, or answer "can I attend both", from these times:** call `plan_schedule` with the offerings (it needs a sign-in), which checks time overlap (not travel or seats), and
+report what it says.
 
 Each candidate's `why` is `{ "summary": string, "yourCode": [{ "repo", "file", "line"? }], "more"?: number, "sessionSays"?: string }`,
 built from the profile and the session's own title or abstract (never model text). `summary` is one
@@ -211,8 +217,8 @@ sentence naming what the candidate covers: under `fix` the gap and its note (`Co
 gap-no-dlq: ...`), under `next-level` the source pattern and destination, under `explain` the
 concept and how the code uses it, under `all` the one or two concepts of the profile the session was admitted for, most about first
 (`Matches your AWS Lambda (...) and serverless`), with `; ranked lower: sponsored session` when it is demoted. `yourCode` lists up to three deduped citations in profile order; `more` counts the ones
-left out and is absent when none were. `sessionSays` is the abstract sentence that says it (the title only when the abstract has none),
-trimmed to about 160 characters, and is absent (not empty) when nothing could be quoted. Lead with
+left out and is absent when none were. `sessionSays` is the abstract sentence that says it (the title only when the abstract has none): among the sentences that name the concept, one that says what the attendee will learn, build or see
+("learn", "build", "walk through", "dive into", "see how", "you'll", "demo", "hands-on", "deep dive", "patterns for", "best practices") is preferred over a marketing opener, and the first sentence that names it is the fallback, trimmed to about 160 characters, and is absent (not empty) when nothing could be quoted. Lead with
 `why.summary` and `sessionSays` when presenting, and cite `yourCode`.
 
 When the response would not fit the budget, MCP drops every candidate's ranking reasons first and

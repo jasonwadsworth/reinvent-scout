@@ -20,11 +20,19 @@ explained shortlist.
 
 ## The flow
 
-1. Call `status`. If it returns `isError` because no session is signed in, run
+1. Call `status`. Not being signed in is not an error: it returns `signedIn: false` with the catalog state
+   and a `signIn` note. Browsing needs no sign-in: when the catalog is usable (`status.catalog.status`
+   is `"fresh"`, or `"stale"` with `reason: "age"` and a `syncedAt` you are willing to use), go straight to
+   profiling, mapping and matching without signing in. A catalog that is `"stale"` for `reason: "schema-version"`
+   or `"corrupt"`, or `"missing"`, cannot be browsed yet (step 2). Sign in only when you need a real fetch from the
+   catalog sync (step 2) or the schedule, favorite, reservation and `plan_schedule` tools (steps 6 and 7). When you do need to, run
    `reinvent-scout auth login` yourself in the shell -- it blocks until the browser sign-in callback
    lands, so just wait for it to return -- then call `status` again. Never tell the user to open a
    terminal and sign in themselves; you already have shell access, and this is exactly why.
-2. If `status.catalog.status` is `"missing"` or `"stale"`, call `catalog_sync`. Never ask for or try
+2. If `status.catalog.status` is `"stale"` with `reason: "schema-version"`, call `catalog_sync` with `reindex: true`:
+   it rebuilds the local index from what is already stored and needs no sign-in. If it is `"missing"` or `"stale"`
+   with `reason: "corrupt"`, or `"stale"` with `reason: "age"` and you want fresh data, sign in if you are not
+   already (see step 1) and call `catalog_sync`. Never ask for or try
    to read the whole catalog through any other means -- it's synced locally specifically so an
    agent never has to hold it in context.
 3. Read the repository (or repositories) the user wants matched and write a profile object,
@@ -35,7 +43,7 @@ explained shortlist.
    something to pass anywhere else. Fix anything it flags as a schema error (it names the
    offending entry) and validate again. An unresolved service name is not an error -- keep going,
    but it's worth a passing mention to the user. Then call `map_profile` with the same profile and
-   **show the user the map**: one line per topic, grouped as services, patterns, gaps and next steps,
+   **show the user the map** (and, when `omittedPlatformServices` is not empty, the one line saying which platform services are not shown and why, so the user does not think they were missed): one line per topic, grouped as services, patterns, gaps and next steps,
    each with the goals that have sessions (`understand` for introductions, `deepen` for sessions at
    any level, `improve` for a gap or a next step). Offer only goals with sessions, and say plainly when a
    topic has none for a goal (its `reason` may name the closest 300-level session). Then **ask what they care about**: up to about five topics and a goal for each, in
@@ -85,7 +93,9 @@ explained shortlist.
 6. Present the candidates to the user. Lead each one with its title, format and level, then
    `why.summary` and, when present, the `why.sessionSays` quote; cite `why.yourCode` (repo, file and
    line, plus `why.more` cut ones) so the user can open the code, then every `offerings` entry
-   (when and where each sitting happens). Do not read out ranking `reasons` unless the user asks.
+   (when and where each sitting happens, with its `endTime` when it has one). Never judge yourself whether two sessions overlap or whether the user can attend both: that is a
+   `plan_schedule` question, whatever the times look like, and `plan_schedule` needs a sign-in, so an overlap
+   question is one of the times you sign in (run `reinvent-scout auth login` yourself, step 1). Do not read out ranking `reasons` unless the user asks.
    If the response came back `truncated`, say so and offer to narrow the request
    (a narrower lens or a more specific profile -- **not** a smaller `limit`, which only returns
    fewer of the exact same top-ranked candidates and can never reach the ones already omitted)

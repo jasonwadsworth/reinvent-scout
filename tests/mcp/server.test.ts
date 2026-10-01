@@ -1,6 +1,8 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { saveTokens, type StoredTokens } from "../../src/auth/token-store.js";
 import { CURRENT_SCHEMA_VERSION, writeCatalog, type CatalogMeta } from "../../src/catalog/store.js";
 import { DEFAULT_EVENT_ID } from "../../src/catalog/sync.js";
@@ -103,19 +105,38 @@ describe("createMcpServer", () => {
     expect(Buffer.byteLength(JSON.stringify(result), "utf8")).toBeLessThan(30 * 1024);
   });
 
-  it("returns isError telling the agent it can run auth login itself when no session is stored", async () => {
-    // Amendment 3: the skill has shell access, so the MCP status tool's message must say the
-    // agent can run the command itself, not defer to a human at a terminal -- task 7's skill
-    // content test asserts this exact instruction too, so the wording here is load-bearing beyond
-    // just this test.
-    const client = await connectedClient({ resolveStoreRoot: () => home.path });
+  it("reports signedIn false with the catalog state, not an error, when no session is stored, and says the agent can run auth login itself", async () => {
+    // Browsing (map, match) needs only a synced catalog, so a missing sign-in is a state to report, not a failure. Amendment 3 still
+    // holds: the hint says the agent can run the command itself, not defer to a human at a terminal -- the skill content test asserts
+    // this instruction too, so the wording is load-bearing.
+    writeCatalog({ raw: [], index: [], meta: sampleMeta() }, { storeRoot: home.path });
+    const client = await connectedClient({ resolveStoreRoot: () => home.path, now: () => NOW });
 
     const result = await client.callTool({ name: "status", arguments: {} });
 
-    expect(result.isError).toBe(true);
+    expect(result.isError).not.toBe(true);
     const content = (result.content as Array<{ type: string; text: string }>)[0]!;
-    expect(content.text).toContain("reinvent-scout auth login");
-    expect(content.text).toMatch(/the skill can run it for you/i);
+    const parsed = JSON.parse(content.text) as { signedIn: boolean; accessTokenExpiresAt?: string; catalog: { status: string }; signIn?: string };
+    expect(parsed.signedIn).toBe(false);
+    expect(parsed.accessTokenExpiresAt).toBeUndefined();
+    expect(parsed.catalog.status).toBe("fresh");
+    expect(parsed.signIn).toContain("reinvent-scout auth login");
+    expect(parsed.signIn).toMatch(/the skill can run it for you/i);
+    expect(parsed.signIn).toMatch(/catalog_sync/);
+  });
+
+  it("reports a missing catalog next to a missing sign-in", async () => {
+    const client = await connectedClient({ resolveStoreRoot: () => home.path });
+    const parsed = JSON.parse(((await client.callTool({ name: "status", arguments: {} })).content as Array<{ text: string }>)[0]!.text) as { signedIn: boolean; catalog: { status: string } };
+    expect(parsed).toMatchObject({ signedIn: false, catalog: { status: "missing" } });
+  });
+
+  it("does not claim a signed-in session when the stored tokens are unreadable", async () => {
+    writeFileSync(join(home.path, "tokens.json"), "not json");
+    const client = await connectedClient({ resolveStoreRoot: () => home.path });
+    const result = await client.callTool({ name: "status", arguments: {} });
+    expect(result.isError).not.toBe(true);
+    expect(JSON.parse((result.content as Array<{ text: string }>)[0]!.text)).toMatchObject({ signedIn: false });
   });
 
   it("returns isError rather than crashing the server when a tool throws, and the server keeps working afterward", async () => {
@@ -138,7 +159,7 @@ describe("createMcpServer", () => {
     // whole process down.
     shouldThrow = false;
     const second = await client.callTool({ name: "status", arguments: {} });
-    expect(second.isError).toBe(true); // still no session stored, but no crash this time either
+    expect(second.isError).not.toBe(true); // no session stored, which is now a state, and no crash this time either
   });
 
   it("rejects a tool call whose arguments fail the input schema", async () => {

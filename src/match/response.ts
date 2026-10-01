@@ -17,6 +17,15 @@ export function isRankingReason(reason: Reason): boolean {
   return !LENS_REASON_KINDS.includes(reason.kind);
 }
 
+/** The candidate without its offerings' end times: display-only (overlap is `plan_schedule`'s question), so they are the first thing a tight budget gives up. */
+function withoutEnds<T extends MatchCandidate>(candidate: T): T {
+  const bare = (offering: MatchCandidate["offerings"][number]): MatchCandidate["offerings"][number] => {
+    const { endTime, endDate, ...rest } = offering;
+    return endTime === undefined && endDate === undefined ? offering : rest;
+  };
+  return { ...candidate, offerings: candidate.offerings.map(bare) };
+}
+
 /** The MCP-facing candidate shape, deliberately leaner than the CLI's own (which reuses the full
  * `toPublicIndexRecord` -- reasonable for a human terminal, too heavy for metered agent context
  * held to a real 30 KB response budget; see the size note above `DEFAULT_MATCH_SESSIONS_LIMIT`).
@@ -133,11 +142,22 @@ export function buildMatchResponse(
     return everything;
   }
 
-  // Not everything fits. What explains a candidate to the reader is `why` and the lens reasons; the
-  // ranking reasons only explain the ranking, so they go first, from every candidate, before any
-  // candidate is left out.
-  const withoutRanking = result.candidates.map(candidate =>
-    toCandidate({ ...candidate, reasons: candidate.reasons.filter(reason => !isRankingReason(reason)) }));
+  // Not everything fits. The offerings' end times are display-only (overlap is `plan_schedule`'s question), so they go first, from every
+  // offering: a response that fits without them is exactly what it was before they existed.
+  const noEnds = result.candidates.map(candidate => toCandidate(withoutEnds(candidate)));
+  const noEndsResponse = buildResponse(noEnds, requested, totalMatched, false, skippedRules, uncovered, applied);
+  if (fits(noEndsResponse)) {
+    return noEndsResponse;
+  }
+
+  // What explains a candidate to the reader is `why` and the lens reasons; the ranking reasons only explain the ranking, so they go next,
+  // from every candidate, before any candidate is left out. The end times come back if that alone is enough.
+  const stripRanking = <T extends MatchCandidate>(candidate: T): T => ({ ...candidate, reasons: candidate.reasons.filter(reason => !isRankingReason(reason)) });
+  const withEnds = buildResponse(result.candidates.map(candidate => toCandidate(stripRanking(candidate))), requested, totalMatched, false, skippedRules, uncovered, applied, true);
+  if (fits(withEnds)) {
+    return withEnds;
+  }
+  const withoutRanking = result.candidates.map(candidate => toCandidate(stripRanking(withoutEnds(candidate))));
   const trimmed = buildResponse(withoutRanking, requested, totalMatched, false, skippedRules, uncovered, applied, true);
   if (fits(trimmed)) {
     return trimmed;
@@ -202,11 +222,18 @@ export function buildFocusResponse(
   fits: (value: unknown) => boolean = () => true,
   toCandidate: (candidate: FocusCandidate) => Record<string, unknown> = toLeanFocusCandidate,
 ): FocusResponse {
-  const lean = (strip: boolean): Record<string, unknown>[][] => result.results.map(entry => entry.candidates.map(candidate =>
-    toCandidate(strip ? { ...candidate, reasons: candidate.reasons.filter(reason => !isRankingReason(reason)) } : candidate)));
-  const everything = focusResponse(result.results, lean(false), 0, false, result.preferences);
+  const lean = (ranking: boolean, ends: boolean): Record<string, unknown>[][] => result.results.map(entry => entry.candidates.map(candidate => {
+    const shaped = ends ? candidate : withoutEnds(candidate);
+    return toCandidate(ranking ? shaped : { ...shaped, reasons: shaped.reasons.filter(reason => !isRankingReason(reason)) });
+  }));
+  const everything = focusResponse(result.results, lean(true, true), 0, false, result.preferences);
   if (fits(everything)) return everything;
-  const kept = lean(true);
+  // The end times are display-only, so they go first; the ranking reasons next (the end times come back if that alone is enough).
+  const noEnds = focusResponse(result.results, lean(true, false), 0, false, result.preferences);
+  if (fits(noEnds)) return noEnds;
+  const noRanking = focusResponse(result.results, lean(false, true), 0, true, result.preferences);
+  if (fits(noRanking)) return noRanking;
+  const kept = lean(false, false);
   let omitted = 0;
   let response = focusResponse(result.results, kept, omitted, true, result.preferences);
   while (!fits(response) && kept.some(list => list.length > 0)) {
@@ -222,6 +249,7 @@ export function buildFocusResponse(
 export function buildMapResponse(map: ProfileMap, fits: (value: unknown) => boolean = () => true): ProfileMap {
   const each = (change: (topic: MapTopic) => MapTopic): ProfileMap => ({
     services: map.services.map(change), patterns: map.patterns.map(change), gaps: map.gaps.map(change), nextSteps: map.nextSteps.map(change),
+    omittedPlatformServices: map.omittedPlatformServices,
     ...(map.preferences === undefined ? {} : { preferences: map.preferences }),
   });
   const oneIn = (topic: MapTopic): MapTopic => ({ ...topic, evidence: topic.evidence.slice(0, 1) });

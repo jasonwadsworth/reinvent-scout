@@ -334,9 +334,10 @@ function isBoosted(concept: ProfileConcept, record: IndexRecord): boolean {
 }
 
 /** What the session says about the concept: the abstract sentence naming it when there is one, else the title. */
-function quotedSite(inTitle: RegExpExecArray | undefined, inAbstract: RegExpExecArray | undefined): MatchSite {
-  const quoted = inAbstract ?? inTitle!;
-  return { inTitle: inAbstract === undefined, index: quoted.index, length: quoted[0].length };
+function quotedSite(inTitle: RegExpExecArray | undefined, inAbstract: readonly RegExpExecArray[]): MatchSite {
+  const quoted = inAbstract[0] ?? inTitle!;
+  const others = inAbstract.slice(1).map(match => ({ index: match.index, length: match[0].length }));
+  return { inTitle: inAbstract.length === 0, index: quoted.index, length: quoted[0].length, ...(others.length === 0 ? {} : { others }) };
 }
 
 /** What a lens accepts as a session being about a concept. */
@@ -366,7 +367,7 @@ export function admitConcepts(concepts: readonly ProfileConcept[], record: Index
       if (inTitle === undefined && tag === undefined) continue;
       matches.push({
         concept, strength: inTitle === undefined ? SINGLE_STRENGTH : TITLE_STRENGTH, phrase: inTitle?.[0] ?? tag!, boosted,
-        site: inTitle === undefined && inAbstract[0] === undefined ? { inTitle: false, index: -1, length: 0 } : quotedSite(inTitle, inAbstract[0]),
+        site: inTitle === undefined && inAbstract[0] === undefined ? { inTitle: false, index: -1, length: 0 } : quotedSite(inTitle, inAbstract),
       });
       continue;
     }
@@ -379,7 +380,7 @@ export function admitConcepts(concepts: readonly ProfileConcept[], record: Index
     matches.push({
       concept, strength: inTitle !== undefined ? TITLE_STRENGTH : repeated ? ABSTRACT_STRENGTH : SINGLE_STRENGTH,
       phrase: admitted[0], boosted,
-      site: quotedSite(inTitle, inAbstract[0]),
+      site: quotedSite(inTitle, inAbstract),
     });
   }
   return matches;

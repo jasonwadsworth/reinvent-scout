@@ -63,6 +63,18 @@ describe("profile map and match --focus", () => {
     expect(text).toContain("    improve (1 session)");
   });
 
+  it("says which platform services the map leaves out and why, only when the profile has some", async () => {
+    expect((await run(["profile", "map", "--profile", file])).text).not.toContain("Not shown");
+    // A name resolves to its catalog name through the catalog's own service vocabulary.
+    const withPlatform = [...CATALOG, session("PLT200", "Platform basics", { services: ["Amazon Simple Storage Service (Amazon S3)", "AWS Key Management Service (AWS KMS)", "AWS Cloud Development Kit (AWS CDK)"] })];
+    writeCatalog({ raw: withPlatform, index: withPlatform.map(buildIndexRecord), meta: { schemaVersion: CURRENT_SCHEMA_VERSION, eventId: "reinvent2026", syncedAt: 1, totalCount: withPlatform.length, count: withPlatform.length, includedAbstracts: true, timezone: null } }, { storeRoot: home.path });
+    writeFileSync(file, JSON.stringify({ ...PROFILE, services: [...PROFILE.services, { name: "Amazon S3", evidence: [cite("s3.ts", 1)] }, { name: "AWS KMS", evidence: [cite("k.ts", 1)] }, { name: "AWS CDK", evidence: [cite("cdk.ts", 1)] }] }));
+    const { text } = await run(["profile", "map", "--profile", file]);
+    expect(text).toContain("Not shown: S3, KMS, CDK (platform services nearly every workload uses; they don't narrow sessions)");
+    const json = JSON.parse((await run(["profile", "map", "--profile", file, "--json"])).text);
+    expect(json.omittedPlatformServices).toEqual(["S3", "KMS", "CDK"]);
+  });
+
   it("shows a next step's destination, and one line per goal for the topics with nothing instead of a zero on each", async () => {
     const { text } = await run(["profile", "map", "--profile", file]);
     expect(text).toContain("  serverless → containers  [path:serverless]");

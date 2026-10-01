@@ -240,7 +240,8 @@ function catalogSignal(rule: SignalRule, record: IndexRecord, abstract: string, 
   const matched = (titleMatch ?? abstractMatch)!;
   // What the session says: the abstract sentence holding the phrase when there is one, else the title.
   const quoted = abstractMatch ?? titleMatch!;
-  return { evidence: matched[0], strength, site: { inTitle: abstractMatch === undefined, index: quoted.index, length: quoted[0].length } };
+  const others = abstractMatches.slice(1).map(match => ({ index: match.index, length: match[0].length }));
+  return { evidence: matched[0], strength, site: { inTitle: abstractMatch === undefined, index: quoted.index, length: quoted[0].length, ...(others.length === 0 ? {} : { others }) } };
 }
 
 /** Evidence-bearing exact pattern names activate rules; `fitsStack` (see `buildStackFit`) rejects

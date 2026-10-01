@@ -63,6 +63,41 @@ describe("mapProfile and matchFocus", () => {
       expect(map.nextSteps.map(topic => topic.id)).toEqual(["path:serverless"]);
     });
 
+    it("names the platform services the profile has and the map leaves out, in the profile's order, by their short names", () => {
+      seed();
+      const p = base();
+      p.services.push(
+        { name: "Amazon S3", catalogName: "Amazon Simple Storage Service (Amazon S3)", evidence: [cite("s3.ts", 1)] },
+        { name: "AWS KMS", catalogName: "AWS Key Management Service (AWS KMS)", evidence: [cite("k.ts", 1)] },
+        { name: "Route 53", catalogName: "Amazon Route 53", role: "supporting", evidence: [cite("r.ts", 1)] },
+        { name: "Secrets", catalogName: "AWS Secrets Manager", evidence: [cite("sm.ts", 1)] },
+      );
+      const map = mapProfile(p, deps());
+      expect(map.omittedPlatformServices).toEqual(["CloudWatch", "S3", "KMS", "Route 53", "Secrets Manager"]);
+      expect(map.services.map(topic => topic.label)).not.toContain("Amazon S3");
+    });
+
+    it("names each omitted platform service once, however many names the profile gives it", () => {
+      seed();
+      const p = base();
+      p.services.push(
+        { name: "Amazon S3", catalogName: "Amazon Simple Storage Service (Amazon S3)", evidence: [cite("s3.ts", 1)] },
+        { name: "S3", catalogName: "Amazon Simple Storage Service (Amazon S3)", evidence: [cite("s3b.ts", 1)] },
+        { name: "S3 buckets", catalogName: "Amazon Simple Storage Service (Amazon S3)", role: "supporting", evidence: [cite("s3c.ts", 1)] },
+        { name: "IAM", catalogName: "AWS Identity and Access Management (IAM)", evidence: [cite("i.ts", 1)] },
+      );
+      expect(mapProfile(p, deps()).omittedPlatformServices).toEqual(["CloudWatch", "S3", "IAM"]);
+    });
+
+    it("has no omitted platform services when the profile uses none, and still lists supporting services that are not platform", () => {
+      seed();
+      const p = base();
+      p.services = p.services.filter(service => service.catalogName !== "Amazon CloudWatch");
+      const map = mapProfile(p, deps());
+      expect(map.omittedPlatformServices).toEqual([]);
+      expect(map.services.map(topic => topic.id)).toContain("service:Amazon Simple Queue Service (Amazon SQS)");
+    });
+
     it("orders services and patterns by how many files cite them, core services before supporting ones, and lists a pattern once", () => {
       seed();
       const p = base();
