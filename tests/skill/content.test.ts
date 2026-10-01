@@ -403,6 +403,22 @@ describe("reference/taxonomy.md vocabulary", () => {
   });
 });
 
+describe("sign-in is not needed to browse", () => {
+  const flow = (): string => extractSection(skillMd, "## The flow").replace(/\s+/g, " ");
+  it("tells the agent to profile, map and match without signing in when the catalog is present, and to sign in only to sync or touch the schedule", () => {
+    for (const expected of ["Not being signed in is not an error", "returns `signedIn: false` with the catalog state", "Browsing needs no sign-in", "go straight to profiling, mapping and matching without signing in",
+      "Sign in only when you need to sync the catalog (step 2) or to use the schedule, favorite and reservation tools (step 7)", "run `reinvent-scout auth login` yourself in the shell"]) {
+      expect(flow(), expected).toContain(expected);
+    }
+  });
+  it("documents status's signedIn false result and which tools need no sign-in in workflow.md", () => {
+    const text = workflowMd.replace(/\s+/g, " ");
+    for (const expected of ["`status` is not an error: it returns `{ \"signedIn\": false,", "no `accessTokenExpiresAt`", "`validate_profile`, `map_profile`, `match_sessions` and `list_filters` do not need a sign-in", "only for `catalog_sync` and the schedule, favorite and reservation tools"]) {
+      expect(text, expected).toContain(expected);
+    }
+  });
+});
+
 describe("SKILL.md auth login instructions", () => {
   it("tells the agent how to run auth login itself rather than deferring to the user", () => {
     expect(skillMd).toMatch(/run\s+`reinvent-scout auth login`\s+yourself/);

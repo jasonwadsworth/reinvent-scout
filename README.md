@@ -499,7 +499,7 @@ CLI. It never writes anything but protocol traffic to its stdout; every diagnost
 Seven tools are registered, and every one of them holds its response to a 30 KB budget -- the
 catalog and the attendee's own data stay local; only a bounded summary ever reaches agent context:
 
-- `status` -- signed-in state and local catalog state. Call this first.
+- `status` -- signed-in state and local catalog state. Call this first. Not being signed in is a state, not an error: mapping and matching need only a synced catalog; sign in only to sync or to use the schedule.
 - `catalog_sync` -- returns counts only, never session data.
 - `validate_profile` -- resolves an agent-authored profile's service names against the catalog.
 - `match_sessions` -- ranks the catalog against a resolved profile. At any limit or profile

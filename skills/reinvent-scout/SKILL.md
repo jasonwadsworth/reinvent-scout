@@ -20,11 +20,16 @@ explained shortlist.
 
 ## The flow
 
-1. Call `status`. If it returns `isError` because no session is signed in, run
+1. Call `status`. Not being signed in is not an error: it returns `signedIn: false` with the catalog state
+   and a `signIn` note. Browsing needs no sign-in: when the catalog is present (`status.catalog.status`
+   is `"fresh"`, or `"stale"` with a `syncedAt` you are willing to use), go straight to profiling, mapping
+   and matching without signing in. Sign in only when you need to sync the catalog (step 2) or to use the
+   schedule, favorite and reservation tools (step 7). When you do need to, run
    `reinvent-scout auth login` yourself in the shell -- it blocks until the browser sign-in callback
    lands, so just wait for it to return -- then call `status` again. Never tell the user to open a
    terminal and sign in themselves; you already have shell access, and this is exactly why.
-2. If `status.catalog.status` is `"missing"` or `"stale"`, call `catalog_sync`. Never ask for or try
+2. If `status.catalog.status` is `"missing"` or `"stale"` and you need a fresh catalog, sign in if you are
+   not already (see step 1) and call `catalog_sync`. Never ask for or try
    to read the whole catalog through any other means -- it's synced locally specifically so an
    agent never has to hold it in context.
 3. Read the repository (or repositories) the user wants matched and write a profile object,

@@ -17,14 +17,16 @@ Arguments: none.
 }
 ```
 
+With no signed-in session (or unreadable stored tokens) `status` is not an error: it returns `{ "signedIn": false, "catalog": { ... }, "signIn": "Not signed in. ..." }`, with no `accessTokenExpiresAt`.
+Browsing needs only a synced catalog: `validate_profile`, `map_profile`, `match_sessions` and `list_filters` do not need a sign-in. Sign in (run `reinvent-scout auth login` yourself) only for
+`catalog_sync` and the schedule, favorite and reservation tools.
+
 `catalog.status` is one of:
 
 - `"missing"` -- nothing has been synced yet; call `catalog_sync`.
 - `"stale"` -- `{ "status": "stale", "reason": "schema-version" | "age" | "corrupt", "syncedAt"?: number }`; call `catalog_sync` (`reindex: true` is enough for `"schema-version"` alone -- see `catalog_sync` below).
 - `"fresh"` -- `{ "status": "fresh", "syncedAt": number, "count": number }`; no sync needed.
 
-If no session is stored, `status` itself returns `isError: true` with the same message named in
-"Error handling" below.
 
 ## 2. `catalog_sync`
 
