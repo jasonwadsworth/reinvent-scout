@@ -19,7 +19,7 @@ const evidence = [{ repo: "repo", file: "stack.ts", line: 3, snippet: "new Queue
 const profile = {
   schemaVersion: 1, repos: [{ root: "repo", languages: [] }],
   services: [{ name: "lambda", role: "core", evidence }, { name: "sqs", evidence }, { name: "eventbridge", evidence }, { name: "stepfunctions", evidence }, { name: "sns", evidence }],
-  patterns: [{ name: "gap-no-dlq", evidence }, { name: "genai-single-call", evidence }, { name: "agentic", evidence }],
+  patterns: [{ name: "gap-no-dlq", note: "Read infra/stack.ts: the queue has no redrive policy.", evidence }, { name: "genai-single-call", evidence }, { name: "agentic", evidence }],
 };
 
 describe("CLI and MCP share one contract", () => {

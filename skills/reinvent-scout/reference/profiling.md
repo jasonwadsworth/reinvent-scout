@@ -312,7 +312,7 @@ restatement of the `services` list as prose.
     },
     {
       "name": "gap-no-dlq",
-      "note": "The order-created consumer queue has no dead-letter queue or redrive policy, so a repeatedly-failing message is retried forever instead of being set aside for inspection.",
+      "note": "Searched infra/*.ts for every sqs.Queue and Rule target: 1 of 2 queues has a dead-letter queue. The order-created consumer queue has none and no redrive policy, so a repeatedly-failing message is retried forever instead of being set aside for inspection.",
       "evidence": [
         { "repo": "api", "file": "infra/stack.ts", "line": 61, "snippet": "new sqs.Queue(this, \"OrderCreatedQueue\")" }
       ]

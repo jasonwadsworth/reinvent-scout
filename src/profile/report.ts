@@ -16,6 +16,26 @@ export interface ValidateProfileResponse {
   truncated: boolean;
   omitted: number;
   hint?: string;
+  /** Non-blocking: the profile is valid, but something in it makes it less checkable. Absent when
+   * there is nothing to say, so a report without warnings is unchanged. */
+  warnings?: string[];
+}
+
+const FILE_EXTENSIONS = "tsx?|jsx?|mjs|cjs|py|java|kt|go|rb|cs|tf|ya?ml|json|toml|sh|md|dockerfile";
+/** A path separator, a glob star, or a name with a source-file extension: the shapes a note uses to
+ * say which files it looked at. */
+const NAMES_WHAT_WAS_INSPECTED = new RegExp(`[/*]|\\b[\\w-]+\\.(?:${FILE_EXTENSIONS})\\b`, "i");
+
+/** One warning per `gap-*` pattern whose note names no file, path or glob: a reviewer cannot tell
+ * what the profiler searched, so an absence or a "present everywhere" cannot be rechecked. */
+function gapWarnings(resolved: ResolvedProfile): string[] {
+  return resolved.patterns
+    .filter(pattern => pattern.name.startsWith("gap-") && !NAMES_WHAT_WAS_INSPECTED.test(pattern.note ?? ""))
+    .map(
+      pattern =>
+        `${pattern.name}: the note names no file, path or glob, so what was inspected cannot be checked. ` +
+        "Say which files or search you used and how many resources you counted.",
+    );
 }
 
 /** Builds one services/patterns-count's worth of response -- the one place that decides the shape
@@ -35,6 +55,7 @@ function buildValidateProfileResponse(
   totalServices: number,
   totalPatterns: number,
   truncated: boolean,
+  warnings: string[],
 ): ValidateProfileResponse {
   const omitted = totalServices - services.length + (totalPatterns - patterns.length);
   const unresolvedServices = services
@@ -47,6 +68,7 @@ function buildValidateProfileResponse(
     counts,
     truncated,
     omitted,
+    ...(warnings.length === 0 ? {} : { warnings }),
     ...(truncated
       ? {
           hint:
@@ -85,6 +107,7 @@ export function buildValidateReport(
     catalogName: service.catalogName,
   }));
   const patterns = resolved.patterns.map((pattern) => pattern.name);
+  const warnings = gapWarnings(resolved);
   const counts = {
     services: resolved.services.length,
     patterns: resolved.patterns.length,
@@ -98,6 +121,7 @@ export function buildValidateReport(
     services.length,
     patterns.length,
     false,
+    warnings,
   );
   if (fits(everything)) {
     return everything;
@@ -112,6 +136,7 @@ export function buildValidateReport(
       services.length,
       patterns.length,
       true,
+      warnings,
     );
     if (!fits(trial)) {
       break;
@@ -128,6 +153,7 @@ export function buildValidateReport(
       services.length,
       patterns.length,
       true,
+      warnings,
     );
     if (!fits(trial)) {
       break;
@@ -142,5 +168,6 @@ export function buildValidateReport(
     services.length,
     patterns.length,
     true,
+    warnings,
   );
 }

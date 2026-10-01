@@ -797,6 +797,15 @@ describe("lens-precision guidance in profiling.md", () => {
   });
 });
 
+describe("validate_profile warnings in the skill docs", () => {
+  it("documents the optional warnings field, and says a warning is not an error", () => {
+    const section = extractSection(workflowMd, "## 4. `validate_profile`").replace(/\s+/g, " ");
+    expect(section).toContain("`warnings`");
+    expect(section).toContain("names no file, path or glob");
+    expect(section).toContain("not an error");
+  });
+});
+
 describe("newer gap guidance in profiling.md", () => {
   const collapsed = profilingMd.replace(/\s+/g, " ");
   const gaps = ["gap-no-tracing", "gap-no-ci", "gap-no-graviton"];

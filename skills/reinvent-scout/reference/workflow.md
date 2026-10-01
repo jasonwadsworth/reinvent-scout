@@ -88,6 +88,11 @@ to the user in passing, not something to fix before moving on. A schema violatio
 evidence, an entry with no `file`, an unknown `schemaVersion`) returns `isError: true` naming the
 offending entry -- fix the *profile object* and call `validate_profile` again with it.
 
+The report may also carry `warnings`, a list of strings and absent when there is nothing to say. A
+`gap-*` pattern whose `note` names no file, path or glob gets one ("the note names no file, path or glob"):
+the profile is valid, but a reviewer cannot tell what you searched. A warning is not an error; add
+the files or search you used, and the count, to that note and validate again.
+
 ## 4a. `map_profile`
 
 Arguments: `{ "profile": <the profile object>, "preferences"?: <preferences, as in `match_sessions`> }`. Returns what the profile found, grouped, for the user to choose from:
