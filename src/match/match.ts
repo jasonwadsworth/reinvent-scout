@@ -1,5 +1,5 @@
 import { buildStackFit, hasCoreService, PREFIX_REQUIRED_SERVICE_NAMES } from "./stack-fit.js";
-import { absentBroadTopics, buildConcepts, interestConcepts, serviceTails, type ConceptMatch, type UncoveredConcept } from "./concepts.js";
+import { absentBroadTopics, buildConcepts, interestConcepts, serviceTails, type ConceptMatch, type ProfileConcept, type UncoveredConcept } from "./concepts.js";
 import { allReason, demotionReason, industryTerms, matchAllConcepts, rankAll, rareProfileServices } from "./all.js";
 import { offStackOf } from "./off-stack.js";
 import { explainReason, matchConcepts, selectExplain } from "./explain.js";
@@ -16,6 +16,16 @@ import { allWhy, explainWhy, lensWhy, type Why } from "./why.js";
 /** A core service listed by fewer than this fraction of catalog sessions is distinctive enough to
  * fit a Fix session on its own. */
 const RARE_SERVICE_FRACTION = 0.03;
+
+/** What every lens reads: the profile, the loaded catalog and the scorer's own corpus statistics, built once. */
+export interface LensContext {
+  profile: ResolvedProfile;
+  index: readonly IndexRecord[];
+  rawById: ReadonlyMap<string, { abstract?: string }>;
+  query: MatchQuery;
+  corpusStats: ReturnType<typeof buildCorpusStats>;
+  abstractOf: AbstractOf;
+}
 
 export interface MatchOptions {
   /** Defaults to `"all"`: the sessions about what the profile's code is built on, at any level. */
@@ -79,7 +89,7 @@ interface LensInfo {
   relevance: number;
 }
 
-interface GroupedCandidate extends Omit<MatchCandidate, "why"> {
+export interface GroupedCandidate extends Omit<MatchCandidate, "why"> {
   lens?: LensInfo;
   explain?: ConceptMatch[];
   demoted?: string;
@@ -278,9 +288,9 @@ function roundToTwoDecimals(value: number): number {
 }
 
 /** The abstract of the sitting that scored, which the quote and the lens signals were matched against. */
-type AbstractOf = (record: IndexRecord) => string;
+export type AbstractOf = (record: IndexRecord) => string;
 
-function whyFor(candidate: GroupedCandidate, lens: Lens, profile: ResolvedProfile, abstractOf: AbstractOf): Why {
+export function whyFor(candidate: GroupedCandidate, lens: Lens, profile: ResolvedProfile, abstractOf: AbstractOf): Why {
   const text = { title: candidate.record.title, abstract: abstractOf(candidate.record) };
   if (lens === "all") {
     if (candidate.explain === undefined) throw new Error(`all candidate ${candidate.code} has no concept it was admitted for`);
@@ -297,7 +307,7 @@ function whyFor(candidate: GroupedCandidate, lens: Lens, profile: ResolvedProfil
   return lensWhy(lens, candidate.lens.hits, profile, text);
 }
 
-function roundCandidate(candidate: GroupedCandidate, why: Why): MatchCandidate {
+export function roundCandidate(candidate: GroupedCandidate, why: Why): MatchCandidate {
   return {
     code: candidate.code,
     record: candidate.record,
@@ -408,7 +418,7 @@ const NO_CORE_SERVICES_REASON = "profile has no core services to check stack fit
 
 /** Paths already taken, plus -- when the profile has no core service, so the stack gate admits
  * nothing -- every other activated rule, so an empty result says why. */
-function lensSkippedRules(profile: ResolvedProfile, lens: "fix" | "next-level"): SkippedRule[] {
+export function lensSkippedRules(profile: ResolvedProfile, lens: "fix" | "next-level"): SkippedRule[] {
   const taken = skippedLensRules(profile, lens);
   if (hasCoreService(profile)) {
     return taken;
@@ -425,25 +435,10 @@ function lensSkippedRules(profile: ResolvedProfile, lens: "fix" | "next-level"):
  * each candidate's reasons name the concept and the code that uses it. A profile concept no session
  * is about comes back in `uncovered` rather than being filled with weaker matches.
  */
-function matchExplain(
-  profile: ResolvedProfile,
-  index: readonly IndexRecord[],
-  rawById: ReadonlyMap<string, { abstract?: string }>,
-  query: MatchQuery,
-  corpusStats: ReturnType<typeof buildCorpusStats>,
-  limit: number | undefined,
-  abstractOf: AbstractOf,
-): MatchResult {
+function matchExplain(ctx: LensContext, limit: number | undefined): MatchResult {
+  const { profile, abstractOf } = ctx;
   const { typeWeights } = getLensProfile("explain");
-  const { concepts, uncovered: unmapped } = buildConcepts(profile, knownServices(profile, index));
-  const scored: ScoredRecord[] = [];
-  for (const record of index) {
-    const matches = matchConcepts(concepts, record, rawById.get(record.sessionId)?.abstract ?? "");
-    if (matches.length > 0) {
-      scored.push({ record, score: scoreSession(record, query, corpusStats).score, reasons: [], explain: matches });
-    }
-  }
-  const groups = groupByCode(scored);
+  const { concepts, unmapped, groups } = explainSessions(ctx);
   const byCode = new Map(groups.map((group) => [group.code, group]));
   const { selected, uncovered } = selectExplain(
     groups.map((group) => ({ key: group.code, record: group.record, matches: group.explain!, rank: group.score })),
@@ -458,21 +453,38 @@ function matchExplain(
   };
 }
 
+/** The profile's concepts for the Explain lens, the patterns it cannot word, and every session (repeat sittings grouped) that
+ * names one of the concepts, with the concepts it names. */
+export function explainSessions(ctx: LensContext): { concepts: ProfileConcept[]; unmapped: UncoveredConcept[]; groups: GroupedCandidate[] } {
+  const { profile, index, rawById, query, corpusStats } = ctx;
+  const { concepts, uncovered: unmapped } = buildConcepts(profile, knownServices(profile, index));
+  const scored: ScoredRecord[] = [];
+  for (const record of index) {
+    const matches = matchConcepts(concepts, record, rawById.get(record.sessionId)?.abstract ?? "");
+    if (matches.length > 0) {
+      scored.push({ record, score: scoreSession(record, query, corpusStats).score, reasons: [], explain: matches });
+    }
+  }
+  return { concepts, unmapped, groups: groupByCode(scored) };
+}
+
 /**
  * The All lens: the sessions about the technologies and architecture the profile is built on, at any
  * level and in any format (see `all.ts`). A session is admitted for a concept of the profile it names,
  * ranked by how central the concepts are to the code, and listed at most three to a concept while
  * other concepts have sessions. Anything the profile's concepts do not name is not returned.
  */
-function matchAll(
-  profile: ResolvedProfile,
-  index: readonly IndexRecord[],
-  rawById: ReadonlyMap<string, { abstract?: string }>,
-  query: MatchQuery,
-  corpusStats: ReturnType<typeof buildCorpusStats>,
-  limit: number | undefined,
-  abstractOf: AbstractOf,
-): MatchResult {
+function matchAll(ctx: LensContext, limit: number | undefined): MatchResult {
+  const candidates = allRanked(ctx);
+  return {
+    candidates: (limit === undefined ? candidates : candidates.slice(0, limit)).map((candidate) => roundCandidate(candidate, whyFor(candidate, "all", ctx.profile, ctx.abstractOf))),
+    skippedRules: [],
+  };
+}
+
+/** Every session the All lens admits, in rank order, each with its concept reasons. */
+export function allRanked(ctx: LensContext): GroupedCandidate[] {
+  const { profile, index, rawById, query, corpusStats, abstractOf } = ctx;
   const services = knownServices(profile, index);
   const { concepts: evidenced } = buildConcepts(profile, services, { architecturePhrases: true });
   const concepts = [...evidenced, ...interestConcepts(profile, evidenced)];
@@ -493,11 +505,7 @@ function matchAll(
     key: group.code, record: group.record, matches: group.explain!, relevance: group.score,
     ...(group.demoted === undefined ? {} : { demoted: group.demoted }),
   })));
-  const candidates = ranked.map((entry) => allCandidate(byCode.get(entry.key)!, entry.matches, profile));
-  return {
-    candidates: (limit === undefined ? candidates : candidates.slice(0, limit)).map((candidate) => roundCandidate(candidate, whyFor(candidate, "all", profile, abstractOf))),
-    skippedRules: [],
-  };
+  return ranked.map((entry) => allCandidate(byCode.get(entry.key)!, entry.matches, profile));
 }
 
 function allCandidate(group: GroupedCandidate, matches: readonly ConceptMatch[], profile: ResolvedProfile): GroupedCandidate {
@@ -508,13 +516,13 @@ function allCandidate(group: GroupedCandidate, matches: readonly ConceptMatch[],
 /** Services a title can list next to another ("Amazon Polly and Transcribe"): the catalog's own service
  * vocabulary, the profile's, and the ordinary-word names (Glue, Backup, ...), since the catalog does not
  * list every service a profile names. */
-function knownServices(profile: ResolvedProfile, index: readonly IndexRecord[]): string[] {
+export function knownServices(profile: ResolvedProfile, index: readonly IndexRecord[]): string[] {
   const fromProfile = profile.services.flatMap((service) => [service.name, ...(service.catalogName === null ? [] : [service.catalogName])]);
   const ordinaryWords = PREFIX_REQUIRED_SERVICE_NAMES.map((name) => name.charAt(0).toUpperCase() + name.slice(1));
   return [...new Set([...index.flatMap((record) => record.services), ...fromProfile, ...ordinaryWords])];
 }
 
-function explainCandidate(
+export function explainCandidate(
   group: GroupedCandidate,
   matches: readonly ConceptMatch[],
   profile: ResolvedProfile,
@@ -540,7 +548,6 @@ export function matchSessionsDetailed(
   options: MatchOptions = {},
 ): MatchResult {
   const lens = options.lens ?? "all";
-  const lensProfile = getLensProfile(lens);
   const index = requireCurrentIndex(deps);
   const query = buildMatchQuery(profile);
   const rawById = new Map((readRaw(deps) ?? []).map(session => [session.sessionId, session]));
@@ -550,14 +557,31 @@ export function matchSessionsDetailed(
   // record would be both wasteful and simply wrong, since it needs to see every document to know
   // how rare a term actually is.
   const corpusStats = buildCorpusStats(index);
+  const ctx: LensContext = { profile, index, rawById, query, corpusStats, abstractOf };
 
   if (lens === "all") {
-    return matchAll(profile, index, rawById, query, corpusStats, options.limit, abstractOf);
+    return matchAll(ctx, options.limit);
   }
   if (lens === "explain") {
-    return matchExplain(profile, index, rawById, query, corpusStats, options.limit, abstractOf);
+    return matchExplain(ctx, options.limit);
   }
+  return matchRules(ctx, lens, options.limit);
+}
 
+function matchRules(ctx: LensContext, lens: "fix" | "next-level", limit: number | undefined): MatchResult {
+  const ordered = rulesRanked(ctx, lens);
+  const limited = limit === undefined ? ordered : ordered.slice(0, limit);
+  return {
+    candidates: limited.map(candidate => roundCandidate(candidate, whyFor(candidate, lens, ctx.profile, ctx.abstractOf))),
+    skippedRules: lensSkippedRules(ctx.profile, lens),
+  };
+}
+
+/** Every session the Fix or Next-level lens admits, ordered by interleaving the activated rules' lists, each with the rules
+ * that admitted it. */
+export function rulesRanked(ctx: LensContext, lens: "fix" | "next-level"): GroupedCandidate[] {
+  const { profile, index, rawById, query, corpusStats } = ctx;
+  const lensProfile = getLensProfile(lens);
   // Fix has to be pickier than Next-level: its phrases (alarms, tests, IAM) appear in talks about any
   // stack, so one shared near-universal service such as CloudWatch is not evidence of fit.
   const fitsStack = buildStackFit(profile, lens === "fix"
@@ -603,13 +627,5 @@ export function matchSessionsDetailed(
     scoredRecords.push({ record, score, reasons, lens: { hits: base.hits, relevance: relevance.score } });
   }
 
-  const candidates = groupByCode(scoredRecords);
-
-  const ordered = interleaveByRule(candidates);
-
-  const limited = options.limit === undefined ? ordered : ordered.slice(0, options.limit);
-  return {
-    candidates: limited.map(candidate => roundCandidate(candidate, whyFor(candidate, lens, profile, abstractOf))),
-    skippedRules: lensSkippedRules(profile, lens),
-  };
+  return interleaveByRule(groupByCode(scoredRecords));
 }

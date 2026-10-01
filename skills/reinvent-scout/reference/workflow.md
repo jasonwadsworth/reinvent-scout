@@ -62,7 +62,7 @@ Arguments: `{ "profile": <the profile object> }`.
 
 Returns a compact **report** on what resolved -- not the profile itself, and not a shape
 `match_sessions` accepts. Never pass this response anywhere else; keep the profile object you wrote
-in step 3 and call `match_sessions` with that instead (step 5).
+in step 3 and call `match_sessions` with that instead (step 5). `map_profile` (next section) takes the profile object too.
 
 ```json
 {
@@ -86,9 +86,37 @@ to the user in passing, not something to fix before moving on. A schema violatio
 evidence, an entry with no `file`, an unknown `schemaVersion`) returns `isError: true` naming the
 offending entry -- fix the *profile object* and call `validate_profile` again with it.
 
+## 4a. `map_profile`
+
+Arguments: `{ "profile": <the profile object> }`. Returns what the profile found, grouped, for the user to choose from:
+`{ "services": [...], "patterns": [...], "gaps": [...], "nextSteps": [...] }`. Every topic is
+`{ "id", "label", "note"?, "evidence": [{ "repo", "file", "line"? }], "more"?, "pillar"?, "skipped"?, "goals": [{ "goal", "sessions" }] }`.
+`id` is stable (`service:Amazon DynamoDB`, `pattern:event-driven`, `gap:gap-no-dlq`, `path:genai-single-call`) and is what
+`match_sessions`' `focus` takes. Services list core before supporting (platform services are left out); a gap is a supported
+gap pattern with its Well-Architected `pillar`; a next step is a migration path the profile activates, or one it skipped because it
+already has the destination (`skipped` says why, and it has no goals). The goals are `understand` (introductory sessions, level 100/200),
+`deepen` (sessions at any level whose title names the topic, leaving out the ones the All lens demotes) for services and patterns, and `improve` for a gap or a next step; `sessions` counts what that
+goal would return for that topic alone, and a goal with `0` is a dead end (its `reason` says why, for example the closest 300-level session): say so instead of offering it.
+The text map (`profile map`) prints each topic's label and id, a next step's destination, and one line per goal for the topics with nothing, not a zero on each. A very large map is trimmed
+to the budget, first to one place per topic, then to none, then without notes. `reinvent-scout profile map --profile <file|name> [--json]`
+prints the same map.
+
+Present the map, ask the user for up to about five topics and a goal each, then call `match_sessions` with a `focus`.
+
 ## 5. `match_sessions`
 
-Arguments: `{ "profile": <profile object>, "lens"?: "all" | "explain" | "fix" | "next-level", "limit"?: number }`.
+Arguments: `{ "profile": <profile object>, "lens"?: "all" | "explain" | "fix" | "next-level", "limit"?: number, "focus"?: [{ "topic": <id>, "goal": "understand" | "deepen" | "improve" }], "perTopic"?: number }`.
+With a `focus` (one to six choices, never together with `lens` or `limit`; `perTopic` defaults to 3 and is at most 3 here, the most six choices
+can list within the response budget on the profiles measured; the CLI's `--per-topic` takes up to 10) the response is instead
+`{ "results": [{ "topic", "goal", "total", "candidates", "reason"? }], "truncated", "omitted", "rankingReasonsOmitted"? }`: each choice runs the lens its
+goal stands for (explain, all, or fix or next-level) restricted to that topic, with that lens's own admission, demotions and ranking. Every
+candidate keeps its full `why`. `total` is how many sessions the choice alone would list, before the cap. A session listed under
+an earlier choice is left out of later ones and carries `alsoMatches` naming them. A choice with no sessions says why in `reason`, and so does a choice whose sessions all went to earlier choices ("all 2 matching sessions are listed under ..."); a session an earlier choice
+ranked past its cap is still listed under a later choice that matches it. An
+unknown topic, a goal that does not apply (`improve` is for gaps and next steps, `understand` and `deepen` for services and patterns), a
+focus with `lens` or `limit`, or `perTopic` without a `focus` is an `isError` naming the problem. When the response would not fit, ranking reasons go
+first, then sessions from the end of the longest list (`truncated`, `omitted`). `reinvent-scout match --focus "<topic>:<goal>,..." [--per-topic N] [--json]`
+prints the same response, and accepts a bare label ("DynamoDB") where only one topic has it.
 `lens` defaults to `"all"`: the sessions about the services and patterns the profile's code is built on,
 at any level and in any format (see "The all lens" in `reference/profiling.md`). `limit` defaults to 25 and is silently capped at 50 --
 asking for more never errors, it just gets the largest sensible set. Fix requires an exact supported
@@ -343,6 +371,7 @@ human running these directly gets human-formatted terminal output, not JSON):
 - `reinvent-scout catalog show`
 - `reinvent-scout profile validate`
 - `reinvent-scout profile save`
+- `reinvent-scout profile map`
 - `reinvent-scout match`
 - `reinvent-scout schedule show`
 - `reinvent-scout schedule favorite`

@@ -1,6 +1,8 @@
 import { toPublicIndexRecord } from "../catalog/index-record.js";
 import type { UncoveredConcept } from "./concepts.js";
 import type { SkippedRule } from "./lens-signals.js";
+import type { ProfileMap, MapTopic } from "./map.js";
+import type { FocusCandidate, FocusEntry, FocusResult } from "./focus.js";
 import type { MatchCandidate, MatchResult } from "./match.js";
 import type { Reason } from "./score.js";
 
@@ -150,3 +152,71 @@ export function buildMatchResponse(
   return buildResponse(included, requested, totalMatched, true, skippedRules, uncovered, true);
 }
 
+
+export interface FocusResponse {
+  results: Array<{ topic: string; goal: string; total: number; candidates: Record<string, unknown>[]; reason?: string }>;
+  /** True when sessions were left out, from the end of the longest lists, to fit the budget. */
+  truncated: boolean;
+  /** How many sessions were left out; 0 when `truncated` is false. */
+  omitted: number;
+  /** Present (`true`) only when ranking reasons were left off every candidate to fit the budget. */
+  rankingReasonsOmitted?: true;
+}
+
+function focusResponse(entries: readonly FocusEntry[], candidates: readonly Record<string, unknown>[][], omitted: number, rankingReasonsOmitted: boolean): FocusResponse {
+  return {
+    results: entries.map((entry, position) => ({
+      topic: entry.topic, goal: entry.goal, total: entry.total, candidates: candidates[position]!,
+      ...(entry.reason === undefined ? {} : { reason: entry.reason }),
+    })),
+    truncated: omitted > 0,
+    omitted,
+    ...(rankingReasonsOmitted ? { rankingReasonsOmitted: true as const } : {}),
+  };
+}
+
+/** The lean candidate of a focused result, with the later choices it would also have matched. */
+export function toLeanFocusCandidate(candidate: FocusCandidate): Record<string, unknown> {
+  return { ...toLeanCandidate(candidate), ...(candidate.alsoMatches === undefined ? {} : { alsoMatches: candidate.alsoMatches }) };
+}
+
+/**
+ * The one focused-match response shape, shared by the CLI's `match --focus --json` and the MCP `match_sessions` tool with a
+ * `focus`. Budgeted like `buildMatchResponse`: when it does not fit, every candidate's ranking reasons go first, then sessions
+ * from the end of the longest list, one at a time, so every choice keeps its first sessions; nothing is ever partly serialized.
+ */
+export function buildFocusResponse(
+  result: FocusResult,
+  fits: (value: unknown) => boolean = () => true,
+  toCandidate: (candidate: FocusCandidate) => Record<string, unknown> = toLeanFocusCandidate,
+): FocusResponse {
+  const lean = (strip: boolean): Record<string, unknown>[][] => result.results.map(entry => entry.candidates.map(candidate =>
+    toCandidate(strip ? { ...candidate, reasons: candidate.reasons.filter(reason => !isRankingReason(reason)) } : candidate)));
+  const everything = focusResponse(result.results, lean(false), 0, false);
+  if (fits(everything)) return everything;
+  const kept = lean(true);
+  let omitted = 0;
+  let response = focusResponse(result.results, kept, omitted, true);
+  while (!fits(response) && kept.some(list => list.length > 0)) {
+    const longest = kept.reduce((best, list) => (list.length > best.length ? list : best), kept[0]!);
+    longest.pop();
+    omitted++;
+    response = focusResponse(result.results, kept, omitted, true);
+  }
+  return response;
+}
+
+/** The map, trimmed to the budget when a large profile would not fit: first to one place per topic, then to none, then without notes. */
+export function buildMapResponse(map: ProfileMap, fits: (value: unknown) => boolean = () => true): ProfileMap {
+  const each = (change: (topic: MapTopic) => MapTopic): ProfileMap => ({
+    services: map.services.map(change), patterns: map.patterns.map(change), gaps: map.gaps.map(change), nextSteps: map.nextSteps.map(change),
+  });
+  const oneIn = (topic: MapTopic): MapTopic => ({ ...topic, evidence: topic.evidence.slice(0, 1) });
+  const without = (topic: MapTopic, key: "more" | "note"): MapTopic => Object.fromEntries(Object.entries(topic).filter(([name]) => name !== key)) as unknown as MapTopic;
+  const noneIn = (topic: MapTopic): MapTopic => without({ ...topic, evidence: [] }, "more");
+  const noNote = (topic: MapTopic): MapTopic => without(noneIn(topic), "note");
+  for (const trimmed of [map, each(oneIn), each(noneIn), each(noNote)]) {
+    if (fits(trimmed)) return trimmed;
+  }
+  return each(noNote);
+}

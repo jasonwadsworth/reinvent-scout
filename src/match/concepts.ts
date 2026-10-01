@@ -191,7 +191,7 @@ export function serviceTails(catalogServices: readonly string[]): string[] {
 }
 
 /** "ecs" for "Amazon Elastic Container Service (Amazon ECS)": the parenthesized short name, lowercase. */
-function shortNames(catalogName: string): string[] {
+export function shortNames(catalogName: string): string[] {
   const parenthesized = /\(([^)]+)\)\s*$/.exec(catalogName)?.[1];
   return parenthesized === undefined ? [] : [parenthesized.replace(PREFIX, "").trim().toLowerCase()];
 }

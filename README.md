@@ -282,6 +282,33 @@ session at a score of zero -- an empty result is a real, distinguishable outcome
 matched equally."
 
 
+### Map your code, then choose what to look for
+
+The plain lenses rank everything the profile touches. To get a short list about what *you* care about, map the profile first, then pick
+topics and, for each, a goal:
+
+```sh
+reinvent-scout profile map --profile my-profile.json
+reinvent-scout match --profile my-profile.json --focus "DynamoDB:understand,gap-no-dlq:improve,event-driven:deepen"
+```
+
+`profile map` lists what the profile found, grouped as services, patterns, gaps (supported rules, with their Well-Architected pillar) and
+next steps (migration paths, or ones skipped because you already made the move). Each topic has an id (`service:Amazon DynamoDB`,
+`pattern:event-driven`, `gap:gap-no-dlq`, `path:genai-single-call`), a one-line note, where your code uses it, and the goals that apply with
+how many sessions each would return (0 is a dead end):
+
+- **understand**: introductory sessions (level 100/200) about the service or pattern, from the Explain lens.
+- **deepen**: sessions at any level whose *title names the topic*, from the All lens, leaving out the ones it demotes (sponsored, news, customer stories, migration tooling, industry, off-topic agents or a technology your code does not use).
+- **improve**: for a gap, every session the Fix lens admits for that one rule; for a next step, the Next-level lens's, minus sponsored, news, customer-story, migration-tooling and industry sessions.
+
+`match --focus` takes one to six `<topic>:<goal>` pairs (a bare label such as `DynamoDB` or `ECS` works when only one topic that supports the goal
+has it) and lists up to `--per-topic` (default 5, at most 10) sessions per choice, each with its `why`. A session listed under an earlier choice is
+left out of later ones and notes `Also matches:`; one an earlier choice ranked past its cap stays available to a later choice, and a choice
+emptied by earlier ones says which. A choice with no sessions says why. The text map prints each topic's label and id, the destination of a next
+step, and one line per goal for the topics with no sessions (with the closest 300-level session where there is one) instead of a zero on every
+topic. `--focus` replaces `--lens` and `--limit` (use `--per-topic`); `--json` prints the same object the MCP
+`match_sessions` tool returns for a `focus`, and `map_profile` returns the map.
+
 ### Fix and Next-level lenses
 
 ```sh
