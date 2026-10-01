@@ -50,9 +50,7 @@ export interface MatchOffering {
   abbreviation: string | null;
   startDate: string | null;
   startTime: string | null;
-  /** The catalog's length of the sitting; absent when the catalog has none. */
-  lengthMinutes?: number;
-  /** `startTime` plus `lengthMinutes`, the same local time; absent when either is missing, so an overlap is never judged from start times alone. */
+  /** `startTime` plus the catalog's length, the same local time; absent when either is missing, so an overlap is never judged from start times alone. */
   endTime?: string;
   /** Only when the sitting runs past midnight. */
   endDate?: string;
@@ -231,7 +229,6 @@ function toOffering(record: IndexRecord): MatchOffering {
     abbreviation: record.abbreviation,
     startDate: record.startDate,
     startTime: record.startTime,
-    ...(record.lengthMinutes === null ? {} : { lengthMinutes: record.lengthMinutes }),
     ...endOf(record.startDate, record.startTime, record.lengthMinutes),
     venue: record.venue,
     room: record.room,

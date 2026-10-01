@@ -30,6 +30,11 @@ describe("endOf", () => {
     expect(endOf("2026-12-02", "09:05", 25)).toEqual({ endTime: "09:30" });
   });
 
+  it("rounds a fractional length to whole minutes", () => {
+    expect(endOf("2026-12-02", "10:00", 30.5)).toEqual({ endTime: "10:31" });
+    expect(endOf("2026-12-02", "10:00", 29.4)).toEqual({ endTime: "10:29" });
+  });
+
   it("says the next day when the session runs past midnight", () => {
     expect(endOf("2026-12-02", "23:30", 60)).toEqual({ endTime: "00:30", endDate: "2026-12-03" });
     expect(endOf("2026-12-31", "23:30", 60)).toEqual({ endTime: "00:30", endDate: "2027-01-01" });
@@ -43,6 +48,8 @@ describe("endOf", () => {
     expect(endOf("2026-12-02", null, 60)).toBeUndefined();
     expect(endOf("2026-12-02", "10:00", null)).toBeUndefined();
     expect(endOf("2026-12-02", "10:00", 0)).toBeUndefined();
+    expect(endOf("2026-12-02", "10:00", -30)).toBeUndefined();
+    expect(endOf("2026-12-02", "10:00", 0.4)).toBeUndefined();
     expect(endOf("2026-12-02", "soon", 60)).toBeUndefined();
     expect(endOf("2026-12-02", "10:00:30", 60)).toBeUndefined();
     expect(endOf(null, "10:00", 60)).toEqual({ endTime: "11:00" });
@@ -56,26 +63,26 @@ describe("offerings carry their length and end", () => {
   const seed = (raw: Session[]) => writeCatalog({ raw, index: raw.map(buildIndexRecord), meta: { schemaVersion: CURRENT_SCHEMA_VERSION, eventId: "reinvent2026", syncedAt: 1, totalCount: raw.length, count: raw.length, includedAbstracts: true, timezone: null } }, { storeRoot: home.path });
   const offeringsOf = (code: string) => matchSessionsDetailed(profile(), { storeRoot: home.path }).candidates.find(candidate => candidate.code === code)!.offerings;
 
-  it("gives lengthMinutes and endTime for a session with a length, in the match and the lean response", () => {
+  it("gives endTime for a session with a length, in the match and the lean response", () => {
     seed([session("L1", { time: "10:00", length: "75" })]);
     const [offering] = offeringsOf("L1");
-    expect(offering).toMatchObject({ startTime: "10:00", lengthMinutes: 75, endTime: "11:15" });
+    expect(offering).toMatchObject({ startTime: "10:00", endTime: "11:15" });
+    expect(offering).not.toHaveProperty("lengthMinutes");
     const lean = toLeanCandidate(matchSessionsDetailed(profile(), { storeRoot: home.path }).candidates[0]!) as { offerings: Array<Record<string, unknown>> };
-    expect(lean.offerings[0]).toMatchObject({ lengthMinutes: 75, endTime: "11:15" });
+    expect(lean.offerings[0]).toMatchObject({ endTime: "11:15" });
+    expect(lean.offerings[0]).not.toHaveProperty("lengthMinutes");
   });
 
-  it("omits both when the catalog has no length", () => {
+  it("omits endTime when the catalog has no length", () => {
     seed([session("L2", { length: undefined })]);
     const [offering] = offeringsOf("L2");
-    expect(offering).not.toHaveProperty("lengthMinutes");
     expect(offering).not.toHaveProperty("endTime");
     expect(offering!.startTime).toBe("10:00");
   });
 
-  it("gives the length but no end when there is no start time", () => {
+  it("gives no end when there is no start time", () => {
     seed([session("L3", { time: undefined, length: "60" })]);
     const [offering] = offeringsOf("L3");
-    expect(offering).toMatchObject({ lengthMinutes: 60 });
     expect(offering).not.toHaveProperty("endTime");
   });
 

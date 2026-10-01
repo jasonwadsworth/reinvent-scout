@@ -134,7 +134,8 @@ export function platformShortName(catalogName: string): string {
 
 /** The platform services a profile uses, by short name in the profile's order, what the map leaves out and says so. */
 export function platformServicesOf(profile: ResolvedProfile): string[] {
-  return profile.services.flatMap(service => service.catalogName !== null && PLATFORM_SERVICES.includes(service.catalogName) ? [platformShortName(service.catalogName)] : []);
+  const names = profile.services.flatMap(service => service.catalogName !== null && PLATFORM_SERVICES.includes(service.catalogName) ? [service.catalogName] : []);
+  return [...new Set(names)].map(platformShortName);
 }
 
 function isCore(service: ResolvedProfile["services"][number]): boolean {

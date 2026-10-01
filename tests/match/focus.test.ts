@@ -77,6 +77,18 @@ describe("mapProfile and matchFocus", () => {
       expect(map.services.map(topic => topic.label)).not.toContain("Amazon S3");
     });
 
+    it("names each omitted platform service once, however many names the profile gives it", () => {
+      seed();
+      const p = base();
+      p.services.push(
+        { name: "Amazon S3", catalogName: "Amazon Simple Storage Service (Amazon S3)", evidence: [cite("s3.ts", 1)] },
+        { name: "S3", catalogName: "Amazon Simple Storage Service (Amazon S3)", evidence: [cite("s3b.ts", 1)] },
+        { name: "S3 buckets", catalogName: "Amazon Simple Storage Service (Amazon S3)", role: "supporting", evidence: [cite("s3c.ts", 1)] },
+        { name: "IAM", catalogName: "AWS Identity and Access Management (IAM)", evidence: [cite("i.ts", 1)] },
+      );
+      expect(mapProfile(p, deps()).omittedPlatformServices).toEqual(["CloudWatch", "S3", "IAM"]);
+    });
+
     it("has no omitted platform services when the profile uses none, and still lists supporting services that are not platform", () => {
       seed();
       const p = base();
