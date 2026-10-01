@@ -21,10 +21,25 @@ export interface ValidateProfileResponse {
   warnings?: string[];
 }
 
+const COMMON_DIRECTORIES = "src|lib|infra|infrastructure|services|packages|apps|cdk|stacks|tests?|scripts|shared|cmd|internal|terraform|modules|handlers";
 const FILE_EXTENSIONS = "tsx?|jsx?|mjs|cjs|py|java|kt|go|rb|cs|tf|ya?ml|json|toml|sh|md|dockerfile";
-/** A path separator, a glob star, or a name with a source-file extension: the shapes a note uses to
- * say which files it looked at. */
-const NAMES_WHAT_WAS_INSPECTED = new RegExp(`[/*]|\\b[\\w-]+\\.(?:${FILE_EXTENSIONS})\\b`, "i");
+/** What a note uses to say which files it looked at: a name with a source-file extension, a path with at
+ * least two directory segments (`services/user/src`), a dot directory or a well-known top directory
+ * (`.github/workflows`, `src/handlers`), a directory with a trailing slash (`services/`),
+ * or a glob (`**` or `*.ext`). A bare slash or star does not count: "5xx/unhealthy", an IAM action like
+ * "cognito-idp:*", a quoted "'*'" resource and an ARN ending in "/*" name no file. */
+const NAMES_WHAT_WAS_INSPECTED = new RegExp(
+  [
+    `[\\w@-]+\\.(?:${FILE_EXTENSIONS})\\b`,
+    "(?:[\\w.@-]+/){2,}",
+    "[\\w.@-]+/(?![\\w.@*-])",
+    `\\.[\\w-]+/[\\w.@-]+`,
+    `\\b(?:${COMMON_DIRECTORIES})/[\\w.@-]+`,
+    "\\*\\*",
+    "\\*\\.[a-z]\\w*",
+  ].join("|"),
+  "i",
+);
 
 /** One warning per `gap-*` pattern whose note names no file, path or glob: a reviewer cannot tell
  * what the profiler searched, so an absence or a "present everywhere" cannot be rechecked. */

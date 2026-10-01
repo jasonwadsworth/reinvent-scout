@@ -30,10 +30,26 @@ describe("validate report warnings", () => {
     ["a file name", "Checked infra/stack.ts: 3 of 4 queues lack a DLQ."],
     ["a bare file name", "Read stack.ts and found 3 of 4 queues without a DLQ."],
     ["a glob", "Grepped every **/cdk-construct.ts for deadLetterQueue: 34 of 37 have one."],
-    ["a directory path", "Searched services/ for Rule targets: 3 of 37 lack a DLQ."],
+    ["a star-extension glob", "Searched *.tf for dead_letter_config: 2 of 5 have one."],
+    ["a nested path", "Searched services/user/src for statements: one grants a wildcard."],
+    ["a directory", "Searched services/ for Rule targets: 3 of 37 lack a DLQ."],
+    ["a dot directory", "Read .github/workflows for a test step: none."],
   ])("does not warn when the note names %s", (_label, note) => {
     const report = buildValidateReport(profileWith({ name: "gap-no-dlq", note }));
     expect(report).not.toHaveProperty("warnings");
+  });
+
+  it.each([
+    ["a slash between two words", "Alarms on 5xx/unhealthy exist for some functions only."],
+    ["a verb pair", "Suspend/Resume has no failure destination."],
+    ["an IAM action wildcard", "Grants cognito-idp:* to the handler."],
+    ["a quoted wildcard resource", "The statement uses resources '*' for the table."],
+    ["an ARN with a trailing wildcard", "Allows arn:aws:cognito-idp:us-east-1:111122223333:userpool/* for every pool."],
+    ["an ARN with several wildcards", "Allows arn:aws:dynamodb:*:*:table/*/index/* for every table."],
+    ["an S3 object wildcard", "Allows s3:GetObject on arn:aws:s3:::bucket/*."],
+  ])("still warns when the only slash or star in the note is %s", (_label, note) => {
+    const report = buildValidateReport(profileWith({ name: "gap-broad-iam", note }));
+    expect(report.warnings).toHaveLength(1);
   });
 
   it("does not warn about patterns that are not gaps", () => {
@@ -47,10 +63,15 @@ describe("validate report warnings", () => {
   });
 
   it("keeps warnings when the response is truncated", () => {
-    const report = buildValidateReport(
-      profileWith({ name: "gap-no-dlq", note: "No DLQs." }),
-      value => JSON.stringify(value).length < 400,
-    );
+    const manyServices = Array.from({ length: 40 }, (_, index) => ({
+      name: `Service number ${index}`,
+      evidence: [citation],
+      catalogName: null,
+    }));
+    const profile = { ...profileWith({ name: "gap-no-dlq", note: "No DLQs." }), services: manyServices };
+    const report = buildValidateReport(profile, value => JSON.stringify(value).length < 1200);
+    expect(report.truncated).toBe(true);
+    expect(report.omitted).toBeGreaterThan(0);
     expect(report.warnings).toHaveLength(1);
   });
 });
