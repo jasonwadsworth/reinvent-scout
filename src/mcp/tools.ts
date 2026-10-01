@@ -257,7 +257,7 @@ const MAX_MATCH_SESSIONS_LIMIT = 50;
  * choices (four per choice already trims policy-tracker's). The CLI, with no budget, takes up to 10. */
 const MAX_FOCUS_PER_TOPIC = 3;
 
-/** What the user asked of the sessions, shared by `match_sessions` and `map_profile`. Bands are checked by `validatePreferences`, which
+/** What the user asked of the sessions, shared by `match_sessions` and `map_profile`. Bands and values are checked against the catalog by `resolvePreferences`, which
  * names the problem, so a bad range is a readable tool error. */
 const LevelRangeSchema = z.strictObject({ min: z.number(), max: z.number() });
 const PreferencesSchema = z.strictObject({
@@ -318,8 +318,8 @@ function registerMatchSessionsTool(server: McpServer, deps: McpToolDeps): void {
       description:
         "Rank the local catalog against a resolved tech profile and return the top candidates, " +
         "restricted and reordered by the user's `preferences` when they have stated any (`{ levels: { min, max }, rules: [{ field: format | venue | day | topic | area | industry | role, value, action: only | prefer | avoid | exclude, levels? }] }`: " +
-        "only sessions in that band range, bands 100 to 500; facet rules: `only` keeps just sessions with the value (a union within a field, an intersection across fields), `exclude` removes them, `prefer`/`avoid` move a session up or down after the demoted ones' place (the first matching rule decides within a field, the effects add across fields); values are checked against the catalog (`list_filters`); " +
-        "ranking is unchanged, the sessions that remain keep their order; the response echoes `preferences`, and `reason` says when they left nothing of a result that has sessions), " +
+        "only sessions in that band range, bands 100 to 500; facet rules: `only` keeps just sessions with the value (a union within a field, an intersection across fields), `exclude` removes them, `prefer`/`avoid` move a session up or down, ahead of every other ranking consideration except that demoted sessions stay last (the first matching rule decides within a field, the effects add across fields); values are checked against the catalog (`list_filters`); " +
+        "filtering removes sessions and the remaining ones are re-ranked by the same rules (a session's own score is unchanged; `prefer`/`avoid` only reorder, within each tier by the usual order, and a level-scoped `only` also removes a session with no level); the response echoes `preferences`, and `reason` says when they left nothing of a result that has sessions), " +
         "or, with a `focus` (topics from `map_profile`, each with a goal: understand, deepen or improve; 1 to 6, and `perTopic` sessions each, 1 to 3 and 3 by default, " +
         "instead of `lens` and `limit`), a short list per choice as `{ results: [{ topic, goal, total, candidates, reason? }], truncated, omitted }`. " +
         "Each candidate has a `why` (summary, yourCode citations, and a sessionSays quote from the session), " +

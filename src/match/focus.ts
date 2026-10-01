@@ -23,7 +23,7 @@ export interface FocusChoice {
 export interface FocusOptions {
   /** How many sessions each choice lists. Defaults to 5; 1 to 10. */
   perTopic?: number;
-  /** What the user asked of the sessions; see `levels.ts`. */
+  /** What the user asked of the sessions; see `preferences.ts`. */
   preferences?: SessionPreferences;
 }
 

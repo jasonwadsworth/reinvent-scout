@@ -860,13 +860,13 @@ describe("the session preferences documentation", () => {
     const flow = collapse(extractSection(skillMd, "## The flow"));
     for (const expected of ["`preferences: { \"levels\": { \"min\": N, \"max\": M } }`", "on `map_profile` and on `match_sessions`", "for the rest of the conversation, the map included",
       "100 Foundational, 200 Intermediate, 300 Advanced, 400 Expert, 500 Distinguished", "\"Only 400-500\" and \"expert\" are 400 to 500", "\"advanced and up\" and \"no intro\" are 300 to 500",
-      "ranking of what remains is unchanged", "never widen the range yourself, and offer to widen it", "`explain` is an error naming `deepen` or `all`"]) {
+      "the remaining ones are re-ranked by the same rules", "never widen the range yourself, and offer to widen it", "`explain` is an error naming `deepen` or `all`"]) {
       expect(flow, expected).toContain(expected);
     }
   });
   it("documents the preferences argument, its order of application and its refusals in workflow.md", () => {
     const text = collapse(workflowMd);
-    for (const expected of ["\"preferences\"?: { \"levels\"?: { \"min\": number, \"max\": number }, \"rules\"?:", "applied after admission and before the per-concept cap", "ranking itself does not change",
+    for (const expected of ["\"preferences\"?: { \"levels\"?: { \"min\": number, \"max\": number }, \"rules\"?:", "applied after admission and before the per-concept cap", "a session's own score does not change",
       "4 sessions match, none at 400\u2013500", "explain lists introductory (100\u2013200) sessions, which is outside 400\u2013500; use deepen or all", "`profile map --level 400-500`", "`--level 400-500` is the CLI form"]) {
       expect(text, expected).toContain(expected);
     }
@@ -878,7 +878,7 @@ describe("the session preferences documentation", () => {
       "a preferred session outranks a neutral one even if it matches less strongly", "(a chalk talk at MGM Grand, which you prefer)", "(ranked lower: a breakout session, which you asked to avoid at 300\u2013500)",
       "| \"only 400+\" |", "| \"no workshops\" | `rules: [{ field: \"format\", value: \"Workshop\", action: \"exclude\" }]` |", "| \"I like chalk talks\" |",
       "| \"avoid breakouts unless intro\" | `rules: [{ field: \"format\", value: \"Breakout session\", action: \"avoid\", levels: { min: 300, max: 500 } }]` |",
-      "| \"only sessions at MGM\" | `rules: [{ field: \"venue\", value: \"MGM Grand\", action: \"only\" }]` |", "| \"I'm staying at the Venetian, prefer sessions there\" |", "| \"nothing on Thursday\" | `rules: [{ field: \"day\", value: \"<that date>\", action: \"exclude\" }]` |",
+      "| \"only sessions at MGM\" | `rules: [{ field: \"venue\", value: \"MGM Grand\", action: \"only\" }]` |", "| \"I'm staying at the Venetian, prefer sessions there\" |", "| \"nothing on Thursday\" | `rules: [{ field: \"day\", value: \"<that date>\", action: \"exclude\" }]`, the date from `list_filters` with `field: \"day\"` |", "Never compute a day's date yourself",
       "| \"what venues are there?\" | call `list_filters` with `field: \"venue\"` |",
       "chalk talk; breakout or talk (the catalog's \"Breakout session\"); workshop; builders' session; lightning talk; code talk; lab; bootcamp",
       "call `list_filters` (no profile needed", "names a value that does not resolve (the error lists the closest values)", "Restate the active preferences once, briefly",
@@ -889,7 +889,7 @@ describe("the session preferences documentation", () => {
   it("documents the facet rules and list_filters in workflow.md and the readme", () => {
     const text = collapse(workflowMd);
     for (const expected of ["\"rules\"?: [{ \"field\": string, \"value\": string, \"action\": \"only\" | \"prefer\" | \"avoid\" | \"exclude\"", "the first rule that matches winning within a field", "an unknown or ambiguous value is an `isError` listing the closest values and pointing at `list_filters`",
-      "several on one field are a union, on different fields an intersection", "across fields the effects add up", "the per-concept cap and the focus dedupe run after the tier", "`explain` and `understand` included",
+      "several on one field are a union, on different fields an intersection", "across fields the effects add up", "the per-concept cap applies within each tier", "a level-scoped `only` also leaves out a session with no level", "`fix` and `next-level` re-interleave their rules over what remains", "`explain` and `understand` included",
       "`--only <field>:<value>[@band]`, and `--prefer`, `--avoid` and `--exclude` taking `[<field>:]<value>[@band]`", "## 4b. `list_filters`", "Read-only, from the local catalog: it needs no profile and no sign-in",
       "every field lists its first 40 values", "`reinvent-scout catalog filters [--field <field>] [--json]`"]) {
       expect(text, expected).toContain(expected);
@@ -901,7 +901,7 @@ describe("the session preferences documentation", () => {
   });
   it("documents --level in the readme", () => {
     const text = collapse(readmeMd);
-    for (const expected of ["#### Only the levels you want", "`--level 400-500`", "does not change the ranking", "none at 400-500"]) {
+    for (const expected of ["#### Only the levels you want", "`--level 400-500`", "filtering removes sessions, the remaining ones are re-ranked by the same rules", "none at 400-500"]) {
       expect(text, expected).toContain(expected);
     }
   });

@@ -198,7 +198,20 @@ describe("--level on match and profile map", () => {
       const mgm = await json(["profile", "map", "--profile", file, "--only", "venue:mgm"]);
       const deepen = (map: typeof plain) => map.services.find((topic: { id: string }) => topic.id === "service:Amazon DynamoDB").goals.find((goal: { goal: string }) => goal.goal === "deepen").sessions;
       expect(deepen(mgm)).toBeLessThan(deepen(plain));
-      expect((await run(["profile", "map", "--profile", file, "--only", "venue:mgm"])).text.split("\n")[0]).toBe("Only venue MGM Grand.");
+      const { text } = await run(["profile", "map", "--profile", file, "--only", "venue:mgm"]);
+      expect(text.split("\n")[0]).toBe("Only venue MGM Grand.");
+      expect(text).toContain("No sessions that go deeper with venue MGM Grand for:");
+      expect(text).not.toContain("in the catalog");
+      expect((await run(["profile", "map", "--profile", file, "--exclude", "breakout session", "--exclude", "chalk talk", "--exclude", "workshop"])).text).toContain("after excluding Breakout session, Chalk talk, Workshop for:");
+    });
+
+    it("keeps the order rules are typed in across --prefer and --avoid, the first match winning", async () => {
+      const preferFirst = await json(["match", "--profile", file, "--prefer", "chalk", "--avoid", "chalk@400-500"]);
+      const avoidFirst = await json(["match", "--profile", file, "--avoid", "chalk@400-500", "--prefer", "chalk"]);
+      expect(preferFirst.preferences.rules.map((rule: { action: string }) => rule.action)).toEqual(["prefer", "avoid"]);
+      expect(avoidFirst.preferences.rules.map((rule: { action: string }) => rule.action)).toEqual(["avoid", "prefer"]);
+      expect(preferFirst.candidates[0].code).toBe("CHK400");
+      expect(avoidFirst.candidates.at(-1).code).toBe("CHK400");
     });
   });
 });

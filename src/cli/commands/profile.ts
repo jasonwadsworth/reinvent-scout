@@ -14,7 +14,7 @@ import { buildValidateReport } from "../../profile/report.js";
 import { readProfileFile, saveProfileFile } from "../../profile/store.js";
 import { formatZodError } from "../zod-errors.js";
 import { loadResolvedProfile } from "../profile-input.js";
-import { allowsIntroductory, describeLevels, describePreferences, INTRODUCTORY_LABEL, type SessionPreferences } from "../../match/preferences.js";
+import { allowsIntroductory, describePreferences, INTRODUCTORY_LABEL, restrictionText, type SessionPreferences } from "../../match/preferences.js";
 import { addPreferenceOptions } from "../level-option.js";
 import { mapProfile, type MapTopic, type ProfileMap } from "../../match/map.js";
 
@@ -77,8 +77,9 @@ function formatTopic(topic: MapTopic): string {
  * where the explain lens found one. */
 function formatDeadEnds(topics: readonly MapTopic[], preferences: SessionPreferences | undefined): string[] {
   const lines: string[] = [];
-  // With a level range the empty goals are the range's doing, so say "at level" where the catalog would be named.
-  const where = preferences?.levels === undefined ? " in the catalog" : ` at level ${describeLevels(preferences.levels)}`;
+  // With preferences that take sessions out, the empty goals are their doing, so say what they took out where the catalog would be named.
+  const restriction = restrictionText(preferences, "at level");
+  const where = restriction === undefined ? " in the catalog" : ` ${restriction}`;
   for (const goal of ["understand", "deepen", "improve"] as const) {
     const dead = topics.filter(topic => topic.goals.some(entry => entry.goal === goal && entry.sessions === 0));
     const introductory = goal === "understand" && !allowsIntroductory(preferences) ? ` (understand is introductory, ${INTRODUCTORY_LABEL})` : "";

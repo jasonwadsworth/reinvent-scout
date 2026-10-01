@@ -186,6 +186,16 @@ describe("session type preferences", () => {
       expect(undemoted.indexOf("C1")).toBeGreaterThan(undemoted.indexOf("B3"));
     });
 
+    it("puts a preferred session the per-concept cap holds back ahead of every neutral one", () => {
+      const chalk = Array.from({ length: 5 }, (_, i) => s(`LC${i}`, `Lambda deep dive ${i}`, L300, CHALK));
+      seed([...chalk, s("NB1", "DynamoDB essentials", L300, BREAKOUT), s("NB2", "Amazon SQS essentials", L300, BREAKOUT, { services: ["Amazon Simple Queue Service (Amazon SQS)"] }), s("NB3", "Serverless essentials", L300, BREAKOUT)]);
+      const plain = codes(run("all"));
+      // Without a preference the cap holds the fourth Lambda session behind the other concepts' sessions.
+      expect(plain.indexOf("LC3")).toBeGreaterThan(plain.indexOf("NB3"));
+      const result = codes(run("all", { rules: [{ field: "format", value: "chalk talk", action: "prefer" }] }));
+      expect(result.slice(0, 5).sort()).toEqual(["LC0", "LC1", "LC2", "LC3", "LC4"]);
+    });
+
     it("keeps a demoted session behind every undemoted one, preferred or not", () => {
       seed();
       const result = run("all", { rules: [{ field: "format", value: "chalk talk", action: "prefer" }] });

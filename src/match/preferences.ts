@@ -111,8 +111,9 @@ export function admits(preferences: SessionPreferences | undefined, record: Inde
   const rules = preferences?.rules ?? [];
   if (rules.some(rule => rule.action === "exclude" && matches(rule, record))) return false;
   // Every field with an `only` rule that is about this session must have one of them match: a union within a field, an intersection across fields.
+  // A level-scoped rule is also about a session with no level, which no range proves it outside of, as in the level filter itself.
   return FACET_FIELDS.every(field => {
-    const only = rules.filter(rule => rule.field === field && rule.action === "only" && appliesTo(rule, record));
+    const only = rules.filter(rule => rule.field === field && rule.action === "only" && (appliesTo(rule, record) || (rule.levels !== undefined && record.levelBand === null)));
     return only.length === 0 || only.some(rule => matches(rule, record));
   });
 }
@@ -158,9 +159,13 @@ export function formatNote(preferences: SessionPreferences | undefined, record: 
   const moving = movers(preferences, record);
   const preferred = moving.filter(rule => rule.action === "prefer");
   const avoided = moving.filter(rule => rule.action === "avoid");
+  // One range after the avoided phrases when every avoided rule has the same one; otherwise each phrase carries its own.
+  const ranges = new Set(avoided.map(rule => rule.levels === undefined ? "" : describeLevels(rule.levels)));
+  const shared = ranges.size === 1 ? [...ranges][0]! : undefined;
+  const avoidedText = avoided.map(rule => `${phrase(rule)}${shared === undefined && rule.levels !== undefined ? ` (at ${describeLevels(rule.levels)})` : ""}`).join(" ");
   const notes = [
     ...(preferred.length === 0 ? [] : [`${preferred.map(phrase).join(" ")}, which you prefer`]),
-    ...(avoided.length === 0 ? [] : [`ranked lower: ${avoided.map(phrase).join(" ")}, which you asked to avoid${avoided.find(rule => rule.levels !== undefined)?.levels === undefined ? "" : ` at ${describeLevels(avoided.find(rule => rule.levels !== undefined)!.levels!)}`}`]),
+    ...(avoided.length === 0 ? [] : [`ranked lower: ${avoidedText}, which you asked to avoid${shared === undefined || shared === "" ? "" : ` at ${shared}`}`]),
   ];
   return notes.length === 0 ? undefined : notes.join("; ");
 }
@@ -213,16 +218,32 @@ export function introductoryRefusal(subject: string, preferences: SessionPrefere
   return `${subject} lists introductory (${INTRODUCTORY_LABEL}) sessions, which is outside ${describeLevels(preferences.levels!)}; use ${alternatives}`;
 }
 
-/** What the preferences emptied, when the same result would not be empty without them: "4 sessions match, none at 400–500". */
-export function emptiedBy(preferences: SessionPreferences | undefined, without: number): string | undefined {
+/** The values of the `only` rules grouped by field: "venue MGM Grand or Wynn/Encore and format Chalk talk". */
+function onlyText(rules: readonly FacetRule[]): string {
+  return FACET_FIELDS.flatMap(field => {
+    const values = rules.filter(rule => rule.field === field && rule.action === "only");
+    return values.length === 0 ? [] : [`${field} ${values.map(rule => `${rule.value}${rule.levels === undefined ? "" : ` at ${describeLevels(rule.levels)}`}`).join(" or ")}`];
+  }).join(" and ");
+}
+
+/**
+ * What the preferences took out, in words, for what a result or a goal says is empty: "at 400\u2013500 with venue MGM Grand or Wynn/Encore and format
+ * Chalk talk after excluding Workshop". `levelWord` is how the level range is introduced ("at" or "at level"). Absent when nothing was taken out.
+ */
+export function restrictionText(preferences: SessionPreferences | undefined, levelWord = "at"): string | undefined {
   const rules = preferences?.rules ?? [];
-  const only = rules.filter(rule => rule.action === "only").map(plain);
   const excluded = rules.filter(rule => rule.action === "exclude").map(plain);
-  if (without === 0 || (preferences?.levels === undefined && only.length === 0 && excluded.length === 0)) return undefined;
-  const restriction = [
-    ...(preferences?.levels === undefined ? [] : [`at ${describeLevels(preferences.levels)}`]),
-    ...(only.length === 0 ? [] : [`with ${only.join(" or ")}`]),
+  const parts = [
+    ...(preferences?.levels === undefined ? [] : [`${levelWord} ${describeLevels(preferences.levels)}`]),
+    ...(rules.some(rule => rule.action === "only") ? [`with ${onlyText(rules)}`] : []),
     ...(excluded.length === 0 ? [] : [`after excluding ${excluded.join(", ")}`]),
-  ].join(" ");
+  ];
+  return parts.length === 0 ? undefined : parts.join(" ");
+}
+
+/** What the preferences emptied, when the same result would not be empty without them: "4 sessions match, none at 400\u2013500". */
+export function emptiedBy(preferences: SessionPreferences | undefined, without: number): string | undefined {
+  const restriction = restrictionText(preferences);
+  if (without === 0 || restriction === undefined) return undefined;
   return `${without} session${without === 1 ? " matches" : "s match"}, none ${restriction}`;
 }

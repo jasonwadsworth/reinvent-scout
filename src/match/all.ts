@@ -139,7 +139,7 @@ export interface AllSession {
   /** How relevant the whole session is to the profile; the last word between otherwise equal sessions. */
   relevance: number;
   demoted?: string;
-  /** From the user's format preferences: 1 preferred, -1 avoided, 0 neither. */
+  /** From the user's rules: the sum over fields of +1 for each that prefers the session and -1 for each that avoids it; 0 for neither. */
   tier?: number;
 }
 
@@ -172,12 +172,12 @@ const TOP_SHARE = 3;
 const MIN_CONCEPTS_FOR_CAP = 4;
 
 /**
- * Orders sessions by, in sequence: demoted sessions after every other; the user's preferred formats before neutral ones before avoided ones; the strongest match (a title that
+ * Orders sessions by, in sequence: demoted sessions after every other; the sessions the user's preferences move up (the higher the sum of their rules, the higher) before neutral ones before the ones they move down; the strongest match (a title that
  * names a concept before an abstract that only does); a session about the profile's evidence before one
  * about only a stated interest; the summed centrality of the concepts they are
  * about (the code's central concepts first); the number of concepts; relevance; a scheduled session
  * before an unscheduled one; the key. Each key is compared only when the ones before it tie; none is
- * added to another. Then no concept is the main subject of more than three of the first ten, unless
+ * added to another. Then, within each preference tier, no concept is the main subject of more than three of the tier's first ten, unless
  * fewer than four concepts have any session. After the ten come the sessions the cap held back and the rest
  * of the undemoted ones, in rank order; the demoted sessions come last, in rank order.
  */
@@ -203,19 +203,25 @@ export function rankAll(sessions: readonly AllSession[]): RankedAll[] {
     || a.session.key.localeCompare(b.session.key));
   const admitted = new Set(ranked.flatMap(entry => entry.matches.map(match => match.concept)));
   const capped = admitted.size >= MIN_CONCEPTS_FOR_CAP;
-  const top: Ranked[] = [];
-  const rest: Ranked[] = [];
-  const share = new Map<ProfileConcept, number>();
-  for (const entry of ranked.filter(candidate => candidate.session.demoted === undefined)) {
-    const main = entry.matches[0]!.concept;
-    if (top.length >= TOP || (capped && (share.get(main) ?? 0) >= TOP_SHARE)) {
-      rest.push(entry);
-      continue;
+  // The cap is applied within each preference tier, so a session the cap holds back still ranks ahead of every session of a lower tier.
+  const undemoted = ranked.filter(candidate => candidate.session.demoted === undefined);
+  const tiers = [...new Set(undemoted.map(entry => entry.session.tier ?? 0))].sort((a, b) => b - a);
+  const ordered = tiers.flatMap(tier => {
+    const top: Ranked[] = [];
+    const rest: Ranked[] = [];
+    const share = new Map<ProfileConcept, number>();
+    for (const entry of undemoted.filter(candidate => (candidate.session.tier ?? 0) === tier)) {
+      const main = entry.matches[0]!.concept;
+      if (top.length >= TOP || (capped && (share.get(main) ?? 0) >= TOP_SHARE)) {
+        rest.push(entry);
+        continue;
+      }
+      share.set(main, (share.get(main) ?? 0) + 1);
+      top.push(entry);
     }
-    share.set(main, (share.get(main) ?? 0) + 1);
-    top.push(entry);
-  }
-  return [...top, ...rest, ...ranked.filter(candidate => candidate.session.demoted !== undefined)].map(entry => ({ key: entry.session.key, matches: entry.matches }));
+    return [...top, ...rest];
+  });
+  return [...ordered, ...ranked.filter(candidate => candidate.session.demoted !== undefined)].map(entry => ({ key: entry.session.key, matches: entry.matches }));
 }
 
 

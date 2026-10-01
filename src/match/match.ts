@@ -37,7 +37,7 @@ export interface MatchOptions {
   /** Caps the number of candidates (groups, not raw sittings -- see `MatchCandidate.offerings`)
    * returned, after ranking. */
   limit?: number;
-  /** What the user asked of the sessions: a level range, ... See `levels.ts`. */
+  /** What the user asked of the sessions: a level range and rules by catalog field. See `preferences.ts`. */
   preferences?: SessionPreferences;
 }
 

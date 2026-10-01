@@ -75,7 +75,20 @@ describe("facet preferences", () => {
       seed();
       const result = run({ rules: [only("venue", "wynn"), only("day", "2026-12-03")] });
       expect(result.candidates).toEqual([]);
-      expect(result.reason).toBe(`${run().candidates.length} sessions match, none with venue Wynn/Encore or day 2026-12-03`);
+      expect(result.reason).toBe(`${run().candidates.length} sessions match, none with venue Wynn/Encore and day 2026-12-03`);
+    });
+
+    it("joins values of one field with or and different fields with and", () => {
+      seed();
+      const result = run({ rules: [only("venue", "mgm"), only("venue", "wynn"), only("day", "2026-12-03")] });
+      expect(result.reason).toBe(`${run().candidates.length} sessions match, none with venue MGM Grand or Wynn/Encore and day 2026-12-03`);
+      expect(run({ rules: [only("venue", "wynn"), only("format", "chalk talk")] }).reason).toBe(`${run().candidates.length} sessions match, none with format Chalk talk and venue Wynn/Encore`);
+    });
+
+    it("leaves out a session with no level when a level-scoped only is about a level it cannot place", () => {
+      seed([...CATALOG, s("NL1", "DynamoDB no level", { ...at(MGM, "2026-12-01"), level: "" })]);
+      expect(codes(run({ rules: [only("venue", "mgm", { min: 300, max: 500 })] }))).not.toContain("NL1");
+      expect(codes(run({ rules: [only("venue", "mgm")] }))).toContain("NL1");
     });
   });
 
@@ -166,6 +179,13 @@ describe("facet preferences", () => {
       expect(formatNote(prefs, record(MGM, "Chalk talk"))).toBe("a chalk talk at MGM Grand, which you prefer");
       expect(formatNote(prefs, record(VEN, "Chalk talk"))).toBe("a chalk talk, which you prefer");
       expect(formatNote(prefs, record(VEN, "Breakout session"))).toBeUndefined();
+    });
+
+    it("gives each avoided rule its own range when two scoped avoids move a session", () => {
+      const prefs: SessionPreferences = { rules: [{ field: "venue", value: VEN, action: "avoid", levels: { min: 300, max: 500 } }, { field: "format", value: "Chalk talk", action: "avoid", levels: { min: 100, max: 400 } }] };
+      expect(formatNote(prefs, record(VEN, "Chalk talk"))).toBe("ranked lower: a chalk talk (at 100\u2013400) at Venetian (at 300\u2013500), which you asked to avoid");
+      const same: SessionPreferences = { rules: [{ field: "venue", value: VEN, action: "avoid", levels: { min: 300, max: 500 } }, { field: "format", value: "Chalk talk", action: "avoid", levels: { min: 300, max: 500 } }] };
+      expect(formatNote(same, record(VEN, "Chalk talk"))).toBe("ranked lower: a chalk talk at Venetian, which you asked to avoid at 300\u2013500");
     });
 
     it("says both directions when the fields disagree", () => {
