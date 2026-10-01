@@ -520,22 +520,22 @@ this original profile object to `match_sessions`, never that report.
     },
     {
       "name": "gap-no-load-tests",
-      "note": "Searched ci/test.yml and *.yml for load or stress tests: 0 of 1 workflows run any. Cited the deploy entry point ci/test.yml.",
+      "note": "Searched ci/test.yml and *.yml for load or stress tests: 0 of 1 workflows run any. Cited the deploy entry point infra/app.ts.",
       "evidence": [
         {
           "repo": "example",
-          "file": "ci/test.yml",
+          "file": "infra/app.ts",
           "line": 16
         }
       ]
     },
     {
       "name": "gap-no-cost-monitoring",
-      "note": "Searched infra/*.ts for budgets and anomaly monitors: 0 found. Cited the deploy entry point infra/budget.ts.",
+      "note": "Searched infra/*.ts for budgets and anomaly monitors: 0 found. Cited the deploy entry point infra/app.ts.",
       "evidence": [
         {
           "repo": "example",
-          "file": "infra/budget.ts",
+          "file": "infra/app.ts",
           "line": 7
         }
       ]

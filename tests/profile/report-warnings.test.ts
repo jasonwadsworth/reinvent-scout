@@ -33,6 +33,13 @@ describe("validate report warnings", () => {
     ["a star-extension glob", "Searched *.tf for dead_letter_config: 2 of 5 have one."],
     ["a nested path", "Searched services/user/src for statements: one grants a wildcard."],
     ["a directory", "Searched services/ for Rule targets: 3 of 37 lack a DLQ."],
+    ["a path only the multi-segment branch accepts", "Searched frontend/e2e/specs for a test step: none."],
+    ["a bare Dockerfile", "Read the Dockerfile and found no healthcheck."],
+    ["a bare Makefile", "Read Makefile for a test target: none."],
+    ["go.mod", "Read go.mod: no tracing library."],
+    ["pom.xml", "Read pom.xml: no test dependency."],
+    ["requirements.txt", "Read requirements.txt: no pytest."],
+    ["cdk.json", "Read cdk.json for the app entry: one stack."],
     ["a dot directory", "Read .github/workflows for a test step: none."],
   ])("does not warn when the note names %s", (_label, note) => {
     const report = buildValidateReport(profileWith({ name: "gap-no-dlq", note }));
@@ -46,6 +53,7 @@ describe("validate report warnings", () => {
     ["a quoted wildcard resource", "The statement uses resources '*' for the table."],
     ["an ARN with a trailing wildcard", "Allows arn:aws:cognito-idp:us-east-1:111122223333:userpool/* for every pool."],
     ["an ARN with several wildcards", "Allows arn:aws:dynamodb:*:*:table/*/index/* for every table."],
+    ["a bare extension list", "Searched .ts and .tf for dead letter queues: none."],
     ["an S3 object wildcard", "Allows s3:GetObject on arn:aws:s3:::bucket/*."],
   ])("still warns when the only slash or star in the note is %s", (_label, note) => {
     const report = buildValidateReport(profileWith({ name: "gap-broad-iam", note }));

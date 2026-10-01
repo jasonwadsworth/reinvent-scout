@@ -22,11 +22,12 @@ export interface ValidateProfileResponse {
 }
 
 const COMMON_DIRECTORIES = "src|lib|infra|infrastructure|services|packages|apps|cdk|stacks|tests?|scripts|shared|cmd|internal|terraform|modules|handlers";
+const WELL_KNOWN_FILES = "Dockerfile|Makefile|go\\.mod|pom\\.xml|requirements\\.txt|package\\.json|serverless\\.yml|template\\.yaml|cdk\\.json";
 const FILE_EXTENSIONS = "tsx?|jsx?|mjs|cjs|py|java|kt|go|rb|cs|tf|ya?ml|json|toml|sh|md|dockerfile";
 /** What a note uses to say which files it looked at: a name with a source-file extension, a path with at
  * least two directory segments (`services/user/src`), a dot directory or a well-known top directory
  * (`.github/workflows`, `src/handlers`), a directory with a trailing slash (`services/`),
- * or a glob (`**` or `*.ext`). A bare slash or star does not count: "5xx/unhealthy", an IAM action like
+ * a well-known bare file name (`Dockerfile`, `go.mod`), or a glob (`**` or `*.ext`). A bare slash or star does not count: "5xx/unhealthy", an IAM action like
  * "cognito-idp:*", a quoted "'*'" resource and an ARN ending in "/*" name no file. */
 const NAMES_WHAT_WAS_INSPECTED = new RegExp(
   [
@@ -34,6 +35,7 @@ const NAMES_WHAT_WAS_INSPECTED = new RegExp(
     "(?:[\\w.@-]+/){2,}",
     "[\\w.@-]+/(?![\\w.@*-])",
     `\\.[\\w-]+/[\\w.@-]+`,
+    `\\b(?:${WELL_KNOWN_FILES})\\b`,
     `\\b(?:${COMMON_DIRECTORIES})/[\\w.@-]+`,
     "\\*\\*",
     "\\*\\.[a-z]\\w*",

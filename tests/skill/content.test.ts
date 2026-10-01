@@ -822,6 +822,13 @@ describe("the workflow.md teaching profile", () => {
     const gaps = block!.patterns.filter(pattern => pattern.name.startsWith("gap-"));
     expect(gaps.length).toBeGreaterThanOrEqual(7);
     for (const gap of gaps) expect(gap.note, gap.name).toMatch(/\d/);
+    for (const gap of gaps) {
+      const cited = /deploy entry point (\S+\.ts)\./.exec(gap.note ?? "")?.[1];
+      if (cited !== undefined) {
+        expect(cited, gap.name).toBe("infra/app.ts");
+        expect(gap.evidence[0]!.file, gap.name).toBe(cited);
+      }
+    }
     const report = buildValidateReport({ ...block!, unresolvedServices: [] });
     expect(report.warnings, JSON.stringify(report.warnings)).toBeUndefined();
   });
@@ -919,10 +926,20 @@ describe("gap consistency guidance in profiling.md", () => {
   });
   it("gives gap-no-resource-rightsizing a recipe, since the lens table lists it", () => {
     const text = recipe("gap-no-resource-rightsizing");
-    for (const term of ["memory", "instance size", "defaults", "measurement", "production"]) expect(text, term).toContain(term);
+    for (const term of ["memory", "instance size", "platform default", "production"]) expect(text, term).toContain(term);
   });
   it("tells absence gaps to cite the deploy entry point and say so", () => {
     expect(collapsed).toContain("cite the deploy entry point (the app or stack file) and say so in the `note`");
+  });
+  it("says how many gaps have recipes, matching the recipes there are", () => {
+    const recipes = collapsed.match(/\*\*`gap-[a-z-]+`\*\* recipe\./g) ?? [];
+    expect(recipes).toHaveLength(5);
+    expect(collapsed).toContain("Five gaps are easy to get wrong by sampling");
+  });
+  it("records rightsizing only for compute left at the platform default or with an explicit sizing TODO", () => {
+    const text = recipe("gap-no-resource-rightsizing");
+    for (const term of ["MemorySize", "memory_size", "platform default", "explicit sizing TODO"]) expect(text, term).toContain(term);
+    expect(text).not.toContain("round number");
   });
   it("does not add a gap-no-waf rule", () => {
     expect(collapsed).not.toContain("gap-no-waf");

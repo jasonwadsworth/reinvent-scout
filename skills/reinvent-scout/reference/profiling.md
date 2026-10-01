@@ -225,7 +225,7 @@ the narrowing mentioned in the `note`.
 
 ## Search recipes for the common gaps
 
-Four gaps are easy to get wrong by sampling, so each has a search that enumerates the resources
+Five gaps are easy to get wrong by sampling, so each has a search that enumerates the resources
 first. Run it over every package, service directory and stack in the repository (a monorepo has one
 per service), skipping dependency and build directories. Each recipe names where to look for CDK
 (TypeScript, Python), CloudFormation/SAM YAML or JSON, Terraform and the Serverless Framework.
@@ -274,10 +274,10 @@ per service), skipping dependency and build directories. Each recipe names where
   resources. A test directory shared by every unit counts for the units it exercises.
 - **`gap-no-resource-rightsizing`** recipe. List the compute that serves production (Lambda
   functions, ECS tasks, EC2 instances, containers) and read its size settings: `memorySize`,
-  `memory_size`, `Memory`, CPU, `instanceType` and instance size. Record the gap when the size is left at
-  defaults, or is set to a round number with no evidence of measurement (no power-tuning run, no
-  metrics-driven comment, no autoscaling or compute optimizer reference). Name the count in the
-  `note`: "6 of 9 production functions use the default memory". Test, example and placeholder compute is
+  `memory_size`, `MemorySize`, `Memory`, CPU, `instanceType` and instance size. Record the gap only when
+  production compute is left at the platform default (no `memorySize`, `MemorySize`, `memory_size` or
+  instance type set) or an explicit sizing TODO says the size was never tuned; a size someone chose is
+  not this gap. Name the count in the `note`: "6 of 9 production functions use the default memory". Test, example and placeholder compute is
   not production compute.
 
 ## What counts as each newer gap
