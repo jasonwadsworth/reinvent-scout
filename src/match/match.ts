@@ -1,4 +1,5 @@
 import { buildStackFit, hasCoreService, PREFIX_REQUIRED_SERVICE_NAMES } from "./stack-fit.js";
+import { admits, allowsBand, allowsIntroductory, emptiedBy, introductoryRefusal, validatePreferences, type SessionPreferences } from "./levels.js";
 import { absentBroadTopics, buildConcepts, interestConcepts, serviceTails, type ConceptMatch, type ProfileConcept, type UncoveredConcept } from "./concepts.js";
 import { allReason, demotionReason, industryTerms, matchAllConcepts, rankAll, rareProfileServices } from "./all.js";
 import { offStackOf } from "./off-stack.js";
@@ -6,6 +7,7 @@ import { explainReason, matchConcepts, selectExplain } from "./explain.js";
 import { activeLensRules, scoreLensSignals, skippedLensRules, type LensHit, type SkippedRule } from "./lens-signals.js";
 import { readRaw, type CatalogStoreDeps } from "../catalog/store.js";
 import { baseSessionCode, requireCurrentIndex } from "../catalog/query.js";
+import { ValidationError } from "../core/errors.js";
 import type { IndexRecord } from "../catalog/index-record.js";
 import type { Venue } from "../catalog/venue.js";
 import type { ResolvedProfile } from "../profile/profile.js";
@@ -25,6 +27,8 @@ export interface LensContext {
   query: MatchQuery;
   corpusStats: ReturnType<typeof buildCorpusStats>;
   abstractOf: AbstractOf;
+  /** Applied after admission's own rules and before ranking; the corpus statistics and every vocabulary stay those of the whole catalog. */
+  preferences?: SessionPreferences | undefined;
 }
 
 export interface MatchOptions {
@@ -33,6 +37,8 @@ export interface MatchOptions {
   /** Caps the number of candidates (groups, not raw sittings -- see `MatchCandidate.offerings`)
    * returned, after ranking. */
   limit?: number;
+  /** What the user asked of the sessions: a level range, ... See `levels.ts`. */
+  preferences?: SessionPreferences;
 }
 
 /** One scheduled sitting of a session -- a repeat carries the same talk on a different day, so an
@@ -81,6 +87,10 @@ export interface MatchResult {
   /** Explain only, always present there: concepts of the profile no session could be matched to,
    * each with the reason. Absent under every other lens. */
   uncovered?: UncoveredConcept[];
+  /** The preferences that were applied, absent when there were none. */
+  preferences?: SessionPreferences;
+  /** Present when the preferences left nothing of a result that has sessions without them: "4 sessions match, none at 400-500". */
+  reason?: string;
 }
 
 /** What interleaving needs from the winning sitting of a lens candidate. */
@@ -444,6 +454,7 @@ function matchExplain(ctx: LensContext, limit: number | undefined): MatchResult 
     groups.map((group) => ({ key: group.code, record: group.record, matches: group.explain!, rank: group.score })),
     concepts,
     typeWeights,
+    allowsBand(ctx.preferences, 300),
   );
   const candidates = selected.map((entry) => explainCandidate(byCode.get(entry.key)!, entry.matches, profile, typeWeights));
   return {
@@ -460,6 +471,7 @@ export function explainSessions(ctx: LensContext): { concepts: ProfileConcept[];
   const { concepts, uncovered: unmapped } = buildConcepts(profile, knownServices(profile, index));
   const scored: ScoredRecord[] = [];
   for (const record of index) {
+    if (!admits(ctx.preferences, record)) continue;
     const matches = matchConcepts(concepts, record, rawById.get(record.sessionId)?.abstract ?? "");
     if (matches.length > 0) {
       scored.push({ record, score: scoreSession(record, query, corpusStats).score, reasons: [], explain: matches });
@@ -493,6 +505,7 @@ export function allRanked(ctx: LensContext): GroupedCandidate[] {
   const rare = rareProfileServices(concepts, index, abstractOf, RARE_SERVICE_FRACTION);
   const scored: ScoredRecord[] = [];
   for (const record of index) {
+    if (!admits(ctx.preferences, record)) continue;
     const abstract = rawById.get(record.sessionId)?.abstract ?? "";
     const matches = matchAllConcepts(concepts, record, abstract, rare);
     if (matches.length === 0) continue;
@@ -548,6 +561,10 @@ export function matchSessionsDetailed(
   options: MatchOptions = {},
 ): MatchResult {
   const lens = options.lens ?? "all";
+  const preferences = validatePreferences(options.preferences);
+  if (lens === "explain" && preferences !== undefined && !allowsIntroductory(preferences)) {
+    throw new ValidationError(introductoryRefusal("explain", preferences, "deepen or all"));
+  }
   const index = requireCurrentIndex(deps);
   const query = buildMatchQuery(profile);
   const rawById = new Map((readRaw(deps) ?? []).map(session => [session.sessionId, session]));
@@ -557,15 +574,18 @@ export function matchSessionsDetailed(
   // record would be both wasteful and simply wrong, since it needs to see every document to know
   // how rare a term actually is.
   const corpusStats = buildCorpusStats(index);
-  const ctx: LensContext = { profile, index, rawById, query, corpusStats, abstractOf };
+  const ctx: LensContext = { profile, index, rawById, query, corpusStats, abstractOf, preferences };
 
-  if (lens === "all") {
-    return matchAll(ctx, options.limit);
+  const result = lens === "all" ? matchAll(ctx, options.limit)
+    : lens === "explain" ? matchExplain(ctx, options.limit)
+      : matchRules(ctx, lens, options.limit);
+  if (preferences === undefined) {
+    return result;
   }
-  if (lens === "explain") {
-    return matchExplain(ctx, options.limit);
-  }
-  return matchRules(ctx, lens, options.limit);
+  const reason = result.candidates.length === 0
+    ? emptiedBy(preferences, matchSessionsDetailed(profile, deps, { lens }).candidates.length)
+    : undefined;
+  return { ...result, preferences, ...(reason === undefined ? {} : { reason }) };
 }
 
 function matchRules(ctx: LensContext, lens: "fix" | "next-level", limit: number | undefined): MatchResult {
@@ -590,6 +610,7 @@ export function rulesRanked(ctx: LensContext, lens: "fix" | "next-level"): Group
   const scoredRecords: ScoredRecord[] = [];
 
   for (const record of index) {
+    if (!admits(ctx.preferences, record)) continue;
     if (lensProfile.levelBands !== null) {
       if (record.levelBand === null || !lensProfile.levelBands.includes(record.levelBand)) {
         continue;

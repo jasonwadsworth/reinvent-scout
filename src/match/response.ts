@@ -1,5 +1,6 @@
 import { toPublicIndexRecord } from "../catalog/index-record.js";
 import type { UncoveredConcept } from "./concepts.js";
+import type { SessionPreferences } from "./levels.js";
 import type { SkippedRule } from "./lens-signals.js";
 import type { ProfileMap, MapTopic } from "./map.js";
 import type { FocusCandidate, FocusEntry, FocusResult } from "./focus.js";
@@ -78,6 +79,10 @@ export interface MatchSessionsResponse {
   /** Explain only, always present there: profile concepts no session could be matched to. Absent
    * under the other lenses, whose output is unchanged. */
   uncovered?: UncoveredConcept[];
+  /** The preferences that were applied, so the agent can say what the list was restricted to; absent when there were none. */
+  preferences?: SessionPreferences;
+  /** Present when the preferences left nothing of a result that has sessions without them. */
+  reason?: string;
 }
 
 /** Builds one candidate-count's worth of response. Kept as the one place that decides the shape
@@ -91,6 +96,7 @@ function buildResponse(
   truncated: boolean,
   skippedRules: SkippedRule[],
   uncovered: UncoveredConcept[] | undefined,
+  applied: Pick<MatchSessionsResponse, "preferences" | "reason">,
   rankingReasonsOmitted = false,
 ): MatchSessionsResponse {
   const omitted = totalMatched - candidates.length;
@@ -104,6 +110,8 @@ function buildResponse(
     ...(rankingReasonsOmitted ? { rankingReasonsOmitted: true as const } : {}),
     skippedRules,
     ...(uncovered === undefined ? {} : { uncovered }),
+    ...(applied.preferences === undefined ? {} : { preferences: applied.preferences }),
+    ...(applied.reason === undefined ? {} : { reason: applied.reason }),
   };
 }
 
@@ -118,8 +126,9 @@ export function buildMatchResponse(
 ): MatchSessionsResponse {
   const leanCandidates = result.candidates.map(toCandidate);
   const { skippedRules, uncovered } = result;
+  const applied = { ...(result.preferences === undefined ? {} : { preferences: result.preferences }), ...(result.reason === undefined ? {} : { reason: result.reason }) };
   const totalMatched = leanCandidates.length;
-  const everything = buildResponse(leanCandidates, requested, totalMatched, false, skippedRules, uncovered);
+  const everything = buildResponse(leanCandidates, requested, totalMatched, false, skippedRules, uncovered, applied);
   if (fits(everything)) {
     return everything;
   }
@@ -129,7 +138,7 @@ export function buildMatchResponse(
   // candidate is left out.
   const withoutRanking = result.candidates.map(candidate =>
     toCandidate({ ...candidate, reasons: candidate.reasons.filter(reason => !isRankingReason(reason)) }));
-  const trimmed = buildResponse(withoutRanking, requested, totalMatched, false, skippedRules, uncovered, true);
+  const trimmed = buildResponse(withoutRanking, requested, totalMatched, false, skippedRules, uncovered, applied, true);
   if (fits(trimmed)) {
     return trimmed;
   }
@@ -142,14 +151,14 @@ export function buildMatchResponse(
   // or left out entirely -- never partially serialized to make room.
   const included: Record<string, unknown>[] = [];
   for (const candidate of withoutRanking) {
-    const trial = buildResponse([...included, candidate], requested, totalMatched, true, skippedRules, uncovered, true);
+    const trial = buildResponse([...included, candidate], requested, totalMatched, true, skippedRules, uncovered, applied, true);
     if (!fits(trial)) {
       break;
     }
     included.push(candidate);
   }
 
-  return buildResponse(included, requested, totalMatched, true, skippedRules, uncovered, true);
+  return buildResponse(included, requested, totalMatched, true, skippedRules, uncovered, applied, true);
 }
 
 
@@ -161,9 +170,11 @@ export interface FocusResponse {
   omitted: number;
   /** Present (`true`) only when ranking reasons were left off every candidate to fit the budget. */
   rankingReasonsOmitted?: true;
+  /** The preferences that were applied; absent when there were none. */
+  preferences?: SessionPreferences;
 }
 
-function focusResponse(entries: readonly FocusEntry[], candidates: readonly Record<string, unknown>[][], omitted: number, rankingReasonsOmitted: boolean): FocusResponse {
+function focusResponse(entries: readonly FocusEntry[], candidates: readonly Record<string, unknown>[][], omitted: number, rankingReasonsOmitted: boolean, preferences: SessionPreferences | undefined): FocusResponse {
   return {
     results: entries.map((entry, position) => ({
       topic: entry.topic, goal: entry.goal, total: entry.total, candidates: candidates[position]!,
@@ -172,6 +183,7 @@ function focusResponse(entries: readonly FocusEntry[], candidates: readonly Reco
     truncated: omitted > 0,
     omitted,
     ...(rankingReasonsOmitted ? { rankingReasonsOmitted: true as const } : {}),
+    ...(preferences === undefined ? {} : { preferences }),
   };
 }
 
@@ -192,16 +204,16 @@ export function buildFocusResponse(
 ): FocusResponse {
   const lean = (strip: boolean): Record<string, unknown>[][] => result.results.map(entry => entry.candidates.map(candidate =>
     toCandidate(strip ? { ...candidate, reasons: candidate.reasons.filter(reason => !isRankingReason(reason)) } : candidate)));
-  const everything = focusResponse(result.results, lean(false), 0, false);
+  const everything = focusResponse(result.results, lean(false), 0, false, result.preferences);
   if (fits(everything)) return everything;
   const kept = lean(true);
   let omitted = 0;
-  let response = focusResponse(result.results, kept, omitted, true);
+  let response = focusResponse(result.results, kept, omitted, true, result.preferences);
   while (!fits(response) && kept.some(list => list.length > 0)) {
     const longest = kept.reduce((best, list) => (list.length > best.length ? list : best), kept[0]!);
     longest.pop();
     omitted++;
-    response = focusResponse(result.results, kept, omitted, true);
+    response = focusResponse(result.results, kept, omitted, true, result.preferences);
   }
   return response;
 }
@@ -210,6 +222,7 @@ export function buildFocusResponse(
 export function buildMapResponse(map: ProfileMap, fits: (value: unknown) => boolean = () => true): ProfileMap {
   const each = (change: (topic: MapTopic) => MapTopic): ProfileMap => ({
     services: map.services.map(change), patterns: map.patterns.map(change), gaps: map.gaps.map(change), nextSteps: map.nextSteps.map(change),
+    ...(map.preferences === undefined ? {} : { preferences: map.preferences }),
   });
   const oneIn = (topic: MapTopic): MapTopic => ({ ...topic, evidence: topic.evidence.slice(0, 1) });
   const without = (topic: MapTopic, key: "more" | "note"): MapTopic => Object.fromEntries(Object.entries(topic).filter(([name]) => name !== key)) as unknown as MapTopic;

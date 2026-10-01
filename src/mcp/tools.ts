@@ -255,8 +255,20 @@ const MAX_MATCH_SESSIONS_LIMIT = 50;
  * choices (four per choice already trims policy-tracker's). The CLI, with no budget, takes up to 10. */
 const MAX_FOCUS_PER_TOPIC = 3;
 
+/** What the user asked of the sessions, shared by `match_sessions` and `map_profile`. Bands are checked by `validatePreferences`, which
+ * names the problem, so a bad range is a readable tool error. */
+const PreferencesSchema = z.strictObject({
+  levels: z.strictObject({ min: z.number(), max: z.number() }).optional(),
+});
+
+const MapProfileInputSchema = z.strictObject({
+  profile: z.unknown(),
+  preferences: PreferencesSchema.optional(),
+});
+
 const MatchSessionsInputSchema = z.strictObject({
   profile: z.unknown(),
+  preferences: PreferencesSchema.optional(),
   lens: z.enum(LENSES).optional(),
   /** Silently capped at `MAX_MATCH_SESSIONS_LIMIT`, never rejected -- unlike the CLI's own
    * `--limit`, which refuses a too-large value outright. An agent asking for "a lot" of
@@ -293,6 +305,8 @@ function registerMatchSessionsTool(server: McpServer, deps: McpToolDeps): void {
     {
       description:
         "Rank the local catalog against a resolved tech profile and return the top candidates, " +
+        "restricted by the user's `preferences` when they have stated any (`{ levels: { min, max } }`: only sessions in that band range, bands 100 to 500; " +
+        "ranking is unchanged, the sessions that remain keep their order; the response echoes `preferences`, and `reason` says when they left nothing of a result that has sessions), " +
         "or, with a `focus` (topics from `map_profile`, each with a goal: understand, deepen or improve; 1 to 6, and `perTopic` sessions each, 1 to 3 and 3 by default, " +
         "instead of `lens` and `limit`), a short list per choice as `{ results: [{ topic, goal, total, candidates, reason? }], truncated, omitted }`. " +
         "Each candidate has a `why` (summary, yourCode citations, and a sessionSays quote from the session), " +
@@ -306,7 +320,7 @@ function registerMatchSessionsTool(server: McpServer, deps: McpToolDeps): void {
         "(sponsored, news, customer story, migration tooling, industry, off-topic agents, a technology the code does not use) carries `demoted`, the reason.",
       inputSchema: MatchSessionsInputSchema,
     },
-    async ({ profile, lens, limit, focus, perTopic }) => {
+    async ({ profile, lens, limit, focus, perTopic, preferences }) => {
       const storeRoot = deps.resolveStoreRoot();
       try {
         if (focus !== undefined && limit !== undefined) {
@@ -320,13 +334,14 @@ function registerMatchSessionsTool(server: McpServer, deps: McpToolDeps): void {
         }
         const resolved = resolveProfileAgainstCatalog(profile, storeRoot);
         if (focus !== undefined) {
-          const focused = matchFocus(resolved, { storeRoot }, focus, { perTopic: perTopic ?? MAX_FOCUS_PER_TOPIC });
+          const focused = matchFocus(resolved, { storeRoot }, focus, { perTopic: perTopic ?? MAX_FOCUS_PER_TOPIC, ...(preferences === undefined ? {} : { preferences }) });
           return textResult(buildFocusResponse(focused, value => envelopeBytes(value) <= RESPONSE_BYTE_BUDGET));
         }
         const cappedLimit = Math.min(limit ?? DEFAULT_MATCH_SESSIONS_LIMIT, MAX_MATCH_SESSIONS_LIMIT);
         const result = matchSessionsDetailed(resolved, { storeRoot }, {
           ...(lens === undefined ? {} : { lens: lens as Lens }),
           limit: cappedLimit,
+          ...(preferences === undefined ? {} : { preferences }),
         });
         const response = buildMatchResponse(result, cappedLimit, value => envelopeBytes(value) <= RESPONSE_BYTE_BUDGET);
         return textResult(response);
@@ -344,14 +359,14 @@ function registerMapProfileTool(server: McpServer, deps: McpToolDeps): void {
       description:
         "Show what a tech profile found in the code as topics the user can choose from: services, patterns, supported gaps and next steps, " +
         "each with an `id`, a one-sentence note, where the code uses it, and the goals that apply (understand, deepen, improve) with how many " +
-        "sessions each would return (0 is a dead end). Present it, ask which topics and goals the user cares about, then call `match_sessions` with a `focus`.",
-      inputSchema: ValidateProfileInputSchema,
+        "sessions each would return (0 is a dead end). Pass the user's `preferences` (`{ levels: { min, max } }`, bands 100 to 500) when they have stated any, and the counts are under them. Present it, ask which topics and goals the user cares about, then call `match_sessions` with a `focus`.",
+      inputSchema: MapProfileInputSchema,
     },
-    async ({ profile }) => {
+    async ({ profile, preferences }) => {
       const storeRoot = deps.resolveStoreRoot();
       try {
         const resolved = resolveProfileAgainstCatalog(profile, storeRoot);
-        return textResult(buildMapResponse(mapProfile(resolved, { storeRoot }), value => envelopeBytes(value) <= RESPONSE_BYTE_BUDGET));
+        return textResult(buildMapResponse(mapProfile(resolved, { storeRoot }, preferences === undefined ? {} : { preferences }), value => envelopeBytes(value) <= RESPONSE_BYTE_BUDGET));
       } catch (err) {
         return toToolError(err);
       }

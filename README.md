@@ -309,6 +309,14 @@ step, and one line per goal for the topics with no sessions (with the closest 30
 topic. `--focus` replaces `--lens` and `--limit` (use `--per-topic`); `--json` prints the same object the MCP
 `match_sessions` tool returns for a `focus`, and `map_profile` returns the map.
 
+#### Only the levels you want
+
+`--level 400-500` (or `--level 300`) on `match` and `profile map` keeps only sessions at those level bands (100 Foundational, 200 Intermediate,
+300 Advanced, 400 Expert, 500 Distinguished; a session with no level is left out). It applies to every lens, the map and a focus, and does not change
+the ranking: the sessions that remain keep their order, and a list is filled from the ones in range. The map counts what is left. `understand` and
+`--lens explain` are introductory (100-200), so above 200 `explain` is refused (use `deepen` or `all`) and `understand` shows 0 with the reason.
+When the range empties a result, it says so ("4 sessions match, none at 400-500"). The MCP tools take `preferences: { levels: { min, max } }`.
+
 ### Fix and Next-level lenses
 
 ```sh

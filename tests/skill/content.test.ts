@@ -853,6 +853,32 @@ describe("the off-stack documentation", () => {
   });
 });
 
+describe("the session preferences documentation", () => {
+  const readmeMd = readFileSync(join(here, "..", "..", "README.md"), "utf8");
+  const collapse = (text: string): string => text.replace(/\s+/g, " ");
+  it("tells the agent to pass a stated level preference on the map and the match, in words as well as numbers, and keep it", () => {
+    const flow = collapse(extractSection(skillMd, "## The flow"));
+    for (const expected of ["`preferences: { \"levels\": { \"min\": N, \"max\": M } }`", "on `map_profile` and on `match_sessions`", "for the rest of the conversation, the map included",
+      "100 Foundational, 200 Intermediate, 300 Advanced, 400 Expert, 500 Distinguished", "\"Only 400-500\" and \"expert\" are 400 to 500", "\"advanced and up\" and \"no intro\" are 300 to 500",
+      "ranking of what remains is unchanged", "never widen the range yourself, and offer to widen it", "`explain` is an error naming `deepen` or `all`"]) {
+      expect(flow, expected).toContain(expected);
+    }
+  });
+  it("documents the preferences argument, its order of application and its refusals in workflow.md", () => {
+    const text = collapse(workflowMd);
+    for (const expected of ["\"preferences\"?: { \"levels\"?: { \"min\": number, \"max\": number } }", "applied after admission and before the per-concept cap", "ranking itself does not change",
+      "4 sessions match, none at 400\u2013500", "explain lists introductory (100\u2013200) sessions, which is outside 400\u2013500; use deepen or all", "`profile map --level 400-500`", "`--level 400-500` is the CLI form"]) {
+      expect(text, expected).toContain(expected);
+    }
+  });
+  it("documents --level in the readme", () => {
+    const text = collapse(readmeMd);
+    for (const expected of ["#### Only the levels you want", "`--level 400-500`", "does not change the ranking", "none at 400-500"]) {
+      expect(text, expected).toContain(expected);
+    }
+  });
+});
+
 describe("the map and focus documentation", () => {
   const readmeMd = readFileSync(join(here, "..", "..", "README.md"), "utf8");
   const collapse = (text: string): string => text.replace(/\s+/g, " ");

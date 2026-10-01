@@ -19,6 +19,7 @@ import {
   ValidationError,
 } from "../../core/errors.js";
 import { ensureStoreRoot } from "../../core/paths.js";
+import { parseLevelBandRange } from "../level-option.js";
 
 export interface CatalogCommandDeps {
   /** Defaults to the real store root (`ensureStoreRoot`). Inject a fixed path in tests so
@@ -59,19 +60,6 @@ const NO_MATCHES_MESSAGE = "No sessions matched.";
 
 function defaultBuildApiClient(storeRoot: string): ApiClient {
   return createApiClient({ getAccessToken: createTokenProviderAdapter({ storeRoot }) });
-}
-
-function parseLevelBandRange(raw: string): { min: number; max: number } {
-  const rangeMatch = /^(\d+)-(\d+)$/.exec(raw);
-  if (rangeMatch) {
-    return { min: Number(rangeMatch[1]), max: Number(rangeMatch[2]) };
-  }
-  const singleMatch = /^(\d+)$/.exec(raw);
-  if (singleMatch) {
-    const band = Number(singleMatch[1]);
-    return { min: band, max: band };
-  }
-  throw new ValidationError(`--level must be a number or a range like "100-200", got "${raw}".`);
 }
 
 function parseLimit(raw: string): number {

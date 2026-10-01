@@ -53,6 +53,13 @@ explained shortlist.
    remediation (`"fix"`), or migration options (`"next-level"`). Fix uses only supported,
    evidence-bearing gap patterns; Next-level uses `serverless`, `ecs`, or `genai-single-call`.
    See the exact vocabulary and trade-offs in `reference/profiling.md`.
+   **Session preferences.** When the user states a level preference, in numbers or words, pass it as `preferences: { "levels": { "min": N, "max": M } }` on
+   `map_profile` and on `match_sessions`, and keep passing it for the rest of the conversation, the map included. The words are the catalog's own
+   labels: 100 Foundational, 200 Intermediate, 300 Advanced, 400 Expert, 500 Distinguished. "Only 400-500" and "expert" are 400 to 500;
+   "advanced and up" and "no intro" are 300 to 500; "only intro" is 100 to 200; "300 only" is 300 to 300. State the active level range once, briefly, when you
+   apply it. It filters; the ranking of what remains is unchanged. `understand` and the `explain` lens are introductory (100 to 200), so above 200 they
+   have nothing and say so (`explain` is an error naming `deepen` or `all`). When the filter empties something the response says so (`reason`:
+   "4 sessions match, none at 400–500"): tell the user, never widen the range yourself, and offer to widen it.
 6. Present the candidates to the user. Lead each one with its title, format and level, then
    `why.summary` and, when present, the `why.sessionSays` quote; cite `why.yourCode` (repo, file and
    line, plus `why.more` cut ones) so the user can open the code, then every `offerings` entry

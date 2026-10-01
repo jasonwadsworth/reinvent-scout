@@ -88,7 +88,7 @@ offending entry -- fix the *profile object* and call `validate_profile` again wi
 
 ## 4a. `map_profile`
 
-Arguments: `{ "profile": <the profile object> }`. Returns what the profile found, grouped, for the user to choose from:
+Arguments: `{ "profile": <the profile object>, "preferences"?: { "levels"?: { "min": number, "max": number } } }`. Returns what the profile found, grouped, for the user to choose from:
 `{ "services": [...], "patterns": [...], "gaps": [...], "nextSteps": [...] }`. Every topic is
 `{ "id", "label", "note"?, "evidence": [{ "repo", "file", "line"? }], "more"?, "pillar"?, "skipped"?, "goals": [{ "goal", "sessions" }] }`.
 `id` is stable (`service:Amazon DynamoDB`, `pattern:event-driven`, `gap:gap-no-dlq`, `path:genai-single-call`) and is what
@@ -101,11 +101,21 @@ The text map (`profile map`) prints each topic's label and id, a next step's des
 to the budget, first to one place per topic, then to none, then without notes. `reinvent-scout profile map --profile <file|name> [--json]`
 prints the same map.
 
+With `preferences.levels` the counts are of the sessions in that band range only (bands 100, 200, 300, 400, 500; inclusive; a session with no level is left
+out), the map echoes `preferences`, and a goal the range emptied says why in its `reason` ("6 sessions match, none at 400–500"; `understand` is
+introductory, so above 200 it says "understand lists introductory (100–200) sessions, which is outside 400–500; use deepen"). `profile map --level 400-500` is the CLI form.
+
 Present the map, ask the user for up to about five topics and a goal each, then call `match_sessions` with a `focus`.
 
 ## 5. `match_sessions`
 
-Arguments: `{ "profile": <profile object>, "lens"?: "all" | "explain" | "fix" | "next-level", "limit"?: number, "focus"?: [{ "topic": <id>, "goal": "understand" | "deepen" | "improve" }], "perTopic"?: number }`.
+Arguments: `{ "profile": <profile object>, "lens"?: "all" | "explain" | "fix" | "next-level", "limit"?: number, "focus"?: [{ "topic": <id>, "goal": "understand" | "deepen" | "improve" }], "perTopic"?: number, "preferences"?: { "levels"?: { "min": number, "max": number } } }`.
+`preferences.levels` restricts every lens and every focus choice to the sessions in that inclusive band range (100 to 500; a session with no level is left out;
+the same rule as `catalog search --level`). It is applied after admission and before the per-concept cap, the focus dedupe and `limit`, so a list is filled
+from sessions in range and the sessions that remain keep their order; ranking itself does not change. The response echoes `preferences`; when the range leaves nothing of a
+result that has sessions without it, `reason` says "4 sessions match, none at 400–500" (for a focus, in that choice's `reason`). The `explain` lens and `understand` are introductory
+(100 to 200): they keep the sessions in both, and above 200 `explain` is an `isError` ("explain lists introductory (100–200) sessions, which is outside 400–500; use deepen or all")
+and `understand` shows 0 with that reason. A range with `min` above `max`, or a value that is not a band, is an `isError`. `--level 400-500` is the CLI form, on `match` and `profile map`.
 With a `focus` (one to six choices, never together with `lens` or `limit`; `perTopic` defaults to 3 and is at most 3 here, the most six choices
 can list within the response budget on the profiles measured; the CLI's `--per-topic` takes up to 10) the response is instead
 `{ "results": [{ "topic", "goal", "total", "candidates", "reason"? }], "truncated", "omitted", "rankingReasonsOmitted"? }`: each choice runs the lens its

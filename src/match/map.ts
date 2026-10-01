@@ -2,6 +2,7 @@ import { ValidationError } from "../core/errors.js";
 import type { CatalogStoreDeps } from "../catalog/store.js";
 import type { ResolvedProfile } from "../profile/profile.js";
 import { createFocusEngine } from "./focus.js";
+import { validatePreferences, type SessionPreferences } from "./levels.js";
 import { goalsOf, type Goal, type Topic, type TopicGroup } from "./topics.js";
 import type { Citation } from "./why.js";
 
@@ -30,12 +31,15 @@ export interface ProfileMap {
   patterns: MapTopic[];
   gaps: MapTopic[];
   nextSteps: MapTopic[];
+  /** The preferences the counts were made under, absent when there were none. */
+  preferences?: SessionPreferences;
 }
 
 /** The profile's topics with, for each goal that applies, the number of sessions it would return. A goal with none is kept at 0,
  * so a dead end is visible before it is picked. */
-export function mapProfile(profile: ResolvedProfile, deps: CatalogStoreDeps): ProfileMap {
-  const engine = createFocusEngine(profile, deps);
+export function mapProfile(profile: ResolvedProfile, deps: CatalogStoreDeps, options: { preferences?: SessionPreferences } = {}): ProfileMap {
+  const preferences = validatePreferences(options.preferences);
+  const engine = createFocusEngine(profile, deps, preferences);
   const describe = (topic: Topic): MapTopic => ({
     id: topic.id, label: topic.label,
     ...(topic.note === undefined ? {} : { note: topic.note }),
@@ -49,7 +53,7 @@ export function mapProfile(profile: ResolvedProfile, deps: CatalogStoreDeps): Pr
     }),
   });
   const group = (name: Topic["group"]): MapTopic[] => engine.topics.filter(topic => topic.group === name).map(describe);
-  return { services: group("services"), patterns: group("patterns"), gaps: group("gaps"), nextSteps: group("nextSteps") };
+  return { services: group("services"), patterns: group("patterns"), gaps: group("gaps"), nextSteps: group("nextSteps"), ...(preferences === undefined ? {} : { preferences }) };
 }
 
 const bare = (text: string): string => text.replace(/\s*\([^()]*\)\s*$/, "").replace(/^(?:Amazon|AWS)\s+/i, "").trim().toLowerCase();

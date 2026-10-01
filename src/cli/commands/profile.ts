@@ -14,6 +14,8 @@ import { buildValidateReport } from "../../profile/report.js";
 import { readProfileFile, saveProfileFile } from "../../profile/store.js";
 import { formatZodError } from "../zod-errors.js";
 import { loadResolvedProfile } from "../profile-input.js";
+import { describePreferences } from "../../match/levels.js";
+import { parseLevelBandRange } from "../level-option.js";
 import { mapProfile, type MapTopic, type ProfileMap } from "../../match/map.js";
 
 export interface ProfileCommandDeps {
@@ -87,8 +89,9 @@ function formatDeadEnds(topics: readonly MapTopic[]): string[] {
 }
 
 function formatMap(map: ProfileMap): string {
+  const header = describePreferences(map.preferences);
   const sections: Array<[string, MapTopic[]]> = [["Services", map.services], ["Patterns", map.patterns], ["Gaps", map.gaps], ["Next steps", map.nextSteps]];
-  return sections.filter(([, topics]) => topics.length > 0).map(([name, topics]) => [`${name}:`, ...topics.map(formatTopic), ...formatDeadEnds(topics)].join("\n")).join("\n\n");
+  return [...(header === undefined ? [] : [header]), ...sections.filter(([, topics]) => topics.length > 0).map(([name, topics]) => [`${name}:`, ...topics.map(formatTopic), ...formatDeadEnds(topics)].join("\n"))].join("\n\n");
 }
 
 /** Registers `profile` and its `validate`, `save` and `map` subcommands. */
@@ -184,11 +187,12 @@ export function registerProfileCommands(program: Command, deps: ProfileCommandDe
     .command("map")
     .description("Show what the profile found in the code, as topics to choose from with `match --focus`.")
     .requiredOption("--profile <file|name>", "a profile file path, or a name saved with `profile save`")
+    .option("--level <band>", "count only sessions at this level band, e.g. 400 or a range like 400-500")
     .option("--json", "print machine-readable JSON instead of a readable list")
-    .action((options: { profile: string; json?: boolean }) => {
+    .action((options: { profile: string; json?: boolean; level?: string }) => {
       const storeRoot = resolveStoreRoot();
       try {
-        const map = mapProfile(loadResolvedProfile(options.profile, storeRoot), { storeRoot });
+        const map = mapProfile(loadResolvedProfile(options.profile, storeRoot), { storeRoot }, options.level === undefined ? {} : { preferences: { levels: parseLevelBandRange(options.level) } });
         print(options.json === true ? JSON.stringify(map) : formatMap(map));
       } catch (err) {
         if (err instanceof z.ZodError) {
