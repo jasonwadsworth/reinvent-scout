@@ -169,6 +169,8 @@ and `"event-driven-architecture"` should both just be `event-driven`). Use this 
 `serverless`, `event-driven`, `containers`, `ecs`, `eks`, `api`, `streaming`, `iac-cdk`,
 `genai-single-call`, `agentic`, `multi-account`, `multi-tenant`, `data-lake`.
 
+`multi-account` means the code deploys to, or assumes roles in, more than one AWS account, using account-keyed configuration or cross-account roles; several stacks in one account are not it.
+
 These are the names `match_sessions` and `map_profile` know how to match to sessions. A pattern with any other name is
 recorded in the profile but cannot be matched, and comes back as `uncovered`, so do not invent names for a shape that fits none of
 these: leave it out. A user's topical interests belong in `interests`, not in a pattern; you do not invent them. (Terraform and
@@ -193,7 +195,7 @@ code for an absence itself to point at. The Fix lens consumes these agent-author
 it does not scan repositories or infer an absence from missing service entries.
 
 **Count, do not sample.** Before you record a gap, or say a practice is in place, count the
-resources of that kind and put the count in the `note`: "34 of 37 EventBridge rules have a DLQ; the 3
+resources of that kind and put the count in the `note`: "18 of 20 EventBridge rules have a DLQ; the 2
 Step Functions targets do not". Checking two or three examples and finding them fine proves nothing about
 the rest: never claim a practice is present everywhere from a sample, exactly as you never infer a
 system-wide absence from one file.
@@ -206,7 +208,7 @@ A practice that is wired in but switched off in every deployed environment count
 feature flag that is false, `enabled: false`, a commented-out association, an env-gated construct
 whose condition is false in each environment you can see. Check the environment configuration, not
 only the construct. The note names the switch and where it is set ("every alarm is gated by
-`alarmsEnabled`, false in both environments in `environments.ts`"), and the citation can be the line
+`enableAlarms`, false in both environments in `config/environments.ts`"), and the citation can be the line
 that sets it.
 
 **Every gap note names what was inspected**: the files, or the glob and the search term you used. A
@@ -215,7 +217,8 @@ returns a warning for it (the profile is still valid).
 
 Record `gap-no-load-tests` and `gap-no-cost-monitoring` only when the repository deploys production
 infrastructure (IaC with a real environment, or a pipeline to one) and has none of the named
-practices; otherwise leave them out, since they are true of almost any repository. A gap may apply
+practices; otherwise leave them out, since they are true of almost any repository. For these two, and any
+other gap that is an absence across the whole repository, cite the deploy entry point (the app or stack file) and say so in the `note`. A gap may apply
 to a clearly cited part of the system: record it and say which part in the `note`. A wildcard
 permission narrowed by a condition or session policy is still recordable as `gap-broad-iam`, with
 the narrowing mentioned in the `note`.
@@ -237,8 +240,9 @@ per service), skipping dependency and build directories. Each recipe names where
   and `dead_letter_queue` on each target, queue or subscription; CloudFormation/SAM looks for
   `DeadLetterConfig`, `RedrivePolicy`, `OnFailure` and `EventInvokeConfig`; Terraform looks for
   `dead_letter_config`, `redrive_policy`, `destination_config` on `aws_cloudwatch_event_target`,
-  `aws_sqs_queue`, `aws_sns_topic_subscription` and `aws_lambda_function_event_invoke_config`; the
-  Serverless Framework looks for `onError`, `destinations` and `redrivePolicy` under `functions` and
+  `aws_sqs_queue`, `aws_sns_topic_subscription`, `aws_lambda_event_source_mapping` (its
+  `destination_config` `on_failure`) and `aws_lambda_function_event_invoke_config`; the
+  Serverless Framework looks for `onError`, `deadLetterQueueArn` (on an `eventBridge` event), `destinations` and `redrivePolicy` under `functions` and
   `resources`. Record the gap for the target kinds that lack one, naming the count.
 - **`gap-no-alarms`** recipe. List the resource kinds present (functions, queues, streams, state
   machines, tables, APIs, containers), then for each kind check whether an alarm on it reaches a person:
@@ -255,18 +259,26 @@ per service), skipping dependency and build directories. Each recipe names where
   `cloudwatch:PutMetricData`, `xray:PutTraceSegments`, `sts:GetCallerIdentity`, `logs:CreateLogGroup` on
   its own, and the like. Of the rest, judge whether the code needs that much. When the repository has
   both production and test roles, cite a production one first and name the test roles in the `note`.
-  A wildcard narrowed by a condition or session policy is still recordable (see above). Look in CDK
+  A wildcard inside an ARN that is wider than the code needs (`userpool/*` when the code uses one pool) counts, exactly like a bare `'*'`. A wildcard narrowed by a condition or session policy is still recordable (see above). Look in CDK
   (`.ts`, `.py`), CloudFormation/SAM, Terraform (`.tf`, including `.json` policy files) and the
   Serverless Framework (`serverless.yml`).
 - **`gap-no-tests`** recipe. Enumerate the deployable units: each service, package or function that
   has its own handler directory, manifest or stack. For each, count the test files (`*.test.ts`,
   `*.spec.ts`, `test_*.py`, `*_test.go`, a `tests/` or `__tests__` directory) and note the runner
-  (`jest`, `vitest`, `pytest`, `go test`). Record the gap for every unit with none, with "N of M units
+  (`jest`, `vitest`, `pytest`, `go test`, JUnit, xunit); Java and C# files are `*Test.java` or
+  `*Tests.java` under `src/test/java`, and `*Tests.cs` in a test project. Record the gap for every unit with none, with "N of M units
   have tests" in the `note`, and cite a unit that has none. A pipeline flag such as
-  `--passWithNoTests` does not count as tests, and neither does a test script that runs nothing.
+  `--passWithNoTests` does not count as tests, and neither does a test script that runs nothing. A test file that never imports or exercises the unit's production code does not count toward that unit.
   Infrastructure-only units (CDK, CloudFormation/SAM, Terraform, Serverless Framework definitions)
   count when they hold logic worth testing, such as a custom resource, but not when they only declare
   resources. A test directory shared by every unit counts for the units it exercises.
+- **`gap-no-resource-rightsizing`** recipe. List the compute that serves production (Lambda
+  functions, ECS tasks, EC2 instances, containers) and read its size settings: `memorySize`,
+  `memory_size`, `Memory`, CPU, `instanceType` and instance size. Record the gap when the size is left at
+  defaults, or is set to a round number with no evidence of measurement (no power-tuning run, no
+  metrics-driven comment, no autoscaling or compute optimizer reference). Name the count in the
+  `note`: "6 of 9 production functions use the default memory". Test, example and placeholder compute is
+  not production compute.
 
 ## What counts as each newer gap
 
@@ -416,7 +428,7 @@ Next-level stack-fit gate, and their names stay out of the free-text relevance. 
 product whose templates deploy Lambda and API Gateway ranks as if it ran on them.
 
 Always list the platform services you find, as `"role": "supporting"`: CloudWatch, VPC, S3, Route 53,
-ACM, CDK, CloudFormation, KMS, Secrets Manager, Systems Manager and CloudTrail. Do not leave one out
+ACM, CDK, CloudFormation (when it is more than CDK's synthesis target), KMS (a customer-managed key, not the default key), Secrets Manager, Systems Manager and CloudTrail. Do not leave one out
 because it is common: the profile is the record of what the repository uses, and two profiles of the
 same repository should list the same ones. IAM and STS are never listed; if present they are ignored.
 Nearly every AWS workload runs on them, so the ranking and the gates discount them rather than your

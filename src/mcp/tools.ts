@@ -65,8 +65,9 @@ function errorResult(message: string): ToolTextResult {
 
 /** What `status` says when nobody is signed in: not a failure, with when signing in is needed and that the agent can do it itself. */
 const SIGN_IN_HINT =
-  "Not signed in. Mapping and matching need only a synced catalog. Sign in only for a full sync (`catalog_sync`) and for the schedule, favorite and reservation tools; a reindex does not need it: " +
-  "run `reinvent-scout auth login` yourself in the shell (the skill can run it for you), then try again.";
+  "Not signed in. Mapping and matching need only a synced catalog. Sign in only for a full sync (`catalog_sync`) and for the schedule, favorite and reservation tools. " +
+  "A reindex (`catalog_sync` with `reindex: true`) usually does not need it. " +
+  "To sign in, run `reinvent-scout auth login` yourself in the shell (the skill can run it for you), then try again.";
 
 /**
  * Amendment 3 (lead review): the skill runs in a shell, so the agent can run `auth login` itself

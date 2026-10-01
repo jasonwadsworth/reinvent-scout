@@ -15,7 +15,8 @@ import { CURRENT_SCHEMA_VERSION, writeCatalog } from "../../src/catalog/store.js
 import { DEFAULT_EVENT_ID } from "../../src/catalog/sync.js";
 import { buildProgram } from "../../src/cli/main.js";
 import { createMcpServer } from "../../src/mcp/server.js";
-import { resolveProfile } from "../../src/profile/profile.js";
+import { resolveProfile, type ResolvedProfile } from "../../src/profile/profile.js";
+import { buildValidateReport } from "../../src/profile/report.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -220,11 +221,14 @@ describe("skill files tool names", () => {
     "aws_lambda_function_event_invoke_config",
     "aws_cloudwatch_metric_alarm",
     "aws_iam_policy_document",
+    "aws_lambda_event_source_mapping",
     "dead_letter_queue",
     "dead_letter_config",
     "redrive_policy",
     "destination_config",
     "alarm_actions",
+    "memory_size",
+    "on_failure",
   ]);
 
   it("names only tools the mcp server actually registers or explicitly documents as absent, anywhere in the skill's files", async () => {
@@ -808,12 +812,27 @@ describe("lens-precision guidance in profiling.md", () => {
   });
 });
 
+describe("the workflow.md teaching profile", () => {
+  it("names a file and a count in every gap note, so copying it triggers no validate_profile warning", () => {
+    const block = [...workflowMd.matchAll(/```json\n([\s\S]*?)```/g)]
+      .map(match => JSON.parse(match[1]!) as { profile?: ResolvedProfile })
+      .map(parsed => parsed.profile ?? (parsed as unknown as ResolvedProfile))
+      .find(parsed => Array.isArray(parsed.patterns) && parsed.patterns.some(pattern => pattern.name === "gap-no-resource-rightsizing"));
+    expect(block).toBeDefined();
+    const gaps = block!.patterns.filter(pattern => pattern.name.startsWith("gap-"));
+    expect(gaps.length).toBeGreaterThanOrEqual(7);
+    for (const gap of gaps) expect(gap.note, gap.name).toMatch(/\d/);
+    const report = buildValidateReport({ ...block!, unresolvedServices: [] });
+    expect(report.warnings, JSON.stringify(report.warnings)).toBeUndefined();
+  });
+});
+
 describe("validate_profile warnings in the skill docs", () => {
   it("documents the optional warnings field, and says a warning is not an error", () => {
     const section = extractSection(workflowMd, "## 4. `validate_profile`").replace(/\s+/g, " ");
     expect(section).toContain("`warnings`");
     expect(section).toContain("names no file, path or glob");
-    expect(section).toContain("not an error");
+    expect(section).toContain("A warning is not an error; add the files or search you used");
   });
 });
 
@@ -851,7 +870,8 @@ describe("gap consistency guidance in profiling.md", () => {
   });
   it("requires counting before recording a gap or claiming a practice, with the count in the note", () => {
     expect(collapsed).toContain("Count, do not sample.");
-    expect(collapsed).toContain("34 of 37 EventBridge rules have a DLQ");
+    expect(collapsed).toContain("18 of 20 EventBridge rules have a DLQ");
+    expect(collapsed).not.toContain("34 of 37");
     expect(collapsed).toContain("never claim a practice is present everywhere from a sample");
   });
   it("says one lacking resource is the gap, and coverage elsewhere never cancels it", () => {
@@ -871,6 +891,35 @@ describe("gap consistency guidance in profiling.md", () => {
     for (const term of ["deployable unit", "count the test files", "N of M units have tests", "--passWithNoTests", "does not count", "jest", "pytest", "go test", "Terraform", "CloudFormation", "Serverless Framework"]) {
       expect(text, term).toContain(term);
     }
+  });
+  it("reconciles the platform-services list with the CloudFormation and KMS exclusions in one sentence", () => {
+    expect(collapsed).toContain("CloudFormation (when it is more than CDK's synthesis target)");
+    expect(collapsed).toContain("KMS (a customer-managed key, not the default key)");
+  });
+  it("says a test file that exercises no production code does not count toward gap-no-tests", () => {
+    expect(recipe("gap-no-tests")).toContain("never imports or exercises the unit's production code does not count");
+  });
+  it("covers Java and C# test conventions in the gap-no-tests recipe", () => {
+    const text = recipe("gap-no-tests");
+    for (const term of ["*Test.java", "src/test/java", "*Tests.cs", "xunit"]) expect(text, term).toContain(term);
+  });
+  it("counts a wildcard inside an ARN that is wider than the code needs as broad IAM", () => {
+    expect(recipe("gap-broad-iam")).toContain("wildcard inside an ARN that is wider than the code needs");
+  });
+  it("covers event source mappings and Serverless dead-letter keys in the dlq recipe", () => {
+    const text = recipe("gap-no-dlq");
+    for (const term of ["aws_lambda_event_source_mapping", "deadLetterQueueArn", "onError"]) expect(text, term).toContain(term);
+  });
+  it("defines multi-account as deploying to or assuming roles in more than one account", () => {
+    expect(collapsed).toContain("`multi-account` means the code deploys to, or assumes roles in, more than one AWS account");
+    expect(collapsed).toContain("account-keyed configuration or cross-account roles");
+  });
+  it("gives gap-no-resource-rightsizing a recipe, since the lens table lists it", () => {
+    const text = recipe("gap-no-resource-rightsizing");
+    for (const term of ["memory", "instance size", "defaults", "measurement", "production"]) expect(text, term).toContain(term);
+  });
+  it("tells absence gaps to cite the deploy entry point and say so", () => {
+    expect(collapsed).toContain("cite the deploy entry point (the app or stack file) and say so in the `note`");
   });
   it("does not add a gap-no-waf rule", () => {
     expect(collapsed).not.toContain("gap-no-waf");

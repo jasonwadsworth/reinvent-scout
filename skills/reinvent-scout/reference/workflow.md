@@ -476,7 +476,7 @@ this original profile object to `match_sessions`, never that report.
   "patterns": [
     {
       "name": "gap-no-dlq",
-      "note": "Redrive not evident in this queue declaration.",
+      "note": "Read infra/queue.ts: 1 of 1 queues has no dead-letter queue or redrive policy.",
       "evidence": [
         {
           "repo": "example",
@@ -487,7 +487,7 @@ this original profile object to `match_sessions`, never that report.
     },
     {
       "name": "gap-no-alarms",
-      "note": "Alarms not evident in the cited deployment scope.",
+      "note": "Searched infra/stack.ts for alarms: 0 of 2 functions have an alarm that notifies a person.",
       "evidence": [
         {
           "repo": "example",
@@ -498,7 +498,7 @@ this original profile object to `match_sessions`, never that report.
     },
     {
       "name": "gap-no-tests",
-      "note": "Test automation not evident in these scripts; checked associated workflows.",
+      "note": "Counted test files under src/ and tests/: 0 of 1 units have tests, and the package.json test script runs nothing.",
       "evidence": [
         {
           "repo": "example",
@@ -509,7 +509,7 @@ this original profile object to `match_sessions`, never that report.
     },
     {
       "name": "gap-broad-iam",
-      "note": "Wildcard resource scope in the policy statement.",
+      "note": "Grepped infra/policy.ts: 1 of 3 statements grants an action on resource '*'.",
       "evidence": [
         {
           "repo": "example",
@@ -520,7 +520,7 @@ this original profile object to `match_sessions`, never that report.
     },
     {
       "name": "gap-no-load-tests",
-      "note": "Load testing not evident in the cited workflow.",
+      "note": "Searched ci/test.yml and *.yml for load or stress tests: 0 of 1 workflows run any. Cited the deploy entry point ci/test.yml.",
       "evidence": [
         {
           "repo": "example",
@@ -531,7 +531,7 @@ this original profile object to `match_sessions`, never that report.
     },
     {
       "name": "gap-no-cost-monitoring",
-      "note": "Cost monitoring not evident in the inspected infrastructure scope.",
+      "note": "Searched infra/*.ts for budgets and anomaly monitors: 0 found. Cited the deploy entry point infra/budget.ts.",
       "evidence": [
         {
           "repo": "example",
@@ -542,7 +542,7 @@ this original profile object to `match_sessions`, never that report.
     },
     {
       "name": "gap-no-resource-rightsizing",
-      "note": "Rightsizing controls not evident in the inspected workload scope.",
+      "note": "Read infra/service.ts: 1 of 1 production functions keeps the default memory size.",
       "evidence": [
         {
           "repo": "example",
