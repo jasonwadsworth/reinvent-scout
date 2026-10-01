@@ -903,8 +903,11 @@ describe("gap consistency guidance in profiling.md", () => {
     const text = recipe("gap-no-tests");
     for (const term of ["*Test.java", "src/test/java", "*Tests.cs", "xunit"]) expect(text, term).toContain(term);
   });
-  it("counts a wildcard inside an ARN that is wider than the code needs as broad IAM", () => {
-    expect(recipe("gap-broad-iam")).toContain("wildcard inside an ARN that is wider than the code needs");
+  it("searches for ARNs ending in /* or :* too, and keeps the wider-than-needed judgment", () => {
+    const text = recipe("gap-broad-iam");
+    expect(text).toContain("search for an ARN that ends in `/*` or `:*`");
+    expect(text).toContain("A wildcard inside an ARN counts only when it is wider than the code needs");
+    expect(text).toContain("counts exactly like a bare");
   });
   it("covers event source mappings and Serverless dead-letter keys in the dlq recipe", () => {
     const text = recipe("gap-no-dlq");

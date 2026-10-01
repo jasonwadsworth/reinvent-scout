@@ -259,7 +259,7 @@ per service), skipping dependency and build directories. Each recipe names where
   `cloudwatch:PutMetricData`, `xray:PutTraceSegments`, `sts:GetCallerIdentity`, `logs:CreateLogGroup` on
   its own, and the like. Of the rest, judge whether the code needs that much. When the repository has
   both production and test roles, cite a production one first and name the test roles in the `note`.
-  A wildcard inside an ARN that is wider than the code needs (`userpool/*` when the code uses one pool) counts, exactly like a bare `'*'`. A wildcard narrowed by a condition or session policy is still recordable (see above). Look in CDK
+  Also search for an ARN that ends in `/*` or `:*`. A wildcard inside an ARN counts only when it is wider than the code needs (`userpool/*` when the code uses one pool), and then it counts exactly like a bare `'*'`. A wildcard narrowed by a condition or session policy is still recordable (see above). Look in CDK
   (`.ts`, `.py`), CloudFormation/SAM, Terraform (`.tf`, including `.json` policy files) and the
   Serverless Framework (`serverless.yml`).
 - **`gap-no-tests`** recipe. Enumerate the deployable units: each service, package or function that
