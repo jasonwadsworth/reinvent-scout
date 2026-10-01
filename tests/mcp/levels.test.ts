@@ -27,6 +27,8 @@ const CATALOG = [
   session("DDB400", "DynamoDB at the limit", "400 - Expert"),
   session("LAM200", "Lambda basics", "200 - Intermediate"),
   session("LAM500", "Lambda internals", "500 - Distinguished"),
+  session("CHK400", "Data at scale", "400 - Expert", { type: "Chalk talk", services: ["Amazon DynamoDB"], abstract: "You will use DynamoDB tables." }),
+  session("WRK400", "Hands-on tables and indexes", "400 - Expert", { type: "Workshop", services: ["Amazon DynamoDB"], abstract: "You will use DynamoDB tables." }),
   session("DLQ400", "Dead-letter queues at scale", "400 - Expert", { services: ["AWS Lambda", "Amazon DynamoDB"], abstract: "Recover with dead-letter queues and redrive." }),
 ];
 const HIGH = { levels: { min: 400, max: 500 } };
@@ -99,6 +101,17 @@ describe("preferences on match_sessions and map_profile", () => {
     expect(await call("map_profile", { preferences: { levels: { min: 0, max: 400 } } })).toMatchObject({ error: true });
     expect(await call("match_sessions", { lens: "explain", preferences: HIGH })).toMatchObject({ error: true, text: expect.stringContaining("explain lists introductory (100–200) sessions, which is outside 400–500; use deepen or all") });
     expect(await call("match_sessions", { preferences: { colour: "red" } })).toMatchObject({ error: true });
+  });
+
+  it("takes format rules on both tools, resolves the type names, and refuses a bad one", async () => {
+    const formats = [{ type: "chalk", action: "prefer" }, { type: "breakout session", action: "avoid", levels: { min: 300, max: 500 } }];
+    const matched = JSON.parse((await call("match_sessions", { preferences: { formats } })).text);
+    expect(matched.preferences).toEqual({ formats: [{ type: "Chalk talk", action: "prefer" }, { type: "Breakout session", action: "avoid", levels: { min: 300, max: 500 } }] });
+    expect(JSON.parse((await call("map_profile", { preferences: { formats } })).text).preferences.formats).toHaveLength(2);
+    expect(JSON.parse((await call("match_sessions", { preferences: { formats: [{ type: "workshop", action: "exclude" }] } })).text).candidates.length).toBeGreaterThan(0);
+    expect(await call("match_sessions", { preferences: { formats: [{ type: "keynote", action: "avoid" }] } })).toMatchObject({ error: true, text: expect.stringMatching(/Unknown session type "keynote"/) });
+    expect(await call("match_sessions", { preferences: { formats: [{ type: "chalk", action: "love" }] } })).toMatchObject({ error: true });
+    expect(await call("map_profile", { preferences: { formats: [{ type: "chalk", action: "avoid", extra: 1 }] } })).toMatchObject({ error: true });
   });
 
   it("describes preferences in both tools", async () => {

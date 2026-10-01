@@ -25,6 +25,7 @@ import {
 import { matchSessionsDetailed } from "../match/match.js";
 import { matchFocus, MAX_FOCUS_CHOICES } from "../match/focus.js";
 import { mapProfile } from "../match/map.js";
+import { FORMAT_ACTIONS } from "../match/preferences.js";
 import { GOALS } from "../match/topics.js";
 import { LENSES, type Lens } from "../match/lens.js";
 import { resolveProfile } from "../profile/profile.js";
@@ -257,8 +258,10 @@ const MAX_FOCUS_PER_TOPIC = 3;
 
 /** What the user asked of the sessions, shared by `match_sessions` and `map_profile`. Bands are checked by `validatePreferences`, which
  * names the problem, so a bad range is a readable tool error. */
+const LevelRangeSchema = z.strictObject({ min: z.number(), max: z.number() });
 const PreferencesSchema = z.strictObject({
-  levels: z.strictObject({ min: z.number(), max: z.number() }).optional(),
+  levels: LevelRangeSchema.optional(),
+  formats: z.array(z.strictObject({ type: z.string().min(1), action: z.enum(FORMAT_ACTIONS), levels: LevelRangeSchema.optional() })).optional(),
 });
 
 const MapProfileInputSchema = z.strictObject({
@@ -305,7 +308,8 @@ function registerMatchSessionsTool(server: McpServer, deps: McpToolDeps): void {
     {
       description:
         "Rank the local catalog against a resolved tech profile and return the top candidates, " +
-        "restricted by the user's `preferences` when they have stated any (`{ levels: { min, max } }`: only sessions in that band range, bands 100 to 500; " +
+        "restricted and reordered by the user's `preferences` when they have stated any (`{ levels: { min, max }, formats: [{ type, action: prefer | avoid | exclude, levels? }] }`: " +
+        "only sessions in that band range, bands 100 to 500; session-type rules applied in order, the first match winning, `exclude` removing and `prefer`/`avoid` moving a session up or down after the demoted ones' place; " +
         "ranking is unchanged, the sessions that remain keep their order; the response echoes `preferences`, and `reason` says when they left nothing of a result that has sessions), " +
         "or, with a `focus` (topics from `map_profile`, each with a goal: understand, deepen or improve; 1 to 6, and `perTopic` sessions each, 1 to 3 and 3 by default, " +
         "instead of `lens` and `limit`), a short list per choice as `{ results: [{ topic, goal, total, candidates, reason? }], truncated, omitted }`. " +
@@ -359,7 +363,7 @@ function registerMapProfileTool(server: McpServer, deps: McpToolDeps): void {
       description:
         "Show what a tech profile found in the code as topics the user can choose from: services, patterns, supported gaps and next steps, " +
         "each with an `id`, a one-sentence note, where the code uses it, and the goals that apply (understand, deepen, improve) with how many " +
-        "sessions each would return (0 is a dead end). Pass the user's `preferences` (`{ levels: { min, max } }`, bands 100 to 500) when they have stated any, and the counts are under them. Present it, ask which topics and goals the user cares about, then call `match_sessions` with a `focus`.",
+        "sessions each would return (0 is a dead end). Pass the user's `preferences` (`{ levels: { min, max }, formats: [{ type, action, levels? }] }`) when they have stated any, and the counts are under their level range and `exclude` rules (`prefer` and `avoid` only reorder). Present it, ask which topics and goals the user cares about, then call `match_sessions` with a `focus`.",
       inputSchema: MapProfileInputSchema,
     },
     async ({ profile, preferences }) => {

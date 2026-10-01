@@ -1,6 +1,6 @@
 import { toPublicIndexRecord } from "../catalog/index-record.js";
 import type { UncoveredConcept } from "./concepts.js";
-import type { SessionPreferences } from "./levels.js";
+import type { SessionPreferences } from "./preferences.js";
 import type { SkippedRule } from "./lens-signals.js";
 import type { ProfileMap, MapTopic } from "./map.js";
 import type { FocusCandidate, FocusEntry, FocusResult } from "./focus.js";

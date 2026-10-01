@@ -2,7 +2,7 @@ import { ValidationError } from "../core/errors.js";
 import type { CatalogStoreDeps } from "../catalog/store.js";
 import type { ResolvedProfile } from "../profile/profile.js";
 import { createFocusEngine } from "./focus.js";
-import { validatePreferences, type SessionPreferences } from "./levels.js";
+import { type SessionPreferences } from "./preferences.js";
 import { goalsOf, type Goal, type Topic, type TopicGroup } from "./topics.js";
 import type { Citation } from "./why.js";
 
@@ -38,8 +38,8 @@ export interface ProfileMap {
 /** The profile's topics with, for each goal that applies, the number of sessions it would return. A goal with none is kept at 0,
  * so a dead end is visible before it is picked. */
 export function mapProfile(profile: ResolvedProfile, deps: CatalogStoreDeps, options: { preferences?: SessionPreferences } = {}): ProfileMap {
-  const preferences = validatePreferences(options.preferences);
-  const engine = createFocusEngine(profile, deps, preferences);
+  const engine = createFocusEngine(profile, deps, options.preferences);
+  const { preferences } = engine;
   const describe = (topic: Topic): MapTopic => ({
     id: topic.id, label: topic.label,
     ...(topic.note === undefined ? {} : { note: topic.note }),

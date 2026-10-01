@@ -3,7 +3,7 @@ import type { Session } from "../../src/api/types.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { CURRENT_SCHEMA_VERSION, writeCatalog } from "../../src/catalog/store.js";
 import { ValidationError } from "../../src/core/errors.js";
-import { describeLevels, validateLevels } from "../../src/match/levels.js";
+import { describeLevels, validateLevels } from "../../src/match/preferences.js";
 import { matchFocus, type FocusChoice } from "../../src/match/focus.js";
 import { mapProfile } from "../../src/match/map.js";
 import { matchSessionsDetailed } from "../../src/match/match.js";

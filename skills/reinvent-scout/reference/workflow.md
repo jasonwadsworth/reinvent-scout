@@ -88,7 +88,7 @@ offending entry -- fix the *profile object* and call `validate_profile` again wi
 
 ## 4a. `map_profile`
 
-Arguments: `{ "profile": <the profile object>, "preferences"?: { "levels"?: { "min": number, "max": number } } }`. Returns what the profile found, grouped, for the user to choose from:
+Arguments: `{ "profile": <the profile object>, "preferences"?: <preferences, as in `match_sessions`> }`. Returns what the profile found, grouped, for the user to choose from:
 `{ "services": [...], "patterns": [...], "gaps": [...], "nextSteps": [...] }`. Every topic is
 `{ "id", "label", "note"?, "evidence": [{ "repo", "file", "line"? }], "more"?, "pillar"?, "skipped"?, "goals": [{ "goal", "sessions" }] }`.
 `id` is stable (`service:Amazon DynamoDB`, `pattern:event-driven`, `gap:gap-no-dlq`, `path:genai-single-call`) and is what
@@ -109,7 +109,13 @@ Present the map, ask the user for up to about five topics and a goal each, then 
 
 ## 5. `match_sessions`
 
-Arguments: `{ "profile": <profile object>, "lens"?: "all" | "explain" | "fix" | "next-level", "limit"?: number, "focus"?: [{ "topic": <id>, "goal": "understand" | "deepen" | "improve" }], "perTopic"?: number, "preferences"?: { "levels"?: { "min": number, "max": number } } }`.
+Arguments: `{ "profile": <profile object>, "lens"?: "all" | "explain" | "fix" | "next-level", "limit"?: number, "focus"?: [{ "topic": <id>, "goal": "understand" | "deepen" | "improve" }], "perTopic"?: number, "preferences"?: { "levels"?: { "min": number, "max": number }, "formats"?: [{ "type": string, "action": "prefer" | "avoid" | "exclude", "levels"?: { "min": number, "max": number } }] } }`.
+`preferences.formats` are session-type rules applied in order, the first rule that matches a session winning (`levels` limits a rule to that range). `type` is checked against the catalog's
+types, in any case or as a unique prefix ("chalk"), and echoed as the catalog spells it; an unknown or ambiguous type is an `isError` naming the catalog's types. `exclude` removes the session like a level
+filter. `prefer` and `avoid` move it to a tier after the demotion tier and before every other ranking key (preferred, then neutral, then avoided; the lens's own order within each tier), so a preferred session
+outranks a neutral one even if it matches less strongly; the per-concept cap and the focus dedupe run after the tier. A preferred session's `why.summary` ends "(a chalk talk, which you prefer)", an avoided one's
+"(ranked lower: a breakout session, which you asked to avoid at 300–500)". Format rules apply to every lens and focus goal, `explain` and `understand` included. The map counts under `exclude` and `levels`,
+not under `prefer` and `avoid`, which only reorder. `--prefer <type[@band]>`, `--avoid` and `--exclude` (repeatable, kept in the order typed) are the CLI form.
 `preferences.levels` restricts every lens and every focus choice to the sessions in that inclusive band range (100 to 500; a session with no level is left out;
 the same rule as `catalog search --level`). It is applied after admission and before the per-concept cap, the focus dedupe and `limit`, so a list is filled
 from sessions in range and the sessions that remain keep their order; ranking itself does not change. The response echoes `preferences`; when the range leaves nothing of a

@@ -139,6 +139,8 @@ export interface AllSession {
   /** How relevant the whole session is to the profile; the last word between otherwise equal sessions. */
   relevance: number;
   demoted?: string;
+  /** From the user's format preferences: 1 preferred, -1 avoided, 0 neither. */
+  tier?: number;
 }
 
 export interface RankedAll {
@@ -170,7 +172,7 @@ const TOP_SHARE = 3;
 const MIN_CONCEPTS_FOR_CAP = 4;
 
 /**
- * Orders sessions by, in sequence: demoted sessions after every other; the strongest match (a title that
+ * Orders sessions by, in sequence: demoted sessions after every other; the user's preferred formats before neutral ones before avoided ones; the strongest match (a title that
  * names a concept before an abstract that only does); a session about the profile's evidence before one
  * about only a stated interest; the summed centrality of the concepts they are
  * about (the code's central concepts first); the number of concepts; relevance; a scheduled session
@@ -191,6 +193,7 @@ export function rankAll(sessions: readonly AllSession[]): RankedAll[] {
   });
   ranked.sort((a, b) =>
     Number(a.session.demoted !== undefined) - Number(b.session.demoted !== undefined)
+    || (b.session.tier ?? 0) - (a.session.tier ?? 0)
     || b.strongest - a.strongest
     || Number(b.evidenced) - Number(a.evidenced)
     || b.centrality - a.centrality

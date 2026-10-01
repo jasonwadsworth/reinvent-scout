@@ -60,6 +60,23 @@ explained shortlist.
    apply it. It filters; the ranking of what remains is unchanged. `understand` and the `explain` lens are introductory (100 to 200), so above 200 they
    have nothing and say so (`explain` is an error naming `deepen` or `all`). When the filter empties something the response says so (`reason`:
    "4 sessions match, none at 400–500"): tell the user, never widen the range yourself, and offer to widen it.
+   The same `preferences` object carries session types as `formats`: a list of `{ "type", "action": "prefer" | "avoid" | "exclude", "levels"? }` rules, applied in order, the
+   first rule that matches a session winning (`levels` limits a rule to sessions in that range). `exclude` removes the sessions like a level filter; `prefer` and `avoid`
+   only reorder: preferred sessions come before neutral ones, which come before avoided ones, after the demoted sessions' own place and before every other ranking
+   consideration, so "more than anything" means a preferred session outranks a neutral one even if it matches less strongly. A preferred session's `why.summary` ends
+   "(a chalk talk, which you prefer)"; an avoided one's "(ranked lower: a breakout session, which you asked to avoid at 300–500)". Turn plain statements into rules and keep them for the rest
+   of the conversation, the map included:
+
+   | The user says | Pass |
+   |---|---|
+   | "only 400+" | `levels: { min: 400, max: 500 }` |
+   | "no workshops" | `formats: [{ type: "Workshop", action: "exclude" }]` |
+   | "I like chalk talks" | `formats: [{ type: "Chalk talk", action: "prefer" }]` |
+   | "avoid breakouts unless intro" | `formats: [{ type: "Breakout session", action: "avoid", levels: { min: 300, max: 500 } }]` |
+
+   Format words: chalk talk; breakout or talk (the catalog's "Breakout session"); workshop; builders' session; lightning talk; code talk; lab; bootcamp. The type is checked
+   against the catalog's own names, in any case or as a unique prefix ("chalk"). Restate the active preferences once, briefly, when you first apply them, and say when a
+   preference emptied a result. `exclude` and `levels` change the map's counts; `prefer` and `avoid` do not.
 6. Present the candidates to the user. Lead each one with its title, format and level, then
    `why.summary` and, when present, the `why.sessionSays` quote; cite `why.yourCode` (repo, file and
    line, plus `why.more` cut ones) so the user can open the code, then every `offerings` entry

@@ -866,9 +866,30 @@ describe("the session preferences documentation", () => {
   });
   it("documents the preferences argument, its order of application and its refusals in workflow.md", () => {
     const text = collapse(workflowMd);
-    for (const expected of ["\"preferences\"?: { \"levels\"?: { \"min\": number, \"max\": number } }", "applied after admission and before the per-concept cap", "ranking itself does not change",
+    for (const expected of ["\"preferences\"?: { \"levels\"?: { \"min\": number, \"max\": number }, \"formats\"?:", "applied after admission and before the per-concept cap", "ranking itself does not change",
       "4 sessions match, none at 400\u2013500", "explain lists introductory (100\u2013200) sessions, which is outside 400\u2013500; use deepen or all", "`profile map --level 400-500`", "`--level 400-500` is the CLI form"]) {
       expect(text, expected).toContain(expected);
+    }
+  });
+  it("turns plain statements into format rules, restates them and keeps them, in the skill", () => {
+    const flow = collapse(extractSection(skillMd, "## The flow"));
+    for (const expected of ["`formats`", "\"action\": \"prefer\" | \"avoid\" | \"exclude\"", "the first rule that matches a session winning", "a preferred session outranks a neutral one even if it matches less strongly",
+      "(a chalk talk, which you prefer)", "(ranked lower: a breakout session, which you asked to avoid at 300\u2013500)", "| \"only 400+\" |", "| \"no workshops\" | `formats: [{ type: \"Workshop\", action: \"exclude\" }]` |",
+      "| \"I like chalk talks\" |", "| \"avoid breakouts unless intro\" | `formats: [{ type: \"Breakout session\", action: \"avoid\", levels: { min: 300, max: 500 } }]` |",
+      "chalk talk; breakout or talk (the catalog's \"Breakout session\"); workshop; builders' session; lightning talk; code talk; lab; bootcamp",
+      "Restate the active preferences once, briefly", "`exclude` and `levels` change the map's counts; `prefer` and `avoid` do not"]) {
+      expect(flow, expected).toContain(expected);
+    }
+  });
+  it("documents the format rules in workflow.md and the readme", () => {
+    const text = collapse(workflowMd);
+    for (const expected of ["\"formats\"?: [{ \"type\": string, \"action\": \"prefer\" | \"avoid\" | \"exclude\"", "the first rule that matches a session winning", "echoed as the catalog spells it",
+      "preferred, then neutral, then avoided", "the per-concept cap and the focus dedupe run after the tier", "`explain` and `understand` included", "`--prefer <type[@band]>`, `--avoid` and `--exclude` (repeatable, kept in the order typed)"]) {
+      expect(text, expected).toContain(expected);
+    }
+    const readme = collapse(readmeMd);
+    for (const expected of ["#### Chalk talks more than anything, no workshops", "--prefer \"chalk talk\" --avoid \"breakout session@300-500\" --exclude workshop", "demoted sessions still come last", "`preferences: { formats: [{ type, action, levels? }] }`"]) {
+      expect(readme, expected).toContain(expected);
     }
   });
   it("documents --level in the readme", () => {

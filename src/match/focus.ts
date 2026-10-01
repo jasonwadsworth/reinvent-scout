@@ -10,7 +10,7 @@ import {
   allRanked, explainCandidate, explainSessions, knownServices, lensSkippedRules, roundCandidate, rulesRanked, whyFor, buildMatchQuery,
   type GroupedCandidate, type LensContext, type MatchCandidate,
 } from "./match.js";
-import { allowsBand, allowsIntroductory, emptiedBy, introductoryRefusal, validatePreferences, type SessionPreferences } from "./levels.js";
+import { allowsBand, allowsIntroductory, byTier, emptiedBy, introductoryRefusal, resolvePreferences, type SessionPreferences } from "./preferences.js";
 import { buildCorpusStats } from "./score.js";
 import { conceptKey, goalsOf, GOALS, buildTopics, type Goal, type Topic } from "./topics.js";
 import type { ResolvedProfile } from "../profile/profile.js";
@@ -58,14 +58,16 @@ interface Listed {
 /** What `mapProfile` and `matchFocus` both read: the topics of a profile and, per topic and goal, the sessions its lens would list. */
 export interface FocusEngine {
   topics: Topic[];
+  /** The preferences as checked against the catalog, absent when there are none. */
+  preferences: SessionPreferences | undefined;
   list(topic: Topic, goal: Goal): Listed;
 }
 
 const NO_INTRODUCTION = "no introductory (100/200) session names it in its title or twice in its abstract";
 
 export function createFocusEngine(profile: ResolvedProfile, deps: CatalogStoreDeps, given?: SessionPreferences): FocusEngine {
-  const preferences = validatePreferences(given);
   const index = requireCurrentIndex(deps);
+  const preferences = resolvePreferences(given, index);
   const rawById = new Map((readRaw(deps) ?? []).map(session => [session.sessionId, session]));
   const ctx: LensContext = {
     profile, index, rawById, query: buildMatchQuery(profile), corpusStats: buildCorpusStats(index),
@@ -78,7 +80,7 @@ export function createFocusEngine(profile: ResolvedProfile, deps: CatalogStoreDe
     return cache.get(key) as T;
   };
   const finish = (candidates: readonly GroupedCandidate[], lens: "all" | "explain" | "fix" | "next-level"): MatchCandidate[] =>
-    candidates.map(candidate => roundCandidate(candidate, whyFor(candidate, lens, profile, ctx.abstractOf)));
+    candidates.map(candidate => roundCandidate(candidate, whyFor(candidate, lens, profile, ctx.abstractOf, preferences)));
 
   const understand = (topic: Topic): Listed => {
     if (preferences !== undefined && !allowsIntroductory(preferences)) {
@@ -95,7 +97,7 @@ export function createFocusEngine(profile: ResolvedProfile, deps: CatalogStoreDe
     const sessions = groups.filter(group => group.explain!.some(match => match.concept === concept))
       .map(group => ({ key: group.code, record: group.record, matches: group.explain!.filter(match => match.concept === concept), rank: group.score }));
     const { selected, uncovered } = selectExplain(sessions, [concept], typeWeights, allowsBand(preferences, 300));
-    const candidates = finish(selected.map(entry => explainCandidate(byCode.get(entry.key)!, entry.matches, profile, typeWeights)), "explain");
+    const candidates = finish(byTier(preferences, selected.map(entry => explainCandidate(byCode.get(entry.key)!, entry.matches, profile, typeWeights)), candidate => candidate.record), "explain");
     return candidates.length > 0 ? { candidates } : { candidates, reason: uncovered[0]?.reason ?? NO_INTRODUCTION };
   };
 
@@ -131,7 +133,7 @@ export function createFocusEngine(profile: ResolvedProfile, deps: CatalogStoreDe
     return emptied === undefined || (goal === "understand" && !allowsIntroductory(preferences)) ? found : { candidates: found.candidates, reason: emptied };
   };
   return {
-    topics,
+    topics, preferences,
     list: (topic, goal) => once(`${topic.id}|${goal}`, () => listed(topic, goal)),
   };
 }
@@ -175,7 +177,7 @@ function validate(topics: readonly Topic[], choices: readonly FocusChoice[], per
  */
 export function matchFocus(profile: ResolvedProfile, deps: CatalogStoreDeps, choices: readonly FocusChoice[], options: FocusOptions = {}): FocusResult {
   const engine = createFocusEngine(profile, deps, options.preferences);
-  const preferences = validatePreferences(options.preferences);
+  const { preferences } = engine;
   const perTopic = options.perTopic ?? DEFAULT_PER_TOPIC;
   const topics = validate(engine.topics, choices, perTopic);
   // A session counts as taken only once it is listed, so one an earlier choice ranked past its cap is still there for a later choice.

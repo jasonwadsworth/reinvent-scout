@@ -317,6 +317,20 @@ the ranking: the sessions that remain keep their order, and a list is filled fro
 `--lens explain` are introductory (100-200), so above 200 `explain` is refused (use `deepen` or `all`) and `understand` shows 0 with the reason.
 When the range empties a result, it says so ("4 sessions match, none at 400-500"). The MCP tools take `preferences: { levels: { min, max } }`.
 
+#### Chalk talks more than anything, no workshops
+
+`--prefer <type[@band]>`, `--avoid <type[@band]>` and `--exclude <type[@band]>` (repeatable; a type is any case or a unique prefix, so `chalk` is a chalk talk) set rules by
+session type, applied in the order typed, the first rule that matches a session winning. `--exclude` removes sessions like `--level`. `--prefer` and `--avoid` only reorder: preferred
+sessions come before neutral ones, which come before avoided ones, ahead of every other consideration except that demoted sessions still come last, so a preferred session outranks a
+neutral one even if it matches less strongly. `@300-500` limits a rule to those levels:
+
+```sh
+reinvent-scout match --profile my-profile.json --prefer "chalk talk" --avoid "breakout session@300-500" --exclude workshop
+```
+
+A preferred session's `why` ends "(a chalk talk, which you prefer)"; an avoided one's "(ranked lower: a breakout session, which you asked to avoid at 300-500)". The map counts under
+`--exclude` and `--level` and not under `--prefer` and `--avoid`. The MCP tools take `preferences: { formats: [{ type, action, levels? }] }`.
+
 ### Fix and Next-level lenses
 
 ```sh

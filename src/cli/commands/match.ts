@@ -13,8 +13,8 @@ import { resolveTopic, type Nameable } from "../../match/map.js";
 import { GOALS, type Goal } from "../../match/topics.js";
 import { matchSessionsDetailed, type MatchCandidate, type MatchResult } from "../../match/match.js";
 import { buildFocusResponse, buildMatchResponse, toLeanCandidate, toLeanFocusCandidate } from "../../match/response.js";
-import { describePreferences, type SessionPreferences } from "../../match/levels.js";
-import { parseLevelBandRange } from "../level-option.js";
+import { describePreferences } from "../../match/preferences.js";
+import { addPreferenceOptions } from "../level-option.js";
 import { formatZodError } from "../zod-errors.js";
 import { loadResolvedProfile } from "../profile-input.js";
 
@@ -183,13 +183,14 @@ export function registerMatchCommands(program: Command, deps: MatchCommandDeps =
   const print = deps.print ?? ((message: string) => process.stdout.write(`${message}\n`));
   const resolveStoreRoot = deps.resolveStoreRoot ?? (() => ensureStoreRoot());
 
-  program
+  const matchCommand = program
     .command("match")
-    .description("Rank the local catalog against an agent-authored tech profile.")
+    .description("Rank the local catalog against an agent-authored tech profile.");
+  const preferencesOf = addPreferenceOptions(matchCommand);
+  matchCommand
     .requiredOption("--profile <file|name>", "a profile file path, or a name saved with `profile save`")
     .option("--focus <choices>", `what to look for, as "<topic>:<goal>" pairs separated by commas (goals: ${GOALS.join(", ")}); topics are listed by \`profile map\``)
     .option("--per-topic <n>", `with --focus, how many sessions each choice lists (default ${DEFAULT_PER_TOPIC}, maximum ${MAX_PER_TOPIC})`)
-    .option("--level <band>", "only sessions at this level band, e.g. 400 or a range like 400-500")
     .option("--lens <lens>", `one of ${LENSES.join(", ")}`, "all")
     .option("--limit <n>", "maximum number of candidates", String(DEFAULT_MATCH_LIMIT))
     .option("--include-abstracts", "include each session's abstract in the output")
@@ -199,7 +200,7 @@ export function registerMatchCommands(program: Command, deps: MatchCommandDeps =
       const storeRoot = resolveStoreRoot();
 
       try {
-        const preferences: SessionPreferences | undefined = options.level === undefined ? undefined : { levels: parseLevelBandRange(options.level) };
+        const preferences = preferencesOf(options.level);
         if (options.focus !== undefined) {
           if (command.getOptionValueSource("lens") !== "default") {
             throw new ValidationError("--focus and --lens cannot be used together: a focus names its own goal for each topic.");
