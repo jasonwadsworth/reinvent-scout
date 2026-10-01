@@ -405,6 +405,14 @@ describe("reference/taxonomy.md vocabulary", () => {
   });
 });
 
+describe("the sessionSays quote", () => {
+  it("documents that a sentence about what the attendee will do is preferred, with the first match as the fallback", () => {
+    const text = workflowMd.replace(/\s+/g, " ");
+    for (const expected of ["one that says what the attendee will learn, build or see", "is preferred over a marketing opener", "the first sentence that names it is the fallback"]) expect(text, expected).toContain(expected);
+    expect(readFileSync(join(here, "..", "..", "README.md"), "utf8").replace(/\s+/g, " ")).toContain("preferring one about what you will learn, build or see over the abstract's opener");
+  });
+});
+
 describe("offering end times and conflicts", () => {
   it("tells the agent to use plan_schedule for any overlap question and never infer it from the times", () => {
     const flow = extractSection(skillMd, "## The flow").replace(/\s+/g, " ");

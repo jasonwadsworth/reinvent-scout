@@ -216,8 +216,8 @@ sentence naming what the candidate covers: under `fix` the gap and its note (`Co
 gap-no-dlq: ...`), under `next-level` the source pattern and destination, under `explain` the
 concept and how the code uses it, under `all` the one or two concepts of the profile the session was admitted for, most about first
 (`Matches your AWS Lambda (...) and serverless`), with `; ranked lower: sponsored session` when it is demoted. `yourCode` lists up to three deduped citations in profile order; `more` counts the ones
-left out and is absent when none were. `sessionSays` is the abstract sentence that says it (the title only when the abstract has none),
-trimmed to about 160 characters, and is absent (not empty) when nothing could be quoted. Lead with
+left out and is absent when none were. `sessionSays` is the abstract sentence that says it (the title only when the abstract has none): among the sentences that name the concept, one that says what the attendee will learn, build or see
+("learn", "build", "walk through", "dive into", "see how", "you'll", "demo", "hands-on", "deep dive", "patterns for", "best practices") is preferred over a marketing opener, and the first sentence that names it is the fallback, trimmed to about 160 characters, and is absent (not empty) when nothing could be quoted. Lead with
 `why.summary` and `sessionSays` when presenting, and cite `yourCode`.
 
 When the response would not fit the budget, MCP drops every candidate's ranking reasons first and

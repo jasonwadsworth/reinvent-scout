@@ -24,6 +24,8 @@ export interface MatchSite {
   inTitle: boolean;
   index: number;
   length: number;
+  /** Other places in the abstract that name the same thing, in order, for a sentence that says more than the first. */
+  others?: ReadonlyArray<{ index: number; length: number }>;
 }
 
 /** The session text a quote can come from. */
@@ -126,12 +128,22 @@ export function citationsOf(evidence: readonly Evidence[]): Pick<Why, "yourCode"
   return { yourCode: all.slice(0, CITATIONS_LISTED), ...(more > 0 ? { more } : {}) };
 }
 
-/** The title when the match is in it, else the abstract sentence holding the match. `undefined`
- * when the site does not fall inside the text it claims, so nothing is ever invented. */
+/** Words that say what an attendee will learn, build or see, rather than what a service is: the sentence worth quoting. */
+const LEARN_CUE = /\b(?:learn|build(?:ing)?|explore how|discover how|walk(?:ing)? through|dives? into|see how|we['\u2019]ll show|you['\u2019]ll|demos?|hands-on|deep dive|patterns for|best practices)\b/i;
+
+/** The title when the match is in it, else the abstract sentence holding the match, preferring (among the sentences that name it) one that
+ * says what the attendee will learn, build or see, and falling back to the first. `undefined` when the site does not fall inside the text it
+ * claims, so nothing is ever invented. */
 export function quoteSite(text: SessionText, site: MatchSite): string | undefined {
   if (site.inTitle) return text.title === "" ? undefined : text.title;
   if (site.index < 0 || site.index + site.length > text.abstract.length) return undefined;
-  const quote = quoteAround(text.abstract, site.index, site.length);
+  const places = [site, ...(site.others ?? [])].filter(place => place.index >= 0 && place.index + place.length <= text.abstract.length);
+  const cued = places.find(place => {
+    const { start, end } = sentenceBounds(text.abstract, place.index, place.length);
+    return LEARN_CUE.test(text.abstract.slice(start, end));
+  });
+  const chosen = cued ?? site;
+  const quote = quoteAround(text.abstract, chosen.index, chosen.length);
   return quote === "" ? undefined : quote;
 }
 
