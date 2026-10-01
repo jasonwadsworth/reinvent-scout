@@ -160,27 +160,19 @@ misattribute someone else's stack as this repository's own.
 
 ## Naming patterns
 
-A pattern's `name` is usually a short, kebab-case, architectural noun -- reused across
+A pattern's `name` is a short, kebab-case, architectural noun -- reused across
 repositories with the same shape, not a one-off phrase invented per repository (`"event driven"`
-and `"event-driven-architecture"` should both just be `event-driven`). A starting vocabulary,
-extend it when a repository's shape genuinely doesn't fit any of these:
+and `"event-driven-architecture"` should both just be `event-driven`). Use this starting vocabulary:
 
-`serverless`, `event-driven`, `containers`, `ecs`, `eks`, `api`, `streaming`, `iac-cdk`, `iac-terraform`,
-`iac-cloudformation`, `genai-single-call`, `agentic`, `multi-account`.
+`serverless`, `event-driven`, `containers`, `ecs`, `eks`, `api`, `streaming`, `iac-cdk`,
+`genai-single-call`, `agentic`, `multi-account`, `multi-tenant`, `data-lake`.
 
-The one exception: when a pattern genuinely corresponds to one of `reference/taxonomy.md`'s
-"Topics" (not just a loose thematic resemblance -- the pattern *is* that topic), name it with that
-topic's exact spelling instead of inventing a kebab-case version of it: `"Developer Tools"`,
-`"Security & Identity"`, not `developer-tools` or `security-identity`. This isn't cosmetic:
-`match_sessions` compares every pattern name against a session's own topics case-insensitively, but
-not hyphen- or punctuation-insensitively, so a kebab-cased rendering of a multi-word topic ("exact"
-here means spelling, not case) never actually matches the real topic and silently loses that
-reason. A single-word topic like "Serverless" still reads fine in ordinary kebab-case (`serverless`
-already matches it case-insensitively), which is why the general vocabulary above stays kebab-case
-by default -- this exception only bites for a multi-word topic.
+These are the names `match_sessions` and `map_profile` know how to match to sessions. A pattern with any other name is
+recorded in the profile but cannot be matched, and comes back as `uncovered`, so do not invent names for a shape that fits none of
+these: leave it out. A user's topical interests belong in `interests`, not in a pattern; you do not invent them. (Terraform and
+CloudFormation have no pattern name because no session wording is defined for them; cite the services instead.)
 
-A gap (see "Say what's missing, too" below) is always kebab-case with a `gap-` prefix, never a
-topic spelling, so it's never confused with a positive, present-tense pattern: `gap-no-dlq`,
+A gap (see "Say what's missing, too" below) is always kebab-case with a `gap-` prefix, so it's never confused with a positive, present-tense pattern: `gap-no-dlq`,
 `gap-no-alarms`, `gap-broad-iam`, `gap-no-tests`, `gap-no-tracing`. Code nothing reaches is `dead-code` (no `gap-`
 prefix -- it isn't an absence, it's a presence that doesn't count).
 
@@ -312,8 +304,8 @@ restatement of the `services` list as prose.
       ]
     },
     {
-      "name": "Security & Identity",
-      "note": "Every API Gateway route is fronted by a Lambda request authorizer that checks the caller's IAM-scoped role before the handler runs.",
+      "name": "api",
+      "note": "REST APIs on API Gateway, every route fronted by a Lambda request authorizer.",
       "evidence": [
         { "repo": "api", "file": "infra/stack.ts", "line": 20, "snippet": "new apigateway.RequestAuthorizer(this, \"OrderAuthorizer\")" }
       ]
@@ -339,12 +331,6 @@ event-driven architecture to cut coupling between services," the second from "we
 reduce our AWS bill." `"serverless"` is kept as free text because there's no "Serverless" entry in
 the Areas of interest list (it's a *topic*, not an area of interest) -- forcing it onto an unrelated
 tag would be a worse match than leaving it as text.
-
-`"Security & Identity"` is a pattern, not an interest, but follows the same "exact spelling" rule
-from "Naming patterns" above for the opposite reason `"serverless"` doesn't: it genuinely *is* one
-of `reference/taxonomy.md`'s "Topics", so it's spelled exactly as that topic is, capital letters
-and ampersand included, rather than invented as `security-identity` -- the kebab-case rendering
-would silently fail to match the real topic at all.
 
 For a multi-repository profile, add one entry per repository to `repos` and use its `root` as the
 `repo` value in every citation that belongs to it.
