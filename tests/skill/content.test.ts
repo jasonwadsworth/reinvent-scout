@@ -884,10 +884,9 @@ describe("gap consistency guidance in profiling.md", () => {
     expect(collapsed).toContain("cloudformation:CreateStack");
     expect(collapsed).not.toContain("Listing the excluded items as services would swamp");
   });
-  it("adds multi-tenant and dead-code to the vocabulary and IaC directories to what to read", () => {
-    const vocabulary = collapsed.slice(collapsed.indexOf("A starting vocabulary"), collapsed.indexOf("The one exception"));
+  it("keeps multi-tenant in the vocabulary and adds IaC directories to what to read", () => {
+    const vocabulary = collapsed.slice(collapsed.indexOf("Use this starting vocabulary"), collapsed.indexOf("These are the names"));
     expect(vocabulary).toContain("`multi-tenant`");
-    expect(vocabulary).toContain("`dead-code`");
     expect(collapsed).toContain("every directory that holds infrastructure as code");
   });
 });
