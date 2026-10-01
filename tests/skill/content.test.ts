@@ -214,6 +214,17 @@ describe("skill files tool names", () => {
     "node_modules",
     "aws_dynamodb_table",
     "aws_elasticache_serverless_cache",
+    "aws_cloudwatch_event_target",
+    "aws_sqs_queue",
+    "aws_sns_topic_subscription",
+    "aws_lambda_function_event_invoke_config",
+    "aws_cloudwatch_metric_alarm",
+    "aws_iam_policy_document",
+    "dead_letter_queue",
+    "dead_letter_config",
+    "redrive_policy",
+    "destination_config",
+    "alarm_actions",
   ]);
 
   it("names only tools the mcp server actually registers or explicitly documents as absent, anywhere in the skill's files", async () => {
@@ -746,7 +757,7 @@ describe("lens-quality documentation", () => {
 describe("lens-precision guidance in profiling.md", () => {
   const collapsed = profilingMd.replace(/\s+/g, " ");
   it("marks platform services supporting by default and names them, from the exported list", () => {
-    expect(collapsed).toContain("Mark platform services `\"role\": \"supporting\"` by default");
+    expect(collapsed).toContain("Always list the platform services you find, as `\"role\": \"supporting\"`");
     const shortName = (name: string): string => {
       const inner = /\(([^)]+)\)\s*$/.exec(name)?.[1] ?? name;
       return inner.replace(/^(?:Amazon|AWS)\s+/, "");
@@ -756,7 +767,7 @@ describe("lens-precision guidance in profiling.md", () => {
     expect(listed).toEqual(expect.arrayContaining(["IAM", "STS"]));
     for (const name of listed) {
       if (never.has(name)) continue;
-      expect(collapsed, name).toMatch(new RegExp(`Mark platform services[^.]*\\b${name}\\b`));
+      expect(collapsed, name).toMatch(new RegExp(`Always list the platform services[^.]*\\b${name}\\b`));
     }
     expect(collapsed).toContain("IAM and STS are never listed; if present they are ignored.");
     expect(collapsed).toContain("no alarm that notifies a person on the infrastructure you found");
@@ -803,6 +814,65 @@ describe("validate_profile warnings in the skill docs", () => {
     expect(section).toContain("`warnings`");
     expect(section).toContain("names no file, path or glob");
     expect(section).toContain("not an error");
+  });
+});
+
+describe("gap consistency guidance in profiling.md", () => {
+  const collapsed = profilingMd.replace(/\s+/g, " ");
+  const recipe = (gap: string): string => {
+    const match = new RegExp(`- \\*\\*\`${gap}\`\\*\\* recipe\\. (.*?)(?= - \\*\\*\`gap-|## |$)`).exec(collapsed);
+    expect(match, `${gap} recipe`).not.toBeNull();
+    return match![1]!;
+  };
+  it("gives gap-no-dlq a search recipe that lists every asynchronous target and source", () => {
+    const text = recipe("gap-no-dlq");
+    for (const term of ["EventBridge rule target", "SfnStateMachine", "onFailure", "SNS subscription", "destination", "deadLetterQueue", "dead_letter_config", "RedrivePolicy"]) {
+      expect(text, term).toContain(term);
+    }
+  });
+  it("gives gap-no-alarms a recipe that checks each resource kind reaches a person", () => {
+    const text = recipe("gap-no-alarms");
+    for (const term of ["state machine", "queue", "SNS topic", "PagerDuty", "Chatbot", "alarm_actions", "AlarmActions", "addAlarmAction"]) {
+      expect(text, term).toContain(term);
+    }
+  });
+  it("gives gap-broad-iam a recipe with a wildcard search, the unscopable actions and a production-first rule", () => {
+    const text = recipe("gap-broad-iam");
+    for (const term of ["cloudwatch:PutMetricData", "xray:PutTraceSegments", "sts:GetCallerIdentity", "logs:CreateLogGroup", "production", "test"]) {
+      expect(text, term).toContain(term);
+    }
+    expect(text).toMatch(/'\*'|"\*"/);
+  });
+  it("names file kinds for every IaC flavour in each recipe", () => {
+    for (const gap of ["gap-no-dlq", "gap-no-alarms", "gap-broad-iam"]) {
+      const text = recipe(gap);
+      for (const flavour of ["CDK", "CloudFormation", "Terraform", "Serverless Framework"]) expect(text, `${gap} ${flavour}`).toContain(flavour);
+    }
+  });
+  it("requires counting before recording a gap or claiming a practice, with the count in the note", () => {
+    expect(collapsed).toContain("Count, do not sample.");
+    expect(collapsed).toContain("34 of 37 EventBridge rules have a DLQ");
+    expect(collapsed).toContain("never claim a practice is present everywhere from a sample");
+  });
+  it("says one lacking resource is the gap, and coverage elsewhere never cancels it", () => {
+    expect(collapsed).toContain("If even one resource of the kind lacks the practice, record the gap.");
+    expect(collapsed).toContain("never cancels the gap");
+    expect(collapsed).toContain("cite the lacking resource");
+  });
+  it("requires every gap note to name what was inspected, and says validate_profile warns", () => {
+    expect(collapsed).toContain("Every gap note names what was inspected");
+    expect(collapsed).toContain("`validate_profile` returns a warning");
+  });
+  it("lists platform services as supporting and treats runtime CloudFormation as a real service", () => {
+    expect(collapsed).toContain("Always list the platform services you find");
+    expect(collapsed).toContain("cloudformation:CreateStack");
+    expect(collapsed).not.toContain("Listing the excluded items as services would swamp");
+  });
+  it("adds multi-tenant and dead-code to the vocabulary and IaC directories to what to read", () => {
+    const vocabulary = collapsed.slice(collapsed.indexOf("A starting vocabulary"), collapsed.indexOf("The one exception"));
+    expect(vocabulary).toContain("`multi-tenant`");
+    expect(vocabulary).toContain("`dead-code`");
+    expect(collapsed).toContain("every directory that holds infrastructure as code");
   });
 });
 

@@ -19,6 +19,8 @@ from prose that describes what it's supposed to do:
 - **Infrastructure as code**: CDK (`*.ts`/`*.py`/`*.java` under a `cdk`/`infra`/`stacks` directory,
   or wherever `Stack` subclasses live), CloudFormation/SAM templates (`template.yaml`,
   `*.template.json`), Terraform (`*.tf`).
+  Read every directory that holds infrastructure as code, not the first stack you find: a monorepo
+  has one per service, and a gap or a service can sit in any of them.
 - **SDK imports and client construction**: `import`/`require` of an AWS SDK package, or the
   language-specific client construction call (`new DynamoDBClient(...)`, `boto3.client("s3")`,
   `dynamodb.New(cfg)`).
@@ -97,11 +99,11 @@ or Amplify goes on to provision or call, but the tool itself. It does not includ
   (any use, including runtime AssumeRole), CloudFormation *specifically when it's only there
   because CDK synthesizes to it*, and the *default* AWS-managed KMS key. A hand-written
   CloudFormation or SAM template the repository deploys directly is a real, deliberate choice and
-  counts as a service, exactly like Terraform would. A dedicated (customer-managed) key the code actually uses
+  counts as a service, exactly like Terraform would; so does CloudFormation called at runtime
+  (`cloudformation:CreateStack`, a CloudFormation SDK client), which is not CDK's synthesis target. A dedicated (customer-managed) key the code actually uses
   to sign or encrypt something is a real choice and counts; only the default key, present whether
-  or not anyone thought about it, doesn't. Listing the excluded items as services would swamp a
-  profile with noise that's true of almost any AWS repository and therefore matches almost nothing
-  distinctive about *this* one. If IAM policies are unusually broad rather than scoped to what the
+  or not anyone thought about it, doesn't. Only these four are left out; every other platform service
+  you find is listed (see "Supporting components and mixed usage"). If IAM policies are unusually broad rather than scoped to what the
   code needs, that's still worth recording -- as a `gap-broad-iam` pattern (see "Naming patterns"
   below), not a service. IAM stays out of `services`: sessions about IAM tooling reach a
   `gap-broad-iam` profile through the remedy services path (see "Supported evidence lenses"), not
@@ -178,9 +180,10 @@ prefix -- it isn't an absence, it's a presence that doesn't count).
 
 ## Say what's missing, too
 
-Note real absences you notice while reading -- no test suite, no alarm that notifies a person on the
+Record real absences -- no test suite, no alarm that notifies a person on the
 infrastructure you found, no dead-letter queues on an async pipeline, IAM policies that are broad
-rather than scoped to what the code actually needs. These aren't services in the `services` sense
+rather than scoped to what the code actually needs. Search for them (see "Search recipes for the
+common gaps" below) instead of waiting to notice one while reading. These aren't services in the `services` sense
 (they have nothing to cite a positive line for), so record them as `patterns` entries named with the
 `gap-` prefix (see "Naming patterns" above). The citation rule is the same as for anything else,
 applied to the nearest relevant line: cite the resource that *lacks* the thing -- the queue
@@ -189,12 +192,65 @@ wildcard resource -- and explain what's absent and why it matters in `note`; the
 code for an absence itself to point at. The Fix lens consumes these agent-authored judgments;
 it does not scan repositories or infer an absence from missing service entries.
 
+**Count, do not sample.** Before you record a gap, or say a practice is in place, count the
+resources of that kind and put the count in the `note`: "34 of 37 EventBridge rules have a DLQ; the 3
+Step Functions targets do not". Checking two or three examples and finding them fine proves nothing about
+the rest: never claim a practice is present everywhere from a sample, exactly as you never infer a
+system-wide absence from one file.
+
+**Absent versus partial.** If even one resource of the kind lacks the practice, record the gap.
+Coverage elsewhere goes in the `note` as the count and never cancels the gap. The citation points at
+the resources that lack it: cite the lacking resource or resources, not one that has the practice.
+
+**Every gap note names what was inspected**: the files, or the glob and the search term you used. A
+note that names no file, path or glob cannot be checked by whoever reads it, and `validate_profile`
+returns a warning for it (the profile is still valid).
+
 Record `gap-no-load-tests` and `gap-no-cost-monitoring` only when the repository deploys production
 infrastructure (IaC with a real environment, or a pipeline to one) and has none of the named
 practices; otherwise leave them out, since they are true of almost any repository. A gap may apply
 to a clearly cited part of the system: record it and say which part in the `note`. A wildcard
 permission narrowed by a condition or session policy is still recordable as `gap-broad-iam`, with
 the narrowing mentioned in the `note`.
+
+## Search recipes for the common gaps
+
+Three gaps are easy to get wrong by sampling, so each has a search that enumerates the resources
+first. Run it over every package, service directory and stack in the repository (a monorepo has one
+per service), skipping dependency and build directories. Each recipe names where to look for CDK
+(TypeScript, Python), CloudFormation/SAM YAML or JSON, Terraform and the Serverless Framework.
+
+- **`gap-no-dlq`** recipe. List every asynchronous target and event source, then check each for a
+  dead-letter queue or failure destination. The list: every EventBridge rule target (a Lambda, an SQS
+  queue, an `SfnStateMachine` or Step Functions target, an event bus, an API destination), every
+  SQS-triggered or stream-triggered Lambda (an event source mapping, with `onFailure` or a
+  dead-letter queue on the source queue), every SNS subscription, and every Lambda invoked
+  asynchronously (a `destination` or `onFailure`, or a function-level dead-letter queue). The check:
+  CDK (`.ts`, `.py`) looks for `deadLetterQueue`, `deadLetterQueueEnabled`, `onFailure`, `DeadLetterQueue`
+  and `dead_letter_queue` on each target, queue or subscription; CloudFormation/SAM looks for
+  `DeadLetterConfig`, `RedrivePolicy`, `OnFailure` and `EventInvokeConfig`; Terraform looks for
+  `dead_letter_config`, `redrive_policy`, `destination_config` on `aws_cloudwatch_event_target`,
+  `aws_sqs_queue`, `aws_sns_topic_subscription` and `aws_lambda_function_event_invoke_config`; the
+  Serverless Framework looks for `onError`, `destinations` and `redrivePolicy` under `functions` and
+  `resources`. Record the gap for the target kinds that lack one, naming the count.
+- **`gap-no-alarms`** recipe. List the resource kinds present (functions, queues, streams, state
+  machines, tables, APIs, containers), then for each kind check whether an alarm on it reaches a person:
+  the alarm has an action that publishes to an SNS topic with a subscription, or to PagerDuty, an
+  AWS Chatbot channel or similar. CDK looks for `cloudwatch.Alarm`, `addAlarmAction`, `SnsAction`,
+  `alarmActions` and `.metric...createAlarm`; CloudFormation/SAM for `AWS::CloudWatch::Alarm` with
+  `AlarmActions`; Terraform for `aws_cloudwatch_metric_alarm` with `alarm_actions`; the Serverless
+  Framework for the alerts plugin (`alerts:`) or alarm resources. An alarm with no action, or one
+  that only drives scaling or rollback, does not reach a person. Record the gap for each resource
+  kind (a state machine, a queue) that has no alarm reaching a person, and say which kinds do.
+- **`gap-broad-iam`** recipe. Grep every IAM statement (policy documents, `PolicyStatement`, `Effect:
+  Allow`, `aws_iam_policy_document`, `iamRoleStatements`) for a resource of `'*'` (also `"*"` and
+  `Resource: '*'`) or a `service:*` action. Ignore actions that cannot be scoped to a resource:
+  `cloudwatch:PutMetricData`, `xray:PutTraceSegments`, `sts:GetCallerIdentity`, `logs:CreateLogGroup` on
+  its own, and the like. Of the rest, judge whether the code needs that much. When the repository has
+  both production and test roles, cite a production one first and name the test roles in the `note`.
+  A wildcard narrowed by a condition or session policy is still recordable (see above). Look in CDK
+  (`.ts`, `.py`), CloudFormation/SAM, Terraform (`.tf`, including `.json` policy files) and the
+  Serverless Framework (`serverless.yml`).
 
 ## What counts as each newer gap
 
@@ -343,9 +399,12 @@ generates for users. Supporting services count for half in ranking, never satisf
 Next-level stack-fit gate, and their names stay out of the free-text relevance. Without it, a
 product whose templates deploy Lambda and API Gateway ranks as if it ran on them.
 
-Mark platform services `"role": "supporting"` by default: CloudWatch, VPC, S3, Route 53, ACM, CDK,
-CloudFormation, KMS, Secrets Manager, Systems Manager and CloudTrail. IAM and STS are never listed; if
-present they are ignored. Nearly every AWS workload runs on them, so sharing one with a session says nothing about your stack. The stack-fit
+Always list the platform services you find, as `"role": "supporting"`: CloudWatch, VPC, S3, Route 53,
+ACM, CDK, CloudFormation, KMS, Secrets Manager, Systems Manager and CloudTrail. Do not leave one out
+because it is common: the profile is the record of what the repository uses, and two profiles of the
+same repository should list the same ones. IAM and STS are never listed; if present they are ignored.
+Nearly every AWS workload runs on them, so the ranking and the gates discount them rather than your
+leaving them out: sharing one with a session says nothing about your stack. The stack-fit
 gate ignores them whatever role you give, so a profile whose only services are platform services
 has no stack to fit: list the services the product is actually built from.
 
