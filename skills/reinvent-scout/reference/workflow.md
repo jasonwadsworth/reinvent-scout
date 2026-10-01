@@ -107,15 +107,27 @@ introductory, so above 200 it says "understand lists introductory (100–200) se
 
 Present the map, ask the user for up to about five topics and a goal each, then call `match_sessions` with a `focus`.
 
+## 4b. `list_filters`
+
+Arguments: `{ "field"?: "level" | "format" | "venue" | "day" | "topic" | "area" | "industry" | "role" }`. Read-only, from the local catalog: it needs no profile and no sign-in. Returns
+`{ "fields": { "<field>": { "total": number, "values": [{ "value": string, "count": number }], "more"?: number } } }`: each value with how many distinct talks have it (a repeat counts once), most first
+(levels in order). With no `field`, every field lists its first 40 values and `more` says how many were left out; with a `field`, its whole list, shortened only to fit the response budget (again `more`).
+Call it when the user asks what they can filter on ("what venues are there?"), or names a value that does not resolve; the values are what `preferences.rules` takes. An unknown field is an `isError`
+naming the fields. `reinvent-scout catalog filters [--field <field>] [--json]` prints the same.
+
 ## 5. `match_sessions`
 
-Arguments: `{ "profile": <profile object>, "lens"?: "all" | "explain" | "fix" | "next-level", "limit"?: number, "focus"?: [{ "topic": <id>, "goal": "understand" | "deepen" | "improve" }], "perTopic"?: number, "preferences"?: { "levels"?: { "min": number, "max": number }, "formats"?: [{ "type": string, "action": "prefer" | "avoid" | "exclude", "levels"?: { "min": number, "max": number } }] } }`.
-`preferences.formats` are session-type rules applied in order, the first rule that matches a session winning (`levels` limits a rule to that range). `type` is checked against the catalog's
-types, in any case or as a unique prefix ("chalk"), and echoed as the catalog spells it; an unknown or ambiguous type is an `isError` naming the catalog's types. `exclude` removes the session like a level
-filter. `prefer` and `avoid` move it to a tier after the demotion tier and before every other ranking key (preferred, then neutral, then avoided; the lens's own order within each tier), so a preferred session
-outranks a neutral one even if it matches less strongly; the per-concept cap and the focus dedupe run after the tier. A preferred session's `why.summary` ends "(a chalk talk, which you prefer)", an avoided one's
-"(ranked lower: a breakout session, which you asked to avoid at 300–500)". Format rules apply to every lens and focus goal, `explain` and `understand` included. The map counts under `exclude` and `levels`,
-not under `prefer` and `avoid`, which only reorder. `--prefer <type[@band]>`, `--avoid` and `--exclude` (repeatable, kept in the order typed) are the CLI form.
+Arguments: `{ "profile": <profile object>, "lens"?: "all" | "explain" | "fix" | "next-level", "limit"?: number, "focus"?: [{ "topic": <id>, "goal": "understand" | "deepen" | "improve" }], "perTopic"?: number, "preferences"?: { "levels"?: { "min": number, "max": number }, "rules"?: [{ "field": string, "value": string, "action": "only" | "prefer" | "avoid" | "exclude", "levels"?: { "min": number, "max": number } }] } }`.
+`preferences.rules` are facet rules, applied with the first rule that matches winning within a field: `{ "field": "format" | "venue" | "day" | "topic" | "area" | "industry" | "role", "value": string,
+"action": "only" | "prefer" | "avoid" | "exclude", "levels"?: { "min": number, "max": number } }` (`levels` limits a rule to sessions in that range; the fields are the catalog's `type`, `venue`, start date,
+`topics`, `areasOfInterest`, `industries` and `roles`, and a multi-valued field matches when any value does). `value` is checked against that field's catalog vocabulary, in any case or as a unique prefix
+("chalk", "mgm"), and echoed as the catalog spells it; an unknown or ambiguous value is an `isError` listing the closest values and pointing at `list_filters`. `only` keeps just the sessions with the value:
+several on one field are a union, on different fields an intersection, and a session with no value for the field is left out. `exclude` removes the session like a level filter. `prefer` and `avoid` move it to a
+tier after the demotion tier and before every other ranking key: within one field the first matching prefer or avoid rule decides, across fields the effects add up (+1 each, -1 each) and the highest sum comes
+first, then neutral, then the lowest, with the lens's own order within each tier, so a preferred session outranks a neutral one even if it matches less strongly; the per-concept cap and the focus dedupe run after
+the tier. `why.summary` names every preference that moved the session, for example "(a chalk talk at MGM Grand, which you prefer)" and "(ranked lower: a breakout session, which you asked to avoid at 300–500)".
+Rules apply to every lens and focus goal, `explain` and `understand` included. The map counts under `only`, `exclude` and `levels`, not under `prefer` and `avoid`, which only reorder.
+`--only <field>:<value>[@band]`, and `--prefer`, `--avoid` and `--exclude` taking `[<field>:]<value>[@band]` (the field is a format when left out), are the CLI form: repeatable, kept in the order typed.
 `preferences.levels` restricts every lens and every focus choice to the sessions in that inclusive band range (100 to 500; a session with no level is left out;
 the same rule as `catalog search --level`). It is applied after admission and before the per-concept cap, the focus dedupe and `limit`, so a list is filled
 from sessions in range and the sessions that remain keep their order; ranking itself does not change. The response echoes `preferences`; when the range leaves nothing of a
@@ -385,6 +397,7 @@ human running these directly gets human-formatted terminal output, not JSON):
 - `reinvent-scout catalog sync`
 - `reinvent-scout catalog search`
 - `reinvent-scout catalog show`
+- `reinvent-scout catalog filters`
 - `reinvent-scout profile validate`
 - `reinvent-scout profile save`
 - `reinvent-scout profile map`

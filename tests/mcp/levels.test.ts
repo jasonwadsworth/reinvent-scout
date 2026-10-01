@@ -27,7 +27,7 @@ const CATALOG = [
   session("DDB400", "DynamoDB at the limit", "400 - Expert"),
   session("LAM200", "Lambda basics", "200 - Intermediate"),
   session("LAM500", "Lambda internals", "500 - Distinguished"),
-  session("CHK400", "Data at scale", "400 - Expert", { type: "Chalk talk", services: ["Amazon DynamoDB"], abstract: "You will use DynamoDB tables." }),
+  session("CHK400", "Data at scale", "400 - Expert", { type: "Chalk talk", venue: "MGM Grand", services: ["Amazon DynamoDB"], abstract: "You will use DynamoDB tables." }),
   session("WRK400", "Hands-on tables and indexes", "400 - Expert", { type: "Workshop", services: ["Amazon DynamoDB"], abstract: "You will use DynamoDB tables." }),
   session("DLQ400", "Dead-letter queues at scale", "400 - Expert", { services: ["AWS Lambda", "Amazon DynamoDB"], abstract: "Recover with dead-letter queues and redrive." }),
 ];
@@ -104,14 +104,24 @@ describe("preferences on match_sessions and map_profile", () => {
   });
 
   it("takes format rules on both tools, resolves the type names, and refuses a bad one", async () => {
-    const formats = [{ type: "chalk", action: "prefer" }, { type: "breakout session", action: "avoid", levels: { min: 300, max: 500 } }];
-    const matched = JSON.parse((await call("match_sessions", { preferences: { formats } })).text);
-    expect(matched.preferences).toEqual({ formats: [{ type: "Chalk talk", action: "prefer" }, { type: "Breakout session", action: "avoid", levels: { min: 300, max: 500 } }] });
-    expect(JSON.parse((await call("map_profile", { preferences: { formats } })).text).preferences.formats).toHaveLength(2);
-    expect(JSON.parse((await call("match_sessions", { preferences: { formats: [{ type: "workshop", action: "exclude" }] } })).text).candidates.length).toBeGreaterThan(0);
-    expect(await call("match_sessions", { preferences: { formats: [{ type: "keynote", action: "avoid" }] } })).toMatchObject({ error: true, text: expect.stringMatching(/Unknown session type "keynote"/) });
-    expect(await call("match_sessions", { preferences: { formats: [{ type: "chalk", action: "love" }] } })).toMatchObject({ error: true });
-    expect(await call("map_profile", { preferences: { formats: [{ type: "chalk", action: "avoid", extra: 1 }] } })).toMatchObject({ error: true });
+    const rules = [{ field: "format", value: "chalk", action: "prefer" }, { field: "format", value: "breakout session", action: "avoid", levels: { min: 300, max: 500 } }];
+    const matched = JSON.parse((await call("match_sessions", { preferences: { rules } })).text);
+    expect(matched.preferences).toEqual({ rules: [{ field: "format", value: "Chalk talk", action: "prefer" }, { field: "format", value: "Breakout session", action: "avoid", levels: { min: 300, max: 500 } }] });
+    expect(JSON.parse((await call("map_profile", { preferences: { rules } })).text).preferences.rules).toHaveLength(2);
+    expect(JSON.parse((await call("match_sessions", { preferences: { rules: [{ field: "format", value: "workshop", action: "exclude" }] } })).text).candidates.length).toBeGreaterThan(0);
+    expect(await call("match_sessions", { preferences: { rules: [{ field: "format", value: "keynote", action: "avoid" }] } })).toMatchObject({ error: true, text: expect.stringMatching(/Unknown format "keynote"/) });
+    expect(await call("match_sessions", { preferences: { rules: [{ field: "format", value: "chalk", action: "love" }] } })).toMatchObject({ error: true });
+    expect(await call("map_profile", { preferences: { rules: [{ field: "format", value: "chalk", action: "avoid", extra: 1 }] } })).toMatchObject({ error: true });
+  });
+
+  it("takes facet rules of every field, and refuses a bad field or action", async () => {
+    const kept = JSON.parse((await call("match_sessions", { preferences: { rules: [{ field: "venue", value: "mgm", action: "only" }] } })).text);
+    expect(kept.candidates.map((candidate: { code: string }) => candidate.code)).toEqual(["CHK400"]);
+    expect(kept.preferences).toEqual({ rules: [{ field: "venue", value: "MGM Grand", action: "only" }] });
+    expect(JSON.parse((await call("map_profile", { preferences: { rules: [{ field: "venue", value: "mgm", action: "only" }] } })).text).preferences.rules[0].value).toBe("MGM Grand");
+    expect(await call("match_sessions", { preferences: { rules: [{ field: "venue", value: "Nowhere", action: "only" }] } })).toMatchObject({ error: true });
+    expect(await call("match_sessions", { preferences: { rules: [{ field: "colour", value: "red", action: "only" }] } })).toMatchObject({ error: true });
+    expect(await call("map_profile", { preferences: { rules: [{ field: "venue", value: "mgm", action: "love" }] } })).toMatchObject({ error: true });
   });
 
   it("describes preferences in both tools", async () => {

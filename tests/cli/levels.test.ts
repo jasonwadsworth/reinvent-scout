@@ -21,11 +21,11 @@ const PROFILE = {
 const session = (code: string, title: string, level: string, extra: Partial<Session> = {}): Session =>
   ({ sessionId: code, abbreviation: code, title, level, type: "Breakout session", ...extra });
 const CATALOG = [
-  session("CHK400", "Data at scale", "400 - Expert", { type: "Chalk talk", services: ["Amazon DynamoDB"], abstract: "You will use DynamoDB tables." }),
-  session("WRK400", "Hands-on tables and indexes", "400 - Expert", { type: "Workshop", services: ["Amazon DynamoDB"], abstract: "You will use DynamoDB tables." }),
+  session("CHK400", "Data at scale", "400 - Expert", { type: "Chalk talk", venue: "MGM Grand", services: ["Amazon DynamoDB"], abstract: "You will use DynamoDB tables." }),
+  session("WRK400", "Hands-on tables and indexes", "400 - Expert", { type: "Workshop", venue: "Venetian", services: ["Amazon DynamoDB"], abstract: "You will use DynamoDB tables." }),
   session("CDT400", "Code walk", "400 - Expert", { type: "Code talk" }),
   session("DDB100", "Getting started with DynamoDB", "100 - Foundational"),
-  session("DDB300", "DynamoDB data modeling", "300 - Advanced"),
+  session("DDB300", "DynamoDB data modeling", "300 - Advanced", { venue: "MGM Grand" }),
   session("DDB400", "DynamoDB at the limit", "400 - Expert"),
   session("LAM200", "Lambda basics", "200 - Intermediate"),
   session("LAM400", "Lambda at scale", "400 - Expert"),
@@ -118,21 +118,21 @@ describe("--level on match and profile map", () => {
       const chalk = await json(["match", "--profile", file, "--prefer", "chalk"]);
       expect(chalk.candidates[0].code).toBe("CHK400");
       expect(plain.candidates[0].code).not.toBe("CHK400");
-      expect(chalk.preferences).toEqual({ formats: [{ type: "Chalk talk", action: "prefer" }] });
+      expect(chalk.preferences).toEqual({ rules: [{ field: "format", value: "Chalk talk", action: "prefer" }] });
       expect(chalk.candidates[0].why.summary).toContain("(a chalk talk, which you prefer)");
     });
 
     it("avoids a type at some levels only, and excludes a type", async () => {
       const response = await json(["match", "--profile", file, "--avoid", "breakout session@300-500", "--exclude", "WORKSHOP"]);
       expect(response.candidates.map((candidate: { code: string }) => candidate.code)).not.toContain("WRK400");
-      expect(response.preferences).toEqual({ formats: [{ type: "Breakout session", action: "avoid", levels: { min: 300, max: 500 } }, { type: "Workshop", action: "exclude" }] });
+      expect(response.preferences).toEqual({ rules: [{ field: "format", value: "Breakout session", action: "avoid", levels: { min: 300, max: 500 } }, { field: "format", value: "Workshop", action: "exclude" }] });
       const kinds = response.candidates.map((candidate: { type: string; levelBand: number }) => `${candidate.type}:${candidate.levelBand >= 300}`);
       expect(kinds.lastIndexOf("Breakout session:false")).toBeLessThan(kinds.indexOf("Breakout session:true"));
     });
 
     it("keeps the rules in the order they were typed", async () => {
       const response = await json(["match", "--profile", file, "--avoid", "chalk talk@300-500", "--prefer", "chalk talk"]);
-      expect(response.preferences.formats.map((rule: { action: string }) => rule.action)).toEqual(["avoid", "prefer"]);
+      expect(response.preferences.rules.map((rule: { action: string }) => rule.action)).toEqual(["avoid", "prefer"]);
     });
 
     it("says what is applied, in the text, and combines with --level", async () => {
@@ -145,23 +145,60 @@ describe("--level on match and profile map", () => {
       const excluded = await json(["profile", "map", "--profile", file, "--exclude", "breakout session", "--exclude", "chalk talk"]);
       const deepen = (map: { services: Array<{ id: string; goals: Array<{ goal: string; sessions: number }> }> }) => map.services.find(topic => topic.id === "service:Amazon DynamoDB")!.goals.find(goal => goal.goal === "deepen")!.sessions;
       expect(deepen(excluded)).toBeLessThan(deepen(plain));
-      expect(excluded.preferences.formats).toHaveLength(2);
+      expect(excluded.preferences.rules).toHaveLength(2);
       const { text } = await run(["profile", "map", "--profile", file, "--prefer", "chalk talk"]);
       expect(text.split("\n")[0]).toBe("Preferring chalk talks.");
     });
 
     it("refuses a bad rule, naming the problem", async () => {
       for (const [args, message] of [
-        [["--prefer", "keynote"], /Unknown session type "keynote"/],
+        [["--prefer", "keynote"], /Unknown format "keynote"/],
         [["--prefer", "c"], /ambiguous/],
         [["--avoid", "chalk talk@abc"], /--avoid \.\.\.@ must be a number or a range/],
         [["--exclude", "chalk talk@500-300"], /min must not be above max/],
-        [["--exclude", "@300"], /--exclude takes a session type/],
+        [["--exclude", "@300"], /--exclude takes a value/],
       ] as Array<[string[], RegExp]>) {
         const { text, exitCode } = await run(["match", "--profile", file, ...args]);
         expect(exitCode, args.join(" ")).toBe(1);
         expect(text, args.join(" ")).toMatch(message);
       }
+    });
+  });
+
+  describe("--only and facet rules", () => {
+    it("keeps only the sessions at a venue, resolved from a prefix, and echoes the rule", async () => {
+      const response = await json(["match", "--profile", file, "--only", "venue:mgm"]);
+      expect(response.candidates.length).toBeGreaterThan(0);
+      expect(response.candidates.map((candidate: { code: string }) => candidate.code).sort()).toEqual(["CHK400", "DDB300"]);
+      expect(response.preferences).toEqual({ rules: [{ field: "venue", value: "MGM Grand", action: "only" }] });
+    });
+
+    it("takes several --only on one field as a union", async () => {
+      const response = await json(["match", "--profile", file, "--only", "venue:mgm", "--only", "venue:venetian"]);
+      expect(response.candidates.map((candidate: { code: string }) => candidate.code).sort()).toEqual(["CHK400", "DDB300", "WRK400"]);
+    });
+
+    it("prefers and excludes by a field, the field defaulting to the format", async () => {
+      const preferred = await json(["match", "--profile", file, "--prefer", "venue:venetian"]);
+      expect(preferred.candidates[0].code).toBe("WRK400");
+      expect(preferred.candidates[0].why.summary).toContain("(at Venetian, which you prefer)");
+      const excluded = await json(["match", "--profile", file, "--exclude", "venue:mgm@400-500"]);
+      expect(excluded.candidates.map((candidate: { code: string }) => candidate.code)).toContain("DDB300");
+      expect(excluded.candidates.map((candidate: { code: string }) => candidate.code)).not.toContain("CHK400");
+    });
+
+    it("needs a field on --only, and a value the catalog has", async () => {
+      expect(await run(["match", "--profile", file, "--only", "mgm"])).toMatchObject({ exitCode: 1, text: expect.stringContaining("--only takes \"<field>:<value>\"") });
+      expect(await run(["match", "--profile", file, "--only", "venue:Bellagio"])).toMatchObject({ exitCode: 1, text: expect.stringMatching(/Unknown venue "Bellagio".*list_filters/) });
+      expect(await run(["match", "--profile", file, "--prefer", "venue:"])).toMatchObject({ exitCode: 1, text: expect.stringContaining("--prefer takes a value") });
+    });
+
+    it("counts the map under --only and says so in the text", async () => {
+      const plain = await json(["profile", "map", "--profile", file]);
+      const mgm = await json(["profile", "map", "--profile", file, "--only", "venue:mgm"]);
+      const deepen = (map: typeof plain) => map.services.find((topic: { id: string }) => topic.id === "service:Amazon DynamoDB").goals.find((goal: { goal: string }) => goal.goal === "deepen").sessions;
+      expect(deepen(mgm)).toBeLessThan(deepen(plain));
+      expect((await run(["profile", "map", "--profile", file, "--only", "venue:mgm"])).text.split("\n")[0]).toBe("Only venue MGM Grand.");
     });
   });
 });

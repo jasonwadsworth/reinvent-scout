@@ -25,7 +25,8 @@ import {
 import { matchSessionsDetailed } from "../match/match.js";
 import { matchFocus, MAX_FOCUS_CHOICES } from "../match/focus.js";
 import { mapProfile } from "../match/map.js";
-import { FORMAT_ACTIONS } from "../match/preferences.js";
+import { listFilters } from "../catalog/filters.js";
+import { FACET_ACTIONS, FACET_FIELDS } from "../match/preferences.js";
 import { GOALS } from "../match/topics.js";
 import { LENSES, type Lens } from "../match/lens.js";
 import { resolveProfile } from "../profile/profile.js";
@@ -261,8 +262,16 @@ const MAX_FOCUS_PER_TOPIC = 3;
 const LevelRangeSchema = z.strictObject({ min: z.number(), max: z.number() });
 const PreferencesSchema = z.strictObject({
   levels: LevelRangeSchema.optional(),
-  formats: z.array(z.strictObject({ type: z.string().min(1), action: z.enum(FORMAT_ACTIONS), levels: LevelRangeSchema.optional() })).optional(),
+  rules: z.array(z.strictObject({ field: z.enum(FACET_FIELDS), value: z.string().min(1), action: z.enum(FACET_ACTIONS), levels: LevelRangeSchema.optional() })).optional(),
 });
+
+const ListFiltersInputSchema = z.strictObject({
+  /** One field only (level, format, venue, day, topic, area, industry, role); checked by `listFilters`, which names the fields. */
+  field: z.string().min(1).optional(),
+});
+
+/** How many values of each field `list_filters` returns when no single field is asked for. */
+const LIST_FILTERS_VALUES = 40;
 
 const MapProfileInputSchema = z.strictObject({
   profile: z.unknown(),
@@ -308,8 +317,8 @@ function registerMatchSessionsTool(server: McpServer, deps: McpToolDeps): void {
     {
       description:
         "Rank the local catalog against a resolved tech profile and return the top candidates, " +
-        "restricted and reordered by the user's `preferences` when they have stated any (`{ levels: { min, max }, formats: [{ type, action: prefer | avoid | exclude, levels? }] }`: " +
-        "only sessions in that band range, bands 100 to 500; session-type rules applied in order, the first match winning, `exclude` removing and `prefer`/`avoid` moving a session up or down after the demoted ones' place; " +
+        "restricted and reordered by the user's `preferences` when they have stated any (`{ levels: { min, max }, rules: [{ field: format | venue | day | topic | area | industry | role, value, action: only | prefer | avoid | exclude, levels? }] }`: " +
+        "only sessions in that band range, bands 100 to 500; facet rules: `only` keeps just sessions with the value (a union within a field, an intersection across fields), `exclude` removes them, `prefer`/`avoid` move a session up or down after the demoted ones' place (the first matching rule decides within a field, the effects add across fields); values are checked against the catalog (`list_filters`); " +
         "ranking is unchanged, the sessions that remain keep their order; the response echoes `preferences`, and `reason` says when they left nothing of a result that has sessions), " +
         "or, with a `focus` (topics from `map_profile`, each with a goal: understand, deepen or improve; 1 to 6, and `perTopic` sessions each, 1 to 3 and 3 by default, " +
         "instead of `lens` and `limit`), a short list per choice as `{ results: [{ topic, goal, total, candidates, reason? }], truncated, omitted }`. " +
@@ -356,6 +365,35 @@ function registerMatchSessionsTool(server: McpServer, deps: McpToolDeps): void {
   );
 }
 
+/** `list_filters`: the values a person can filter or prefer sessions by. Local and read-only: no profile, no sign-in. */
+function registerListFiltersTool(server: McpServer, deps: McpToolDeps): void {
+  server.registerTool(
+    "list_filters",
+    {
+      description:
+        "List what the user can filter or prefer sessions by, from the local catalog: for each field (level, format, venue, day, topic, area, industry, role) its values with how many " +
+        "distinct talks have each, most first (levels in order). Call it when the user asks what they can filter on (\"what venues are there?\"), or names a value that does not resolve. " +
+        "Pass `field` for one field's values; with none, each field lists its first values and `more` says how many were left out. " +
+        "The values are what `preferences.rules` takes on `match_sessions` and `map_profile`. Needs no profile and no sign-in.",
+      inputSchema: ListFiltersInputSchema,
+    },
+    async ({ field }) => {
+      const storeRoot = deps.resolveStoreRoot();
+      try {
+        // A field's whole list when one is asked for, else a short list of each; either is halved until the response fits the budget.
+        let limit: number | undefined = field === undefined ? LIST_FILTERS_VALUES : undefined;
+        for (;;) {
+          const response = listFilters({ storeRoot }, { ...(field === undefined ? {} : { field }), ...(limit === undefined ? {} : { limit }) });
+          if (envelopeBytes(response) <= RESPONSE_BYTE_BUDGET || (limit !== undefined && limit <= 1)) return textResult(response);
+          limit = Math.max(1, Math.floor((limit ?? Math.max(...Object.values(response.fields).map(entry => entry.total))) / 2));
+        }
+      } catch (err) {
+        return toToolError(err);
+      }
+    },
+  );
+}
+
 function registerMapProfileTool(server: McpServer, deps: McpToolDeps): void {
   server.registerTool(
     "map_profile",
@@ -363,7 +401,7 @@ function registerMapProfileTool(server: McpServer, deps: McpToolDeps): void {
       description:
         "Show what a tech profile found in the code as topics the user can choose from: services, patterns, supported gaps and next steps, " +
         "each with an `id`, a one-sentence note, where the code uses it, and the goals that apply (understand, deepen, improve) with how many " +
-        "sessions each would return (0 is a dead end). Pass the user's `preferences` (`{ levels: { min, max }, formats: [{ type, action, levels? }] }`) when they have stated any, and the counts are under their level range and `exclude` rules (`prefer` and `avoid` only reorder). Present it, ask which topics and goals the user cares about, then call `match_sessions` with a `focus`.",
+        "sessions each would return (0 is a dead end). Pass the user's `preferences` (`{ levels, rules: [{ field, value, action, levels? }] }`) when they have stated any, and the counts are under their level range and `only` and `exclude` rules (`prefer` and `avoid` only reorder). Present it, ask which topics and goals the user cares about, then call `match_sessions` with a `focus`.",
       inputSchema: MapProfileInputSchema,
     },
     async ({ profile, preferences }) => {
@@ -783,6 +821,7 @@ export function registerTools(server: McpServer, deps: McpToolDeps): void {
   registerValidateProfileTool(server, deps);
   registerMatchSessionsTool(server, deps);
   registerMapProfileTool(server, deps);
+  registerListFiltersTool(server, deps);
   registerGetScheduleTool(server, deps);
   registerFavoriteSessionsTool(server, deps);
   registerUnfavoriteSessionTool(server, deps);

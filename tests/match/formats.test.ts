@@ -67,7 +67,7 @@ describe("session type preferences", () => {
 
   describe("the rules", () => {
     it("names a type the way the catalog does: any case, or a unique prefix", () => {
-      const resolve = (type: string) => resolvePreferences({ formats: [{ type, action: "prefer" }] }, index())!.formats![0]!.type;
+      const resolve = (type: string) => resolvePreferences({ rules: [{ field: "format", value: type, action: "prefer" }] }, index())!.rules![0]!.value;
       expect(resolve("chalk talk")).toBe(CHALK);
       expect(resolve("CHALK TALK")).toBe(CHALK);
       expect(resolve("chalk")).toBe(CHALK);
@@ -77,38 +77,38 @@ describe("session type preferences", () => {
 
     it("takes an exact name before a longer one it begins", () => {
       const records = ["Lab", "Labs special"].map((type, i) => buildIndexRecord(s(`L${i}`, "x", L200, type)));
-      expect(resolvePreferences({ formats: [{ type: "lab", action: "avoid" }] }, records)!.formats![0]!.type).toBe("Lab");
-      expect(resolvePreferences({ formats: [{ type: "labs", action: "avoid" }] }, records)!.formats![0]!.type).toBe("Labs special");
+      expect(resolvePreferences({ rules: [{ field: "format", value: "lab", action: "avoid" }] }, records)!.rules![0]!.value).toBe("Lab");
+      expect(resolvePreferences({ rules: [{ field: "format", value: "labs", action: "avoid" }] }, records)!.rules![0]!.value).toBe("Labs special");
     });
 
     it("says an before a vowel", () => {
       const record = buildIndexRecord(s("E1", "x", L200, "Exam prep"));
-      expect(formatNote({ formats: [{ type: "Exam prep", action: "prefer" }] }, record)).toBe("an exam prep, which you prefer");
-      expect(formatNote({ formats: [{ type: "Exam prep", action: "avoid" }] }, record)).toBe("ranked lower: an exam prep, which you asked to avoid");
+      expect(formatNote({ rules: [{ field: "format", value: "Exam prep", action: "prefer" }] }, record)).toBe("an exam prep, which you prefer");
+      expect(formatNote({ rules: [{ field: "format", value: "Exam prep", action: "avoid" }] }, record)).toBe("ranked lower: an exam prep, which you asked to avoid");
     });
 
     it("refuses an unknown type, naming the catalog's", () => {
-      expect(() => resolvePreferences({ formats: [{ type: "keynote", action: "avoid" }] }, index())).toThrow(/Unknown session type "keynote".*Chalk talk/);
+      expect(() => resolvePreferences({ rules: [{ field: "format", value: "keynote", action: "avoid" }] }, index())).toThrow(/Unknown format "keynote".*Chalk talk/);
     });
 
     it("refuses a prefix that names two types", () => {
-      expect(() => resolvePreferences({ formats: [{ type: "c", action: "avoid" }] }, index())).toThrow(/"c" is ambiguous: Chalk talk, Code talk/);
+      expect(() => resolvePreferences({ rules: [{ field: "format", value: "c", action: "avoid" }] }, index())).toThrow(/"c" is ambiguous: Chalk talk, Code talk/);
     });
 
     it("refuses a bad action and a bad level range in a rule", () => {
-      expect(() => resolvePreferences({ formats: [{ type: "chalk", action: "love" as never }] }, index())).toThrow(ValidationError);
-      expect(() => resolvePreferences({ formats: [{ type: "chalk", action: "avoid", levels: { min: 500, max: 300 } }] }, index())).toThrow(/min must not be above max/);
+      expect(() => resolvePreferences({ rules: [{ field: "format", value: "chalk", action: "love" as never }] }, index())).toThrow(ValidationError);
+      expect(() => resolvePreferences({ rules: [{ field: "format", value: "chalk", action: "avoid", levels: { min: 500, max: 300 } }] }, index())).toThrow(/min must not be above max/);
     });
 
     it("keeps rules in order with the type spelled as the catalog spells it, and drops an empty preference", () => {
-      const rules = [{ type: "chalk", action: "prefer" as const }, { type: "breakout", action: "avoid" as const, levels: { min: 300, max: 500 } }];
-      expect(resolvePreferences({ formats: rules }, index())).toEqual({ formats: [{ type: CHALK, action: "prefer" }, { type: BREAKOUT, action: "avoid", levels: { min: 300, max: 500 } }] });
-      expect(resolvePreferences({ formats: [] }, index())).toBeUndefined();
+      const rules = [{ field: "format" as const, value: "chalk", action: "prefer" as const }, { field: "format" as const, value: "breakout", action: "avoid" as const, levels: { min: 300, max: 500 } }];
+      expect(resolvePreferences({ rules: rules }, index())).toEqual({ rules: [{ field: "format", value: CHALK, action: "prefer" }, { field: "format", value: BREAKOUT, action: "avoid", levels: { min: 300, max: 500 } }] });
+      expect(resolvePreferences({ rules: [] }, index())).toBeUndefined();
       expect(resolvePreferences({}, index())).toBeUndefined();
     });
 
     it("says what is applied, in a line", () => {
-      expect(describePreferences({ levels: { min: 400, max: 500 }, formats: [{ type: CHALK, action: "prefer" }, { type: BREAKOUT, action: "avoid", levels: { min: 300, max: 500 } }, { type: WORKSHOP, action: "exclude" }] }))
+      expect(describePreferences({ levels: { min: 400, max: 500 }, rules: [{ field: "format", value: CHALK, action: "prefer" }, { field: "format", value: BREAKOUT, action: "avoid", levels: { min: 300, max: 500 } }, { field: "format", value: WORKSHOP, action: "exclude" }] }))
         .toBe("Only sessions at level 400–500. Preferring chalk talks. Avoiding breakout sessions at 300–500. Excluding workshops.");
     });
   });
@@ -117,7 +117,7 @@ describe("session type preferences", () => {
     it("removes the type from every lens", () => {
       seed();
       for (const lens of LENSES) {
-        const result = run(lens, { formats: [{ type: "workshop", action: "exclude" }, { type: "chalk talk", action: "exclude" }] });
+        const result = run(lens, { rules: [{ field: "format", value: "workshop", action: "exclude" }, { field: "format", value: "chalk talk", action: "exclude" }] });
         expect(result.candidates.length, lens).toBeGreaterThan(0);
         expect(types(result.candidates), lens).not.toContain(WORKSHOP);
         expect(types(result.candidates), lens).not.toContain(CHALK);
@@ -126,7 +126,7 @@ describe("session type preferences", () => {
 
     it("only removes sessions in the rule's own level range", () => {
       seed();
-      const result = run("all", { formats: [{ type: "workshop", action: "exclude", levels: { min: 400, max: 500 } }] });
+      const result = run("all", { rules: [{ field: "format", value: "workshop", action: "exclude", levels: { min: 400, max: 500 } }] });
       expect(codes(result)).toContain("W2");
       expect(codes(result)).not.toContain("W1");
     });
@@ -134,7 +134,7 @@ describe("session type preferences", () => {
     it("says what it emptied", () => {
       seed();
       const all = run("fix").candidates.length;
-      const none = run("fix", { formats: ["Breakout session", "Chalk talk", "Workshop"].map(type => ({ type, action: "exclude" as const })) });
+      const none = run("fix", { rules: ["Breakout session", "Chalk talk", "Workshop"].map(value => ({ field: "format" as const, value, action: "exclude" as const })) });
       expect(none.candidates).toEqual([]);
       expect(none.reason).toBe(`${all} sessions match, none after excluding Breakout session, Chalk talk, Workshop`);
     });
@@ -145,7 +145,7 @@ describe("session type preferences", () => {
       seed();
       for (const lens of LENSES) {
         const plain = run(lens);
-        const result = run(lens, { formats: [{ type: "chalk talk", action: "prefer" }] });
+        const result = run(lens, { rules: [{ field: "format", value: "chalk talk", action: "prefer" }] });
         expect(codes(result).slice().sort(), lens).toEqual(codes(plain).slice().sort());
         const kept = result.candidates.filter(c => c.demoted === undefined).map(c => c.record.type === CHALK);
         expect(kept.includes(true), lens).toBe(true);
@@ -158,7 +158,7 @@ describe("session type preferences", () => {
       seed();
       for (const lens of ["all", "fix", "next-level"] as const) {
         const plain = codes(run(lens));
-        const result = run(lens, { formats: [{ type: "chalk talk", action: "prefer" }] });
+        const result = run(lens, { rules: [{ field: "format", value: "chalk talk", action: "prefer" }] });
         const chalk = result.candidates.filter(c => c.record.type === CHALK && c.demoted === undefined).map(c => c.code);
         expect(chalk, lens).toEqual(plain.filter(code => chalk.includes(code)));
         const rest = result.candidates.filter(c => c.record.type !== CHALK && c.demoted === undefined).map(c => c.code);
@@ -168,7 +168,7 @@ describe("session type preferences", () => {
 
     it("puts an avoided session behind the neutral ones, and leaves one outside the rule's levels where it was", () => {
       seed();
-      const result = run("all", { formats: [{ type: "breakout session", action: "avoid", levels: { min: 300, max: 500 } }] });
+      const result = run("all", { rules: [{ field: "format", value: "breakout session", action: "avoid", levels: { min: 300, max: 500 } }] });
       const undemoted = result.candidates.filter(c => c.demoted === undefined);
       const position = (code: string) => undemoted.findIndex(c => c.code === code);
       for (const neutral of ["B2", "C1", "C2", "W1"]) expect(position(neutral), neutral).toBeLessThan(position("B1"));
@@ -180,7 +180,7 @@ describe("session type preferences", () => {
 
     it("applies the first rule that matches a session", () => {
       seed();
-      const result = run("all", { formats: [{ type: "chalk talk", action: "avoid", levels: { min: 300, max: 500 } }, { type: "chalk talk", action: "prefer" }] });
+      const result = run("all", { rules: [{ field: "format", value: "chalk talk", action: "avoid", levels: { min: 300, max: 500 } }, { field: "format", value: "chalk talk", action: "prefer" }] });
       const undemoted = result.candidates.filter(c => c.demoted === undefined).map(c => c.code);
       expect(undemoted.indexOf("C2")).toBeLessThan(undemoted.indexOf("B2"));
       expect(undemoted.indexOf("C1")).toBeGreaterThan(undemoted.indexOf("B3"));
@@ -188,7 +188,7 @@ describe("session type preferences", () => {
 
     it("keeps a demoted session behind every undemoted one, preferred or not", () => {
       seed();
-      const result = run("all", { formats: [{ type: "chalk talk", action: "prefer" }] });
+      const result = run("all", { rules: [{ field: "format", value: "chalk talk", action: "prefer" }] });
       const demoted = result.candidates.findIndex(c => c.code === "S1");
       expect(demoted).toBeGreaterThan(-1);
       expect(result.candidates.slice(demoted).every(c => c.demoted !== undefined)).toBe(true);
@@ -198,7 +198,7 @@ describe("session type preferences", () => {
       seed();
       const choices = [{ topic: "service:Amazon DynamoDB", goal: "deepen" as const }, { topic: "gap:gap-no-dlq", goal: "improve" as const }, { topic: "service:AWS Lambda", goal: "understand" as const }];
       const plain = matchFocus(profile(), deps(), choices, { perTopic: 10 });
-      const chalk = matchFocus(profile(), deps(), choices, { perTopic: 10, preferences: { formats: [{ type: "chalk talk", action: "prefer" }] } });
+      const chalk = matchFocus(profile(), deps(), choices, { perTopic: 10, preferences: { rules: [{ field: "format", value: "chalk talk", action: "prefer" }] } });
       for (const [position, entry] of chalk.results.entries()) {
         expect(entry.total).toBe(plain.results[position]!.total);
         const kinds = types(entry.candidates);
@@ -206,7 +206,7 @@ describe("session type preferences", () => {
       }
       expect(chalk.results[1]!.candidates[0]!.code).toBe("D2");
       // The explain lens already favors chalk talks a little; a preferred lightning talk still outranks them.
-      const lightning = matchFocus(profile(), deps(), choices.slice(2), { perTopic: 10, preferences: { formats: [{ type: "lightning talk", action: "prefer" }] } });
+      const lightning = matchFocus(profile(), deps(), choices.slice(2), { perTopic: 10, preferences: { rules: [{ field: "format", value: "lightning talk", action: "prefer" }] } });
       expect(plain.results[2]!.candidates[0]!.code).toBe("ZC4");
       expect(lightning.results[0]!.candidates[0]!.code).toBe("X1");
       for (const entry of chalk.results) expect(entry.candidates.find(candidate => candidate.record.type === CHALK)!.why.summary).toMatch(/\(a chalk talk, which you prefer\)\.$/);
@@ -218,7 +218,7 @@ describe("session type preferences", () => {
     const summaryOf = (result: ReturnType<typeof run>, code: string) => result.candidates.find(c => c.code === code)!.why.summary;
     it("says a preferred session is one, and an avoided one ranks lower and why", () => {
       seed();
-      const result = run("all", { formats: [{ type: "chalk talk", action: "prefer" }, { type: "breakout session", action: "avoid", levels: { min: 300, max: 500 } }, { type: "workshop", action: "avoid" }] });
+      const result = run("all", { rules: [{ field: "format", value: "chalk talk", action: "prefer" }, { field: "format", value: "breakout session", action: "avoid", levels: { min: 300, max: 500 } }, { field: "format", value: "workshop", action: "avoid" }] });
       expect(summaryOf(result, "C1")).toMatch(/ \(a chalk talk, which you prefer\)\.$/);
       expect(summaryOf(result, "B1")).toMatch(/ \(ranked lower: a breakout session, which you asked to avoid at 300–500\)\.$/);
       expect(summaryOf(result, "W1")).toMatch(/ \(ranked lower: a workshop, which you asked to avoid\)\.$/);
@@ -228,7 +228,7 @@ describe("session type preferences", () => {
     it("says it under every lens, and says nothing without preferences", () => {
       seed();
       for (const lens of LENSES) {
-        const result = run(lens, { formats: [{ type: "chalk talk", action: "prefer" }] });
+        const result = run(lens, { rules: [{ field: "format", value: "chalk talk", action: "prefer" }] });
         const chalk = result.candidates.find(c => c.record.type === CHALK)!;
         expect(chalk.why.summary, lens).toMatch(/\(a chalk talk, which you prefer\)\.$/);
         expect(run(lens).candidates.every(c => !/prefer|asked to avoid/.test(c.why.summary)), lens).toBe(true);
@@ -241,8 +241,8 @@ describe("session type preferences", () => {
     it("counts under exclude, and does not change under prefer and avoid", () => {
       seed();
       const plain = counts(mapProfile(profile(), deps()));
-      expect(counts(mapProfile(profile(), deps(), { preferences: { formats: [{ type: "chalk talk", action: "prefer" }, { type: "workshop", action: "avoid" }] } }))).toEqual(plain);
-      const excluded = counts(mapProfile(profile(), deps(), { preferences: { formats: [{ type: "breakout session", action: "exclude" }] } }));
+      expect(counts(mapProfile(profile(), deps(), { preferences: { rules: [{ field: "format", value: "chalk talk", action: "prefer" }, { field: "format", value: "workshop", action: "avoid" }] } }))).toEqual(plain);
+      const excluded = counts(mapProfile(profile(), deps(), { preferences: { rules: [{ field: "format", value: "breakout session", action: "exclude" }] } }));
       expect(excluded).not.toEqual(plain);
       const total = (list: string[]) => list.reduce((sum, entry) => sum + Number(entry.split("|")[2]), 0);
       expect(total(excluded)).toBeLessThan(total(plain));
@@ -250,7 +250,7 @@ describe("session type preferences", () => {
 
     it("equals the focus totals under the same exclude", () => {
       seed();
-      const preferences: SessionPreferences = { levels: { min: 200, max: 400 }, formats: [{ type: "workshop", action: "exclude" }] };
+      const preferences: SessionPreferences = { levels: { min: 200, max: 400 }, rules: [{ field: "format", value: "workshop", action: "exclude" }] };
       const map = mapProfile(profile(), deps(), { preferences });
       for (const topic of [...map.services, ...map.patterns, ...map.gaps, ...map.nextSteps]) {
         for (const goal of topic.goals) {
@@ -262,9 +262,9 @@ describe("session type preferences", () => {
 
     it("echoes the rules the way the catalog spells the types", () => {
       seed();
-      expect(mapProfile(profile(), deps(), { preferences: { formats: [{ type: "chalk", action: "prefer" }] } }).preferences).toEqual({ formats: [{ type: CHALK, action: "prefer" }] });
-      expect(matchFocus(profile(), deps(), [{ topic: "service:AWS Lambda", goal: "deepen" }], { preferences: { formats: [{ type: "chalk", action: "prefer" }] } }).preferences).toEqual({ formats: [{ type: CHALK, action: "prefer" }] });
-      expect(run("all", { formats: [{ type: "chalk", action: "prefer" }] }).preferences).toEqual({ formats: [{ type: CHALK, action: "prefer" }] });
+      expect(mapProfile(profile(), deps(), { preferences: { rules: [{ field: "format", value: "chalk", action: "prefer" }] } }).preferences).toEqual({ rules: [{ field: "format", value: CHALK, action: "prefer" }] });
+      expect(matchFocus(profile(), deps(), [{ topic: "service:AWS Lambda", goal: "deepen" }], { preferences: { rules: [{ field: "format", value: "chalk", action: "prefer" }] } }).preferences).toEqual({ rules: [{ field: "format", value: CHALK, action: "prefer" }] });
+      expect(run("all", { rules: [{ field: "format", value: "chalk", action: "prefer" }] }).preferences).toEqual({ rules: [{ field: "format", value: CHALK, action: "prefer" }] });
     });
   });
 });

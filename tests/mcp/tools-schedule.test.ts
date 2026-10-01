@@ -136,6 +136,7 @@ describe("the fourteen registered tools", () => {
         "validate_profile",
         "match_sessions",
         "map_profile",
+        "list_filters",
         "get_schedule",
         "favorite_sessions",
         "unfavorite_session",
