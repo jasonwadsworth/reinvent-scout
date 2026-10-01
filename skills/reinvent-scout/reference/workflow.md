@@ -91,10 +91,11 @@ offending entry -- fix the *profile object* and call `validate_profile` again wi
 ## 4a. `map_profile`
 
 Arguments: `{ "profile": <the profile object>, "preferences"?: <preferences, as in `match_sessions`> }`. Returns what the profile found, grouped, for the user to choose from:
-`{ "services": [...], "patterns": [...], "gaps": [...], "nextSteps": [...] }`. Every topic is
+`{ "services": [...], "patterns": [...], "gaps": [...], "nextSteps": [...], "omittedPlatformServices": [...] }`. Every topic is
 `{ "id", "label", "note"?, "evidence": [{ "repo", "file", "line"? }], "more"?, "pillar"?, "skipped"?, "goals": [{ "goal", "sessions" }] }`.
 `id` is stable (`service:Amazon DynamoDB`, `pattern:event-driven`, `gap:gap-no-dlq`, `path:genai-single-call`) and is what
-`match_sessions`' `focus` takes. Services list core before supporting (platform services are left out); a gap is a supported
+`match_sessions`' `focus` takes. Services list core before supporting. Platform services (S3, KMS, CDK, CloudWatch, IAM and the like: what nearly every workload uses, so they do not narrow sessions) are left out by design, and
+`omittedPlatformServices` names the ones this profile has by short name (`["S3", "KMS"]`, empty when none); the text map says "Not shown: S3, KMS (platform services nearly every workload uses; they don't narrow sessions)". Supporting services that are not platform services (SQS, WAF, SNS) stay listed; a gap is a supported
 gap pattern with its Well-Architected `pillar`; a next step is a migration path the profile activates, or one it skipped because it
 already has the destination (`skipped` says why, and it has no goals). The goals are `understand` (introductory sessions, level 100/200),
 `deepen` (sessions at any level whose title names the topic, leaving out the ones the All lens demotes) for services and patterns, and `improve` for a gap or a next step; `sessions` counts what that

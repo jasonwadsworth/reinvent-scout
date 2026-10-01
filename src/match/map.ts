@@ -1,6 +1,7 @@
 import { ValidationError } from "../core/errors.js";
 import type { CatalogStoreDeps } from "../catalog/store.js";
 import type { ResolvedProfile } from "../profile/profile.js";
+import { platformServicesOf } from "./stack-fit.js";
 import { createFocusEngine } from "./focus.js";
 import { type SessionPreferences } from "./preferences.js";
 import { goalsOf, type Goal, type Topic, type TopicGroup } from "./topics.js";
@@ -31,6 +32,8 @@ export interface ProfileMap {
   patterns: MapTopic[];
   gaps: MapTopic[];
   nextSteps: MapTopic[];
+  /** The platform services the profile uses and the map leaves out, by short name ("S3", "KMS"): nearly every workload uses them, so they do not narrow sessions. */
+  omittedPlatformServices: string[];
   /** The preferences the counts were made under, absent when there were none. */
   preferences?: SessionPreferences;
 }
@@ -53,7 +56,7 @@ export function mapProfile(profile: ResolvedProfile, deps: CatalogStoreDeps, opt
     }),
   });
   const group = (name: Topic["group"]): MapTopic[] => engine.topics.filter(topic => topic.group === name).map(describe);
-  return { services: group("services"), patterns: group("patterns"), gaps: group("gaps"), nextSteps: group("nextSteps"), ...(preferences === undefined ? {} : { preferences }) };
+  return { services: group("services"), patterns: group("patterns"), gaps: group("gaps"), nextSteps: group("nextSteps"), omittedPlatformServices: platformServicesOf(profile), ...(preferences === undefined ? {} : { preferences }) };
 }
 
 const bare = (text: string): string => text.replace(/\s*\([^()]*\)\s*$/, "").replace(/^(?:Amazon|AWS)\s+/i, "").trim().toLowerCase();

@@ -62,7 +62,7 @@ describe("buildMapResponse", () => {
     id, label: id, note: "n".repeat(120), evidence: [{ repo: "r", file: "a.ts", line: 1 }, { repo: "r", file: "b.ts", line: 2 }], more: 4,
     goals: [{ goal: "deepen", sessions: 3 }],
   });
-  const map: ProfileMap = { services: [topic("service:A"), topic("service:B")], patterns: [topic("pattern:c")], gaps: [], nextSteps: [] };
+  const map: ProfileMap = { services: [topic("service:A"), topic("service:B")], patterns: [topic("pattern:c")], gaps: [], nextSteps: [], omittedPlatformServices: ["S3", "KMS"] };
   const size = (value: unknown): number => JSON.stringify(value).length;
 
   it("keeps the whole map when it fits", () => {
@@ -82,5 +82,7 @@ describe("buildMapResponse", () => {
     expect(bare.services[0]).not.toHaveProperty("note");
     expect(bare.services.map(entry => entry.id)).toEqual(["service:A", "service:B"]);
     expect(bare.services[0]!.goals).toEqual([{ goal: "deepen", sessions: 3 }]);
+    expect(bare.omittedPlatformServices).toEqual(["S3", "KMS"]);
+    expect(one.omittedPlatformServices).toEqual(["S3", "KMS"]);
   });
 });

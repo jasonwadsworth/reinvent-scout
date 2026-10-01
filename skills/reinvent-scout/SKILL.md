@@ -40,7 +40,7 @@ explained shortlist.
    something to pass anywhere else. Fix anything it flags as a schema error (it names the
    offending entry) and validate again. An unresolved service name is not an error -- keep going,
    but it's worth a passing mention to the user. Then call `map_profile` with the same profile and
-   **show the user the map**: one line per topic, grouped as services, patterns, gaps and next steps,
+   **show the user the map** (and, when `omittedPlatformServices` is not empty, the one line saying which platform services are not shown and why, so the user does not think they were missed): one line per topic, grouped as services, patterns, gaps and next steps,
    each with the goals that have sessions (`understand` for introductions, `deepen` for sessions at
    any level, `improve` for a gap or a next step). Offer only goals with sessions, and say plainly when a
    topic has none for a goal (its `reason` may name the closest 300-level session). Then **ask what they care about**: up to about five topics and a goal for each, in

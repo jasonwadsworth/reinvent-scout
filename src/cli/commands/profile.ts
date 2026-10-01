@@ -92,10 +92,15 @@ function formatDeadEnds(topics: readonly MapTopic[], preferences: SessionPrefere
   return lines;
 }
 
+const PLATFORM_NOTE = "platform services nearly every workload uses; they don't narrow sessions";
+
 function formatMap(map: ProfileMap): string {
   const header = describePreferences(map.preferences);
-  const sections: Array<[string, MapTopic[]]> = [["Services", map.services], ["Patterns", map.patterns], ["Gaps", map.gaps], ["Next steps", map.nextSteps]];
-  return [...(header === undefined ? [] : [header]), ...sections.filter(([, topics]) => topics.length > 0).map(([name, topics]) => [`${name}:`, ...topics.map(formatTopic), ...formatDeadEnds(topics, map.preferences)].join("\n"))].join("\n\n");
+  const notShown = map.omittedPlatformServices.length === 0 ? [] : [`  Not shown: ${map.omittedPlatformServices.join(", ")} (${PLATFORM_NOTE})`];
+  const sections: Array<[string, MapTopic[], string[]]> = [["Services", map.services, notShown], ["Patterns", map.patterns, []], ["Gaps", map.gaps, []], ["Next steps", map.nextSteps, []]];
+  const blocks = sections.filter(([, topics, extra]) => topics.length > 0 || extra.length > 0)
+    .map(([name, topics, extra]) => [`${name}:`, ...topics.map(formatTopic), ...formatDeadEnds(topics, map.preferences), ...extra].join("\n"));
+  return [...(header === undefined ? [] : [header]), ...blocks].join("\n\n");
 }
 
 /** Registers `profile` and its `validate`, `save` and `map` subcommands. */

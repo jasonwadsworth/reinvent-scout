@@ -403,6 +403,17 @@ describe("reference/taxonomy.md vocabulary", () => {
   });
 });
 
+describe("platform services the map leaves out", () => {
+  it("tells the agent to say which platform services are not shown, in the skill, workflow.md and the readme", () => {
+    expect(extractSection(skillMd, "## The flow").replace(/\s+/g, " ")).toContain("when `omittedPlatformServices` is not empty, the one line saying which platform services are not shown and why");
+    const text = workflowMd.replace(/\s+/g, " ");
+    for (const expected of ["\"omittedPlatformServices\": [...]", "`omittedPlatformServices` names the ones this profile has by short name", "Not shown: S3, KMS (platform services nearly every workload uses; they don't narrow sessions)", "Supporting services that are not platform services (SQS, WAF, SNS) stay listed"]) {
+      expect(text, expected).toContain(expected);
+    }
+    expect(readFileSync(join(here, "..", "..", "README.md"), "utf8").replace(/\s+/g, " ")).toContain("a \"Not shown\" line naming the platform services");
+  });
+});
+
 describe("sign-in is not needed to browse", () => {
   const flow = (): string => extractSection(skillMd, "## The flow").replace(/\s+/g, " ");
   it("tells the agent to profile, map and match without signing in when the catalog is present, and to sign in only to sync or touch the schedule", () => {

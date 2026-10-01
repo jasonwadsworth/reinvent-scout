@@ -304,7 +304,7 @@ how many sessions each would return (0 is a dead end):
 `match --focus` takes one to six `<topic>:<goal>` pairs (a bare label such as `DynamoDB` or `ECS` works when only one topic that supports the goal
 has it) and lists up to `--per-topic` (default 5, at most 10) sessions per choice, each with its `why`. A session listed under an earlier choice is
 left out of later ones and notes `Also matches:`; one an earlier choice ranked past its cap stays available to a later choice, and a choice
-emptied by earlier ones says which. A choice with no sessions says why. The text map prints each topic's label and id, the destination of a next
+emptied by earlier ones says which. A choice with no sessions says why. The text map prints each topic's label and id, a "Not shown" line naming the platform services (S3, KMS, CDK, CloudWatch, ...) the profile has and the map leaves out by design (`omittedPlatformServices` in the JSON), the destination of a next
 step, and one line per goal for the topics with no sessions (with the closest 300-level session where there is one) instead of a zero on every
 topic. `--focus` replaces `--lens` and `--limit` (use `--per-topic`); `--json` prints the same object the MCP
 `match_sessions` tool returns for a `focus`, and `map_profile` returns the map.

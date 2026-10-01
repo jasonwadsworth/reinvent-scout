@@ -126,6 +126,17 @@ export const PLATFORM_SERVICES: readonly string[] = [
   "AWS CloudTrail",
 ];
 
+/** A platform service as a person says it: its acronym when the catalog name has one ("Amazon S3" -> "S3"), else the name without "Amazon"/"AWS". */
+export function platformShortName(catalogName: string): string {
+  const inner = /\(([^()]+)\)\s*$/.exec(catalogName)?.[1] ?? catalogName;
+  return inner.replace(/^(?:Amazon|AWS)\s+/, "");
+}
+
+/** The platform services a profile uses, by short name in the profile's order, what the map leaves out and says so. */
+export function platformServicesOf(profile: ResolvedProfile): string[] {
+  return profile.services.flatMap(service => service.catalogName !== null && PLATFORM_SERVICES.includes(service.catalogName) ? [platformShortName(service.catalogName)] : []);
+}
+
 function isCore(service: ResolvedProfile["services"][number]): boolean {
   return service.role !== "supporting"
     && (service.catalogName === null || !PLATFORM_SERVICES.includes(service.catalogName));

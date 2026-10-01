@@ -222,6 +222,7 @@ export function buildFocusResponse(
 export function buildMapResponse(map: ProfileMap, fits: (value: unknown) => boolean = () => true): ProfileMap {
   const each = (change: (topic: MapTopic) => MapTopic): ProfileMap => ({
     services: map.services.map(change), patterns: map.patterns.map(change), gaps: map.gaps.map(change), nextSteps: map.nextSteps.map(change),
+    omittedPlatformServices: map.omittedPlatformServices,
     ...(map.preferences === undefined ? {} : { preferences: map.preferences }),
   });
   const oneIn = (topic: MapTopic): MapTopic => ({ ...topic, evidence: topic.evidence.slice(0, 1) });
