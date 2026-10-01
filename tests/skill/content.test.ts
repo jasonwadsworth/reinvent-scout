@@ -859,6 +859,22 @@ describe("gap consistency guidance in profiling.md", () => {
     expect(collapsed).toContain("never cancels the gap");
     expect(collapsed).toContain("cite the lacking resource");
   });
+  it("counts a practice switched off in every deployed environment as absent, naming the switch and where it is set", () => {
+    const section = collapsed.slice(collapsed.indexOf("**Absent versus partial.**"), collapsed.indexOf("**Every gap note names"));
+    expect(section).toContain("switched off in every deployed environment");
+    expect(section).toContain("counts as absent");
+    for (const term of ["feature flag", "enabled: false", "commented-out", "env-gated"]) expect(section, term).toContain(term);
+    expect(section).toContain("names the switch and where it is set");
+  });
+  it("gives gap-no-tests a per-unit recipe where a pipeline flag is not a test", () => {
+    const text = recipe("gap-no-tests");
+    for (const term of ["deployable unit", "count the test files", "N of M units have tests", "--passWithNoTests", "does not count", "jest", "pytest", "go test", "Terraform", "CloudFormation", "Serverless Framework"]) {
+      expect(text, term).toContain(term);
+    }
+  });
+  it("does not add a gap-no-waf rule", () => {
+    expect(collapsed).not.toContain("gap-no-waf");
+  });
   it("requires every gap note to name what was inspected, and says validate_profile warns", () => {
     expect(collapsed).toContain("Every gap note names what was inspected");
     expect(collapsed).toContain("`validate_profile` returns a warning");

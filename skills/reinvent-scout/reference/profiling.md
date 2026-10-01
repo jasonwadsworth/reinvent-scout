@@ -202,6 +202,13 @@ system-wide absence from one file.
 Coverage elsewhere goes in the `note` as the count and never cancels the gap. The citation points at
 the resources that lack it: cite the lacking resource or resources, not one that has the practice.
 
+A practice that is wired in but switched off in every deployed environment counts as absent: a
+feature flag that is false, `enabled: false`, a commented-out association, an env-gated construct
+whose condition is false in each environment you can see. Check the environment configuration, not
+only the construct. The note names the switch and where it is set ("every alarm is gated by
+`alarmsEnabled`, false in both environments in `environments.ts`"), and the citation can be the line
+that sets it.
+
 **Every gap note names what was inspected**: the files, or the glob and the search term you used. A
 note that names no file, path or glob cannot be checked by whoever reads it, and `validate_profile`
 returns a warning for it (the profile is still valid).
@@ -215,7 +222,7 @@ the narrowing mentioned in the `note`.
 
 ## Search recipes for the common gaps
 
-Three gaps are easy to get wrong by sampling, so each has a search that enumerates the resources
+Four gaps are easy to get wrong by sampling, so each has a search that enumerates the resources
 first. Run it over every package, service directory and stack in the repository (a monorepo has one
 per service), skipping dependency and build directories. Each recipe names where to look for CDK
 (TypeScript, Python), CloudFormation/SAM YAML or JSON, Terraform and the Serverless Framework.
@@ -251,6 +258,15 @@ per service), skipping dependency and build directories. Each recipe names where
   A wildcard narrowed by a condition or session policy is still recordable (see above). Look in CDK
   (`.ts`, `.py`), CloudFormation/SAM, Terraform (`.tf`, including `.json` policy files) and the
   Serverless Framework (`serverless.yml`).
+- **`gap-no-tests`** recipe. Enumerate the deployable units: each service, package or function that
+  has its own handler directory, manifest or stack. For each, count the test files (`*.test.ts`,
+  `*.spec.ts`, `test_*.py`, `*_test.go`, a `tests/` or `__tests__` directory) and note the runner
+  (`jest`, `vitest`, `pytest`, `go test`). Record the gap for every unit with none, with "N of M units
+  have tests" in the `note`, and cite a unit that has none. A pipeline flag such as
+  `--passWithNoTests` does not count as tests, and neither does a test script that runs nothing.
+  Infrastructure-only units (CDK, CloudFormation/SAM, Terraform, Serverless Framework definitions)
+  count when they hold logic worth testing, such as a custom resource, but not when they only declare
+  resources. A test directory shared by every unit counts for the units it exercises.
 
 ## What counts as each newer gap
 
