@@ -405,6 +405,19 @@ describe("reference/taxonomy.md vocabulary", () => {
   });
 });
 
+describe("offering end times and conflicts", () => {
+  it("tells the agent to use plan_schedule for any overlap question and never infer it from the times", () => {
+    const flow = extractSection(skillMd, "## The flow").replace(/\s+/g, " ");
+    expect(flow).toContain("Never judge yourself whether two sessions overlap or whether the user can attend both: that is a `plan_schedule` question");
+    expect(flow).toContain("with its `endTime` when it has one");
+    const text = workflowMd.replace(/\s+/g, " ");
+    for (const expected of ["\"lengthMinutes\": 60, \"endTime\": \"11:30\"", "`lengthMinutes` and `endTime` (`startTime` plus the length", "Never infer that two sittings overlap or do not, or answer \"can I attend both\", from these times", "call `plan_schedule` with the offerings"]) {
+      expect(text, expected).toContain(expected);
+    }
+    expect(readFileSync(join(here, "..", "..", "README.md"), "utf8").replace(/\s+/g, " ")).toContain("overlap and \"can I attend both\" are `plan_schedule` questions, never guessed from the times");
+  });
+});
+
 describe("platform services the map leaves out", () => {
   it("tells the agent to say which platform services are not shown, in the skill, workflow.md and the readme", () => {
     expect(extractSection(skillMd, "## The flow").replace(/\s+/g, " ")).toContain("when `omittedPlatformServices` is not empty, the one line saying which platform services are not shown and why");

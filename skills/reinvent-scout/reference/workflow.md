@@ -177,7 +177,7 @@ relevance.
         { "kind": "service", "detail": "Uses Amazon Redshift, which this session covers.", "weight": 50, "evidence": "Amazon Redshift" }
       ],
       "offerings": [
-        { "sessionId": "1780441461150001GGoc", "abbreviation": "ANT301", "startDate": "2026-11-30", "startTime": "10:30", "venue": "MGM Grand", "room": "Level 3 | Chairman's 363 | Content Hub | White Theater" }
+        { "sessionId": "1780441461150001GGoc", "abbreviation": "ANT301", "startDate": "2026-11-30", "startTime": "10:30", "lengthMinutes": 60, "endTime": "11:30", "venue": "MGM Grand", "room": "Level 3 | Chairman's 363 | Content Hub | White Theater" }
       ]
     }
   ],
@@ -206,7 +206,9 @@ otherwise exceed the size budget:
 `code` is a session's base code with any repeat suffix removed -- the stable id across every
 sitting of the same talk. `offerings` lists every scheduled sitting (a repeat conference talk given
 twice has two), each with its own date, time, venue and room; use the `sessionId` from the specific
-offering you mean when calling `favorite_sessions`, not `code`.
+offering you mean when calling `favorite_sessions`, not `code`. An offering also has `lengthMinutes` and `endTime` (`startTime` plus the length, the same local time; `endDate` too when it runs past midnight)
+when the catalog has a length, and neither when it does not. They are for showing when a sitting ends. **Never infer that two sittings overlap or do not, or answer "can I attend both", from these times:** call `plan_schedule`
+with the offerings, which checks conflicts and travel time properly, and report what it says.
 
 Each candidate's `why` is `{ "summary": string, "yourCode": [{ "repo", "file", "line"? }], "more"?: number, "sessionSays"?: string }`,
 built from the profile and the session's own title or abstract (never model text). `summary` is one

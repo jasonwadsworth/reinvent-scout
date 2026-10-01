@@ -226,7 +226,7 @@ Finds the sessions about what your code is built on: a session is admitted only 
 the profile's services or patterns (or one of its stated `interests`) in its title or abstract, and candidates
 are ranked by how central those concepts are to your code. Each candidate carries a `why` (the concepts it
 matches, where your code uses them, and the session's own sentence that says so), a `score` and `reasons`,
-plus every scheduled `offerings` (day, time, venue, room), so you (or an agent) can see exactly why a session
+plus every scheduled `offerings` (day, time and end time when the catalog has a length, venue, room; overlap and "can I attend both" are `plan_schedule` questions, never guessed from the times), so you (or an agent) can see exactly why a session
 was suggested and when to actually attend it -- this is real output for a serverless profile against the real
 catalog (`--verbose` adds the reasons):
 

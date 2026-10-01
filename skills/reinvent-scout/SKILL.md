@@ -90,7 +90,8 @@ explained shortlist.
 6. Present the candidates to the user. Lead each one with its title, format and level, then
    `why.summary` and, when present, the `why.sessionSays` quote; cite `why.yourCode` (repo, file and
    line, plus `why.more` cut ones) so the user can open the code, then every `offerings` entry
-   (when and where each sitting happens). Do not read out ranking `reasons` unless the user asks.
+   (when and where each sitting happens, with its `endTime` when it has one). Never judge yourself whether two sessions overlap or whether the user can attend both: that is a
+   `plan_schedule` question, whatever the times look like. Do not read out ranking `reasons` unless the user asks.
    If the response came back `truncated`, say so and offer to narrow the request
    (a narrower lens or a more specific profile -- **not** a smaller `limit`, which only returns
    fewer of the exact same top-ranked candidates and can never reach the ones already omitted)
