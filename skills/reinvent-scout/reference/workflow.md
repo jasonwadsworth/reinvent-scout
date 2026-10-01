@@ -88,7 +88,7 @@ offending entry -- fix the *profile object* and call `validate_profile` again wi
 
 ## 4a. `map_profile`
 
-Arguments: `{ "profile": <the profile object> }`. Returns what the profile found, grouped, for the user to choose from:
+Arguments: `{ "profile": <the profile object>, "preferences"?: <preferences, as in `match_sessions`> }`. Returns what the profile found, grouped, for the user to choose from:
 `{ "services": [...], "patterns": [...], "gaps": [...], "nextSteps": [...] }`. Every topic is
 `{ "id", "label", "note"?, "evidence": [{ "repo", "file", "line"? }], "more"?, "pillar"?, "skipped"?, "goals": [{ "goal", "sessions" }] }`.
 `id` is stable (`service:Amazon DynamoDB`, `pattern:event-driven`, `gap:gap-no-dlq`, `path:genai-single-call`) and is what
@@ -101,11 +101,38 @@ The text map (`profile map`) prints each topic's label and id, a next step's des
 to the budget, first to one place per topic, then to none, then without notes. `reinvent-scout profile map --profile <file|name> [--json]`
 prints the same map.
 
+With `preferences.levels` the counts are of the sessions in that band range only (bands 100, 200, 300, 400, 500; inclusive; a session with no level is left
+out), the map echoes `preferences`, and a goal the range emptied says why in its `reason` ("6 sessions match, none at 400–500"; `understand` is
+introductory, so above 200 it says "understand lists introductory (100–200) sessions, which is outside 400–500; use deepen"). `profile map --level 400-500` is the CLI form.
+
 Present the map, ask the user for up to about five topics and a goal each, then call `match_sessions` with a `focus`.
+
+## 4b. `list_filters`
+
+Arguments: `{ "field"?: "level" | "format" | "venue" | "day" | "topic" | "area" | "industry" | "role" }`. Read-only, from the local catalog: it needs no profile and no sign-in. Returns
+`{ "fields": { "<field>": { "total": number, "values": [{ "value": string, "count": number }], "more"?: number } } }`: each value with how many distinct talks have it (a repeat counts once), most first
+(levels in order). With no `field`, every field lists its first 40 values and `more` says how many were left out; with a `field`, its whole list, shortened only to fit the response budget (again `more`).
+Call it when the user asks what they can filter on ("what venues are there?"), or names a value that does not resolve; the values are what `preferences.rules` takes. An unknown field is an `isError`
+naming the fields. `reinvent-scout catalog filters [--field <field>] [--json]` prints the same.
 
 ## 5. `match_sessions`
 
-Arguments: `{ "profile": <profile object>, "lens"?: "all" | "explain" | "fix" | "next-level", "limit"?: number, "focus"?: [{ "topic": <id>, "goal": "understand" | "deepen" | "improve" }], "perTopic"?: number }`.
+Arguments: `{ "profile": <profile object>, "lens"?: "all" | "explain" | "fix" | "next-level", "limit"?: number, "focus"?: [{ "topic": <id>, "goal": "understand" | "deepen" | "improve" }], "perTopic"?: number, "preferences"?: { "levels"?: { "min": number, "max": number }, "rules"?: [{ "field": string, "value": string, "action": "only" | "prefer" | "avoid" | "exclude", "levels"?: { "min": number, "max": number } }] } }`.
+`preferences.rules` are facet rules, applied with the first rule that matches winning within a field: `{ "field": "format" | "venue" | "day" | "topic" | "area" | "industry" | "role", "value": string,
+"action": "only" | "prefer" | "avoid" | "exclude", "levels"?: { "min": number, "max": number } }` (`levels` limits a rule to sessions in that range; the fields are the catalog's `type`, `venue`, start date,
+`topics`, `areasOfInterest`, `industries` and `roles`, and a multi-valued field matches when any value does). `value` is checked against that field's catalog vocabulary, in any case or as a unique prefix
+("chalk", "mgm"), and echoed as the catalog spells it; an unknown or ambiguous value is an `isError` listing the closest values and pointing at `list_filters`. `only` keeps just the sessions with the value:
+several on one field are a union, on different fields an intersection, and a session with no value for the field is left out (a level-scoped `only` also leaves out a session with no level, as the level filter does). `exclude` removes the session like a level filter. `prefer` and `avoid` move it to a
+tier after the demotion tier and before every other ranking key: within one field the first matching prefer or avoid rule decides, across fields the effects add up (+1 each, -1 each) and the highest sum comes
+first, then neutral, then the lowest, with the lens's own order within each tier, so a preferred session outranks a neutral one even if it matches less strongly; the per-concept cap applies within each tier, so a preferred session the cap holds back still ranks ahead of every neutral one, and the focus dedupe runs after the tier. `why.summary` names every preference that moved the session, for example "(a chalk talk at MGM Grand, which you prefer)" and "(ranked lower: a breakout session, which you asked to avoid at 300–500)".
+Rules apply to every lens and focus goal, `explain` and `understand` included. The map counts under `only`, `exclude` and `levels`, not under `prefer` and `avoid`, which only reorder.
+`--only <field>:<value>[@band]`, and `--prefer`, `--avoid` and `--exclude` taking `[<field>:]<value>[@band]` (the field is a format when left out), are the CLI form: repeatable, kept in the order typed.
+`preferences.levels` restricts every lens and every focus choice to the sessions in that inclusive band range (100 to 500; a session with no level is left out;
+the same rule as `catalog search --level`). It is applied after admission and before the per-concept cap, the focus dedupe and `limit`, so a list is filled
+from sessions in range; filtering removes sessions and the remaining ones are re-ranked by the same rules (the All lens and `explain` keep their relative order apart from the cap; `fix` and `next-level` re-interleave their rules over what remains), and a session's own score does not change. The response echoes `preferences`; when the range leaves nothing of a
+result that has sessions without it, `reason` says "4 sessions match, none at 400–500" (for a focus, in that choice's `reason`). The `explain` lens and `understand` are introductory
+(100 to 200): they keep the sessions in both, and above 200 `explain` is an `isError` ("explain lists introductory (100–200) sessions, which is outside 400–500; use deepen or all")
+and `understand` shows 0 with that reason. A range with `min` above `max`, or a value that is not a band, is an `isError`. `--level 400-500` is the CLI form, on `match` and `profile map`.
 With a `focus` (one to six choices, never together with `lens` or `limit`; `perTopic` defaults to 3 and is at most 3 here, the most six choices
 can list within the response budget on the profiles measured; the CLI's `--per-topic` takes up to 10) the response is instead
 `{ "results": [{ "topic", "goal", "total", "candidates", "reason"? }], "truncated", "omitted", "rankingReasonsOmitted"? }`: each choice runs the lens its
@@ -369,6 +396,7 @@ human running these directly gets human-formatted terminal output, not JSON):
 - `reinvent-scout catalog sync`
 - `reinvent-scout catalog search`
 - `reinvent-scout catalog show`
+- `reinvent-scout catalog filters`
 - `reinvent-scout profile validate`
 - `reinvent-scout profile save`
 - `reinvent-scout profile map`

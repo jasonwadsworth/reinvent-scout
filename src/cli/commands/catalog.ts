@@ -8,6 +8,7 @@ import {
   resolveSessionRecord,
   type CatalogQueryResult,
 } from "../../catalog/query.js";
+import { FILTER_FIELDS, listFilters } from "../../catalog/filters.js";
 import { readRaw } from "../../catalog/store.js";
 import { DEFAULT_EVENT_ID, syncCatalog, type SyncResult } from "../../catalog/sync.js";
 import { isKnownVenue } from "../../catalog/venue.js";
@@ -19,6 +20,7 @@ import {
   ValidationError,
 } from "../../core/errors.js";
 import { ensureStoreRoot } from "../../core/paths.js";
+import { parseLevelBandRange } from "../level-option.js";
 
 export interface CatalogCommandDeps {
   /** Defaults to the real store root (`ensureStoreRoot`). Inject a fixed path in tests so
@@ -55,23 +57,12 @@ interface ShowCommandOptions {
 }
 
 const DEFAULT_SEARCH_LIMIT = 20;
+/** How many values of each field `catalog filters` prints when no single field is asked for. */
+const SHOWN_FILTER_VALUES = 15;
 const NO_MATCHES_MESSAGE = "No sessions matched.";
 
 function defaultBuildApiClient(storeRoot: string): ApiClient {
   return createApiClient({ getAccessToken: createTokenProviderAdapter({ storeRoot }) });
-}
-
-function parseLevelBandRange(raw: string): { min: number; max: number } {
-  const rangeMatch = /^(\d+)-(\d+)$/.exec(raw);
-  if (rangeMatch) {
-    return { min: Number(rangeMatch[1]), max: Number(rangeMatch[2]) };
-  }
-  const singleMatch = /^(\d+)$/.exec(raw);
-  if (singleMatch) {
-    const band = Number(singleMatch[1]);
-    return { min: band, max: band };
-  }
-  throw new ValidationError(`--level must be a number or a range like "100-200", got "${raw}".`);
 }
 
 function parseLimit(raw: string): number {
@@ -259,6 +250,36 @@ export function registerCatalogCommands(program: Command, deps: CatalogCommandDe
           err instanceof CatalogUnusableError ||
           err instanceof ValidationError
         ) {
+          print(err.message);
+          process.exitCode = 1;
+          return;
+        }
+        throw err;
+      }
+    });
+
+  catalog
+    .command("filters")
+    .description("List what you can filter or prefer sessions by: each field's values with how many talks have each.")
+    .option("--field <field>", `one field only: ${FILTER_FIELDS.join(", ")}`)
+    .option("--json", "print machine-readable JSON instead of a readable list")
+    .action((options: { field?: string; json?: boolean }) => {
+      try {
+        const { fields } = listFilters({ storeRoot: resolveStoreRoot() }, {
+          ...(options.field === undefined ? {} : { field: options.field }),
+          ...(options.json === true || options.field !== undefined ? {} : { limit: SHOWN_FILTER_VALUES }),
+        });
+        if (options.json === true) {
+          print(JSON.stringify({ fields }));
+          return;
+        }
+        print(Object.entries(fields).map(([name, field]) => [
+          `${name} (${field.total} value${field.total === 1 ? "" : "s"}):`,
+          ...field.values.map(entry => `  ${entry.value}  ${entry.count}`),
+          ...(field.more === undefined ? [] : [`  ... and ${field.more} more (--field ${name})`]),
+        ].join("\n")).join("\n\n"));
+      } catch (err) {
+        if (err instanceof CatalogMissingError || err instanceof CatalogUnusableError || err instanceof ValidationError) {
           print(err.message);
           process.exitCode = 1;
           return;

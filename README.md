@@ -309,6 +309,39 @@ step, and one line per goal for the topics with no sessions (with the closest 30
 topic. `--focus` replaces `--lens` and `--limit` (use `--per-topic`); `--json` prints the same object the MCP
 `match_sessions` tool returns for a `focus`, and `map_profile` returns the map.
 
+#### Only the levels you want
+
+`--level 400-500` (or `--level 300`) on `match` and `profile map` keeps only sessions at those level bands (100 Foundational, 200 Intermediate,
+300 Advanced, 400 Expert, 500 Distinguished; a session with no level is left out). It applies to every lens, the map and a focus, and does not change
+a session's own score: filtering removes sessions, the remaining ones are re-ranked by the same rules, and a list is filled from the ones in range. The map counts what is left. `understand` and
+`--lens explain` are introductory (100-200), so above 200 `explain` is refused (use `deepen` or `all`) and `understand` shows 0 with the reason.
+When the range empties a result, it says so ("4 sessions match, none at 400-500"). The MCP tools take `preferences: { levels: { min, max } }`.
+
+#### Chalk talks more than anything, no workshops, only this venue
+
+Rules by any catalog field: `--only <field>:<value>` keeps just the sessions with the value, and `--prefer`, `--avoid` and `--exclude` take `[<field>:]<value>` (the field is the session format when left out).
+Fields are `format`, `venue`, `day`, `topic`, `area`, `industry` and `role`; a value is any case or a unique prefix (`chalk`, `mgm`); `@300-500` limits a rule to those levels. All are repeatable.
+Several `--only` on one field are a union (`--only venue:mgm --only venue:venetian`), on different fields an intersection, and a session with no value for the field is left out. `--exclude` removes sessions like `--level`.
+`--prefer` and `--avoid` only reorder: within a field the first matching rule decides, across fields the effects add up, and the sessions with the highest sum come first, ahead of every other consideration
+except that demoted sessions still come last, so a preferred session outranks a neutral one even if it matches less strongly:
+
+```sh
+reinvent-scout match --profile my-profile.json --only venue:mgm --prefer "chalk talk" --avoid "breakout session@300-500" --exclude workshop
+```
+
+A `why` names every preference that moved a session: "(a chalk talk at MGM Grand, which you prefer)", "(ranked lower: a breakout session, which you asked to avoid at 300-500)". The map counts under `--only`,
+`--exclude` and `--level` and not under `--prefer` and `--avoid`. The MCP tools take `preferences: { levels, rules: [{ field, value, action, levels? }] }`.
+
+#### What can I filter on?
+
+```sh
+reinvent-scout catalog filters
+reinvent-scout catalog filters --field venue
+```
+
+Lists each field's values with how many talks have each (a repeat counts once), most first, from the local catalog and with no sign-in; `--field` prints one field's whole list, `--json` prints what the MCP
+`list_filters` tool returns. A value that does not resolve is an error listing the closest ones.
+
 ### Fix and Next-level lenses
 
 ```sh

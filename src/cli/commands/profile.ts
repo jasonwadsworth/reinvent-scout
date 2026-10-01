@@ -14,6 +14,8 @@ import { buildValidateReport } from "../../profile/report.js";
 import { readProfileFile, saveProfileFile } from "../../profile/store.js";
 import { formatZodError } from "../zod-errors.js";
 import { loadResolvedProfile } from "../profile-input.js";
+import { allowsIntroductory, describePreferences, INTRODUCTORY_LABEL, restrictionText, type SessionPreferences } from "../../match/preferences.js";
+import { addPreferenceOptions } from "../level-option.js";
 import { mapProfile, type MapTopic, type ProfileMap } from "../../match/map.js";
 
 export interface ProfileCommandDeps {
@@ -73,11 +75,15 @@ function formatTopic(topic: MapTopic): string {
 
 /** One line per goal that has dead ends in the group, instead of a "0 sessions" on every topic, with the closest 300-level session
  * where the explain lens found one. */
-function formatDeadEnds(topics: readonly MapTopic[]): string[] {
+function formatDeadEnds(topics: readonly MapTopic[], preferences: SessionPreferences | undefined): string[] {
   const lines: string[] = [];
+  // With preferences that take sessions out, the empty goals are their doing, so say what they took out where the catalog would be named.
+  const restriction = restrictionText(preferences, "at level");
+  const where = restriction === undefined ? " in the catalog" : ` ${restriction}`;
   for (const goal of ["understand", "deepen", "improve"] as const) {
     const dead = topics.filter(topic => topic.goals.some(entry => entry.goal === goal && entry.sessions === 0));
-    if (dead.length > 0) lines.push(`  ${GOAL_PHRASES[goal]} in the catalog for: ${dead.map(topic => topic.label).join(", ")}`);
+    const introductory = goal === "understand" && !allowsIntroductory(preferences) ? ` (understand is introductory, ${INTRODUCTORY_LABEL})` : "";
+    if (dead.length > 0) lines.push(`  ${GOAL_PHRASES[goal]}${where}${introductory} for: ${dead.map(topic => topic.label).join(", ")}`);
     for (const topic of dead) {
       const hint = /the closest is a 300-level one: (.*)$/.exec(topic.goals.find(entry => entry.goal === goal)?.reason ?? "")?.[1];
       if (hint !== undefined) lines.push(`    closest 300-level for ${topic.label}: ${hint}`);
@@ -87,8 +93,9 @@ function formatDeadEnds(topics: readonly MapTopic[]): string[] {
 }
 
 function formatMap(map: ProfileMap): string {
+  const header = describePreferences(map.preferences);
   const sections: Array<[string, MapTopic[]]> = [["Services", map.services], ["Patterns", map.patterns], ["Gaps", map.gaps], ["Next steps", map.nextSteps]];
-  return sections.filter(([, topics]) => topics.length > 0).map(([name, topics]) => [`${name}:`, ...topics.map(formatTopic), ...formatDeadEnds(topics)].join("\n")).join("\n\n");
+  return [...(header === undefined ? [] : [header]), ...sections.filter(([, topics]) => topics.length > 0).map(([name, topics]) => [`${name}:`, ...topics.map(formatTopic), ...formatDeadEnds(topics, map.preferences)].join("\n"))].join("\n\n");
 }
 
 /** Registers `profile` and its `validate`, `save` and `map` subcommands. */
@@ -180,15 +187,18 @@ export function registerProfileCommands(program: Command, deps: ProfileCommandDe
       }
     });
 
-  profile
+  const mapCommand = profile
     .command("map")
     .description("Show what the profile found in the code, as topics to choose from with `match --focus`.")
-    .requiredOption("--profile <file|name>", "a profile file path, or a name saved with `profile save`")
+    .requiredOption("--profile <file|name>", "a profile file path, or a name saved with `profile save`");
+  const preferencesOf = addPreferenceOptions(mapCommand);
+  mapCommand
     .option("--json", "print machine-readable JSON instead of a readable list")
-    .action((options: { profile: string; json?: boolean }) => {
+    .action((options: { profile: string; json?: boolean; level?: string }) => {
       const storeRoot = resolveStoreRoot();
       try {
-        const map = mapProfile(loadResolvedProfile(options.profile, storeRoot), { storeRoot });
+        const preferences = preferencesOf(options.level);
+        const map = mapProfile(loadResolvedProfile(options.profile, storeRoot), { storeRoot }, preferences === undefined ? {} : { preferences });
         print(options.json === true ? JSON.stringify(map) : formatMap(map));
       } catch (err) {
         if (err instanceof z.ZodError) {

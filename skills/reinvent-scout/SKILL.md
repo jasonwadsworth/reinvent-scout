@@ -53,6 +53,35 @@ explained shortlist.
    remediation (`"fix"`), or migration options (`"next-level"`). Fix uses only supported,
    evidence-bearing gap patterns; Next-level uses `serverless`, `ecs`, or `genai-single-call`.
    See the exact vocabulary and trade-offs in `reference/profiling.md`.
+   **Session preferences.** When the user states a level preference, in numbers or words, pass it as `preferences: { "levels": { "min": N, "max": M } }` on
+   `map_profile` and on `match_sessions`, and keep passing it for the rest of the conversation, the map included. The words are the catalog's own
+   labels: 100 Foundational, 200 Intermediate, 300 Advanced, 400 Expert, 500 Distinguished. "Only 400-500" and "expert" are 400 to 500;
+   "advanced and up" and "no intro" are 300 to 500; "only intro" is 100 to 200; "300 only" is 300 to 300. State the active level range once, briefly, when you
+   apply it. It filters: filtering removes sessions, and the remaining ones are re-ranked by the same rules. `understand` and the `explain` lens are introductory (100 to 200), so above 200 they
+   have nothing and say so (`explain` is an error naming `deepen` or `all`). When the filter empties something the response says so (`reason`:
+   "4 sessions match, none at 400–500"): tell the user, never widen the range yourself, and offer to widen it.
+   The same `preferences` object carries `rules` on any catalog field: `{ "field": "format" | "venue" | "day" | "topic" | "area" | "industry" | "role", "value", "action": "only" | "prefer" | "avoid" | "exclude", "levels"? }`
+   (`levels` limits a rule to sessions in that range). `only` keeps just the sessions with the value: several `only` rules on one field are a union ("MGM Grand or Wynn/Encore"), rules on different
+   fields an intersection, and a session with no value for that field is left out. `exclude` removes sessions. `prefer` and `avoid` only reorder: within one field the first matching rule decides, across
+   fields the effects add up (+1 each for prefer, -1 for avoid), and the sessions with the highest sum come first, after the demoted sessions' own place and before every other ranking consideration, so
+   "more than anything" means a preferred session outranks a neutral one even if it matches less strongly. `why.summary` names every preference that moved a session: "(a chalk talk at MGM Grand, which you
+   prefer)", "(ranked lower: a breakout session, which you asked to avoid at 300–500)". Turn plain statements into rules and keep them for the rest of the conversation, the map included:
+
+   | The user says | Pass |
+   |---|---|
+   | "only 400+" | `levels: { min: 400, max: 500 }` |
+   | "no workshops" | `rules: [{ field: "format", value: "Workshop", action: "exclude" }]` |
+   | "I like chalk talks" | `rules: [{ field: "format", value: "Chalk talk", action: "prefer" }]` |
+   | "avoid breakouts unless intro" | `rules: [{ field: "format", value: "Breakout session", action: "avoid", levels: { min: 300, max: 500 } }]` |
+   | "only sessions at MGM" | `rules: [{ field: "venue", value: "MGM Grand", action: "only" }]` |
+   | "I'm staying at the Venetian, prefer sessions there" | `rules: [{ field: "venue", value: "Venetian", action: "prefer" }]` |
+   | "nothing on Thursday" | `rules: [{ field: "day", value: "<that date>", action: "exclude" }]`, the date from `list_filters` with `field: "day"` |
+   | "what venues are there?" | call `list_filters` with `field: "venue"` |
+
+   Format words: chalk talk; breakout or talk (the catalog's "Breakout session"); workshop; builders' session; lightning talk; code talk; lab; bootcamp. A value is checked against the catalog's own
+   vocabulary for its field, in any case or as a unique prefix ("chalk", "mgm"). When the user asks what they can filter on ("what venues are there?", "what categories are there?"), or names a value that
+   does not resolve (the error lists the closest values), call `list_filters` (no profile needed; `field` for one field's values with counts) and offer the real values. Never compute a day's date yourself: get the `YYYY-MM-DD` values from `list_filters` with `field: "day"` and pick the one that is the weekday the user named. Restate the active
+   preferences once, briefly, when you first apply them, and say when a preference emptied a result. `only`, `exclude` and `levels` change the map's counts; `prefer` and `avoid` do not.
 6. Present the candidates to the user. Lead each one with its title, format and level, then
    `why.summary` and, when present, the `why.sessionSays` quote; cite `why.yourCode` (repo, file and
    line, plus `why.more` cut ones) so the user can open the code, then every `offerings` entry

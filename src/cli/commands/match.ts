@@ -13,6 +13,8 @@ import { resolveTopic, type Nameable } from "../../match/map.js";
 import { GOALS, type Goal } from "../../match/topics.js";
 import { matchSessionsDetailed, type MatchCandidate, type MatchResult } from "../../match/match.js";
 import { buildFocusResponse, buildMatchResponse, toLeanCandidate, toLeanFocusCandidate } from "../../match/response.js";
+import { describePreferences } from "../../match/preferences.js";
+import { addPreferenceOptions } from "../level-option.js";
 import { formatZodError } from "../zod-errors.js";
 import { loadResolvedProfile } from "../profile-input.js";
 
@@ -33,6 +35,7 @@ interface MatchCommandOptions {
   verbose: boolean;
   focus?: string;
   perTopic?: string;
+  level?: string;
 }
 
 const DEFAULT_MATCH_LIMIT = 30;
@@ -91,7 +94,8 @@ function formatFocusEntry(entry: FocusEntry, verbose: boolean, abstracts?: Reado
 }
 
 function formatFocusResult(result: FocusResult, verbose: boolean, abstracts?: ReadonlyMap<string, string | null>): string {
-  return result.results.map(entry => formatFocusEntry(entry, verbose, abstracts)).join("\n\n\n");
+  const header = describePreferences(result.preferences);
+  return [...(header === undefined ? [] : [`${header}\n`]), result.results.map(entry => formatFocusEntry(entry, verbose, abstracts)).join("\n\n\n")].join("\n");
 }
 
 function formatCandidateLine(candidate: MatchCandidate): string {
@@ -166,11 +170,12 @@ function formatHumanResult(result: MatchResult, verbose: boolean, abstracts?: Re
     ...(result.uncovered ?? []).map((entry) => `Uncovered: ${entry.concept} (${entry.reason})`),
   ];
   if (result.candidates.length === 0) {
-    return [NO_CANDIDATES_MESSAGE, ...skipped].join("\n");
+    return [NO_CANDIDATES_MESSAGE, ...(result.reason === undefined ? [] : [result.reason]), ...skipped].join("\n");
   }
   const blocks = result.candidates.map((candidate) =>
     formatCandidateWithReasons(candidate, verbose, abstracts?.get(candidate.record.sessionId) ?? null));
-  return [blocks.join("\n\n"), ...skipped].join("\n\n");
+  const header = describePreferences(result.preferences);
+  return [...(header === undefined ? [] : [header]), blocks.join("\n\n"), ...skipped].join("\n\n");
 }
 
 /** Registers the `match` command. */
@@ -178,9 +183,11 @@ export function registerMatchCommands(program: Command, deps: MatchCommandDeps =
   const print = deps.print ?? ((message: string) => process.stdout.write(`${message}\n`));
   const resolveStoreRoot = deps.resolveStoreRoot ?? (() => ensureStoreRoot());
 
-  program
+  const matchCommand = program
     .command("match")
-    .description("Rank the local catalog against an agent-authored tech profile.")
+    .description("Rank the local catalog against an agent-authored tech profile.");
+  const preferencesOf = addPreferenceOptions(matchCommand);
+  matchCommand
     .requiredOption("--profile <file|name>", "a profile file path, or a name saved with `profile save`")
     .option("--focus <choices>", `what to look for, as "<topic>:<goal>" pairs separated by commas (goals: ${GOALS.join(", ")}); topics are listed by \`profile map\``)
     .option("--per-topic <n>", `with --focus, how many sessions each choice lists (default ${DEFAULT_PER_TOPIC}, maximum ${MAX_PER_TOPIC})`)
@@ -193,6 +200,7 @@ export function registerMatchCommands(program: Command, deps: MatchCommandDeps =
       const storeRoot = resolveStoreRoot();
 
       try {
+        const preferences = preferencesOf(options.level);
         if (options.focus !== undefined) {
           if (command.getOptionValueSource("lens") !== "default") {
             throw new ValidationError("--focus and --lens cannot be used together: a focus names its own goal for each topic.");
@@ -203,7 +211,10 @@ export function registerMatchCommands(program: Command, deps: MatchCommandDeps =
           const focused = loadResolvedProfile(options.profile, storeRoot);
           const choices = parseFocus(options.focus, profileTopics(focused, { storeRoot }));
           const perTopic = options.perTopic === undefined ? undefined : parsePerTopic(options.perTopic);
-          const focusResult = matchFocus(focused, { storeRoot }, choices, perTopic === undefined ? {} : { perTopic });
+          const focusResult = matchFocus(focused, { storeRoot }, choices, {
+            ...(perTopic === undefined ? {} : { perTopic }),
+            ...(preferences === undefined ? {} : { preferences }),
+          });
           const focusAbstracts = options.includeAbstracts
             ? new Map((readRaw({ storeRoot }) ?? []).map((s) => [s.sessionId, s.abstract ?? null]))
             : undefined;
@@ -226,7 +237,7 @@ export function registerMatchCommands(program: Command, deps: MatchCommandDeps =
 
         const resolvedProfile = loadResolvedProfile(options.profile, storeRoot);
 
-        const result = matchSessionsDetailed(resolvedProfile, { storeRoot }, { lens, limit });
+        const result = matchSessionsDetailed(resolvedProfile, { storeRoot }, { lens, limit, ...(preferences === undefined ? {} : { preferences }) });
 
         const abstracts = options.includeAbstracts
           ? new Map((readRaw({ storeRoot }) ?? []).map((s) => [s.sessionId, s.abstract ?? null]))

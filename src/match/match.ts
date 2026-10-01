@@ -1,4 +1,5 @@
 import { buildStackFit, hasCoreService, PREFIX_REQUIRED_SERVICE_NAMES } from "./stack-fit.js";
+import { admits, allowsBand, allowsIntroductory, annotate, byTier, emptiedBy, formatNote, introductoryRefusal, resolvePreferences, tierOf, type SessionPreferences } from "./preferences.js";
 import { absentBroadTopics, buildConcepts, interestConcepts, serviceTails, type ConceptMatch, type ProfileConcept, type UncoveredConcept } from "./concepts.js";
 import { allReason, demotionReason, industryTerms, matchAllConcepts, rankAll, rareProfileServices } from "./all.js";
 import { offStackOf } from "./off-stack.js";
@@ -6,6 +7,7 @@ import { explainReason, matchConcepts, selectExplain } from "./explain.js";
 import { activeLensRules, scoreLensSignals, skippedLensRules, type LensHit, type SkippedRule } from "./lens-signals.js";
 import { readRaw, type CatalogStoreDeps } from "../catalog/store.js";
 import { baseSessionCode, requireCurrentIndex } from "../catalog/query.js";
+import { ValidationError } from "../core/errors.js";
 import type { IndexRecord } from "../catalog/index-record.js";
 import type { Venue } from "../catalog/venue.js";
 import type { ResolvedProfile } from "../profile/profile.js";
@@ -25,6 +27,8 @@ export interface LensContext {
   query: MatchQuery;
   corpusStats: ReturnType<typeof buildCorpusStats>;
   abstractOf: AbstractOf;
+  /** Applied after admission's own rules and before ranking; the corpus statistics and every vocabulary stay those of the whole catalog. */
+  preferences?: SessionPreferences | undefined;
 }
 
 export interface MatchOptions {
@@ -33,6 +37,8 @@ export interface MatchOptions {
   /** Caps the number of candidates (groups, not raw sittings -- see `MatchCandidate.offerings`)
    * returned, after ranking. */
   limit?: number;
+  /** What the user asked of the sessions: a level range and rules by catalog field. See `preferences.ts`. */
+  preferences?: SessionPreferences;
 }
 
 /** One scheduled sitting of a session -- a repeat carries the same talk on a different day, so an
@@ -81,6 +87,10 @@ export interface MatchResult {
   /** Explain only, always present there: concepts of the profile no session could be matched to,
    * each with the reason. Absent under every other lens. */
   uncovered?: UncoveredConcept[];
+  /** The preferences that were applied, absent when there were none. */
+  preferences?: SessionPreferences;
+  /** Present when the preferences left nothing of a result that has sessions without them: "4 sessions match, none at 400-500". */
+  reason?: string;
 }
 
 /** What interleaving needs from the winning sitting of a lens candidate. */
@@ -290,7 +300,13 @@ function roundToTwoDecimals(value: number): number {
 /** The abstract of the sitting that scored, which the quote and the lens signals were matched against. */
 export type AbstractOf = (record: IndexRecord) => string;
 
-export function whyFor(candidate: GroupedCandidate, lens: Lens, profile: ResolvedProfile, abstractOf: AbstractOf): Why {
+export function whyFor(candidate: GroupedCandidate, lens: Lens, profile: ResolvedProfile, abstractOf: AbstractOf, preferences?: SessionPreferences): Why {
+  const why = baseWhy(candidate, lens, profile, abstractOf);
+  const note = formatNote(preferences, candidate.record);
+  return note === undefined ? why : { ...why, summary: annotate(why.summary, note) };
+}
+
+function baseWhy(candidate: GroupedCandidate, lens: Lens, profile: ResolvedProfile, abstractOf: AbstractOf): Why {
   const text = { title: candidate.record.title, abstract: abstractOf(candidate.record) };
   if (lens === "all") {
     if (candidate.explain === undefined) throw new Error(`all candidate ${candidate.code} has no concept it was admitted for`);
@@ -444,10 +460,11 @@ function matchExplain(ctx: LensContext, limit: number | undefined): MatchResult 
     groups.map((group) => ({ key: group.code, record: group.record, matches: group.explain!, rank: group.score })),
     concepts,
     typeWeights,
+    allowsBand(ctx.preferences, 300),
   );
-  const candidates = selected.map((entry) => explainCandidate(byCode.get(entry.key)!, entry.matches, profile, typeWeights));
+  const candidates = byTier(ctx.preferences, selected.map((entry) => explainCandidate(byCode.get(entry.key)!, entry.matches, profile, typeWeights)), candidate => candidate.record);
   return {
-    candidates: (limit === undefined ? candidates : candidates.slice(0, limit)).map(candidate => roundCandidate(candidate, whyFor(candidate, "explain", profile, abstractOf))),
+    candidates: (limit === undefined ? candidates : candidates.slice(0, limit)).map(candidate => roundCandidate(candidate, whyFor(candidate, "explain", profile, abstractOf, ctx.preferences))),
     skippedRules: [],
     uncovered: [...uncovered, ...unmapped],
   };
@@ -460,6 +477,7 @@ export function explainSessions(ctx: LensContext): { concepts: ProfileConcept[];
   const { concepts, uncovered: unmapped } = buildConcepts(profile, knownServices(profile, index));
   const scored: ScoredRecord[] = [];
   for (const record of index) {
+    if (!admits(ctx.preferences, record)) continue;
     const matches = matchConcepts(concepts, record, rawById.get(record.sessionId)?.abstract ?? "");
     if (matches.length > 0) {
       scored.push({ record, score: scoreSession(record, query, corpusStats).score, reasons: [], explain: matches });
@@ -477,7 +495,7 @@ export function explainSessions(ctx: LensContext): { concepts: ProfileConcept[];
 function matchAll(ctx: LensContext, limit: number | undefined): MatchResult {
   const candidates = allRanked(ctx);
   return {
-    candidates: (limit === undefined ? candidates : candidates.slice(0, limit)).map((candidate) => roundCandidate(candidate, whyFor(candidate, "all", ctx.profile, ctx.abstractOf))),
+    candidates: (limit === undefined ? candidates : candidates.slice(0, limit)).map((candidate) => roundCandidate(candidate, whyFor(candidate, "all", ctx.profile, ctx.abstractOf, ctx.preferences))),
     skippedRules: [],
   };
 }
@@ -493,6 +511,7 @@ export function allRanked(ctx: LensContext): GroupedCandidate[] {
   const rare = rareProfileServices(concepts, index, abstractOf, RARE_SERVICE_FRACTION);
   const scored: ScoredRecord[] = [];
   for (const record of index) {
+    if (!admits(ctx.preferences, record)) continue;
     const abstract = rawById.get(record.sessionId)?.abstract ?? "";
     const matches = matchAllConcepts(concepts, record, abstract, rare);
     if (matches.length === 0) continue;
@@ -502,7 +521,7 @@ export function allRanked(ctx: LensContext): GroupedCandidate[] {
   const groups = groupByCode(scored);
   const byCode = new Map(groups.map((group) => [group.code, group]));
   const ranked = rankAll(groups.map((group) => ({
-    key: group.code, record: group.record, matches: group.explain!, relevance: group.score,
+    key: group.code, record: group.record, matches: group.explain!, relevance: group.score, tier: tierOf(ctx.preferences, group.record),
     ...(group.demoted === undefined ? {} : { demoted: group.demoted }),
   })));
   return ranked.map((entry) => allCandidate(byCode.get(entry.key)!, entry.matches, profile));
@@ -549,6 +568,10 @@ export function matchSessionsDetailed(
 ): MatchResult {
   const lens = options.lens ?? "all";
   const index = requireCurrentIndex(deps);
+  const preferences = resolvePreferences(options.preferences, index);
+  if (lens === "explain" && preferences !== undefined && !allowsIntroductory(preferences)) {
+    throw new ValidationError(introductoryRefusal("explain", preferences, "deepen or all"));
+  }
   const query = buildMatchQuery(profile);
   const rawById = new Map((readRaw(deps) ?? []).map(session => [session.sessionId, session]));
   const abstractOf: AbstractOf = record => rawById.get(record.sessionId)?.abstract ?? "";
@@ -557,22 +580,25 @@ export function matchSessionsDetailed(
   // record would be both wasteful and simply wrong, since it needs to see every document to know
   // how rare a term actually is.
   const corpusStats = buildCorpusStats(index);
-  const ctx: LensContext = { profile, index, rawById, query, corpusStats, abstractOf };
+  const ctx: LensContext = { profile, index, rawById, query, corpusStats, abstractOf, preferences };
 
-  if (lens === "all") {
-    return matchAll(ctx, options.limit);
+  const result = lens === "all" ? matchAll(ctx, options.limit)
+    : lens === "explain" ? matchExplain(ctx, options.limit)
+      : matchRules(ctx, lens, options.limit);
+  if (preferences === undefined) {
+    return result;
   }
-  if (lens === "explain") {
-    return matchExplain(ctx, options.limit);
-  }
-  return matchRules(ctx, lens, options.limit);
+  const reason = result.candidates.length === 0
+    ? emptiedBy(preferences, matchSessionsDetailed(profile, deps, { lens }).candidates.length)
+    : undefined;
+  return { ...result, preferences, ...(reason === undefined ? {} : { reason }) };
 }
 
 function matchRules(ctx: LensContext, lens: "fix" | "next-level", limit: number | undefined): MatchResult {
   const ordered = rulesRanked(ctx, lens);
   const limited = limit === undefined ? ordered : ordered.slice(0, limit);
   return {
-    candidates: limited.map(candidate => roundCandidate(candidate, whyFor(candidate, lens, ctx.profile, ctx.abstractOf))),
+    candidates: limited.map(candidate => roundCandidate(candidate, whyFor(candidate, lens, ctx.profile, ctx.abstractOf, ctx.preferences))),
     skippedRules: lensSkippedRules(ctx.profile, lens),
   };
 }
@@ -590,6 +616,7 @@ export function rulesRanked(ctx: LensContext, lens: "fix" | "next-level"): Group
   const scoredRecords: ScoredRecord[] = [];
 
   for (const record of index) {
+    if (!admits(ctx.preferences, record)) continue;
     if (lensProfile.levelBands !== null) {
       if (record.levelBand === null || !lensProfile.levelBands.includes(record.levelBand)) {
         continue;
@@ -627,5 +654,5 @@ export function rulesRanked(ctx: LensContext, lens: "fix" | "next-level"): Group
     scoredRecords.push({ record, score, reasons, lens: { hits: base.hits, relevance: relevance.score } });
   }
 
-  return interleaveByRule(groupByCode(scoredRecords));
+  return byTier(ctx.preferences, interleaveByRule(groupByCode(scoredRecords)), candidate => candidate.record);
 }

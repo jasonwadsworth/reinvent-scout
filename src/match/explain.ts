@@ -20,6 +20,7 @@ const INTRODUCTORY_BANDS: readonly number[] = getLensProfile("explain").levelBan
 const ADVANCED_BAND = 300;
 const NO_INTRODUCTION_REASON = "no introductory (100/200) session is about it; the closest is a 300-level one";
 const NOT_COVERED_REASON = "no introductory (100/200) or 300-level session is about it";
+const NOT_INTRODUCED_REASON = "no introductory (100/200) session is about it";
 
 /** A catalog session (repeat sittings already grouped) with the concepts it is about. */
 export interface ExplainSession {
@@ -56,6 +57,8 @@ export function selectExplain(
   sessions: readonly ExplainSession[],
   concepts: readonly ProfileConcept[],
   typeWeights: ReadonlyMap<string, number> = getLensProfile("explain").typeWeights,
+  /** False when the user's level preference leaves 300-level sessions out, so no 300-level session is named as the closest. */
+  advancedAllowed = true,
 ): { selected: ExplainSelection[]; uncovered: UncoveredConcept[] } {
   const introductoryBand = (session: ExplainSession): boolean =>
     session.record.levelBand !== null && INTRODUCTORY_BANDS.includes(session.record.levelBand);
@@ -111,7 +114,7 @@ export function selectExplain(
     return {
       concept: concept.name,
       kind: concept.kind === "pattern" ? ("pattern" as const) : ("service" as const),
-      reason: closest === undefined ? NOT_COVERED_REASON : `${NO_INTRODUCTION_REASON}: ${closest.session.key} "${closest.session.record.title}"`,
+      reason: closest === undefined ? (advancedAllowed ? NOT_COVERED_REASON : NOT_INTRODUCED_REASON) : `${NO_INTRODUCTION_REASON}: ${closest.session.key} "${closest.session.record.title}"`,
     };
   });
   return { selected, uncovered };
