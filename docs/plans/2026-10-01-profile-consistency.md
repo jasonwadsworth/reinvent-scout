@@ -82,3 +82,19 @@ Differences worth knowing:
 - gap-no-alarms: run 1 found every alarm gated by `alarmsEnabled: false` in both environments (true, `environments.ts:50,115`) and also cited the unalarmed state machines; run 2 counted alarms as present and cited only the state machines. Same gap, different evidence.
 - conformity: matches the known gaps for alarms (no actions), broad-iam (session policy named), tracing and graviton. It missed `gap-no-tests` (audit and company services have 0 test files, 17 in the repo) and `gap-no-waf` (not in the guide's vocabulary). It added load-tests and cost-monitoring, which the guide's rules allow (production via CDK Pipelines).
 - Not done: a gap-no-tests recipe. Left for a follow-up since the target did not need a second round.
+
+### Round 2
+
+Guide additions (commit 0c5a814): a practice switched off in every deployed environment counts as absent (the note names the switch and where it is set), and a `gap-no-tests` per-unit recipe (`--passWithNoTests` is not a test). `gap-no-waf` deliberately not added. Runs are in `<scratchpad>/consistency/round2/`.
+
+| | policy-tracker run 1 | policy-tracker run 2 | conformity |
+| --- | --- | --- | --- |
+| Gaps | dlq, alarms, broad-iam, load-tests, cost | the same five | alarms, tests, broad-iam, tracing, graviton, cost, load-tests |
+| alarms evidence | `alarmsEnabled` false in both environments; state machines also unalarmed | `alarmsEnabled` false in both environments | alarms without actions |
+| DLQ count | 37 of 40 targets | 37 of 40 targets | n/a |
+| tests | n/a | n/a | 3 of 8 units have tests; audit, company, global, both UIs none; notes `--passWithNoTests` |
+| Services | 25 | 25 | 20 |
+| Warnings | none | none | none |
+| Fix lens | SEC429, COP311, API311, SEC404, SVS314 | identical | SVS334, ARC313, SVS315, SEC404, SVS329, SVS314 |
+
+Targets met: both policy-tracker runs agree on every gap and both find the `alarmsEnabled` switch; conformity records gap-no-tests with a per-unit count.
