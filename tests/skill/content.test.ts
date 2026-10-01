@@ -15,7 +15,8 @@ import { CURRENT_SCHEMA_VERSION, writeCatalog } from "../../src/catalog/store.js
 import { DEFAULT_EVENT_ID } from "../../src/catalog/sync.js";
 import { buildProgram } from "../../src/cli/main.js";
 import { createMcpServer } from "../../src/mcp/server.js";
-import { resolveProfile } from "../../src/profile/profile.js";
+import { resolveProfile, type ResolvedProfile } from "../../src/profile/profile.js";
+import { buildValidateReport } from "../../src/profile/report.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -214,6 +215,20 @@ describe("skill files tool names", () => {
     "node_modules",
     "aws_dynamodb_table",
     "aws_elasticache_serverless_cache",
+    "aws_cloudwatch_event_target",
+    "aws_sqs_queue",
+    "aws_sns_topic_subscription",
+    "aws_lambda_function_event_invoke_config",
+    "aws_cloudwatch_metric_alarm",
+    "aws_iam_policy_document",
+    "aws_lambda_event_source_mapping",
+    "dead_letter_queue",
+    "dead_letter_config",
+    "redrive_policy",
+    "destination_config",
+    "alarm_actions",
+    "memory_size",
+    "on_failure",
   ]);
 
   it("names only tools the mcp server actually registers or explicitly documents as absent, anywhere in the skill's files", async () => {
@@ -746,7 +761,7 @@ describe("lens-quality documentation", () => {
 describe("lens-precision guidance in profiling.md", () => {
   const collapsed = profilingMd.replace(/\s+/g, " ");
   it("marks platform services supporting by default and names them, from the exported list", () => {
-    expect(collapsed).toContain("Mark platform services `\"role\": \"supporting\"` by default");
+    expect(collapsed).toContain("Always list the platform services you find, as `\"role\": \"supporting\"`");
     const shortName = (name: string): string => {
       const inner = /\(([^)]+)\)\s*$/.exec(name)?.[1] ?? name;
       return inner.replace(/^(?:Amazon|AWS)\s+/, "");
@@ -756,7 +771,7 @@ describe("lens-precision guidance in profiling.md", () => {
     expect(listed).toEqual(expect.arrayContaining(["IAM", "STS"]));
     for (const name of listed) {
       if (never.has(name)) continue;
-      expect(collapsed, name).toMatch(new RegExp(`Mark platform services[^.]*\\b${name}\\b`));
+      expect(collapsed, name).toMatch(new RegExp(`Always list the platform services[^.]*\\b${name}\\b`));
     }
     expect(collapsed).toContain("IAM and STS are never listed; if present they are ignored.");
     expect(collapsed).toContain("no alarm that notifies a person on the infrastructure you found");
@@ -794,6 +809,154 @@ describe("lens-precision guidance in profiling.md", () => {
     expect(collapsed).toContain("agents built on two of your other core services");
     expect(collapsed).toContain("Kubernetes or EKS to serverless or AgentCore");
     expect(collapsed).not.toContain("whose phrase is specific enough that one mention counts");
+  });
+});
+
+describe("the workflow.md teaching profile", () => {
+  it("names a file and a count in every gap note, so copying it triggers no validate_profile warning", () => {
+    const block = [...workflowMd.matchAll(/```json\n([\s\S]*?)```/g)]
+      .map(match => JSON.parse(match[1]!) as { profile?: ResolvedProfile })
+      .map(parsed => parsed.profile ?? (parsed as unknown as ResolvedProfile))
+      .find(parsed => Array.isArray(parsed.patterns) && parsed.patterns.some(pattern => pattern.name === "gap-no-resource-rightsizing"));
+    expect(block).toBeDefined();
+    const gaps = block!.patterns.filter(pattern => pattern.name.startsWith("gap-"));
+    expect(gaps.length).toBeGreaterThanOrEqual(7);
+    for (const gap of gaps) expect(gap.note, gap.name).toMatch(/\d/);
+    for (const gap of gaps) {
+      const cited = /deploy entry point (\S+\.ts)\./.exec(gap.note ?? "")?.[1];
+      if (cited !== undefined) {
+        expect(cited, gap.name).toBe("infra/app.ts");
+        expect(gap.evidence[0]!.file, gap.name).toBe(cited);
+      }
+    }
+    const report = buildValidateReport({ ...block!, unresolvedServices: [] });
+    expect(report.warnings, JSON.stringify(report.warnings)).toBeUndefined();
+  });
+});
+
+describe("validate_profile warnings in the skill docs", () => {
+  it("documents the optional warnings field, and says a warning is not an error", () => {
+    const section = extractSection(workflowMd, "## 4. `validate_profile`").replace(/\s+/g, " ");
+    expect(section).toContain("`warnings`");
+    expect(section).toContain("names no file, path or glob");
+    expect(section).toContain("A warning is not an error; add the files or search you used");
+  });
+});
+
+describe("gap consistency guidance in profiling.md", () => {
+  const collapsed = profilingMd.replace(/\s+/g, " ");
+  const recipe = (gap: string): string => {
+    const match = new RegExp(`- \\*\\*\`${gap}\`\\*\\* recipe\\. (.*?)(?= - \\*\\*\`gap-|## |$)`).exec(collapsed);
+    expect(match, `${gap} recipe`).not.toBeNull();
+    return match![1]!;
+  };
+  it("gives gap-no-dlq a search recipe that lists every asynchronous target and source", () => {
+    const text = recipe("gap-no-dlq");
+    for (const term of ["EventBridge rule target", "SfnStateMachine", "onFailure", "SNS subscription", "destination", "deadLetterQueue", "dead_letter_config", "RedrivePolicy"]) {
+      expect(text, term).toContain(term);
+    }
+  });
+  it("gives gap-no-alarms a recipe that checks each resource kind reaches a person", () => {
+    const text = recipe("gap-no-alarms");
+    for (const term of ["state machine", "queue", "SNS topic", "PagerDuty", "Chatbot", "alarm_actions", "AlarmActions", "addAlarmAction"]) {
+      expect(text, term).toContain(term);
+    }
+  });
+  it("gives gap-broad-iam a recipe with a wildcard search, the unscopable actions and a production-first rule", () => {
+    const text = recipe("gap-broad-iam");
+    for (const term of ["cloudwatch:PutMetricData", "xray:PutTraceSegments", "sts:GetCallerIdentity", "logs:CreateLogGroup", "production", "test"]) {
+      expect(text, term).toContain(term);
+    }
+    expect(text).toMatch(/'\*'|"\*"/);
+  });
+  it("names file kinds for every IaC flavour in each recipe", () => {
+    for (const gap of ["gap-no-dlq", "gap-no-alarms", "gap-broad-iam"]) {
+      const text = recipe(gap);
+      for (const flavour of ["CDK", "CloudFormation", "Terraform", "Serverless Framework"]) expect(text, `${gap} ${flavour}`).toContain(flavour);
+    }
+  });
+  it("requires counting before recording a gap or claiming a practice, with the count in the note", () => {
+    expect(collapsed).toContain("Count, do not sample.");
+    expect(collapsed).toContain("18 of 20 EventBridge rules have a DLQ");
+    expect(collapsed).not.toContain("34 of 37");
+    expect(collapsed).toContain("never claim a practice is present everywhere from a sample");
+  });
+  it("says one lacking resource is the gap, and coverage elsewhere never cancels it", () => {
+    expect(collapsed).toContain("If even one resource of the kind lacks the practice, record the gap.");
+    expect(collapsed).toContain("never cancels the gap");
+    expect(collapsed).toContain("cite the lacking resource");
+  });
+  it("counts a practice switched off in every deployed environment as absent, naming the switch and where it is set", () => {
+    const section = collapsed.slice(collapsed.indexOf("**Absent versus partial.**"), collapsed.indexOf("**Every gap note names"));
+    expect(section).toContain("switched off in every deployed environment");
+    expect(section).toContain("counts as absent");
+    for (const term of ["feature flag", "enabled: false", "commented-out", "env-gated"]) expect(section, term).toContain(term);
+    expect(section).toContain("names the switch and where it is set");
+  });
+  it("gives gap-no-tests a per-unit recipe where a pipeline flag is not a test", () => {
+    const text = recipe("gap-no-tests");
+    for (const term of ["deployable unit", "count the test files", "N of M units have tests", "--passWithNoTests", "does not count", "jest", "pytest", "go test", "Terraform", "CloudFormation", "Serverless Framework"]) {
+      expect(text, term).toContain(term);
+    }
+  });
+  it("reconciles the platform-services list with the CloudFormation and KMS exclusions in one sentence", () => {
+    expect(collapsed).toContain("CloudFormation (when it is more than CDK's synthesis target)");
+    expect(collapsed).toContain("KMS (a customer-managed key, not the default key)");
+  });
+  it("says a test file that exercises no production code does not count toward gap-no-tests", () => {
+    expect(recipe("gap-no-tests")).toContain("never imports or exercises the unit's production code does not count");
+  });
+  it("covers Java and C# test conventions in the gap-no-tests recipe", () => {
+    const text = recipe("gap-no-tests");
+    for (const term of ["*Test.java", "src/test/java", "*Tests.cs", "xunit"]) expect(text, term).toContain(term);
+  });
+  it("searches for ARNs ending in /* or :* too, and keeps the wider-than-needed judgment", () => {
+    const text = recipe("gap-broad-iam");
+    expect(text).toContain("search for an ARN that ends in `/*` or `:*`");
+    expect(text).toContain("A wildcard inside an ARN counts only when it is wider than the code needs");
+    expect(text).toContain("counts exactly like a bare");
+  });
+  it("covers event source mappings and Serverless dead-letter keys in the dlq recipe", () => {
+    const text = recipe("gap-no-dlq");
+    for (const term of ["aws_lambda_event_source_mapping", "deadLetterQueueArn", "onError"]) expect(text, term).toContain(term);
+  });
+  it("defines multi-account as deploying to or assuming roles in more than one account", () => {
+    expect(collapsed).toContain("`multi-account` means the code deploys to, or assumes roles in, more than one AWS account");
+    expect(collapsed).toContain("account-keyed configuration or cross-account roles");
+  });
+  it("gives gap-no-resource-rightsizing a recipe, since the lens table lists it", () => {
+    const text = recipe("gap-no-resource-rightsizing");
+    for (const term of ["memory", "instance size", "platform default", "production"]) expect(text, term).toContain(term);
+  });
+  it("tells absence gaps to cite the deploy entry point and say so", () => {
+    expect(collapsed).toContain("cite the deploy entry point (the app or stack file) and say so in the `note`");
+  });
+  it("says how many gaps have recipes, matching the recipes there are", () => {
+    const recipes = collapsed.match(/\*\*`gap-[a-z-]+`\*\* recipe\./g) ?? [];
+    expect(recipes).toHaveLength(5);
+    expect(collapsed).toContain("Five gaps are easy to get wrong by sampling");
+  });
+  it("records rightsizing only for compute left at the platform default or with an explicit sizing TODO", () => {
+    const text = recipe("gap-no-resource-rightsizing");
+    for (const term of ["MemorySize", "memory_size", "platform default", "explicit sizing TODO"]) expect(text, term).toContain(term);
+    expect(text).not.toContain("round number");
+  });
+  it("does not add a gap-no-waf rule", () => {
+    expect(collapsed).not.toContain("gap-no-waf");
+  });
+  it("requires every gap note to name what was inspected, and says validate_profile warns", () => {
+    expect(collapsed).toContain("Every gap note names what was inspected");
+    expect(collapsed).toContain("`validate_profile` returns a warning");
+  });
+  it("lists platform services as supporting and treats runtime CloudFormation as a real service", () => {
+    expect(collapsed).toContain("Always list the platform services you find");
+    expect(collapsed).toContain("cloudformation:CreateStack");
+    expect(collapsed).not.toContain("Listing the excluded items as services would swamp");
+  });
+  it("keeps multi-tenant in the vocabulary and adds IaC directories to what to read", () => {
+    const vocabulary = collapsed.slice(collapsed.indexOf("Use this starting vocabulary"), collapsed.indexOf("These are the names"));
+    expect(vocabulary).toContain("`multi-tenant`");
+    expect(collapsed).toContain("every directory that holds infrastructure as code");
   });
 });
 

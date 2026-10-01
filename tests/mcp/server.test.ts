@@ -123,6 +123,10 @@ describe("createMcpServer", () => {
     expect(parsed.signIn).toContain("reinvent-scout auth login");
     expect(parsed.signIn).toMatch(/the skill can run it for you/i);
     expect(parsed.signIn).toMatch(/catalog_sync/);
+    expect(parsed.signIn).toMatch(/full sync/i);
+    expect(parsed.signIn).toMatch(/a reindex \(`catalog_sync` with `reindex: true`\) usually does not need it/i);
+    expect(parsed.signIn).toMatch(/\. To sign in, run `reinvent-scout auth login`/);
+    expect(parsed.signIn).not.toMatch(/sign in only to run `catalog_sync`/i);
   });
 
   it("reports a missing catalog next to a missing sign-in", async () => {

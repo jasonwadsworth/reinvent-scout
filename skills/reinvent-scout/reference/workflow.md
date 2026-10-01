@@ -88,6 +88,11 @@ to the user in passing, not something to fix before moving on. A schema violatio
 evidence, an entry with no `file`, an unknown `schemaVersion`) returns `isError: true` naming the
 offending entry -- fix the *profile object* and call `validate_profile` again with it.
 
+The report may also carry `warnings`, a list of strings and absent when there is nothing to say. A
+`gap-*` pattern whose `note` names no file, path or glob gets one ("the note names no file, path or glob"):
+the profile is valid, but a reviewer cannot tell what you searched. A warning is not an error; add
+the files or search you used, and the count, to that note and validate again.
+
 ## 4a. `map_profile`
 
 Arguments: `{ "profile": <the profile object>, "preferences"?: <preferences, as in `match_sessions`> }`. Returns what the profile found, grouped, for the user to choose from:
@@ -471,7 +476,7 @@ this original profile object to `match_sessions`, never that report.
   "patterns": [
     {
       "name": "gap-no-dlq",
-      "note": "Redrive not evident in this queue declaration.",
+      "note": "Read infra/queue.ts: 1 of 1 queues has no dead-letter queue or redrive policy.",
       "evidence": [
         {
           "repo": "example",
@@ -482,7 +487,7 @@ this original profile object to `match_sessions`, never that report.
     },
     {
       "name": "gap-no-alarms",
-      "note": "Alarms not evident in the cited deployment scope.",
+      "note": "Searched infra/stack.ts for alarms: 0 of 2 functions have an alarm that notifies a person.",
       "evidence": [
         {
           "repo": "example",
@@ -493,7 +498,7 @@ this original profile object to `match_sessions`, never that report.
     },
     {
       "name": "gap-no-tests",
-      "note": "Test automation not evident in these scripts; checked associated workflows.",
+      "note": "Counted test files under src/ and tests/: 0 of 1 units have tests, and the package.json test script runs nothing.",
       "evidence": [
         {
           "repo": "example",
@@ -504,7 +509,7 @@ this original profile object to `match_sessions`, never that report.
     },
     {
       "name": "gap-broad-iam",
-      "note": "Wildcard resource scope in the policy statement.",
+      "note": "Grepped infra/policy.ts: 1 of 3 statements grants an action on resource '*'.",
       "evidence": [
         {
           "repo": "example",
@@ -515,29 +520,29 @@ this original profile object to `match_sessions`, never that report.
     },
     {
       "name": "gap-no-load-tests",
-      "note": "Load testing not evident in the cited workflow.",
+      "note": "Searched ci/test.yml and *.yml for load or stress tests: 0 of 1 workflows run any. Cited the deploy entry point infra/app.ts.",
       "evidence": [
         {
           "repo": "example",
-          "file": "ci/test.yml",
+          "file": "infra/app.ts",
           "line": 16
         }
       ]
     },
     {
       "name": "gap-no-cost-monitoring",
-      "note": "Cost monitoring not evident in the inspected infrastructure scope.",
+      "note": "Searched infra/*.ts for budgets and anomaly monitors: 0 found. Cited the deploy entry point infra/app.ts.",
       "evidence": [
         {
           "repo": "example",
-          "file": "infra/budget.ts",
+          "file": "infra/app.ts",
           "line": 7
         }
       ]
     },
     {
       "name": "gap-no-resource-rightsizing",
-      "note": "Rightsizing controls not evident in the inspected workload scope.",
+      "note": "Read infra/service.ts: 1 of 1 production functions keeps the default memory size.",
       "evidence": [
         {
           "repo": "example",
