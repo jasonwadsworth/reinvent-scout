@@ -37,14 +37,14 @@ explained shortlist.
    but it's worth a passing mention to the user. Then call `map_profile` with the same profile and
    **show the user the map**: one line per topic, grouped as services, patterns, gaps and next steps,
    each with the goals that have sessions (`understand` for introductions, `deepen` for sessions at
-   any level, `improve` for a gap or a next step). Skip a goal marked 0 sessions and say a dead end
-   is a dead end. Then **ask what they care about**: up to about five topics and a goal for each, in
+   any level, `improve` for a gap or a next step). Offer only goals with sessions, and say plainly when a
+   topic has none for a goal (its `reason` may name the closest 300-level session). Then **ask what they care about**: up to about five topics and a goal for each, in
    plain words ("understand DynamoDB, improve the dead-letter gap"). Do not guess for them.
 5. Call `match_sessions` with **the profile you wrote in step 3** -- never with `validate_profile`'s
    own report, which is a different, smaller shape `match_sessions` doesn't accept -- and, when the
    user chose, a `focus`: their choices as `{ "topic": <id from the map>, "goal": ... }` (one to six;
-   `perTopic` caps each list, default 5). That returns a short ranked list per choice. `focus` replaces
-   `lens`; send one or the other. If the user just wants recommendations and does not want to choose,
+   `perTopic` caps each list, at most 3, default 3). That returns a short ranked list per choice. `focus` replaces
+   `lens` and `limit`; send one or the other. If the user just wants recommendations and does not want to choose,
    fall back to a lens. Default to the
    `"all"` lens (the sessions about the services and patterns their code is built on, any level; a
    candidate with a `demoted` reason is a sponsored, news, customer-story, modernization, industry,

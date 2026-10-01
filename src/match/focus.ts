@@ -2,7 +2,6 @@ import { ValidationError } from "../core/errors.js";
 import type { CatalogStoreDeps } from "../catalog/store.js";
 import { readRaw } from "../catalog/store.js";
 import { requireCurrentIndex } from "../catalog/query.js";
-import { hasCoreService } from "./stack-fit.js";
 import { demotionReason, industryTerms } from "./all.js";
 import { serviceTails, TITLE_STRENGTH } from "./concepts.js";
 import { selectExplain } from "./explain.js";
@@ -12,7 +11,7 @@ import {
   type GroupedCandidate, type LensContext, type MatchCandidate,
 } from "./match.js";
 import { buildCorpusStats } from "./score.js";
-import { conceptKey, GOALS, buildTopics, type Goal, type Topic } from "./topics.js";
+import { conceptKey, goalsOf, GOALS, buildTopics, type Goal, type Topic } from "./topics.js";
 import type { ResolvedProfile } from "../profile/profile.js";
 
 export interface FocusChoice {
@@ -110,7 +109,8 @@ export function createFocusEngine(profile: ResolvedProfile, deps: CatalogStoreDe
     const candidates = finish(ranked, lens);
     if (candidates.length > 0) return { candidates };
     const blocked = lensSkippedRules(profile, lens).find(entry => entry.rule === topic.rule);
-    return { candidates, reason: blocked?.reason ?? (hasCoreService(profile) ? "no session addresses it for your stack" : "profile has no core services to check stack fit") };
+    // `lensSkippedRules` also names a profile with no core service, which the stack-fit gate admits nothing for.
+    return { candidates, reason: blocked?.reason ?? "no session addresses it for your stack" };
   };
 
   return {
@@ -138,7 +138,7 @@ function validate(topics: readonly Topic[], choices: readonly FocusChoice[], per
     if (topic === undefined) throw new ValidationError(`Unknown topic "${choice.topic}". Valid topics: ${ids(topics)}.`);
     if (!GOALS.includes(choice.goal)) throw new ValidationError(`Unknown goal "${String(choice.goal)}". Goals: ${GOALS.join(", ")}.`);
     // A next step the profile already took keeps its goal, which then says why it has nothing to offer.
-    const applicable = topic.group === "gaps" || topic.group === "nextSteps" ? ["improve"] : ["understand", "deepen"];
+    const applicable = goalsOf(topic.group);
     if (!applicable.includes(choice.goal)) {
       throw new ValidationError(`Goal "${choice.goal}" does not apply to "${topic.id}" (applicable: ${applicable.join(", ")}).`);
     }
@@ -149,32 +149,39 @@ function validate(topics: readonly Topic[], choices: readonly FocusChoice[], per
 /**
  * The sessions for each of the user's choices: one topic of the profile and what to do with it. Each choice runs the lens that
  * goal stands for, restricted to that topic, with that lens's own admission, demotions and ranking. A session listed under an
- * earlier choice is left out of later ones, which the earlier candidate notes in `alsoMatches`. A focused list is short and meant to be
- * precise, so it also leaves out a session the All lens would demote (a sponsored pitch, news, a customer story, migration tooling, an
- * industry session, a technology the code does not use). A session is listed for a service or pattern only when its title names it;
- * for a gap or a next step, every session the Fix or Next-level lens admits for that one rule, minus the demoted ones.
+ * earlier choice is left out of later ones, which the earlier candidate notes in `alsoMatches`; a session an earlier choice
+ * ranked past its cap is not listed there, so it stays available to a later choice. A focused list is short and meant to be
+ * precise, so it leaves out a session the All lens would demote (a sponsored pitch, news, a customer story, migration tooling, an
+ * industry session, an off-topic agent talk or a technology the code does not use) for a service or pattern, which is listed only
+ * when its title names it. For a gap or a next step it lists every session the Fix or Next-level lens admits for that one rule,
+ * minus those sponsored, news, customer-story, migration-tooling and industry sessions.
  */
 export function matchFocus(profile: ResolvedProfile, deps: CatalogStoreDeps, choices: readonly FocusChoice[], options: FocusOptions = {}): FocusResult {
   const engine = createFocusEngine(profile, deps);
   const perTopic = options.perTopic ?? DEFAULT_PER_TOPIC;
   const topics = validate(engine.topics, choices, perTopic);
-  const taken = new Map<string, FocusCandidate>();
+  // A session counts as taken only once it is listed, so one an earlier choice ranked past its cap is still there for a later choice.
+  const taken = new Map<string, { copy: FocusCandidate; topic: string }>();
   const results = choices.map((choice, position): FocusEntry => {
     const topic = topics[position]!;
     const { candidates, reason } = engine.list(topic, choice.goal);
     const fresh: FocusCandidate[] = [];
+    const takenBy = new Set<string>();
     for (const candidate of candidates) {
       const earlier = taken.get(candidate.code);
       if (earlier === undefined) {
-        const copy: FocusCandidate = { ...candidate };
-        fresh.push(copy);
-        taken.set(candidate.code, copy);
+        fresh.push({ ...candidate });
       } else {
-        earlier.alsoMatches = [...(earlier.alsoMatches ?? []), topic.id];
+        earlier.copy.alsoMatches = [...(earlier.copy.alsoMatches ?? []), topic.id];
+        takenBy.add(earlier.topic);
       }
     }
     const listed = fresh.slice(0, perTopic);
-    return { topic: topic.id, goal: choice.goal, total: candidates.length, candidates: listed, ...(candidates.length === 0 && reason !== undefined ? { reason } : {}) };
+    for (const copy of listed) taken.set(copy.code, { copy, topic: topic.id });
+    const emptied = candidates.length > 0 && listed.length === 0
+      ? `all ${candidates.length} matching session${candidates.length === 1 ? " is" : "s are"} listed under ${[...takenBy].join(", ")}` : undefined;
+    const why = candidates.length === 0 ? reason : emptied;
+    return { topic: topic.id, goal: choice.goal, total: candidates.length, candidates: listed, ...(why === undefined ? {} : { reason: why }) };
   });
   return { results };
 }

@@ -31,6 +31,11 @@ export interface Topic {
   rule?: string;
 }
 
+/** The goals a topic of this group can be given. */
+export function goalsOf(group: TopicGroup): readonly Goal[] {
+  return group === "gaps" || group === "nextSteps" ? ["improve"] : ["understand", "deepen"];
+}
+
 export const conceptKey = (concept: Pick<ProfileConcept, "kind" | "name">): string => `${concept.kind}:${concept.name.toLowerCase()}`;
 const displayName = (name: string): string => name.replace(/\s*\([^()]*\)\s*$/, "");
 const isGapOrDeadCode = (name: string): boolean => name.toLowerCase().startsWith("gap-") || name.toLowerCase() === "dead-code";

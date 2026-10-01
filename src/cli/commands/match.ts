@@ -8,8 +8,8 @@ import {
 } from "../../core/errors.js";
 import { ensureStoreRoot } from "../../core/paths.js";
 import { LENSES, type Lens } from "../../match/lens.js";
-import { DEFAULT_PER_TOPIC, matchFocus, profileTopics, type FocusCandidate, type FocusEntry, type FocusResult } from "../../match/focus.js";
-import { resolveTopic } from "../../match/map.js";
+import { DEFAULT_PER_TOPIC, matchFocus, MAX_PER_TOPIC, profileTopics, type FocusCandidate, type FocusEntry, type FocusResult } from "../../match/focus.js";
+import { resolveTopic, type Nameable } from "../../match/map.js";
 import { GOALS, type Goal } from "../../match/topics.js";
 import { matchSessionsDetailed, type MatchCandidate, type MatchResult } from "../../match/match.js";
 import { buildFocusResponse, buildMatchResponse, toLeanCandidate, toLeanFocusCandidate } from "../../match/response.js";
@@ -59,21 +59,21 @@ function parseLens(raw: string): Lens {
 
 /** "service:Amazon DynamoDB:understand,gap-no-dlq:improve" into choices; the goal is after the last colon, and a topic may be a
  * bare label ("DynamoDB") that names exactly one topic. */
-function parseFocus(text: string, topics: readonly { id: string; label: string }[]): Array<{ topic: string; goal: Goal }> {
+function parseFocus(text: string, topics: readonly Nameable[]): Array<{ topic: string; goal: Goal }> {
   return text.split(",").map(part => part.trim()).filter(part => part !== "").map(part => {
     const colon = part.lastIndexOf(":");
     const goal = colon === -1 ? "" : part.slice(colon + 1).trim().toLowerCase();
     if (colon === -1 || !(GOALS as readonly string[]).includes(goal)) {
       throw new ValidationError(`--focus entries look like "<topic>:<goal>" with a goal of ${GOALS.join(", ")}; got "${part}".`);
     }
-    return { topic: resolveTopic(topics, part.slice(0, colon).trim()), goal: goal as Goal };
+    return { topic: resolveTopic(topics, part.slice(0, colon).trim(), goal as Goal), goal: goal as Goal };
   });
 }
 
 function parsePerTopic(raw: string): number {
   const value = Number(raw);
-  if (!Number.isInteger(value) || value < 1 || value > 10) {
-    throw new ValidationError(`--per-topic must be a whole number from 1 to 10, got "${raw}".`);
+  if (!Number.isInteger(value) || value < 1 || value > MAX_PER_TOPIC) {
+    throw new ValidationError(`--per-topic must be a whole number from 1 to ${MAX_PER_TOPIC}, got "${raw}".`);
   }
   return value;
 }
@@ -183,7 +183,7 @@ export function registerMatchCommands(program: Command, deps: MatchCommandDeps =
     .description("Rank the local catalog against an agent-authored tech profile.")
     .requiredOption("--profile <file|name>", "a profile file path, or a name saved with `profile save`")
     .option("--focus <choices>", `what to look for, as "<topic>:<goal>" pairs separated by commas (goals: ${GOALS.join(", ")}); topics are listed by \`profile map\``)
-    .option("--per-topic <n>", `with --focus, how many sessions each choice lists (default ${DEFAULT_PER_TOPIC}, maximum 10)`)
+    .option("--per-topic <n>", `with --focus, how many sessions each choice lists (default ${DEFAULT_PER_TOPIC}, maximum ${MAX_PER_TOPIC})`)
     .option("--lens <lens>", `one of ${LENSES.join(", ")}`, "all")
     .option("--limit <n>", "maximum number of candidates", String(DEFAULT_MATCH_LIMIT))
     .option("--include-abstracts", "include each session's abstract in the output")
@@ -196,6 +196,9 @@ export function registerMatchCommands(program: Command, deps: MatchCommandDeps =
         if (options.focus !== undefined) {
           if (command.getOptionValueSource("lens") !== "default") {
             throw new ValidationError("--focus and --lens cannot be used together: a focus names its own goal for each topic.");
+          }
+          if (command.getOptionValueSource("limit") !== "default") {
+            throw new ValidationError("--focus and --limit cannot be used together: use --per-topic to cap each choice.");
           }
           const focused = loadResolvedProfile(options.profile, storeRoot);
           const choices = parseFocus(options.focus, profileTopics(focused, { storeRoot }));

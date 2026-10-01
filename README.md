@@ -298,12 +298,15 @@ next steps (migration paths, or ones skipped because you already made the move).
 how many sessions each would return (0 is a dead end):
 
 - **understand**: introductory sessions (level 100/200) about the service or pattern, from the Explain lens.
-- **deepen**: sessions at any level about it, from the All lens, with its demotions.
-- **improve**: sessions for a gap (Fix) or a next step (Next-level).
+- **deepen**: sessions at any level whose *title names the topic*, from the All lens, leaving out the ones it demotes (sponsored, news, customer stories, migration tooling, industry, off-topic agents or a technology your code does not use).
+- **improve**: for a gap, every session the Fix lens admits for that one rule; for a next step, the Next-level lens's, minus sponsored, news, customer-story, migration-tooling and industry sessions.
 
-`match --focus` takes one to six `<topic>:<goal>` pairs (a bare label such as `DynamoDB` works when only one topic has it) and lists up to
-`--per-topic` (default 5, at most 10) sessions per choice, each with its `why`. A session listed under an earlier choice is left out of later ones
-and notes `Also matches:`. A choice with no sessions says why. `--focus` replaces `--lens`; `--json` prints the same object the MCP
+`match --focus` takes one to six `<topic>:<goal>` pairs (a bare label such as `DynamoDB` or `ECS` works when only one topic that supports the goal
+has it) and lists up to `--per-topic` (default 5, at most 10) sessions per choice, each with its `why`. A session listed under an earlier choice is
+left out of later ones and notes `Also matches:`; one an earlier choice ranked past its cap stays available to a later choice, and a choice
+emptied by earlier ones says which. A choice with no sessions says why. The text map prints each topic's label and id, the destination of a next
+step, and one line per goal for the topics with no sessions (with the closest 300-level session where there is one) instead of a zero on every
+topic. `--focus` replaces `--lens` and `--limit` (use `--per-topic`); `--json` prints the same object the MCP
 `match_sessions` tool returns for a `focus`, and `map_profile` returns the map.
 
 ### Fix and Next-level lenses

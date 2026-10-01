@@ -858,7 +858,7 @@ describe("the map and focus documentation", () => {
   const collapse = (text: string): string => text.replace(/\s+/g, " ");
   it("makes map_profile then a focus the default flow, with the plain lenses as the fallback", () => {
     const flow = collapse(extractSection(skillMd, "## The flow"));
-    for (const expected of ["call `map_profile` with the same profile", "show the user the map", "ask what they care about", "a `focus`", "`focus` replaces `lens`", "fall back to a lens", "`understand`", "`deepen`", "`improve`", "a dead end"]) {
+    for (const expected of ["call `map_profile` with the same profile", "show the user the map", "ask what they care about", "a `focus`", "`focus` replaces `lens`", "fall back to a lens", "`understand`", "`deepen`", "`improve`", "Offer only goals with sessions", "closest 300-level session"]) {
       expect(flow, expected).toContain(expected);
     }
     expect(flow.indexOf("`map_profile`")).toBeLessThan(flow.indexOf("`match_sessions`"));
@@ -869,13 +869,13 @@ describe("the map and focus documentation", () => {
   });
   it("documents the map shape, the focus shape and the refusals in workflow.md", () => {
     const text = collapse(workflowMd);
-    for (const expected of ["## 4a. `map_profile`", "`service:Amazon DynamoDB`", "`gap:gap-no-dlq`", "`path:genai-single-call`", "a goal with `0` is a dead end", "`perTopic` defaults to 5, at most 10", "never together with `lens`", "`alsoMatches`", "`reinvent-scout profile map --profile <file|name> [--json]`", "reinvent-scout match --focus"]) {
+    for (const expected of ["## 4a. `map_profile`", "`service:Amazon DynamoDB`", "`gap:gap-no-dlq`", "`path:genai-single-call`", "a goal with `0` is a dead end (its `reason` says why", "`perTopic` defaults to 3 and is at most 3 here", "never together with `lens` or `limit`", "`alsoMatches`", "whose title names the topic", "`reinvent-scout profile map --profile <file|name> [--json]`", "reinvent-scout match --focus"]) {
       expect(text, expected).toContain(expected);
     }
   });
   it("documents the commands and the three goals in the readme", () => {
     const text = collapse(readmeMd);
-    for (const expected of ["### Map your code, then choose what to look for", "reinvent-scout profile map --profile", "--focus \"DynamoDB:understand,gap-no-dlq:improve,event-driven:deepen\"", "**understand**", "**deepen**", "**improve**", "`--focus` replaces `--lens`"]) {
+    for (const expected of ["### Map your code, then choose what to look for", "reinvent-scout profile map --profile", "--focus \"DynamoDB:understand,gap-no-dlq:improve,event-driven:deepen\"", "**understand**", "**deepen**", "**improve**", "`--focus` replaces `--lens` and `--limit`", "title names the topic"]) {
       expect(text, expected).toContain(expected);
     }
   });

@@ -40,6 +40,7 @@ const CATALOG: Session[] = [
   session("SPN300", "Dead-letter queues, the sponsored edition (sponsored by Acme)", { level: "300 - Advanced", services: ["AWS Lambda", "Amazon DynamoDB"], abstract: "Recover with dead-letter queues and redrive." }),
   session("PAS300", "Reliability patterns", { level: "300 - Advanced", services: ["AWS Lambda", "Amazon DynamoDB"], abstract: "Use dead-letter queues and redrive policies when a batch fails." }),
   session("TST300", "Automated testing for Lambda applications", { level: "300 - Advanced", services: ["AWS Lambda", "Amazon DynamoDB"] }),
+  session("COG300", "Cognito internals", { level: "300 - Advanced" }),
   session("ABS300", "Data at scale", { level: "300 - Advanced", services: ["Amazon DynamoDB"], abstract: "You will use DynamoDB tables. DynamoDB streams too." }),
 ];
 
@@ -103,9 +104,9 @@ describe("mapProfile and matchFocus", () => {
     it("keeps a goal with no sessions and marks it 0, so the user sees the dead end", () => {
       seed();
       const p = base();
-      p.services.push({ name: "Amazon Cognito", catalogName: "Amazon Cognito", evidence: [cite("auth.ts")] });
-      const cognito = mapProfile(p, deps()).services.find(topic => topic.id === "service:Amazon Cognito")!;
-      expect(cognito.goals).toEqual([{ goal: "understand", sessions: 0 }, { goal: "deepen", sessions: 0 }]);
+      p.services.push({ name: "Amazon SES", catalogName: "Amazon SES", evidence: [cite("mail.ts")] });
+      const cognito = mapProfile(p, deps()).services.find(topic => topic.id === "service:Amazon SES")!;
+      expect(cognito.goals).toEqual([{ goal: "understand", sessions: 0, reason: "no introductory (100/200) or 300-level session is about it" }, { goal: "deepen", sessions: 0, reason: "no session names Amazon SES in its title" }]);
     });
 
     it("counts, for every topic and goal, exactly the sessions matchFocus returns for that topic and goal alone", () => {
@@ -196,6 +197,35 @@ describe("mapProfile and matchFocus", () => {
       expect(results[1]!.total).toBeGreaterThan(codes(results[1]!).length);
     });
 
+    it("lists a session past an earlier choice's cap under the later choice that also matches it", () => {
+      seed([session("OV1", "Lambda with DynamoDB streams"), session("OV2", "DynamoDB behind Lambda"), session("ONLY", "Lambda alone")]);
+      const { results } = matchFocus(base(), deps(), [{ topic: "service:AWS Lambda", goal: "deepen" }, { topic: "service:Amazon DynamoDB", goal: "deepen" }], { perTopic: 1 });
+      const [first, second] = results as [typeof results[number], typeof results[number]];
+      expect(first.total).toBe(3);
+      expect(first.candidates).toHaveLength(1);
+      const listed = codes(first)[0]!;
+      const other = listed === "OV1" ? "OV2" : "OV1";
+      expect(codes(second)).toEqual([other]);
+      expect(first.candidates[0]).toHaveProperty("alsoMatches", ["service:Amazon DynamoDB"]);
+    });
+
+    it("notes alsoMatches on the copy that is listed, and only when the later choice would have listed it", () => {
+      seed();
+      const { results } = matchFocus(base(), deps(), [{ topic: "service:Amazon DynamoDB", goal: "deepen" }, { topic: "service:AWS Lambda", goal: "deepen" }], { perTopic: 5 });
+      expect(results[0]!.candidates.find(candidate => candidate.code === "LAM201")).toHaveProperty("alsoMatches", ["service:AWS Lambda"]);
+      expect(codes(results[1]!)).not.toContain("LAM201");
+    });
+
+    it("says a choice was emptied by earlier ones, naming them", () => {
+      seed([session("ECS200", "Amazon ECS basics")]);
+      const p = base();
+      p.services.push({ name: "Amazon ECS", catalogName: "Amazon Elastic Container Service (Amazon ECS)", evidence: [cite("e.ts")] });
+      p.patterns.push({ name: "ecs", evidence: [cite("e2.ts")] });
+      const { results } = matchFocus(p, deps(), [{ topic: "service:Amazon Elastic Container Service (Amazon ECS)", goal: "deepen" }, { topic: "pattern:ecs", goal: "deepen" }]);
+      expect(codes(results[0]!)).toEqual(["ECS200"]);
+      expect(results[1]).toMatchObject({ total: 1, candidates: [], reason: "all 1 matching session is listed under service:Amazon Elastic Container Service (Amazon ECS)" });
+    });
+
     it("caps an entry at perTopic, keeping the uncapped total", () => {
       seed();
       const [entry] = matchFocus(base(), deps(), [{ topic: "service:AWS Lambda", goal: "deepen" }], { perTopic: 1 }).results;
@@ -215,6 +245,22 @@ describe("mapProfile and matchFocus", () => {
       skipped.patterns.push({ name: "genai-single-call", evidence: [cite("g.ts")] }, { name: "agentic", evidence: [cite("a2.ts")] });
       const [path] = matchFocus(skipped, deps(), [{ topic: "path:genai-single-call", goal: "improve" }]).results;
       expect(path).toMatchObject({ total: 0, reason: "profile already has agentic" });
+    });
+
+    it("gives the closest 300-level session as the reason when only a 300-level one is about the topic", () => {
+      seed();
+      const p = base();
+      p.services.push({ name: "Amazon Cognito", catalogName: "Amazon Cognito", evidence: [cite("auth.ts")] });
+      const [entry] = matchFocus(p, deps(), [{ topic: "service:Amazon Cognito", goal: "understand" }]).results;
+      expect(entry!.reason).toBe('no introductory (100/200) session is about it; the closest is a 300-level one: COG300 "Cognito internals"');
+    });
+
+    it("says a profile with no core service has nothing to check stack fit against, for a gap", () => {
+      seed();
+      const p = base();
+      p.services = p.services.map(service => ({ ...service, role: "supporting" as const }));
+      const [entry] = matchFocus(p, deps(), [{ topic: "gap:gap-no-dlq", goal: "improve" }]).results;
+      expect(entry).toMatchObject({ total: 0, reason: "profile has no core services to check stack fit" });
     });
 
     it("refuses an unknown topic, naming it and listing the valid ones", () => {

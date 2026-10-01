@@ -95,8 +95,9 @@ Arguments: `{ "profile": <the profile object> }`. Returns what the profile found
 `match_sessions`' `focus` takes. Services list core before supporting (platform services are left out); a gap is a supported
 gap pattern with its Well-Architected `pillar`; a next step is a migration path the profile activates, or one it skipped because it
 already has the destination (`skipped` says why, and it has no goals). The goals are `understand` (introductory sessions, level 100/200),
-`deepen` (sessions at any level) for services and patterns, and `improve` for a gap or a next step; `sessions` counts what that
-goal would return for that topic alone, and a goal with `0` is a dead end: say so instead of offering it. A very large map is trimmed
+`deepen` (sessions at any level whose title names the topic, leaving out the ones the All lens demotes) for services and patterns, and `improve` for a gap or a next step; `sessions` counts what that
+goal would return for that topic alone, and a goal with `0` is a dead end (its `reason` says why, for example the closest 300-level session): say so instead of offering it.
+The text map (`profile map`) prints each topic's label and id, a next step's destination, and one line per goal for the topics with nothing, not a zero on each. A very large map is trimmed
 to the budget, first to one place per topic, then to none, then without notes. `reinvent-scout profile map --profile <file|name> [--json]`
 prints the same map.
 
@@ -105,13 +106,15 @@ Present the map, ask the user for up to about five topics and a goal each, then 
 ## 5. `match_sessions`
 
 Arguments: `{ "profile": <profile object>, "lens"?: "all" | "explain" | "fix" | "next-level", "limit"?: number, "focus"?: [{ "topic": <id>, "goal": "understand" | "deepen" | "improve" }], "perTopic"?: number }`.
-With a `focus` (one to six choices, never together with `lens`; `perTopic` defaults to 5, at most 10) the response is instead
+With a `focus` (one to six choices, never together with `lens` or `limit`; `perTopic` defaults to 3 and is at most 3 here, the most six choices
+can list within the response budget on the profiles measured; the CLI's `--per-topic` takes up to 10) the response is instead
 `{ "results": [{ "topic", "goal", "total", "candidates", "reason"? }], "truncated", "omitted", "rankingReasonsOmitted"? }`: each choice runs the lens its
 goal stands for (explain, all, or fix or next-level) restricted to that topic, with that lens's own admission, demotions and ranking. Every
 candidate keeps its full `why`. `total` is how many sessions the choice alone would list, before the cap. A session listed under
-an earlier choice is left out of later ones and carries `alsoMatches` naming them. A choice with no sessions says why in `reason`. An
+an earlier choice is left out of later ones and carries `alsoMatches` naming them. A choice with no sessions says why in `reason`, and so does a choice whose sessions all went to earlier choices ("all 2 matching sessions are listed under ..."); a session an earlier choice
+ranked past its cap is still listed under a later choice that matches it. An
 unknown topic, a goal that does not apply (`improve` is for gaps and next steps, `understand` and `deepen` for services and patterns), a
-focus with `lens`, or `perTopic` without a `focus` is an `isError` naming the problem. When the response would not fit, ranking reasons go
+focus with `lens` or `limit`, or `perTopic` without a `focus` is an `isError` naming the problem. When the response would not fit, ranking reasons go
 first, then sessions from the end of the longest list (`truncated`, `omitted`). `reinvent-scout match --focus "<topic>:<goal>,..." [--per-topic N] [--json]`
 prints the same response, and accepts a bare label ("DynamoDB") where only one topic has it.
 `lens` defaults to `"all"`: the sessions about the services and patterns the profile's code is built on,

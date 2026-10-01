@@ -53,14 +53,30 @@ describe("profile map and match --focus", () => {
     return { text: printed.join("\n"), exitCode };
   }
 
-  it("prints the map grouped, with each topic's id, note, code and goals with session counts", async () => {
+  it("prints the map grouped: each topic's label and id, note, code, and only the goals that have sessions", async () => {
     const { text } = await run(["profile", "map", "--profile", file]);
-    expect(text).toContain("Services:\n  service:AWS Lambda -- Every handler runs on Lambda");
+    expect(text).toContain("Services:\n  AWS Lambda  [service:AWS Lambda]\n    Every handler runs on Lambda\n");
     expect(text).toContain("    Your code: app/fn.ts:3, app/fn2.ts:4");
     expect(text).toContain("    understand (1 session), deepen (");
-    expect(text).toContain("Patterns:\n  pattern:serverless -- No servers");
-    expect(text).toContain("Gaps:\n  gap:gap-no-dlq (Reliability) -- the queue has no dead-letter queue");
+    expect(text).toContain("Patterns:\n  serverless  [pattern:serverless]\n    No servers\n");
+    expect(text).toContain("Gaps:\n  gap-no-dlq  [gap:gap-no-dlq] (Reliability)\n    the queue has no dead-letter queue");
     expect(text).toContain("    improve (1 session)");
+  });
+
+  it("shows a next step's destination, and one line per goal for the topics with nothing instead of a zero on each", async () => {
+    const { text } = await run(["profile", "map", "--profile", file]);
+    expect(text).toContain("  serverless → containers  [path:serverless]");
+    expect(text).not.toContain("(0 sessions)");
+    expect(text).toMatch(/Patterns:[\s\S]*No introductory sessions in the catalog for: serverless/);
+    expect(text).toContain("No sessions that go deeper in the catalog for: serverless");
+  });
+
+  it("gives the closest 300-level session under the goal that has none", async () => {
+    const withCognito = [...CATALOG, session("COG300", "Cognito internals", { level: "300 - Advanced" })];
+    writeCatalog({ raw: withCognito, index: withCognito.map(buildIndexRecord), meta: { schemaVersion: CURRENT_SCHEMA_VERSION, eventId: "reinvent2026", syncedAt: 1, totalCount: withCognito.length, count: withCognito.length, includedAbstracts: true, timezone: null } }, { storeRoot: home.path });
+    writeFileSync(file, JSON.stringify({ ...PROFILE, services: [...PROFILE.services, { name: "Amazon Cognito", evidence: [cite("auth.ts", 1)] }] }));
+    const { text } = await run(["profile", "map", "--profile", file]);
+    expect(text).toContain('    closest 300-level for Amazon Cognito: COG300 "Cognito internals"');
   });
 
   it("prints the map as JSON", async () => {
@@ -78,6 +94,14 @@ describe("profile map and match --focus", () => {
     expect(text).toContain("  Why: Covers your gap-no-dlq");
   });
 
+  it("takes the goal into account when a bare label names several topics, and a service's short name", async () => {
+    writeFileSync(file, JSON.stringify({ ...PROFILE, services: [...PROFILE.services, { name: "Amazon ECS", evidence: [cite("e.ts", 1)] }], patterns: [...PROFILE.patterns, { name: "ecs", evidence: [cite("e2.ts", 1)] }] }));
+    const withEcs = [...CATALOG, session("ECS200", "Amazon ECS basics", { services: ["Amazon Elastic Container Service (Amazon ECS)"] })];
+    writeCatalog({ raw: withEcs, index: withEcs.map(buildIndexRecord), meta: { schemaVersion: CURRENT_SCHEMA_VERSION, eventId: "reinvent2026", syncedAt: 1, totalCount: withEcs.length, count: withEcs.length, includedAbstracts: true, timezone: null } }, { storeRoot: home.path });
+    const ok = JSON.parse((await run(["match", "--profile", file, "--focus", "ECS:deepen,serverless:improve", "--json"])).text);
+    expect(ok.results.map((entry: { topic: string }) => entry.topic)).toEqual(["service:Amazon Elastic Container Service (Amazon ECS)", "path:serverless"]);
+  });
+
   it("notes the later choice a listed session also matches", async () => {
     const shared = [...CATALOG, session("LAM201", "Lambda and DynamoDB together")];
     writeCatalog({ raw: shared, index: shared.map(buildIndexRecord), meta: { schemaVersion: CURRENT_SCHEMA_VERSION, eventId: "reinvent2026", syncedAt: 1, totalCount: shared.length, count: shared.length, includedAbstracts: true, timezone: null } }, { storeRoot: home.path });
@@ -89,8 +113,16 @@ describe("profile map and match --focus", () => {
     writeFileSync(file, JSON.stringify({ ...PROFILE, patterns: [...PROFILE.patterns, { name: "genai-single-call", evidence: [cite("g.ts", 1)] }, { name: "agentic", evidence: [cite("a.ts", 1)] }] }));
     const { text } = await run(["profile", "map", "--profile", file]);
     expect(text).toContain("Next steps:\n");
-    expect(text).toContain("  path:genai-single-call");
+    expect(text).toContain("[path:genai-single-call]");
     expect(text).toContain("    skipped: profile already has agentic");
+  });
+
+  it("says a choice was emptied by earlier ones, in the text and the JSON", async () => {
+    const one = [session("LAM201", "Lambda and DynamoDB together")];
+    writeCatalog({ raw: one, index: one.map(buildIndexRecord), meta: { schemaVersion: CURRENT_SCHEMA_VERSION, eventId: "reinvent2026", syncedAt: 1, totalCount: 1, count: 1, includedAbstracts: true, timezone: null } }, { storeRoot: home.path });
+    const args = ["match", "--profile", file, "--focus", "Lambda:deepen,DynamoDB:deepen"];
+    expect((await run(args)).text).toContain("No sessions: all 1 matching session is listed under service:AWS Lambda");
+    expect(JSON.parse((await run([...args, "--json"])).text).results[1]).toMatchObject({ total: 1, candidates: [], reason: "all 1 matching session is listed under service:AWS Lambda" });
   });
 
   it("says why a choice has no sessions", async () => {
@@ -113,7 +145,8 @@ describe("profile map and match --focus", () => {
       [["--focus", "DynamoDB:dance"], /goal of understand, deepen, improve/],
       [["--focus", "Nope:deepen"], /Unknown topic "Nope".*service:AWS Lambda/s],
       [["--focus", "DynamoDB:improve"], /does not apply/],
-      [["--focus", "DynamoDB:deepen", "--lens", "all"], /cannot be used together/],
+      [["--focus", "DynamoDB:deepen", "--lens", "all"], /--focus and --lens cannot be used together/],
+      [["--focus", "DynamoDB:deepen", "--limit", "5"], /--focus and --limit cannot be used together/],
       [["--per-topic", "3"], /needs --focus/],
       [["--focus", "DynamoDB:deepen", "--per-topic", "11"], /--per-topic must be a whole number from 1 to 10/],
     ];
@@ -127,6 +160,6 @@ describe("profile map and match --focus", () => {
   it("refuses an ambiguous bare label, naming the candidates", async () => {
     writeFileSync(file, JSON.stringify({ ...PROFILE, patterns: [...PROFILE.patterns, { name: "lambda", evidence: [cite("x.ts", 1)] }] }));
     const { text } = await run(["match", "--profile", file, "--focus", "lambda:deepen"]);
-    expect(text).toMatch(/ambiguous: service:AWS Lambda, pattern:lambda/);
+    expect(text).toMatch(/ambiguous for deepen: service:AWS Lambda, pattern:lambda/);
   });
 });

@@ -57,23 +57,38 @@ function readRawProfile(content: string): unknown {
   }
 }
 
-function formatGoals(topic: MapTopic): string {
-  if (topic.skipped !== undefined) return `skipped: ${topic.skipped}`;
-  return topic.goals.map(goal => `${goal.goal} (${goal.sessions} session${goal.sessions === 1 ? "" : "s"})`).join(", ");
-}
+const GOAL_PHRASES: Record<string, string> = { understand: "No introductory sessions", deepen: "No sessions that go deeper", improve: "No sessions" };
 
 function formatTopic(topic: MapTopic): string {
   const places = topic.evidence.map(place => `${place.repo}/${place.file}${place.line === undefined ? "" : `:${place.line}`}`);
+  const open = topic.goals.filter(goal => goal.sessions > 0).map(goal => `${goal.goal} (${goal.sessions} session${goal.sessions === 1 ? "" : "s"})`);
   return [
-    `  ${topic.id}${topic.pillar === undefined ? "" : ` (${topic.pillar})`}${topic.note === undefined ? "" : ` -- ${topic.note}`}`,
+    `  ${topic.label}  [${topic.id}]${topic.pillar === undefined ? "" : ` (${topic.pillar})`}`,
+    ...(topic.note === undefined ? [] : [`    ${topic.note}`]),
     ...(places.length === 0 ? [] : [`    Your code: ${places.join(", ")}${topic.more === undefined ? "" : ` (+${topic.more} more)`}`]),
-    `    ${formatGoals(topic)}`,
+    ...(topic.skipped === undefined ? [] : [`    skipped: ${topic.skipped}`]),
+    ...(open.length === 0 ? [] : [`    ${open.join(", ")}`]),
   ].join("\n");
+}
+
+/** One line per goal that has dead ends in the group, instead of a "0 sessions" on every topic, with the closest 300-level session
+ * where the explain lens found one. */
+function formatDeadEnds(topics: readonly MapTopic[]): string[] {
+  const lines: string[] = [];
+  for (const goal of ["understand", "deepen", "improve"] as const) {
+    const dead = topics.filter(topic => topic.goals.some(entry => entry.goal === goal && entry.sessions === 0));
+    if (dead.length > 0) lines.push(`  ${GOAL_PHRASES[goal]} in the catalog for: ${dead.map(topic => topic.label).join(", ")}`);
+    for (const topic of dead) {
+      const hint = /the closest is a 300-level one: (.*)$/.exec(topic.goals.find(entry => entry.goal === goal)?.reason ?? "")?.[1];
+      if (hint !== undefined) lines.push(`    closest 300-level for ${topic.label}: ${hint}`);
+    }
+  }
+  return lines;
 }
 
 function formatMap(map: ProfileMap): string {
   const sections: Array<[string, MapTopic[]]> = [["Services", map.services], ["Patterns", map.patterns], ["Gaps", map.gaps], ["Next steps", map.nextSteps]];
-  return sections.filter(([, topics]) => topics.length > 0).map(([name, topics]) => [`${name}:`, ...topics.map(formatTopic)].join("\n")).join("\n\n");
+  return sections.filter(([, topics]) => topics.length > 0).map(([name, topics]) => [`${name}:`, ...topics.map(formatTopic), ...formatDeadEnds(topics)].join("\n")).join("\n\n");
 }
 
 /** Registers `profile` and its `validate`, `save` and `map` subcommands. */

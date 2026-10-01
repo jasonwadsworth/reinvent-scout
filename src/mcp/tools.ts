@@ -23,7 +23,7 @@ import {
   ValidationError,
 } from "../core/errors.js";
 import { matchSessionsDetailed } from "../match/match.js";
-import { DEFAULT_PER_TOPIC, matchFocus, MAX_FOCUS_CHOICES, MAX_PER_TOPIC } from "../match/focus.js";
+import { matchFocus, MAX_FOCUS_CHOICES } from "../match/focus.js";
 import { mapProfile } from "../match/map.js";
 import { GOALS } from "../match/topics.js";
 import { LENSES, type Lens } from "../match/lens.js";
@@ -250,6 +250,11 @@ function registerValidateProfileTool(server: McpServer, deps: McpToolDeps): void
 const DEFAULT_MATCH_SESSIONS_LIMIT = 25;
 const MAX_MATCH_SESSIONS_LIMIT = 50;
 
+/** The most sessions per choice `match_sessions` accepts with a `focus`, and what it lists when `perTopic` is not given: six choices
+ * of this many fit the 30 KB response budget without trimming on all seven profiles measured, taking each profile's six largest
+ * choices (four per choice already trims policy-tracker's). The CLI, with no budget, takes up to 10. */
+const MAX_FOCUS_PER_TOPIC = 3;
+
 const MatchSessionsInputSchema = z.strictObject({
   profile: z.unknown(),
   lens: z.enum(LENSES).optional(),
@@ -261,7 +266,7 @@ const MatchSessionsInputSchema = z.strictObject({
   /** What to look for: topics from `map_profile`, each with a goal. Replaces `lens`. */
   focus: z.array(z.strictObject({ topic: z.string().min(1), goal: z.enum(GOALS) })).min(1).max(MAX_FOCUS_CHOICES).optional(),
   /** With `focus`: how many sessions each choice lists. */
-  perTopic: z.number().int().min(1).max(MAX_PER_TOPIC).optional(),
+  perTopic: z.number().int().min(1).max(MAX_FOCUS_PER_TOPIC).optional(),
 });
 
 /**
@@ -288,9 +293,9 @@ function registerMatchSessionsTool(server: McpServer, deps: McpToolDeps): void {
     {
       description:
         "Rank the local catalog against a resolved tech profile and return the top candidates, " +
-        "or, with a `focus` (topics from `map_profile`, each with a goal: understand, deepen or improve; 1 to 6, and `perTopic` sessions each), " +
-        "a short list per choice instead of a lens, as `{ results: [{ topic, goal, total, candidates, reason? }], truncated, omitted }`. " +
-        "each with a `why` (summary, yourCode citations, and a sessionSays quote from the session), " +
+        "or, with a `focus` (topics from `map_profile`, each with a goal: understand, deepen or improve; 1 to 6, and `perTopic` sessions each, 1 to 3 and 3 by default, " +
+        "instead of `lens` and `limit`), a short list per choice as `{ results: [{ topic, goal, total, candidates, reason? }], truncated, omitted }`. " +
+        "Each candidate has a `why` (summary, yourCode citations, and a sessionSays quote from the session), " +
         "its score, reasons and every scheduled offering. Never includes full abstracts (`why.sessionSays` quotes one sentence). " +
         "When the response would not fit its budget, every candidate's ranking reasons are dropped first " +
         "(`rankingReasonsOmitted`), before any candidate is left out. " +
@@ -304,6 +309,9 @@ function registerMatchSessionsTool(server: McpServer, deps: McpToolDeps): void {
     async ({ profile, lens, limit, focus, perTopic }) => {
       const storeRoot = deps.resolveStoreRoot();
       try {
+        if (focus !== undefined && limit !== undefined) {
+          throw new ValidationError("focus and limit cannot be used together: use perTopic to cap each choice.");
+        }
         if (focus !== undefined && lens !== undefined) {
           throw new ValidationError("focus and lens cannot be used together: a focus names its own goal for each topic.");
         }
@@ -312,7 +320,7 @@ function registerMatchSessionsTool(server: McpServer, deps: McpToolDeps): void {
         }
         const resolved = resolveProfileAgainstCatalog(profile, storeRoot);
         if (focus !== undefined) {
-          const focused = matchFocus(resolved, { storeRoot }, focus, { perTopic: perTopic ?? DEFAULT_PER_TOPIC });
+          const focused = matchFocus(resolved, { storeRoot }, focus, { perTopic: perTopic ?? MAX_FOCUS_PER_TOPIC });
           return textResult(buildFocusResponse(focused, value => envelopeBytes(value) <= RESPONSE_BYTE_BUDGET));
         }
         const cappedLimit = Math.min(limit ?? DEFAULT_MATCH_SESSIONS_LIMIT, MAX_MATCH_SESSIONS_LIMIT);

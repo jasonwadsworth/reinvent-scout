@@ -86,15 +86,16 @@ describe("map_profile and match_sessions with a focus", () => {
     const call = async (args: Record<string, unknown>) => { const r = await c.callTool({ name: "match_sessions", arguments: { profile: PROFILE, ...args } }); return { error: r.isError === true, text: textOf(r) }; };
     const focus = [{ topic: "service:AWS Lambda", goal: "deepen" }];
     expect(await call({ focus, lens: "all" })).toMatchObject({ error: true, text: expect.stringMatching(/focus.*lens/i) });
+    expect(await call({ focus, limit: 5 })).toMatchObject({ error: true, text: expect.stringMatching(/focus and limit/) });
     expect(await call({ perTopic: 3 })).toMatchObject({ error: true, text: expect.stringMatching(/perTopic/) });
     expect(await call({ focus: [{ topic: "service:Nope", goal: "deepen" }] })).toMatchObject({ error: true, text: expect.stringMatching(/Unknown topic "service:Nope"/) });
     expect(await call({ focus: [{ topic: "service:AWS Lambda", goal: "improve" }] })).toMatchObject({ error: true, text: expect.stringMatching(/does not apply/) });
     expect(await call({ focus: [] })).toMatchObject({ error: true });
     expect(await call({ focus: Array.from({ length: 7 }, () => focus[0]) })).toMatchObject({ error: true });
-    expect(await call({ focus, perTopic: 11 })).toMatchObject({ error: true });
+    expect(await call({ focus, perTopic: 4 })).toMatchObject({ error: true });
   });
 
-  it("keeps the focus response within the 30 KB budget at six choices of ten sessions", async () => {
+  it("keeps the focus response within the 30 KB budget at six choices of the most sessions, three each, and defaults to three", async () => {
     const big = [
       ...Array.from({ length: 40 }, (_, i) => session(`LAM${String(i).padStart(3, "0")}`, `Lambda deep dive ${i}`, { abstract: `Lambda ${"detail ".repeat(60)}` })),
       ...Array.from({ length: 40 }, (_, i) => session(`DDB${String(i).padStart(3, "0")}`, `DynamoDB deep dive ${i}`, { abstract: `DynamoDB ${"detail ".repeat(60)}` })),
@@ -102,12 +103,14 @@ describe("map_profile and match_sessions with a focus", () => {
     writeCatalog({ raw: big, index: big.map(buildIndexRecord), meta: { schemaVersion: CURRENT_SCHEMA_VERSION, eventId: "reinvent2026", syncedAt: 1, totalCount: big.length, count: big.length, includedAbstracts: true, timezone: null } }, { storeRoot: home.path });
     const profile = { ...PROFILE, services: [{ name: "AWS Lambda", usage: "u ".repeat(150), evidence: Array.from({ length: 30 }, (_, i) => ({ repo: "app", file: `f${i}.ts`, line: i + 1, note: "n".repeat(100) })) }, ...PROFILE.services.slice(1)] };
     const focus = [{ topic: "service:AWS Lambda", goal: "deepen" }, { topic: "service:AWS Lambda", goal: "understand" }, { topic: "service:Amazon DynamoDB", goal: "deepen" }, { topic: "service:Amazon DynamoDB", goal: "understand" }, { topic: "gap:gap-no-dlq", goal: "improve" }, { topic: "service:AWS Lambda", goal: "deepen" }];
-    const result = await (await client()).callTool({ name: "match_sessions", arguments: { profile, focus, perTopic: 10 } });
+    const result = await (await client()).callTool({ name: "match_sessions", arguments: { profile, focus, perTopic: 3 } });
     expect(result.isError).not.toBe(true);
     expect(Buffer.byteLength(JSON.stringify(result), "utf8")).toBeLessThan(30 * 1024);
     const response = JSON.parse(textOf(result));
     expect(response.results).toHaveLength(6);
     expect(response.results[0].candidates.length + response.results[2].candidates.length).toBeGreaterThan(0);
     expect(response.rankingReasonsOmitted).toBe(true);
+    const byDefault = JSON.parse(textOf(await (await client()).callTool({ name: "match_sessions", arguments: { profile, focus } })));
+    expect(Math.max(...byDefault.results.map((entry: { candidates: unknown[] }) => entry.candidates.length))).toBeLessThanOrEqual(3);
   });
 });
