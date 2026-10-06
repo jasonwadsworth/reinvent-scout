@@ -103,6 +103,17 @@ export class ServiceError extends Error {
   }
 }
 
+/** The event API reported a successful but empty session catalog. A full sync must reject it
+ * before writing, since it can otherwise replace a usable local catalog with no sessions. */
+export class EmptyCatalogError extends ServiceError {
+  constructor(eventId: string) {
+    super(
+      `The API returned an empty catalog for ${eventId}; no catalog was written and existing local data was left unchanged. Try again when the event API has sessions.`,
+    );
+    this.name = "EmptyCatalogError";
+  }
+}
+
 const requestNotSent = new WeakSet<object>();
 
 /** Tags an error raised before a request left the process (the token provider failed), so a caller
