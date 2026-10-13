@@ -1,7 +1,7 @@
 ---
 name: reinvent-scout
 description: Finds re:Invent sessions relevant to a codebase by profiling the repo against the services and patterns it actually uses, matching that profile against the imported session catalog with evidence and reasons, and managing the attendee's own schedule through the AWS Events MCP. Use when the user wants re:Invent session recommendations for their repo or team, asks what talks to attend for their tech stack, or wants to review, favorite, reserve or watch sessions on their schedule.
-allowed-tools: Bash(node "${CLAUDE_SKILL_DIR}/scripts/reinvent-scout.mjs" *)
+allowed-tools: Bash(node "${CLAUDE_SKILL_DIR}/scripts/reinvent-scout.mjs" *) Bash(node ${CLAUDE_SKILL_DIR}/scripts/reinvent-scout.mjs *)
 ---
 
 # reinvent-scout

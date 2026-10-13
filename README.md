@@ -40,7 +40,9 @@ both server names (see below). The writes (`ReserveSessions`, `CancelReservation
 {
   "permissions": {
     "allow": [
+      "Skill(reinvent-scout:reinvent-scout)",
       "Bash(node \"*reinvent-scout/scripts/reinvent-scout.mjs\" *)",
+      "Bash(node *reinvent-scout/scripts/reinvent-scout.mjs *)",
       "mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___ListEvents",
       "mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___GetEvent",
       "mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___ListSessions",

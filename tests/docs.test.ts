@@ -153,6 +153,8 @@ describe("README: Install as a Claude Code plugin", () => {
     expect(block).not.toBeNull();
     const allow = (JSON.parse(block![1]!) as { permissions: { allow: string[] } }).permissions.allow;
     expect(allow).toContain('Bash(node "*reinvent-scout/scripts/reinvent-scout.mjs" *)');
+    expect(allow).toContain("Bash(node *reinvent-scout/scripts/reinvent-scout.mjs *)");
+    expect(allow).toContain("Skill(reinvent-scout:reinvent-scout)");
     for (const prefix of ["mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___", "mcp__awsevents__AWSEventsPublicApi-Mcp-prod___"]) {
       for (const tool of ["ListEvents", "GetEvent", "ListSessions", "GetSession", "GetSchedule"]) expect(allow).toContain(`${prefix}${tool}`);
     }

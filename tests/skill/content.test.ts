@@ -186,8 +186,8 @@ describe("skill files tool names", () => {
 describe("plugin skill conventions", () => {
   const flat = (text: string): string => text.replace(/\s+/g, " ");
   const expectAll = (text: string, phrases: string[]) => { for (const phrase of phrases) expect(flat(text), phrase).toContain(phrase); };
-  // Quoted on purpose: the docs quote the path (it may hold spaces), and a rule only matches the command text it was written with.
-  const SCRIPT_RULE = 'Bash(node "${CLAUDE_SKILL_DIR}/scripts/reinvent-scout.mjs" *)';
+  // Both spellings of the command: a rule only matches the command text it was written with, and the model sometimes drops the quotes the docs use.
+  const SCRIPT_RULE = 'Bash(node "${CLAUDE_SKILL_DIR}/scripts/reinvent-scout.mjs" *) Bash(node ${CLAUDE_SKILL_DIR}/scripts/reinvent-scout.mjs *)';
   const SKILL_SCRIPT = "${CLAUDE_SKILL_DIR}/scripts/reinvent-scout.mjs";
   const AGENT_SCRIPT = "${CLAUDE_PLUGIN_ROOT}/skills/reinvent-scout/scripts/reinvent-scout.mjs";
   const EITHER_NAME = "AWS Events tools are `mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___<Name>`, or `mcp__awsevents__AWSEventsPublicApi-Mcp-prod___<Name>` when your own `awsevents` server shadows the plugin's; use whichever is available.";
