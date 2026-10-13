@@ -152,8 +152,16 @@ describe("README: Install as a Claude Code plugin", () => {
     const block = /```json\n([\s\S]*?)```/.exec(section);
     expect(block).not.toBeNull();
     const allow = (JSON.parse(block![1]!) as { permissions: { allow: string[] } }).permissions.allow;
-    expect(allow).toContain('Bash(node "*reinvent-scout/scripts/reinvent-scout.mjs" *)');
-    expect(allow).toContain("Bash(node *reinvent-scout/scripts/reinvent-scout.mjs *)");
+    // Anchored: a wildcard before the path would let `node --require x ...` or `node -e ...` match and run unprompted.
+    // Only the version segment may be a wildcard.
+    const scriptRules = allow.filter(rule => rule.includes("reinvent-scout.mjs"));
+    expect(scriptRules).toEqual([
+      'Bash(node "<your-claude-dir>/plugins/cache/reinvent-scout/reinvent-scout/*/skills/reinvent-scout/scripts/reinvent-scout.mjs" *)',
+      "Bash(node <your-claude-dir>/plugins/cache/reinvent-scout/reinvent-scout/*/skills/reinvent-scout/scripts/reinvent-scout.mjs *)",
+    ]);
+    for (const rule of scriptRules) expect(rule.slice(0, rule.indexOf("/plugins/cache/")), rule).not.toContain("*");
+    expect(flat).toContain("<your-claude-dir>");
+    expect(flat).toContain("Replace `<your-claude-dir>` with the absolute path");
     expect(allow).toContain("Skill(reinvent-scout:reinvent-scout)");
     for (const prefix of ["mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___", "mcp__awsevents__AWSEventsPublicApi-Mcp-prod___"]) {
       for (const tool of ["ListEvents", "GetEvent", "ListSessions", "GetSession", "GetSchedule"]) expect(allow).toContain(`${prefix}${tool}`);
