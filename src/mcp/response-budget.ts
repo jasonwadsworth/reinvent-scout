@@ -1,12 +1,11 @@
+import { shortenDescription } from "../commands/output-budget.js";
 import { RESPONSE_BUDGET_BYTES, type ReserveSessionsResult, type CancelReservationResult } from "../schedule/reservations.js";
 import type { SchedulePlan } from "../schedule/plan.js";
 
 export function responseBytes(value: unknown, isError = false): number {
   return Buffer.byteLength(JSON.stringify({ content: [{ type: "text", text: JSON.stringify(value) }], ...(isError ? { isError: true } : {}) }), "utf8");
 }
-export function shortenDescription(text: string, max = 160): string {
-  return text.length > max ? `${text.slice(0, max)}…[shortened]` : text;
-}
+export { shortenDescription };
 /** Requested IDs and their outcomes are never removed. Optional conflict lists are capped, with
  * intact retained IDs and explicit omissions; re-read the schedule for the full conflict list. */
 export function boundedReservationResult(raw: ReserveSessionsResult) {
