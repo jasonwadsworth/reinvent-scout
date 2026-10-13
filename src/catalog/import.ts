@@ -24,7 +24,7 @@ export type ImportRejectReason = "overlap" | "alreadyComplete" | "nothingStaged"
 /** An import that was refused and left the stored catalog untouched. `reason` is machine-readable. */
 export class CatalogImportRejectedError extends ValidationError {
   constructor(readonly reason: ImportRejectReason, message: string) {
-    super(message);
+    super(`${reason}: ${message}`);
     this.name = "CatalogImportRejectedError";
   }
 }
@@ -300,12 +300,12 @@ export function reindexCatalog(input: { timezone?: string | null }, deps: Import
 
 export interface ImportCommandInput {
   action: "page" | "commit" | "reindex";
-  eventId?: string;
-  timezone?: string | null;
-  syncId?: string;
-  path?: string;
+  eventId?: string | undefined;
+  timezone?: string | null | undefined;
+  syncId?: string | undefined;
+  path?: string | undefined;
   page?: unknown;
-  allowShrink?: boolean;
+  allowShrink?: boolean | undefined;
 }
 
 function forbid(input: ImportCommandInput, label: string, keys: readonly (keyof ImportCommandInput)[]): void {

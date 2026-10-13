@@ -219,6 +219,11 @@ describe("commitCatalogImport", () => {
     const changes = readCatalogChanges({ storeRoot: home.path });
     expect(changes).toMatchObject({ available: true, fromSyncedAt: T0, toSyncedAt: T1, counts: { added: 1, removed: 1, changed: 1 } });
   });
+  it("prefixes every rejection with its reason", () => {
+    const err = new CatalogImportRejectedError("shrunk", "85 of 100");
+    expect(err.message).toBe("shrunk: 85 of 100");
+    expect(err.reason).toBe("shrunk");
+  });
   it("accepts a count above the final totalCount with a warning", () => {
     const syncId = stage([sessions(5)], { totalCount: 4 });
     expect(commitCatalogImport({ syncId }, deps())).toMatchObject({ count: 5, warnings: ["catalog grew during the import"] });

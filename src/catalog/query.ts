@@ -82,7 +82,7 @@ function compareByAbbreviation(a: IndexRecord, b: IndexRecord): number {
 }
 
 const REBUILD_REMEDY =
-  "Run `reinvent-scout catalog sync` (or `catalog sync --reindex` to skip re-fetching).";
+  'Rebuild it locally with catalog_import action "reindex", or re-import it.';
 
 /**
  * Loads the local index, refusing rather than serving it when it can't be trusted. Two cases

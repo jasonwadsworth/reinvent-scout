@@ -17,7 +17,7 @@ const MAX_AMBIGUOUS_IDS = 10;
 export interface LookupInput {
   /** Session ids or codes (`ARC330`, `ARC330-R1`). */
   ids: readonly string[];
-  includeAbstract?: boolean;
+  includeAbstract?: boolean | undefined;
 }
 export interface LookupDeps extends CatalogStoreDeps {
   /** Reads the local index; defaults to `requireCurrentIndex`. Injected so a test can count reads. */

@@ -133,6 +133,10 @@ explained shortlist.
     exact reservations you may cancel to make room before you start; that confirmation is the only
     consent to cancel anything. Follow `reference/watch.md` for the loop, the state to carry and the
     swap rules.
+12. Plugin commands (the flow is rewritten around them): `catalog_import` stages and commits an
+    import of AWS `ListSessions` pages, `catalog_changes` says what the last import changed,
+    `lookup_sessions` names ids and codes from the local catalog, and `search_sessions` finds
+    sessions about a topic.
 
 `reference/workflow.md` has the exact argument and output shape for every tool above, plus what
 each `isError` message means and how to react to it.

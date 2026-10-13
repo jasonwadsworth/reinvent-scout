@@ -5,7 +5,7 @@ var __export = (target, all) => {
 };
 
 // src/script/main.ts
-import { readFileSync as readFileSync4 } from "node:fs";
+import { readFileSync as readFileSync6 } from "node:fs";
 import { parseArgs } from "node:util";
 
 // node_modules/zod/v4/classic/external.js
@@ -19676,6 +19676,11 @@ function date4(params) {
   return _coercedDate(ZodDate, params);
 }
 
+// src/catalog/import.ts
+import { randomUUID } from "node:crypto";
+import { lstatSync, readdirSync, readFileSync as readFileSync4, rmSync } from "node:fs";
+import { join as join5 } from "node:path";
+
 // src/core/atomic-write.ts
 import { randomBytes } from "node:crypto";
 import { chmodSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
@@ -19699,7 +19704,7 @@ function writeFileAtomic(targetPath, produce, options) {
 
 // src/core/errors.ts
 var CatalogMissingError = class extends Error {
-  constructor(message = "No catalog has been synced yet. Run `reinvent-scout catalog sync` first.") {
+  constructor(message = "No catalog has been imported yet. Run the catalog sync (the reinvent-scout:catalog-sync agent).") {
     super(message);
     this.name = "CatalogMissingError";
   }
@@ -19724,6 +19729,7 @@ import { chmodSync as chmodSync2, mkdirSync, statSync } from "node:fs";
 import { homedir as osHomedir } from "node:os";
 import { dirname as dirname2, join as join2 } from "node:path";
 var STORE_DIR_NAME = ".reinvent-scout";
+var STORE_DIR_MODE = 448;
 function resolveStoreRoot(deps = {}) {
   const env = deps.env ?? process.env;
   const homedir = deps.homedir ?? osHomedir;
@@ -19752,6 +19758,10 @@ function ensureDirWithMode(path, mode) {
   chmodSync2(path, mode);
 }
 
+// src/catalog/diff.ts
+import { readFileSync as readFileSync2 } from "node:fs";
+import { join as join4 } from "node:path";
+
 // src/catalog/store.ts
 import { readFileSync } from "node:fs";
 import { join as join3 } from "node:path";
@@ -19760,6 +19770,7 @@ var CATALOG_DIR_NAME = "catalog";
 var RAW_FILE_NAME = "raw.json";
 var INDEX_FILE_NAME = "index.json";
 var META_FILE_NAME = "meta.json";
+var FILE_MODE = 384;
 var CURRENT_SCHEMA_VERSION = 5;
 var STALE_AFTER_MS = 24 * 60 * 60 * 1e3;
 function catalogDir(storeRoot) {
@@ -19793,6 +19804,12 @@ function readJsonFile(path) {
 function readJsonFileOrNull(path) {
   const state = readJsonFile(path);
   return state.status === "present" ? state.value : null;
+}
+function writeCatalog(data, deps) {
+  ensureDirWithMode(catalogDir(deps.storeRoot), STORE_DIR_MODE);
+  writeFileAtomic(rawPath(deps.storeRoot), () => JSON.stringify(data.raw), { mode: FILE_MODE });
+  writeFileAtomic(indexPath(deps.storeRoot), () => JSON.stringify(data.index), { mode: FILE_MODE });
+  writeFileAtomic(metaPath(deps.storeRoot), () => JSON.stringify(data.meta), { mode: FILE_MODE });
 }
 function readRaw(deps) {
   return readJsonFileOrNull(rawPath(deps.storeRoot));
@@ -19852,6 +19869,9 @@ var OUTPUT_BUDGET_BYTES = 24 * 1024;
 function outputBytes(value) {
   return Buffer.byteLength(JSON.stringify(value), "utf8");
 }
+function shortenDescription(text, max = 160) {
+  return text.length > max ? `${text.slice(0, max)}\u2026[shortened]` : text;
+}
 function boundedSchedulePlan(raw) {
   const result2 = { ...raw, selected: [...raw.selected], rejected: [...raw.rejected], alternatives: [...raw.alternatives], blockedBy: [...raw.blockedBy], alreadyReserved: [...raw.alreadyReserved], alreadyReservedAlternative: [...raw.alreadyReservedAlternative], omitted: { selected: 0, rejected: 0, alternatives: 0, blockedBy: 0, alreadyReserved: 0, alreadyReservedAlternative: 0 } };
   for (const key of ["alternatives", "rejected", "selected", "blockedBy", "alreadyReserved", "alreadyReservedAlternative"]) {
@@ -19882,6 +19902,84 @@ function boundedOnsitePreferences(raw) {
 }
 
 // src/catalog/diff.ts
+var VOLATILE_FIELDS = ["seatAvailability"];
+var SCHEDULE_FIELDS = ["sessionTime", "venue", "room"];
+function canonical(value) {
+  if (Array.isArray(value)) {
+    const items = value.every((entry) => typeof entry === "string") ? [...value].sort() : value;
+    return `[${items.map(canonical).join(",")}]`;
+  }
+  if (typeof value === "object" && value !== null) {
+    const record2 = value;
+    return `{${Object.keys(record2).sort().filter((key) => record2[key] !== void 0).map((key) => `${JSON.stringify(key)}:${canonical(record2[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+function changedFields(prev, next, options) {
+  const a = prev;
+  const b = next;
+  const keys = /* @__PURE__ */ new Set([...Object.keys(a), ...Object.keys(b)]);
+  const fields = [];
+  for (const key of [...keys].sort()) {
+    if (VOLATILE_FIELDS.includes(key)) continue;
+    if (key === "abstract" && !options.compareAbstracts) continue;
+    if (canonical(a[key]) !== canonical(b[key])) fields.push(key);
+  }
+  return fields;
+}
+var rowOf = (kind, session, fields) => ({
+  kind,
+  sessionId: session.sessionId,
+  code: session.abbreviation ?? null,
+  title: session.title,
+  ...fields === void 0 ? {} : { fields }
+});
+function rank(change) {
+  if (change.kind === "removed") return 0;
+  if (change.kind === "changed" && change.fields.some((field) => SCHEDULE_FIELDS.includes(field))) return 1;
+  if (change.kind === "added") return 2;
+  return 3;
+}
+function diffCatalogs(prev, next, options) {
+  const before = new Map(prev.map((session) => [session.sessionId, session]));
+  const after = new Map(next.map((session) => [session.sessionId, session]));
+  const changes = [];
+  let unchanged = 0;
+  for (const [id3, session] of before) if (!after.has(id3)) changes.push(rowOf("removed", session));
+  for (const [id3, session] of after) {
+    const old = before.get(id3);
+    if (old === void 0) {
+      changes.push(rowOf("added", session));
+      continue;
+    }
+    const fields = changedFields(old, session, options);
+    if (fields.length === 0) unchanged++;
+    else changes.push(rowOf("changed", session, fields));
+  }
+  changes.sort((x, y) => rank(x) - rank(y) || (x.code ?? "").localeCompare(y.code ?? "", "en") || x.sessionId.localeCompare(y.sessionId, "en"));
+  return {
+    counts: {
+      added: changes.filter((change) => change.kind === "added").length,
+      removed: changes.filter((change) => change.kind === "removed").length,
+      changed: changes.filter((change) => change.kind === "changed").length,
+      unchanged
+    },
+    abstractsCompared: options.compareAbstracts,
+    changes
+  };
+}
+var MAX_HIGHLIGHTS = 20;
+var MAX_HIGHLIGHT_TITLE = 100;
+function summarizeCatalogChanges(diff) {
+  const highlights = diff.changes.slice(0, MAX_HIGHLIGHTS).map((change) => ({ ...change, title: shortenDescription(change.title, MAX_HIGHLIGHT_TITLE) }));
+  const summary = { counts: diff.counts, abstractsCompared: diff.abstractsCompared, highlights, omitted: diff.changes.length - highlights.length };
+  while (outputBytes(summary) > OUTPUT_BUDGET_BYTES && summary.highlights.length > 0) {
+    summary.highlights.pop();
+    summary.omitted++;
+  }
+  return summary;
+}
+var CHANGES_FILE = "changes.json";
 var ChangeSchema = external_exports.object({
   kind: external_exports.enum(["added", "removed", "changed"]),
   sessionId: external_exports.string(),
@@ -19900,9 +19998,69 @@ var StoredChangesSchema = external_exports.object({
   abstractsCompared: external_exports.boolean(),
   changes: external_exports.array(ChangeSchema)
 });
+function writeCatalogChanges(stored, deps) {
+  ensureDirWithMode(catalogDir(deps.storeRoot), STORE_DIR_MODE);
+  writeFileAtomic(join4(catalogDir(deps.storeRoot), CHANGES_FILE), () => JSON.stringify(stored), { mode: 384 });
+}
+function readStoredChanges(deps) {
+  let parsed;
+  try {
+    parsed = StoredChangesSchema.safeParse(JSON.parse(readFileSync2(join4(catalogDir(deps.storeRoot), CHANGES_FILE), "utf8")));
+  } catch {
+    return null;
+  }
+  if (!parsed.success) return null;
+  const meta3 = readMeta(deps);
+  return { stored: parsed.data, matchesCatalog: meta3 !== null && meta3.syncedAt === parsed.data.toSyncedAt };
+}
+function readCatalogChanges(deps) {
+  const read = readStoredChanges(deps);
+  if (read === null) return { available: false, reason: "noImport" };
+  if (!read.matchesCatalog) return { available: false, reason: "superseded" };
+  if (read.stored.firstImport) return { available: false, reason: "firstImport" };
+  if (read.stored.replacedEventId !== void 0) return { available: false, reason: "eventReplaced" };
+  return { available: true, ...read.stored };
+}
+function readLastImport(deps) {
+  const read = readStoredChanges(deps);
+  if (read === null || !read.matchesCatalog) return null;
+  return { toSyncedAt: read.stored.toSyncedAt, counts: read.stored.counts, ...read.stored.firstImport ? { firstImport: true } : {}, ...read.stored.replacedEventId === void 0 ? {} : { replacedEventId: read.stored.replacedEventId } };
+}
+var DEFAULT_CHANGES_LIMIT = 25;
+var CHANGE_TITLE_MAX = 200;
+function queryCatalogChanges(query, deps) {
+  const last = readCatalogChanges(deps);
+  if (!last.available) return last;
+  const wanted = query.sessionIds === void 0 ? null : new Set(query.sessionIds.map((id3) => id3.trim().toLowerCase()));
+  const kinds = query.kinds === void 0 ? null : new Set(query.kinds);
+  const matching = last.changes.filter((change) => (wanted === null || wanted.has(change.sessionId.toLowerCase()) || change.code !== null && wanted.has(change.code.toLowerCase())) && (kinds === null || kinds.has(change.kind)));
+  const offset = query.offset ?? 0;
+  const page = matching.slice(offset, offset + (query.limit ?? DEFAULT_CHANGES_LIMIT)).map((change) => ({ ...change, title: shortenDescription(change.title, CHANGE_TITLE_MAX) }));
+  const build = (rows) => ({
+    available: true,
+    eventId: last.eventId,
+    fromSyncedAt: last.fromSyncedAt,
+    toSyncedAt: last.toSyncedAt,
+    counts: last.counts,
+    abstractsCompared: last.abstractsCompared,
+    total: matching.length,
+    changes: rows,
+    offset,
+    ...offset + rows.length < matching.length ? { nextOffset: offset + rows.length } : {}
+  });
+  let result2 = build(page);
+  while (outputBytes(result2) > OUTPUT_BUDGET_BYTES && page.length > 0) {
+    page.pop();
+    result2 = build(page);
+  }
+  return result2;
+}
+
+// src/catalog/import-page.ts
+import { basename as basename3 } from "node:path";
 
 // src/core/safe-read.ts
-import { closeSync, constants, fstatSync, openSync, readFileSync as readFileSync2 } from "node:fs";
+import { closeSync, constants, fstatSync, openSync, readFileSync as readFileSync3 } from "node:fs";
 import { basename as basename2, isAbsolute } from "node:path";
 function tryParseJson(text) {
   try {
@@ -19936,7 +20094,7 @@ function readSafeJsonFile(path, options) {
     const stat = fstatSync(fd);
     if (!stat.isFile()) throw new ValidationError(`${label} is not a regular file.`);
     if (stat.size > options.maxBytes) throw new ValidationError(`${label} is too large.`);
-    text = readFileSync2(fd, "utf8");
+    text = readFileSync3(fd, "utf8");
   } catch (err) {
     if (err instanceof ValidationError) throw err;
     throw new ValidationError(`Cannot read ${options.noun} file ${name}.`);
@@ -19972,6 +20130,27 @@ var ListSessionsPageSchema = external_exports.object({
   totalCount: external_exports.number().int().nonnegative(),
   nextToken: external_exports.string().min(1).max(512).optional()
 });
+function parseListSessionsPage(value) {
+  const parsed = ListSessionsPageSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new ValidationError(`Not a ListSessions page: ${formatZodError(parsed.error)}`);
+  }
+  return parsed.data;
+}
+function readListSessionsPageFile(path, options = {}) {
+  const value = readSafeJsonFile(path, { noun: "page", maxBytes: options.maxBytes ?? MAX_PAGE_FILE_BYTES });
+  const parsed = ListSessionsPageSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new ValidationError(`Page file ${basename3(path)} is not a ListSessions page: ${formatZodError(parsed.error)}`);
+  }
+  return parsed.data;
+}
+function resolveListSessionsPage(input2, options = {}) {
+  const hasPath = input2.path !== void 0;
+  const hasPage = input2.page !== void 0;
+  if (hasPath === hasPage) throw new ValidationError("Pass exactly one of `path` and `page`.");
+  return hasPath ? readListSessionsPageFile(input2.path, options) : parseListSessionsPage(input2.page);
+}
 
 // src/catalog/venue.ts
 var VENUES = ["MGM Grand", "Caesars Forum", "Venetian", "Wynn/Encore", "Caesars Palace"];
@@ -20134,10 +20313,13 @@ function buildIndexRecord(session) {
 }
 
 // src/catalog/import.ts
+var STAGING_DIR = ["catalog", "staging"];
+var FILE_MODE2 = 384;
+var MANIFEST_NAME = "manifest.json";
 var SYNC_ID_PATTERN = /^[a-z0-9-]{8,64}$/;
 var CatalogImportRejectedError = class extends ValidationError {
   constructor(reason, message) {
-    super(message);
+    super(`${reason}: ${message}`);
     this.reason = reason;
     this.name = "CatalogImportRejectedError";
   }
@@ -20151,8 +20333,231 @@ var ManifestSchema = external_exports.object({
   createdAt: external_exports.number(),
   pages: external_exports.array(external_exports.object({ number: external_exports.number().int().positive(), count: external_exports.number().int().nonnegative(), totalCount: external_exports.number().int().nonnegative(), nextToken: external_exports.string().nullable() }))
 });
+function stagingRoot(storeRoot) {
+  return join5(storeRoot, ...STAGING_DIR);
+}
+function stagingDirFor(storeRoot, syncId) {
+  if (!SYNC_ID_PATTERN.test(syncId)) throw new ValidationError("syncId must be 8-64 characters of lowercase letters, digits and hyphens.");
+  return join5(stagingRoot(storeRoot), syncId);
+}
+var pageFileName = (number4) => `page-${String(number4).padStart(4, "0")}.json`;
+function readManifest(storeRoot, syncId) {
+  const dir = stagingDirFor(storeRoot, syncId);
+  const unknown2 = new ValidationError("Unknown syncId: start a new sync with a first page.");
+  try {
+    if (!lstatSync(dir).isDirectory()) throw unknown2;
+  } catch {
+    throw unknown2;
+  }
+  let parsed;
+  try {
+    parsed = ManifestSchema.safeParse(JSON.parse(readFileSync4(join5(dir, MANIFEST_NAME), "utf8")));
+  } catch {
+    throw unknown2;
+  }
+  if (!parsed.success || parsed.data.syncId !== syncId) throw unknown2;
+  return parsed.data;
+}
 var StagedPageSchema = external_exports.array(SessionItemSchema);
+function readStagedPage(storeRoot, syncId, number4) {
+  const unreadable = new ValidationError("Staged pages for this sync are unreadable; start a new sync.");
+  let parsed;
+  try {
+    parsed = StagedPageSchema.safeParse(JSON.parse(readFileSync4(join5(stagingDirFor(storeRoot, syncId), pageFileName(number4)), "utf8")));
+  } catch {
+    throw unreadable;
+  }
+  if (!parsed.success) throw unreadable;
+  return parsed.data;
+}
 var STALE_STAGING_MS = 24 * 60 * 60 * 1e3;
+function pruneStaleStaging(deps) {
+  const root = stagingRoot(deps.storeRoot);
+  let names;
+  try {
+    if (!lstatSync(root).isDirectory()) return;
+    names = readdirSync(root);
+  } catch {
+    return;
+  }
+  const now = (deps.now ?? Date.now)();
+  for (const name of names) {
+    if (!SYNC_ID_PATTERN.test(name)) continue;
+    const dir = join5(root, name);
+    try {
+      const stat = lstatSync(dir);
+      if (stat.isSymbolicLink() || !stat.isDirectory()) continue;
+      let createdAt = stat.mtimeMs;
+      try {
+        const manifest = ManifestSchema.safeParse(JSON.parse(readFileSync4(join5(dir, MANIFEST_NAME), "utf8")));
+        if (manifest.success) createdAt = manifest.data.createdAt;
+      } catch {
+      }
+      if (now - createdAt > STALE_STAGING_MS) rmSync(dir, { recursive: true, force: true });
+    } catch {
+    }
+  }
+}
+function writeJson(path, value) {
+  writeFileAtomic(path, () => JSON.stringify(value), { mode: FILE_MODE2 });
+}
+function startManifest(input2, deps) {
+  if (input2.eventId === void 0 || input2.eventId.length === 0 || input2.eventId.length > 128) throw new ValidationError("The first page needs `eventId`.");
+  if (input2.timezone === void 0) throw new ValidationError("The first page needs `timezone`: the event's IANA timezone from GetEvent, or null when it has none.");
+  if (input2.timezone !== null && !isRecognizedTimeZone(input2.timezone)) throw new ValidationError("`timezone` is not a recognized IANA timezone.");
+  const syncId = (deps.randomId ?? randomUUID)();
+  if (!SYNC_ID_PATTERN.test(syncId)) throw new ValidationError("Generated syncId is invalid.");
+  return { schemaVersion: 1, syncId, eventId: input2.eventId, timezone: input2.timezone, createdAt: (deps.now ?? Date.now)(), pages: [] };
+}
+function stageCatalogPage(input2, deps, options = {}) {
+  let manifest;
+  const isFirst = input2.syncId === void 0;
+  if (isFirst) {
+    manifest = startManifest(input2, deps);
+  } else {
+    if (input2.eventId !== void 0) throw new ValidationError("`eventId` is only allowed on the first page.");
+    if (input2.timezone !== void 0) throw new ValidationError("`timezone` is only allowed on the first page.");
+    manifest = readManifest(deps.storeRoot, input2.syncId);
+  }
+  const page = resolveListSessionsPage({ ...input2.path === void 0 ? {} : { path: input2.path }, ...input2.page === void 0 ? {} : { page: input2.page } }, options);
+  const last = manifest.pages.at(-1);
+  if (last !== void 0 && last.nextToken === null) {
+    throw new CatalogImportRejectedError("alreadyComplete", "The previous page already ended the list; commit instead of staging more pages.");
+  }
+  const staged = /* @__PURE__ */ new Set();
+  for (const entry of manifest.pages) for (const stagedItem of readStagedPage(deps.storeRoot, manifest.syncId, entry.number)) staged.add(stagedItem.sessionId);
+  if (page.items.some((row) => staged.has(row.sessionId))) {
+    throw new CatalogImportRejectedError("overlap", "This page repeats sessions that are already staged; each page must be imported once.");
+  }
+  const number4 = manifest.pages.length + 1;
+  const next = { ...manifest, pages: [...manifest.pages, { number: number4, count: page.items.length, totalCount: page.totalCount, nextToken: page.nextToken ?? null }] };
+  if (isFirst) pruneStaleStaging(deps);
+  const dir = stagingDirFor(deps.storeRoot, manifest.syncId);
+  ensureDirWithMode(dir, STORE_DIR_MODE);
+  writeJson(join5(dir, pageFileName(number4)), page.items);
+  writeJson(join5(dir, MANIFEST_NAME), next);
+  return {
+    syncId: manifest.syncId,
+    pageNumber: number4,
+    stagedCount: next.pages.reduce((sum, entry) => sum + entry.count, 0),
+    totalCount: page.totalCount,
+    ...page.nextToken === void 0 ? {} : { nextToken: page.nextToken },
+    complete: page.nextToken === void 0,
+    ...last !== void 0 && last.totalCount !== page.totalCount ? { totalCountChanged: true } : {}
+  };
+}
+var SHRINK_FLOOR = 0.9;
+function readStagedItems(manifest, storeRoot) {
+  return manifest.pages.flatMap((entry) => readStagedPage(storeRoot, manifest.syncId, entry.number));
+}
+function commitCatalogImport(input2, deps) {
+  const manifest = readManifest(deps.storeRoot, input2.syncId);
+  const last = manifest.pages.at(-1);
+  if (last === void 0) throw new CatalogImportRejectedError("nothingStaged", "No pages are staged for this sync; stage the pages first.");
+  if (last.nextToken !== null) throw new CatalogImportRejectedError("incomplete", "The last staged page still has a nextToken; stage the remaining pages before committing.");
+  const items = readStagedItems(manifest, deps.storeRoot);
+  if (items.length === 0) throw new CatalogImportRejectedError("empty", "The import contains no sessions; the existing local data was left unchanged.");
+  const count = items.length;
+  const warnings = [];
+  if (count < last.totalCount) {
+    throw new CatalogImportRejectedError("partial", `Only ${count} of ${last.totalCount} sessions were staged (a page is missing); the existing local data was left unchanged.`);
+  }
+  if (count > last.totalCount) warnings.push("catalog grew during the import");
+  const previousMeta = readMeta(deps);
+  const storedRaw = readRaw(deps);
+  const eventMatches = previousMeta === null ? storedRaw !== null : previousMeta.eventId === manifest.eventId;
+  const previousCount = typeof previousMeta?.count === "number" ? previousMeta.count : storedRaw?.length ?? 0;
+  if (eventMatches && previousCount > 0 && count < Math.floor(previousCount * SHRINK_FLOOR) && input2.allowShrink !== true) {
+    throw new CatalogImportRejectedError("shrunk", `The import has ${count} sessions, down from ${previousCount} (more than 10% fewer); the existing local data was left unchanged. Ask the user, then commit again with allowShrink.`);
+  }
+  const previousRaw = previousMeta === null ? null : storedRaw;
+  const sameEvent = previousMeta !== null && previousMeta.eventId === manifest.eventId;
+  const syncedAt = (deps.now ?? Date.now)();
+  const includedAbstracts = items.some((session) => typeof session.abstract === "string" && session.abstract.length > 0);
+  const compareAbstracts = includedAbstracts && previousMeta?.includedAbstracts === true;
+  const base = { schemaVersion: 1, eventId: manifest.eventId, toSyncedAt: syncedAt };
+  let stored;
+  let summary;
+  if (previousMeta === null || previousRaw === null) {
+    stored = { ...base, fromSyncedAt: null, firstImport: true, counts: { added: 0, removed: 0, changed: 0, unchanged: 0 }, abstractsCompared: false, changes: [] };
+  } else if (!sameEvent) {
+    stored = { ...base, fromSyncedAt: previousMeta.syncedAt, replacedEventId: previousMeta.eventId, counts: { added: 0, removed: 0, changed: 0, unchanged: 0 }, abstractsCompared: false, changes: [] };
+  } else {
+    const diff = diffCatalogs(previousRaw, items, { compareAbstracts });
+    stored = { ...base, fromSyncedAt: previousMeta.syncedAt, counts: diff.counts, abstractsCompared: diff.abstractsCompared, changes: diff.changes };
+    summary = summarizeCatalogChanges(diff);
+  }
+  const meta3 = { schemaVersion: CURRENT_SCHEMA_VERSION, eventId: manifest.eventId, syncedAt, totalCount: last.totalCount, count, includedAbstracts, timezone: manifest.timezone };
+  writeCatalogChanges(stored, deps);
+  (deps.writeCatalogFn ?? writeCatalog)({ raw: items, index: items.map(buildIndexRecord), meta: meta3 }, deps);
+  rmSync(stagingDirFor(deps.storeRoot, manifest.syncId), { recursive: true, force: true });
+  pruneStaleStaging(deps);
+  return {
+    committed: true,
+    eventId: manifest.eventId,
+    count,
+    totalCount: last.totalCount,
+    syncedAt,
+    ...stored.firstImport ? { firstImport: true } : {},
+    ...stored.replacedEventId === void 0 ? {} : { replacedEventId: stored.replacedEventId },
+    ...warnings.length === 0 ? {} : { warnings },
+    ...summary === void 0 ? {} : { summary }
+  };
+}
+function reindexCatalog(input2, deps) {
+  if (input2.timezone !== void 0 && input2.timezone !== null && !isRecognizedTimeZone(input2.timezone)) {
+    throw new ValidationError("`timezone` is not a recognized IANA timezone.");
+  }
+  const raw = readRaw(deps);
+  if (raw === null) throw new CatalogMissingError();
+  const stored = readMeta(deps);
+  const availability = readTimezoneAvailability(deps);
+  let timezone;
+  if (availability === null || availability.status === "unavailable" && availability.reason === "syncedBeforeTimezoneSupport") {
+    if (input2.timezone === void 0) throw new ValidationError("This catalog was imported before timezones were stored; call GetEvent and pass its `timezone` (or null when it has none).");
+    timezone = input2.timezone;
+  } else {
+    timezone = stored?.timezone ?? null;
+  }
+  const meta3 = {
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    eventId: stored?.eventId ?? DEFAULT_EVENT_ID,
+    syncedAt: stored?.syncedAt ?? (deps.now ?? Date.now)(),
+    totalCount: typeof stored?.totalCount === "number" && Number.isFinite(stored.totalCount) ? stored.totalCount : raw.length,
+    count: raw.length,
+    includedAbstracts: stored?.includedAbstracts ?? raw.some((session) => typeof session.abstract === "string" && session.abstract.length > 0),
+    timezone
+  };
+  (deps.writeCatalogFn ?? writeCatalog)({ raw, index: raw.map(buildIndexRecord), meta: meta3 }, deps);
+  return { reindexed: true, eventId: meta3.eventId, count: meta3.count, totalCount: meta3.totalCount, timezone };
+}
+function forbid(input2, label, keys) {
+  for (const key of keys) {
+    if (input2[key] !== void 0) throw new ValidationError(`\`${key}\` is not allowed for ${label}.`);
+  }
+}
+function importCatalog(input2, deps, options = {}) {
+  switch (input2.action) {
+    case "page": {
+      const first = input2.syncId === void 0;
+      forbid(input2, first ? "the first page" : "a later page", first ? ["allowShrink"] : ["eventId", "timezone", "allowShrink"]);
+      return stageCatalogPage({
+        ...input2.eventId === void 0 ? {} : { eventId: input2.eventId },
+        ...input2.timezone === void 0 ? {} : { timezone: input2.timezone },
+        ...input2.syncId === void 0 ? {} : { syncId: input2.syncId },
+        ...input2.path === void 0 ? {} : { path: input2.path },
+        ...input2.page === void 0 ? {} : { page: input2.page }
+      }, deps, options);
+    }
+    case "commit":
+      forbid(input2, "commit", ["path", "page", "eventId", "timezone"]);
+      if (input2.syncId === void 0) throw new ValidationError("`commit` needs `syncId`.");
+      return commitCatalogImport({ syncId: input2.syncId, ...input2.allowShrink === void 0 ? {} : { allowShrink: input2.allowShrink } }, deps);
+    case "reindex":
+      forbid(input2, "reindex", ["syncId", "path", "page", "eventId", "allowShrink"]);
+      return reindexCatalog(input2.timezone === void 0 ? {} : { timezone: input2.timezone }, deps);
+  }
+}
 
 // src/commands/errors.ts
 var MAX_ERROR_CHARS = 512;
@@ -20166,7 +20571,49 @@ function toCommandError(err) {
 }
 
 // src/catalog/query.ts
-var REBUILD_REMEDY = "Run `reinvent-scout catalog sync` (or `catalog sync --reindex` to skip re-fetching).";
+var TITLE_TERM_WEIGHT = 3;
+var BODY_TERM_WEIGHT = 1;
+function matchesFilters(record2, options) {
+  if (options.type !== void 0 && record2.type !== options.type) {
+    return false;
+  }
+  if (options.venue !== void 0 && record2.venue !== options.venue) {
+    return false;
+  }
+  if (options.levelBand !== void 0) {
+    if (record2.levelBand === null) {
+      return false;
+    }
+    if (record2.levelBand < options.levelBand.min || record2.levelBand > options.levelBand.max) {
+      return false;
+    }
+  }
+  if (options.day !== void 0 && record2.startDate !== options.day) {
+    return false;
+  }
+  return true;
+}
+function scoreAgainstQuery(record2, queryTerms) {
+  let score = 0;
+  let matched = false;
+  for (const term of queryTerms) {
+    const titleCount = getOwnTermCount(record2.titleTerms, term);
+    if (titleCount !== void 0) {
+      score += TITLE_TERM_WEIGHT * titleCount;
+      matched = true;
+    }
+    const bodyCount = getOwnTermCount(record2.bodyTerms, term);
+    if (bodyCount !== void 0) {
+      score += BODY_TERM_WEIGHT * bodyCount;
+      matched = true;
+    }
+  }
+  return matched ? score : null;
+}
+function compareByAbbreviation(a, b) {
+  return (a.abbreviation ?? "").localeCompare(b.abbreviation ?? "");
+}
+var REBUILD_REMEDY = 'Rebuild it locally with catalog_import action "reindex", or re-import it.';
 function requireCurrentIndex(deps) {
   const state = getCatalogState(deps);
   if (state.status === "missing") {
@@ -20190,12 +20637,84 @@ function requireCurrentIndex(deps) {
   }
   return index;
 }
+function queryCatalog(deps, options = {}) {
+  const index = requireCurrentIndex(deps);
+  const queryTerms = options.query === void 0 ? null : Object.keys(tokenize(options.query, { keepShortTokens: true }));
+  const results = [];
+  for (const record2 of index) {
+    if (!matchesFilters(record2, options)) {
+      continue;
+    }
+    if (queryTerms === null) {
+      results.push({ record: record2, score: 0 });
+      continue;
+    }
+    const score = scoreAgainstQuery(record2, queryTerms);
+    if (score !== null) {
+      results.push({ record: record2, score });
+    }
+  }
+  results.sort((a, b) => {
+    if (b.score !== a.score) {
+      return b.score - a.score;
+    }
+    return compareByAbbreviation(a.record, b.record);
+  });
+  return options.limit === void 0 ? results : results.slice(0, options.limit);
+}
 var REPEAT_SUFFIX_PATTERN = /-R\d*$/;
 function baseSessionCode(record2) {
   if (record2.abbreviation === null) {
     return record2.sessionId;
   }
   return record2.abbreviation.replace(REPEAT_SUFFIX_PATTERN, "");
+}
+function compareByStartDateTime(a, b) {
+  if (a.startDate !== b.startDate) {
+    if (a.startDate === null) {
+      return 1;
+    }
+    if (b.startDate === null) {
+      return -1;
+    }
+    return a.startDate.localeCompare(b.startDate);
+  }
+  return (a.startTime ?? "").localeCompare(b.startTime ?? "");
+}
+function resolveSessionToken(index, token) {
+  const bySessionId = index.find((record2) => record2.sessionId === token);
+  if (bySessionId !== void 0) {
+    return { status: "found", record: bySessionId, relatedAbbreviations: [], relatedRecords: [] };
+  }
+  const normalizedToken = token.toLowerCase();
+  const byAbbreviation = index.filter(
+    (record2) => record2.abbreviation !== null && record2.abbreviation.toLowerCase() === normalizedToken
+  );
+  if (byAbbreviation.length === 1) {
+    const found = byAbbreviation[0];
+    const code = baseSessionCode(found).toLowerCase();
+    const siblings = index.filter((record2) => record2.sessionId !== found.sessionId && baseSessionCode(record2).toLowerCase() === code).sort(compareByStartDateTime);
+    return {
+      status: "found",
+      record: found,
+      relatedAbbreviations: siblings.map((record2) => record2.abbreviation).filter((a) => a !== null),
+      relatedRecords: siblings
+    };
+  }
+  if (byAbbreviation.length > 1) {
+    return { status: "ambiguous", candidates: byAbbreviation };
+  }
+  const byBaseCode = index.filter((record2) => baseSessionCode(record2).toLowerCase() === normalizedToken).sort(compareByStartDateTime);
+  if (byBaseCode.length > 0) {
+    const [earliest, ...rest] = byBaseCode;
+    return {
+      status: "found",
+      record: earliest,
+      relatedAbbreviations: rest.map((record2) => record2.abbreviation).filter((a) => a !== null),
+      relatedRecords: rest
+    };
+  }
+  return { status: "not-found" };
 }
 function catalogServiceNames(deps) {
   const index = requireCurrentIndex(deps);
@@ -21427,8 +21946,8 @@ function idfWeight(term, corpusStats) {
 var SERVICE_MATCH_WEIGHT = 50;
 var TOPIC_MATCH_WEIGHT = 12;
 var AREA_OF_INTEREST_MATCH_WEIGHT = 12;
-var TITLE_TERM_WEIGHT = 3;
-var BODY_TERM_WEIGHT = 1;
+var TITLE_TERM_WEIGHT2 = 3;
+var BODY_TERM_WEIGHT2 = 1;
 var TERM_SATURATION_K = 1.5;
 function saturate(termFrequency) {
   return termFrequency / (termFrequency + TERM_SATURATION_K);
@@ -21448,14 +21967,14 @@ function scoreText(record2, queryText, corpusStats) {
     const weight = idfWeight(term, corpusStats);
     const titleTf = getOwnTermCount(record2.titleTerms, term);
     if (titleTf !== void 0) {
-      const titleContribution = TITLE_TERM_WEIGHT * saturate(titleTf) * weight;
+      const titleContribution = TITLE_TERM_WEIGHT2 * saturate(titleTf) * weight;
       titleScore += titleContribution;
       contribution += titleContribution;
       matched = true;
     }
     const bodyTf = getOwnTermCount(record2.bodyTerms, term);
     if (bodyTf !== void 0) {
-      const bodyContribution = BODY_TERM_WEIGHT * saturate(bodyTf) * weight;
+      const bodyContribution = BODY_TERM_WEIGHT2 * saturate(bodyTf) * weight;
       rawBodyScore += bodyContribution;
       contribution += bodyContribution;
       matched = true;
@@ -22373,8 +22892,8 @@ function buildMapResponse(map2, fits2 = () => true) {
 }
 
 // src/onsite/config.ts
-import { closeSync as closeSync2, lstatSync, openSync as openSync2, readFileSync as readFileSync3, readlinkSync, unlinkSync as unlinkSync2 } from "node:fs";
-import { join as join4, parse as parse3, resolve } from "node:path";
+import { closeSync as closeSync2, lstatSync as lstatSync2, openSync as openSync2, readFileSync as readFileSync5, readlinkSync, unlinkSync as unlinkSync2 } from "node:fs";
+import { join as join6, parse as parse3, resolve } from "node:path";
 var minutes = external_exports.number().finite().min(0).max(240);
 var clock = external_exports.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
 var timeWindowSchema = external_exports.strictObject({ start: clock, end: clock }).refine((w) => w.start !== w.end, "Window must have positive duration");
@@ -22411,9 +22930,9 @@ function assertSafePath(path) {
   const absolute = resolve(path);
   let current = parse3(absolute).root;
   for (const part of absolute.slice(current.length).split("/")) {
-    current = join4(current, part);
+    current = join6(current, part);
     try {
-      if (lstatSync(current).isSymbolicLink()) {
+      if (lstatSync2(current).isSymbolicLink()) {
         const target = resolve(parse3(current).dir, readlinkSync(current));
         if (!(current === "/tmp" && target === "/private/tmp" || current === "/var" && target === "/private/var")) throw new Error("On-site config refuses a symlink path");
       }
@@ -22423,7 +22942,7 @@ function assertSafePath(path) {
   }
 }
 function paths(root) {
-  const file2 = join4(root, "onsite.json"), lock = join4(root, ".onsite.lock");
+  const file2 = join6(root, "onsite.json"), lock = join6(root, ".onsite.lock");
   assertSafePath(file2);
   assertSafePath(lock);
   return { file: file2, lock };
@@ -22431,7 +22950,7 @@ function paths(root) {
 function readOnsiteConfig(deps) {
   const { file: file2 } = paths(deps.storeRoot);
   try {
-    return configSchema.parse(JSON.parse(readFileSync3(file2, "utf8")));
+    return configSchema.parse(JSON.parse(readFileSync5(file2, "utf8")));
   } catch (err) {
     if (err.code === "ENOENT") return { schemaVersion: 1, allowWalkUp: false, events: [] };
     throw new Error("Invalid on-site configuration", { cause: err });
@@ -22763,6 +23282,138 @@ function deriveSessionTimes(session, eventTimezone) {
   const startsAt = zonedWallClockToUtcIso(session.startDate, session.startTime, eventTimezone);
   const endsAt = session.lengthMinutes === null ? null : addMinutesToIso(startsAt, session.lengthMinutes);
   return { startsAt, endsAt };
+}
+function timezoneWarnings(availability) {
+  if (availability === null || availability.status === "known") {
+    return [];
+  }
+  if (availability.status === "unrecognized") {
+    return [
+      `The stored event timezone (${JSON.stringify(availability.value)}) is not a recognized IANA timezone, so session start times could not be converted to a common startsAt -- session and personal-time ordering across kinds is unreliable. Re-syncing (\`catalog_sync\`, or \`reinvent-scout catalog sync\`) may resolve this, but is not guaranteed to: if the API reports the same value again, syncing again will not help.`
+    ];
+  }
+  if (availability.reason === "syncedBeforeTimezoneSupport") {
+    return [
+      "This catalog was synced before timezone support was added, so session start times could not be converted to a common startsAt -- session and personal-time ordering across kinds is unreliable. Run `catalog_sync` (or `reinvent-scout catalog sync`) to fetch the event's timezone; it will very likely resolve this."
+    ];
+  }
+  return [
+    "The event's timezone is unknown (GetEvent's response omitted it), so session start times could not be converted to a common startsAt -- session and personal-time ordering across kinds is unreliable. Sessions still sort correctly relative to each other by their local date and time."
+  ];
+}
+
+// src/catalog/lookup.ts
+var LOOKUP_MAX_IDS = 100;
+var LOOKUP_MAX_ABSTRACT_IDS = 10;
+var MAX_QUERY_LENGTH = 128;
+var MAX_TITLE = 200;
+var MAX_ABSTRACT = 1500;
+var MAX_OTHER_SITTINGS = 5;
+var MAX_AMBIGUOUS_IDS = 10;
+function validateLookupInput(input2) {
+  const ids2 = [...new Set(input2.ids.map((id3) => typeof id3 === "string" ? id3.trim() : id3))];
+  if (ids2.length < 1 || ids2.length > LOOKUP_MAX_IDS || ids2.some((id3) => typeof id3 !== "string" || id3.length === 0 || Array.from(id3).length > MAX_QUERY_LENGTH)) {
+    throw new ValidationError(`Expected 1\u2013${LOOKUP_MAX_IDS} ids or codes, each 1\u2013${MAX_QUERY_LENGTH} characters.`);
+  }
+  if (input2.includeAbstract === true && ids2.length > LOOKUP_MAX_ABSTRACT_IDS) {
+    throw new ValidationError(`Abstracts are returned for at most ${LOOKUP_MAX_ABSTRACT_IDS} ids at a time.`);
+  }
+  return ids2;
+}
+function otherSittingsOf(index, record2) {
+  const code = baseSessionCode(record2).toLowerCase();
+  return index.filter((other) => other.sessionId !== record2.sessionId && baseSessionCode(other).toLowerCase() === code).sort(compareByStartDateTime).slice(0, MAX_OTHER_SITTINGS);
+}
+function endTimeOf(record2) {
+  if (record2.startTime === null || record2.lengthMinutes === null) return null;
+  const match = /^(\d{2}):(\d{2})$/.exec(record2.startTime);
+  if (!match) return null;
+  const total = (Number(match[1]) * 60 + Number(match[2]) + record2.lengthMinutes) % (24 * 60);
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+function lookupSessions(input2, deps) {
+  const ids2 = validateLookupInput(input2);
+  const index = (deps.readIndexFn ?? requireCurrentIndex)(deps);
+  const availability = readTimezoneAvailability(deps);
+  const timezone = availability?.status === "known" ? availability.timezone : null;
+  const rawById = input2.includeAbstract === true ? new Map((readRaw(deps) ?? []).map((session) => [session.sessionId, session])) : null;
+  const result2 = { rows: [], notFound: [], ambiguous: [], notReturned: [] };
+  for (const query of ids2) {
+    const resolved = resolveSessionToken(index, query);
+    if (resolved.status === "not-found") {
+      result2.notFound.push(query);
+      continue;
+    }
+    if (resolved.status === "ambiguous") {
+      result2.ambiguous.push({ query, sessionIds: resolved.candidates.slice(0, MAX_AMBIGUOUS_IDS).map((record3) => record3.sessionId) });
+      continue;
+    }
+    const record2 = resolved.record;
+    const { startsAt, endsAt } = deriveSessionTimes({ sessionId: record2.sessionId, resolved: true, title: record2.title, abbreviation: record2.abbreviation, startDate: record2.startDate, startTime: record2.startTime, lengthMinutes: record2.lengthMinutes, venue: record2.venue, room: record2.room }, timezone);
+    const abstract = rawById?.get(record2.sessionId)?.abstract;
+    result2.rows.push({
+      query,
+      sessionId: record2.sessionId,
+      code: record2.abbreviation,
+      title: shortenDescription(record2.title, MAX_TITLE),
+      type: record2.type,
+      level: record2.level,
+      venue: record2.venue,
+      room: record2.room,
+      startDate: record2.startDate,
+      startTime: record2.startTime,
+      endTime: endTimeOf(record2),
+      startsAt,
+      endsAt,
+      otherSittings: otherSittingsOf(index, record2).map((other) => ({ sessionId: other.sessionId, code: other.abbreviation, startDate: other.startDate, startTime: other.startTime, venue: other.venue, room: other.room })),
+      ...abstract === void 0 ? {} : { abstract: shortenDescription(abstract, MAX_ABSTRACT) }
+    });
+  }
+  const warnings = timezone === null ? timezoneWarnings(availability) : [];
+  if (warnings.length > 0) result2.warnings = warnings;
+  while (outputBytes(result2) > OUTPUT_BUDGET_BYTES && result2.rows.length > 0) {
+    result2.notReturned.unshift(result2.rows.pop().query);
+  }
+  return result2;
+}
+
+// src/catalog/search.ts
+var DEFAULT_SEARCH_LIMIT = 15;
+var MAX_SEARCH_LIMIT = 25;
+var MAX_TITLE2 = 160;
+function searchSessions(input2, deps) {
+  const limit = Math.min(input2.limit ?? DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT);
+  const results = queryCatalog(deps, {
+    ...input2.query === void 0 ? {} : { query: input2.query },
+    ...input2.format === void 0 ? {} : { type: input2.format },
+    ...input2.venue === void 0 ? {} : { venue: input2.venue },
+    ...input2.levels === void 0 ? {} : { levelBand: input2.levels },
+    ...input2.day === void 0 ? {} : { day: input2.day },
+    limit
+  });
+  const result2 = {
+    rows: results.map(({ record: record2, score }) => ({ sessionId: record2.sessionId, code: record2.abbreviation, title: shortenDescription(record2.title, MAX_TITLE2), type: record2.type, level: record2.level, venue: record2.venue, startDate: record2.startDate, startTime: record2.startTime, score })),
+    omitted: 0
+  };
+  while (outputBytes(result2) > OUTPUT_BUDGET_BYTES && result2.rows.length > 0) {
+    result2.rows.pop();
+    result2.omitted++;
+  }
+  return result2;
+}
+
+// src/catalog/status.ts
+function summarizeCatalogState(state) {
+  if (state.status === "missing") return { status: "missing" };
+  if (state.status === "stale") {
+    return state.reason === "corrupt" ? { status: "stale", reason: "corrupt" } : { status: "stale", reason: state.reason, syncedAt: state.meta.syncedAt };
+  }
+  return { status: "fresh", syncedAt: state.meta.syncedAt, count: state.meta.count };
+}
+function catalogStatus(deps) {
+  const catalog = summarizeCatalogState(getCatalogState(deps));
+  const lastImport = catalog.status === "missing" ? null : readLastImport(deps);
+  return { catalog, ...lastImport === null ? {} : { lastImport } };
 }
 
 // src/schedule/plan.ts
@@ -23233,6 +23884,74 @@ var setOnsitePreferences = {
     return boundedOnsitePreferences(effectiveOnsitePreferences(updateOnsiteConfig(event, patch, { storeRoot: deps.storeRoot }), event));
   }
 };
+var CatalogImportInputSchema = external_exports.strictObject({
+  action: external_exports.enum(["page", "commit", "reindex"]),
+  eventId: external_exports.string().min(1).max(128).optional(),
+  /** The event's IANA timezone from GetEvent, or null when it has none. */
+  timezone: external_exports.string().nullable().optional(),
+  syncId: external_exports.string().min(1).max(64).optional(),
+  /** A saved ListSessions result (absolute path), or `page` for a small one passed inline: exactly one on a page call. */
+  path: external_exports.string().min(1).optional(),
+  page: external_exports.unknown().optional(),
+  /** Only after the user has seen both counts and approved the drop. */
+  allowShrink: external_exports.boolean().optional()
+});
+var catalogImportCommand = {
+  description: `Import the event catalog from AWS ListSessions pages, never passing the sessions through the conversation. action "page": stage one page (the first page needs eventId and timezone from GetEvent; pass the saved result as path, or a small inline result as page; later pages need syncId). action "commit": replace the local catalog once the last page has no nextToken (refuses an empty, partial or more than 10% smaller import unless allowShrink, which only the user's approval may set). action "reindex": rebuild the index from the stored sessions with no AWS call. Returns counts and a bounded summary of what changed, never session data.`,
+  inputSchema: CatalogImportInputSchema,
+  run: (input2, deps) => importCatalog(input2, { storeRoot: deps.storeRoot, ...deps.now ? { now: deps.now } : {}, ...deps.randomId ? { randomId: deps.randomId } : {} })
+};
+var CatalogChangesInputSchema = external_exports.strictObject({
+  sessionIds: external_exports.array(external_exports.string().trim().min(1).max(128)).min(1).max(200).optional(),
+  kinds: external_exports.array(external_exports.enum(["added", "removed", "changed"])).min(1).optional(),
+  offset: external_exports.number().int().min(0).optional(),
+  limit: external_exports.number().int().min(1).max(50).optional()
+});
+var catalogChangesCommand = {
+  description: "What the last catalog import changed: added, removed and changed sessions, with the fields that changed (schedule changes first). Pass sessionIds (ids or codes, up to 200, e.g. everything on the user's schedule) to ask whether any of them moved. Pages with limit (default 25) and offset; nextOffset says where the rest starts. Says why there is no diff (noImport, firstImport, eventReplaced, superseded) instead of guessing.",
+  inputSchema: CatalogChangesInputSchema,
+  run: (input2, deps) => queryCatalogChanges({
+    ...input2.sessionIds === void 0 ? {} : { sessionIds: input2.sessionIds },
+    ...input2.kinds === void 0 ? {} : { kinds: input2.kinds },
+    ...input2.offset === void 0 ? {} : { offset: input2.offset },
+    ...input2.limit === void 0 ? {} : { limit: input2.limit }
+  }, { storeRoot: deps.storeRoot })
+};
+var LookupSessionsInputSchema = external_exports.strictObject({
+  ids: external_exports.array(external_exports.string().trim().min(1).max(MAX_SESSION_ID_LENGTH)).min(1).max(LOOKUP_MAX_IDS),
+  includeAbstract: external_exports.boolean().optional()
+});
+var lookupSessionsCommand = {
+  description: `Look up sessions in the local catalog by session id or code (ARC330, ARC330-R1): title, format, level, venue, room, local and UTC start and end, and up to 5 other sittings. Up to ${LOOKUP_MAX_IDS} ids; with includeAbstract, at most ${LOOKUP_MAX_ABSTRACT_IDS} and each abstract is shortened to 1,500 characters. Every id comes back as a row, notFound, ambiguous or notReturned. Use it to name the ids on a GetSchedule result.`,
+  inputSchema: LookupSessionsInputSchema,
+  run: (input2, deps) => lookupSessions(input2, { storeRoot: deps.storeRoot })
+};
+var SearchSessionsInputSchema = external_exports.strictObject({
+  query: external_exports.string().min(1).max(500).optional(),
+  format: external_exports.string().min(1).max(100).optional(),
+  venue: external_exports.enum(VENUES).optional(),
+  levels: external_exports.strictObject({ min: external_exports.number(), max: external_exports.number() }).optional(),
+  day: external_exports.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  limit: external_exports.number().int().min(1).optional()
+});
+var searchSessionsCommand = {
+  description: 'Search the local catalog for sessions about something: free text plus optional format (e.g. "Chalk talk"), venue, level band range (100 to 500) and day (YYYY-MM-DD). Lean rows (code, title, format, level, venue, start, score), 15 by default and at most 25. For a tech profile use match_sessions; this is for a direct "sessions about X".',
+  inputSchema: SearchSessionsInputSchema,
+  run: (input2, deps) => searchSessions({
+    ...input2.query === void 0 ? {} : { query: input2.query },
+    ...input2.format === void 0 ? {} : { format: input2.format },
+    ...input2.venue === void 0 ? {} : { venue: input2.venue },
+    ...input2.levels === void 0 ? {} : { levels: input2.levels },
+    ...input2.day === void 0 ? {} : { day: input2.day },
+    ...input2.limit === void 0 ? {} : { limit: input2.limit }
+  }, { storeRoot: deps.storeRoot })
+};
+var StatusInputSchema = external_exports.strictObject({});
+var statusCommand = {
+  description: "Report the local catalog's state (missing, stale or fresh) and, while it still describes the stored catalog, what the last import changed. Call this first. It needs no sign-in: AWS access is the AWS Events MCP's own.",
+  inputSchema: StatusInputSchema,
+  run: (_input, deps) => catalogStatus({ storeRoot: deps.storeRoot, ...deps.now ? { now: deps.now } : {} })
+};
 var registry2 = {
   validate_profile: validateProfile,
   match_sessions: matchSessions,
@@ -23241,7 +23960,12 @@ var registry2 = {
   get_onsite_preferences: getOnsitePreferences,
   set_onsite_preferences: setOnsitePreferences,
   plan_schedule: planScheduleCommand,
-  nearby_sessions: nearbySessionsCommand
+  nearby_sessions: nearbySessionsCommand,
+  catalog_import: catalogImportCommand,
+  catalog_changes: catalogChangesCommand,
+  lookup_sessions: lookupSessionsCommand,
+  search_sessions: searchSessionsCommand,
+  status: statusCommand
 };
 
 // src/script/main.ts
@@ -23254,7 +23978,7 @@ function readInput(path, io) {
   if (path === void 0) return { value: {} };
   let text;
   try {
-    text = path === "-" ? io.readStdin() : readFileSync4(path, "utf8");
+    text = path === "-" ? io.readStdin() : readFileSync6(path, "utf8");
   } catch {
     return { error: path === "-" ? "Could not read stdin." : "Could not read the --input file." };
   }
@@ -23290,7 +24014,7 @@ async function runScript(argv, io) {
     return done(toCommandError(err), 1);
   }
 }
-var result = await runScript(process.argv.slice(2), { readStdin: () => readFileSync4(0, "utf8"), env: process.env });
+var result = await runScript(process.argv.slice(2), { readStdin: () => readFileSync6(0, "utf8"), env: process.env });
 process.stdout.write(result.stdout);
 process.exitCode = result.exitCode;
 export {

@@ -18,7 +18,7 @@ export interface CatalogChange {
   sessionId: string;
   code: string | null;
   title: string;
-  fields?: string[];
+  fields?: string[] | undefined;
 }
 export interface CatalogDiff {
   counts: { added: number; removed: number; changed: number; unchanged: number };
@@ -142,16 +142,71 @@ export function writeCatalogChanges(stored: StoredCatalogChanges, deps: CatalogS
   writeFileAtomic(join(catalogDir(deps.storeRoot), CHANGES_FILE), () => JSON.stringify(stored), { mode: 0o600 });
 }
 
+function readStoredChanges(deps: CatalogStoreDeps): { stored: StoredCatalogChanges; matchesCatalog: boolean } | null {
+  let parsed;
+  try { parsed = StoredChangesSchema.safeParse(JSON.parse(readFileSync(join(catalogDir(deps.storeRoot), CHANGES_FILE), "utf8"))); }
+  catch { return null; }
+  if (!parsed.success) return null;
+  const meta = readMeta(deps);
+  return { stored: parsed.data, matchesCatalog: meta !== null && meta.syncedAt === parsed.data.toSyncedAt };
+}
+
 /** Reads the last import's diff. It is only valid while it describes the stored catalog: if its
  * `toSyncedAt` no longer matches the meta (a crash between the two writes, or a later sync), it is superseded. */
 export function readCatalogChanges(deps: CatalogStoreDeps): ({ available: true } & StoredCatalogChanges) | { available: false; reason: CatalogChangesUnavailable } {
-  let parsed;
-  try { parsed = StoredChangesSchema.safeParse(JSON.parse(readFileSync(join(catalogDir(deps.storeRoot), CHANGES_FILE), "utf8"))); }
-  catch { return { available: false, reason: "noImport" }; }
-  if (!parsed.success) return { available: false, reason: "noImport" };
-  const meta = readMeta(deps);
-  if (meta === null || meta.syncedAt !== parsed.data.toSyncedAt) return { available: false, reason: "superseded" };
-  if (parsed.data.firstImport) return { available: false, reason: "firstImport" };
-  if (parsed.data.replacedEventId !== undefined) return { available: false, reason: "eventReplaced" };
-  return { available: true, ...parsed.data };
+  const read = readStoredChanges(deps);
+  if (read === null) return { available: false, reason: "noImport" };
+  if (!read.matchesCatalog) return { available: false, reason: "superseded" };
+  if (read.stored.firstImport) return { available: false, reason: "firstImport" };
+  if (read.stored.replacedEventId !== undefined) return { available: false, reason: "eventReplaced" };
+  return { available: true, ...read.stored };
+}
+
+export interface LastImport {
+  toSyncedAt: number;
+  counts: CatalogDiff["counts"];
+  firstImport?: true;
+  replacedEventId?: string;
+}
+/** A short account of the last import, only while it still describes the stored catalog. */
+export function readLastImport(deps: CatalogStoreDeps): LastImport | null {
+  const read = readStoredChanges(deps);
+  if (read === null || !read.matchesCatalog) return null;
+  return { toSyncedAt: read.stored.toSyncedAt, counts: read.stored.counts, ...(read.stored.firstImport ? { firstImport: true as const } : {}), ...(read.stored.replacedEventId === undefined ? {} : { replacedEventId: read.stored.replacedEventId }) };
+}
+
+const DEFAULT_CHANGES_LIMIT = 25;
+const CHANGE_TITLE_MAX = 200;
+export interface ChangesQuery {
+  sessionIds?: readonly string[];
+  kinds?: readonly CatalogChangeKind[];
+  offset?: number;
+  limit?: number;
+}
+export type ChangesPage =
+  | { available: false; reason: CatalogChangesUnavailable }
+  | { available: true; eventId: string; fromSyncedAt: number | null; toSyncedAt: number; counts: CatalogDiff["counts"]; abstractsCompared: boolean; total: number; changes: CatalogChange[]; offset: number; nextOffset?: number };
+
+/** One page of the last import's changes, optionally only for some sessions (by id or code) or kinds,
+ * shortened until it fits the output budget; `nextOffset` says where the rest starts. */
+export function queryCatalogChanges(query: ChangesQuery, deps: CatalogStoreDeps): ChangesPage {
+  const last = readCatalogChanges(deps);
+  if (!last.available) return last;
+  const wanted = query.sessionIds === undefined ? null : new Set(query.sessionIds.map(id => id.trim().toLowerCase()));
+  const kinds = query.kinds === undefined ? null : new Set(query.kinds);
+  const matching = last.changes.filter(change =>
+    (wanted === null || wanted.has(change.sessionId.toLowerCase()) || (change.code !== null && wanted.has(change.code.toLowerCase()))) &&
+    (kinds === null || kinds.has(change.kind)));
+  const offset = query.offset ?? 0;
+  const page = matching.slice(offset, offset + (query.limit ?? DEFAULT_CHANGES_LIMIT)).map(change => ({ ...change, title: shortenDescription(change.title, CHANGE_TITLE_MAX) }));
+  const build = (rows: CatalogChange[]): ChangesPage => ({
+    available: true, eventId: last.eventId, fromSyncedAt: last.fromSyncedAt, toSyncedAt: last.toSyncedAt, counts: last.counts, abstractsCompared: last.abstractsCompared,
+    total: matching.length, changes: rows, offset, ...(offset + rows.length < matching.length ? { nextOffset: offset + rows.length } : {}),
+  });
+  let result = build(page);
+  while (outputBytes(result) > OUTPUT_BUDGET_BYTES && page.length > 0) {
+    page.pop();
+    result = build(page);
+  }
+  return result;
 }

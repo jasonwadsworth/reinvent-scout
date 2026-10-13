@@ -11,7 +11,8 @@ import { createApiClient, type ApiClient } from "../api/client.js";
 import type { Session } from "../api/types.js";
 import { createTokenProviderAdapter } from "../auth/provider-adapter.js";
 import { readTokenStore } from "../auth/token-store.js";
-import { getCatalogState, readTimezoneAvailability, type CatalogState } from "../catalog/store.js";
+import { readTimezoneAvailability } from "../catalog/store.js";
+import { catalogStatus } from "../catalog/status.js";
 import { syncCatalog } from "../catalog/sync.js";
 import { formatZodError } from "../core/zod-errors.js";
 import {
@@ -107,20 +108,6 @@ function logWarning(message: string): void {
   process.stderr.write(`[reinvent-scout mcp] ${message}\n`);
 }
 
-function summarizeCatalogState(state: CatalogState): Record<string, unknown> {
-  if (state.status === "missing") {
-    logWarning("no catalog has been synced yet");
-    return { status: "missing" };
-  }
-  if (state.status === "stale") {
-    logWarning(`catalog is stale (${state.reason})`);
-    return state.reason === "corrupt"
-      ? { status: "stale", reason: state.reason }
-      : { status: "stale", reason: state.reason, syncedAt: state.meta.syncedAt };
-  }
-  return { status: "fresh", syncedAt: state.meta.syncedAt, count: state.meta.count };
-}
-
 function registerStatusTool(server: McpServer, deps: McpToolDeps): void {
   server.registerTool(
     "status",
@@ -134,11 +121,13 @@ function registerStatusTool(server: McpServer, deps: McpToolDeps): void {
       const storeRoot = deps.resolveStoreRoot();
       const tokenState = readTokenStore({ storeRoot });
       const now = deps.now ?? Date.now;
-      const catalog = summarizeCatalogState(getCatalogState({ storeRoot, now }));
+      const { catalog, ...rest } = catalogStatus({ storeRoot, now });
+      if (catalog.status === "missing") logWarning("no catalog has been synced yet");
+      else if (catalog.status === "stale") logWarning(`catalog is stale (${catalog.reason})`);
 
       // Browsing (profile, map, match) needs only a synced catalog, so no sign-in is a state to report, with what signing in is for.
       if (tokenState.status === "absent" || tokenState.status === "corrupt") {
-        return textResult({ signedIn: false, catalog, signIn: SIGN_IN_HINT });
+        return textResult({ signedIn: false, catalog, ...rest, signIn: SIGN_IN_HINT });
       }
 
       const expiresAt = tokenState.tokens.obtainedAt + tokenState.tokens.expiresIn * 1000;
@@ -146,6 +135,7 @@ function registerStatusTool(server: McpServer, deps: McpToolDeps): void {
         signedIn: true,
         accessTokenExpiresAt: new Date(expiresAt).toISOString(),
         catalog,
+        ...rest,
       });
     },
   );
@@ -663,7 +653,7 @@ export function registerTools(server: McpServer, deps: McpToolDeps): void {
 function registerRegistryTools(server: McpServer, deps: McpToolDeps): void {
   for (const [name, entry] of Object.entries(registry)) {
     // plan_schedule and nearby_sessions take the schedule as data in the registry; the legacy server registers its own versions that fetch it through the API client.
-    if (name === "plan_schedule" || name === "nearby_sessions") continue;
+    if (name === "plan_schedule" || name === "nearby_sessions" || name === "status") continue;
     server.registerTool(name, { description: entry.description, inputSchema: entry.inputSchema }, async (input: unknown) => {
       try {
         const run = entry.run as (input: unknown, deps: CommandDeps) => unknown;

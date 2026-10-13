@@ -23,8 +23,8 @@ describe("command registry", () => {
   });
   afterEach(() => home.cleanup());
 
-  it("holds exactly the commands moved so far, each with a description and an object schema", () => {
-    expect(Object.keys(registry).sort()).toEqual(["get_onsite_preferences", "list_filters", "map_profile", "match_sessions", "nearby_sessions", "plan_schedule", "set_onsite_preferences", "validate_profile"]);
+  it("holds exactly the thirteen commands, each with a description and an object schema", () => {
+    expect(Object.keys(registry).sort()).toEqual(["catalog_changes", "catalog_import", "get_onsite_preferences", "list_filters", "lookup_sessions", "map_profile", "match_sessions", "nearby_sessions", "plan_schedule", "search_sessions", "set_onsite_preferences", "status", "validate_profile"]);
     for (const entry of Object.values(registry)) {
       expect(entry.description.length).toBeGreaterThan(20);
       expect(entry.inputSchema.type).toBe("object");

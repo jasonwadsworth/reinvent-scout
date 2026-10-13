@@ -15,6 +15,12 @@ import { effectiveOnsitePreferences, onsitePatchSchema, readOnsiteConfig, update
 import { resolveProfile } from "../profile/profile.js";
 import { buildValidateReport } from "../profile/report.js";
 import { MAX_RESERVATION_IDS, MAX_SESSION_ID_LENGTH, validateSessionIds } from "../schedule/reservations.js";
+import { queryCatalogChanges } from "../catalog/diff.js";
+import { importCatalog } from "../catalog/import.js";
+import { LOOKUP_MAX_ABSTRACT_IDS, LOOKUP_MAX_IDS, lookupSessions } from "../catalog/lookup.js";
+import { searchSessions } from "../catalog/search.js";
+import { catalogStatus } from "../catalog/status.js";
+import { VENUES } from "../catalog/venue.js";
 import { nearbyInputSchema, recommendNearbySessions, type NearbyInput } from "../onsite/recommend.js";
 import { planSchedule } from "../schedule/plan.js";
 import { readScheduleInput, scheduleInputSchema } from "../schedule/schedule-input.js";
@@ -256,6 +262,80 @@ const setOnsitePreferences = {
   },
 } satisfies CommandDefinition<z.ZodObject<{ eventId: typeof eventIdSchema; patch: typeof onsitePatchSchema }, z.core.$strict>>;
 
+const CatalogImportInputSchema = z.strictObject({
+  action: z.enum(["page", "commit", "reindex"]),
+  eventId: z.string().min(1).max(128).optional(),
+  /** The event's IANA timezone from GetEvent, or null when it has none. */
+  timezone: z.string().nullable().optional(),
+  syncId: z.string().min(1).max(64).optional(),
+  /** A saved ListSessions result (absolute path), or `page` for a small one passed inline: exactly one on a page call. */
+  path: z.string().min(1).optional(),
+  page: z.unknown().optional(),
+  /** Only after the user has seen both counts and approved the drop. */
+  allowShrink: z.boolean().optional(),
+});
+
+const catalogImportCommand = {
+  description: "Import the event catalog from AWS ListSessions pages, never passing the sessions through the conversation. action \"page\": stage one page (the first page needs eventId and timezone from GetEvent; pass the saved result as path, or a small inline result as page; later pages need syncId). action \"commit\": replace the local catalog once the last page has no nextToken (refuses an empty, partial or more than 10% smaller import unless allowShrink, which only the user's approval may set). action \"reindex\": rebuild the index from the stored sessions with no AWS call. Returns counts and a bounded summary of what changed, never session data.",
+  inputSchema: CatalogImportInputSchema,
+  run: (input, deps) => importCatalog(input, { storeRoot: deps.storeRoot, ...(deps.now ? { now: deps.now } : {}), ...(deps.randomId ? { randomId: deps.randomId } : {}) }),
+} satisfies CommandDefinition<typeof CatalogImportInputSchema>;
+
+const CatalogChangesInputSchema = z.strictObject({
+  sessionIds: z.array(z.string().trim().min(1).max(128)).min(1).max(200).optional(),
+  kinds: z.array(z.enum(["added", "removed", "changed"])).min(1).optional(),
+  offset: z.number().int().min(0).optional(),
+  limit: z.number().int().min(1).max(50).optional(),
+});
+const catalogChangesCommand = {
+  description: "What the last catalog import changed: added, removed and changed sessions, with the fields that changed (schedule changes first). Pass sessionIds (ids or codes, up to 200, e.g. everything on the user's schedule) to ask whether any of them moved. Pages with limit (default 25) and offset; nextOffset says where the rest starts. Says why there is no diff (noImport, firstImport, eventReplaced, superseded) instead of guessing.",
+  inputSchema: CatalogChangesInputSchema,
+  run: (input, deps) => queryCatalogChanges({
+    ...(input.sessionIds === undefined ? {} : { sessionIds: input.sessionIds }),
+    ...(input.kinds === undefined ? {} : { kinds: input.kinds }),
+    ...(input.offset === undefined ? {} : { offset: input.offset }),
+    ...(input.limit === undefined ? {} : { limit: input.limit }),
+  }, { storeRoot: deps.storeRoot }),
+} satisfies CommandDefinition<typeof CatalogChangesInputSchema>;
+
+const LookupSessionsInputSchema = z.strictObject({
+  ids: z.array(z.string().trim().min(1).max(MAX_SESSION_ID_LENGTH)).min(1).max(LOOKUP_MAX_IDS),
+  includeAbstract: z.boolean().optional(),
+});
+const lookupSessionsCommand = {
+  description: `Look up sessions in the local catalog by session id or code (ARC330, ARC330-R1): title, format, level, venue, room, local and UTC start and end, and up to 5 other sittings. Up to ${LOOKUP_MAX_IDS} ids; with includeAbstract, at most ${LOOKUP_MAX_ABSTRACT_IDS} and each abstract is shortened to 1,500 characters. Every id comes back as a row, notFound, ambiguous or notReturned. Use it to name the ids on a GetSchedule result.`,
+  inputSchema: LookupSessionsInputSchema,
+  run: (input, deps) => lookupSessions(input, { storeRoot: deps.storeRoot }),
+} satisfies CommandDefinition<typeof LookupSessionsInputSchema>;
+
+const SearchSessionsInputSchema = z.strictObject({
+  query: z.string().min(1).max(500).optional(),
+  format: z.string().min(1).max(100).optional(),
+  venue: z.enum(VENUES).optional(),
+  levels: z.strictObject({ min: z.number(), max: z.number() }).optional(),
+  day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  limit: z.number().int().min(1).optional(),
+});
+const searchSessionsCommand = {
+  description: "Search the local catalog for sessions about something: free text plus optional format (e.g. \"Chalk talk\"), venue, level band range (100 to 500) and day (YYYY-MM-DD). Lean rows (code, title, format, level, venue, start, score), 15 by default and at most 25. For a tech profile use match_sessions; this is for a direct \"sessions about X\".",
+  inputSchema: SearchSessionsInputSchema,
+  run: (input, deps) => searchSessions({
+    ...(input.query === undefined ? {} : { query: input.query }),
+    ...(input.format === undefined ? {} : { format: input.format }),
+    ...(input.venue === undefined ? {} : { venue: input.venue }),
+    ...(input.levels === undefined ? {} : { levels: input.levels }),
+    ...(input.day === undefined ? {} : { day: input.day }),
+    ...(input.limit === undefined ? {} : { limit: input.limit }),
+  }, { storeRoot: deps.storeRoot }),
+} satisfies CommandDefinition<typeof SearchSessionsInputSchema>;
+
+const StatusInputSchema = z.strictObject({});
+const statusCommand = {
+  description: "Report the local catalog's state (missing, stale or fresh) and, while it still describes the stored catalog, what the last import changed. Call this first. It needs no sign-in: AWS access is the AWS Events MCP's own.",
+  inputSchema: StatusInputSchema,
+  run: (_input, deps) => catalogStatus({ storeRoot: deps.storeRoot, ...(deps.now ? { now: deps.now } : {}) }),
+} satisfies CommandDefinition<typeof StatusInputSchema>;
+
 /** Every command the script and the legacy MCP server share, keyed by its snake_case name. */
 export const registry = {
   validate_profile: validateProfile,
@@ -266,5 +346,10 @@ export const registry = {
   set_onsite_preferences: setOnsitePreferences,
   plan_schedule: planScheduleCommand,
   nearby_sessions: nearbySessionsCommand,
+  catalog_import: catalogImportCommand,
+  catalog_changes: catalogChangesCommand,
+  lookup_sessions: lookupSessionsCommand,
+  search_sessions: searchSessionsCommand,
+  status: statusCommand,
 };
 export type CommandName = keyof typeof registry;

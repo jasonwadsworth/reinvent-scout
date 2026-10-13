@@ -233,7 +233,7 @@ describe("queryCatalog", () => {
     }
     expect(caught).toBeInstanceOf(CatalogUnusableError);
     expect((caught as CatalogUnusableError).reason).toBe("outdated");
-    expect((caught as CatalogUnusableError).message).toMatch(/catalog sync/);
+    expect((caught as CatalogUnusableError).message).toMatch(/catalog_import action "reindex"/);
   });
 
   it("refuses to search when meta.json is corrupt, even beside a genuinely poisoned index", () => {

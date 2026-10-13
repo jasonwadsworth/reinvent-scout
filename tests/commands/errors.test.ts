@@ -10,7 +10,7 @@ describe("toCommandError", () => {
     expect(toCommandError("plain string")).toEqual({ error: "plain string" });
   });
   it("keeps the reason of an import rejection", () => {
-    expect(toCommandError(new CatalogImportRejectedError("shrunk", "shrunk: 85 of 100"))).toEqual({ error: "shrunk: 85 of 100", reason: "shrunk" });
+    expect(toCommandError(new CatalogImportRejectedError("shrunk", "85 of 100"))).toEqual({ error: "shrunk: 85 of 100", reason: "shrunk" });
   });
   it("formats a zod error with its field paths", () => {
     const schema = z.object({ a: z.object({ b: z.number() }) });
