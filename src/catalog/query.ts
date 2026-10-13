@@ -264,7 +264,11 @@ export function compareByStartDateTime(a: IndexRecord, b: IndexRecord): number {
  * candidate rather than silently resolving to the first match.
  */
 export function resolveSessionRecord(deps: CatalogStoreDeps, token: string): SessionLookupResult {
-  const index = requireCurrentIndex(deps);
+  return resolveSessionToken(requireCurrentIndex(deps), token);
+}
+
+/** The same resolution over an index already in hand, so a caller resolving many tokens reads the index once. */
+export function resolveSessionToken(index: readonly IndexRecord[], token: string): SessionLookupResult {
 
   const bySessionId = index.find((record) => record.sessionId === token);
   if (bySessionId !== undefined) {
