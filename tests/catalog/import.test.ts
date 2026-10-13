@@ -1,7 +1,7 @@
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { stageCatalogPage, CatalogImportRejectedError, SYNC_ID_PATTERN } from "../../src/catalog/import.js";
+import { stageCatalogPage, pruneStaleStaging, CatalogImportRejectedError, SYNC_ID_PATTERN } from "../../src/catalog/import.js";
 import { ValidationError } from "../../src/core/errors.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
 
@@ -107,5 +107,57 @@ describe("stageCatalogPage", () => {
     const two = stageCatalogPage({ syncId: one.syncId, page: pageOf(3, 2, { totalCount: 5 }) }, deps());
     expect(two.totalCountChanged).toBe(true);
     expect(one.totalCountChanged).toBeUndefined();
+  });
+});
+
+describe("pruneStaleStaging", () => {
+  let home: TempHome;
+  beforeEach(() => { home = createTempHome(); }); afterEach(() => home.cleanup());
+  const HOUR = 3_600_000;
+  const NOW = Date.parse("2026-12-02T00:00:00Z");
+  const staging = () => join(home.path, "catalog", "staging");
+  let n = 0;
+  const stageAt = (at: number) => stageCatalogPage({ eventId: "reinvent2026", timezone: null, page: { items: [{ sessionId: `s-${++n}`, title: "t" }], totalCount: 1 } }, { storeRoot: home.path, now: () => at, randomId: () => `sync-${String(n + 100).padStart(8, "0")}` }).syncId;
+  const names = () => (existsSync(staging()) ? readdirSync(staging()).sort() : []);
+
+  it("removes a sync whose manifest is more than 24 hours old, and keeps a recent one", () => {
+    const old = stageAt(NOW - 25 * HOUR);
+    const recent = stageAt(NOW - 1 * HOUR);
+    pruneStaleStaging({ storeRoot: home.path, now: () => NOW });
+    expect(names()).toEqual([recent]);
+    expect(names()).not.toContain(old);
+  });
+  it("removes an unreadable sync by its directory mtime", () => {
+    const stale = join(staging(), "stale-unreadable-1");
+    const fresh = join(staging(), "fresh-unreadable-1");
+    for (const dir of [stale, fresh]) { mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, "manifest.json"), "{ broken"); }
+    utimesSync(stale, (NOW - 25 * HOUR) / 1000, (NOW - 25 * HOUR) / 1000);
+    utimesSync(fresh, (NOW - 1 * HOUR) / 1000, (NOW - 1 * HOUR) / 1000);
+    pruneStaleStaging({ storeRoot: home.path, now: () => NOW });
+    expect(names()).toEqual(["fresh-unreadable-1"]);
+  });
+  it("never follows a symlink out of staging, and leaves the link alone", () => {
+    const outside = join(home.path, "outside"); mkdirSync(outside); writeFileSync(join(outside, "keep.txt"), "keep");
+    utimesSync(outside, (NOW - 48 * HOUR) / 1000, (NOW - 48 * HOUR) / 1000);
+    mkdirSync(staging(), { recursive: true });
+    symlinkSync(outside, join(staging(), "link-to-outside-1"));
+    pruneStaleStaging({ storeRoot: home.path, now: () => NOW });
+    expect(readFileSync(join(outside, "keep.txt"), "utf8")).toBe("keep");
+    expect(names()).toEqual(["link-to-outside-1"]);
+  });
+  it("ignores entries whose names are not valid sync ids", () => {
+    mkdirSync(join(staging(), "Not A Sync"), { recursive: true });
+    utimesSync(join(staging(), "Not A Sync"), (NOW - 48 * HOUR) / 1000, (NOW - 48 * HOUR) / 1000);
+    pruneStaleStaging({ storeRoot: home.path, now: () => NOW });
+    expect(names()).toEqual(["Not A Sync"]);
+  });
+  it("does nothing when there is no staging directory", () => {
+    expect(() => pruneStaleStaging({ storeRoot: home.path, now: () => NOW })).not.toThrow();
+  });
+  it("runs when a new sync starts", () => {
+    const old = stageAt(NOW - 25 * HOUR);
+    const fresh = stageAt(NOW);
+    expect(names()).toEqual([fresh]);
+    expect(names()).not.toContain(old);
   });
 });

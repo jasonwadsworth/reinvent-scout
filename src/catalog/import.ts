@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { lstatSync, readFileSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import { writeFileAtomic } from "../core/atomic-write.js";
@@ -91,6 +91,35 @@ export function readStagedPage(storeRoot: string, syncId: string, number: number
   return parsed.data as ListSessionsPage["items"];
 }
 
+const STALE_STAGING_MS = 24 * 60 * 60 * 1000;
+
+/** Removes abandoned syncs: those whose manifest `createdAt` (or, if the manifest is unreadable,
+ * directory mtime) is more than 24 hours old. Only ever deletes `staging/<validated name>`, and
+ * never follows or removes a symlink. */
+export function pruneStaleStaging(deps: ImportDeps): void {
+  const root = stagingRoot(deps.storeRoot);
+  let names: string[];
+  try {
+    if (!lstatSync(root).isDirectory()) return;
+    names = readdirSync(root);
+  } catch { return; }
+  const now = (deps.now ?? Date.now)();
+  for (const name of names) {
+    if (!SYNC_ID_PATTERN.test(name)) continue;
+    const dir = join(root, name);
+    try {
+      const stat = lstatSync(dir);
+      if (stat.isSymbolicLink() || !stat.isDirectory()) continue;
+      let createdAt = stat.mtimeMs;
+      try {
+        const manifest = ManifestSchema.safeParse(JSON.parse(readFileSync(join(dir, MANIFEST_NAME), "utf8")));
+        if (manifest.success) createdAt = manifest.data.createdAt;
+      } catch { /* unreadable manifest: fall back to the directory mtime */ }
+      if (now - createdAt > STALE_STAGING_MS) rmSync(dir, { recursive: true, force: true });
+    } catch { /* a concurrent removal or a permissions problem is not worth failing a sync for */ }
+  }
+}
+
 function writeJson(path: string, value: unknown): void {
   writeFileAtomic(path, () => JSON.stringify(value), { mode: FILE_MODE });
 }
@@ -127,6 +156,7 @@ export function stageCatalogPage(input: StagePageInput, deps: ImportDeps, option
   }
   const number = manifest.pages.length + 1;
   const next: ImportManifest = { ...manifest, pages: [...manifest.pages, { number, count: page.items.length, totalCount: page.totalCount, nextToken: page.nextToken ?? null }] };
+  if (isFirst) pruneStaleStaging(deps);
   const dir = stagingDirFor(deps.storeRoot, manifest.syncId);
   ensureDirWithMode(dir, STORE_DIR_MODE);
   writeJson(join(dir, pageFileName(number)), page.items);
