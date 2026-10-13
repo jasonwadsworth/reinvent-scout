@@ -794,7 +794,7 @@ function registerReservationTools(server: McpServer, deps: McpToolDeps): void {
   const buildApiClient = deps.buildApiClient ?? defaultBuildApiClient;
   for (const name of ["plan_schedule", "reserve_sessions"] as const) {
     server.registerTool(name, {
-      description: name === "plan_schedule" ? "Read the full schedule and plan up to 50 priority-ordered session IDs with repeat alternatives. No writes; proves time non-overlap only, not seats or travel." : "Reserve up to 30 explicitly confirmed offering IDs per call (larger batches would outlast the MCP request timeout; make several calls). Reports every outcome and uncertainty; never automatically replay an ambiguous write or cancel conflicts.",
+      description: name === "plan_schedule" ? "Read the full schedule and plan up to 50 priority-ordered session IDs with repeat alternatives. No writes; proves time non-overlap only, not seats or travel." : "Reserve up to 30 explicitly confirmed offering IDs per call (larger batches would outlast the MCP request timeout; make several calls). Reports every outcome and uncertainty; never automatically replay an ambiguous write, and never cancel conflicts without the user's explicit consent (the one exception is a pre-confirmed may-cancel list, see the watch playbook).",
       inputSchema: z.strictObject({ sessionIds: z.array(idSchema).min(name === "plan_schedule" ? 0 : 1).max(name === "plan_schedule" ? MAX_RESERVATION_IDS : MCP_MAX_WRITE_IDS), event: z.string().min(1).optional() }),
     }, async ({ sessionIds, event }) => {
       try {

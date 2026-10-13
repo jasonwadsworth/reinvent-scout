@@ -1218,6 +1218,7 @@ describe("watch playbook (reference/watch.md)", () => {
       "the last thing you told the user about each target",
       "the backoff level",
       "the end time",
+      "pending restores (ids and attempt count)",
       "If you lose track",
       "re-read `get_schedule`",
       "re-confirm the may-cancel list with the user",
@@ -1259,7 +1260,11 @@ describe("watch playbook (reference/watch.md)", () => {
     expectAll(watchMd, [
       "Cancel one reservation at a time and read each result",
       "stop cancelling, do not reserve the target, re-reserve anything you already cancelled",
-      "If a cancel is refused outright (429, auth), re-reserve the ones you already cancelled and skip the target for this check",
+      "If a cancel is refused with a 429, re-reserve the ones you already cancelled and skip the target for this check",
+      "If a cancel is refused because auth is required, you are not registered, or reservations are closed (409), re-reserve the ones you already cancelled, then stop the whole watch and tell the user",
+      "Restore every cancel that was confirmed",
+      "If `get_schedule` shows the uncertain one gone, treat it as cancelled and restore it",
+      "If `get_schedule` cannot be read, do not touch the uncertain one and tell the user it may be cancelled",
       "A cancel that says the reservation was already gone (404) is not something to restore",
       "Restore only what you actually cancelled",
     ]);
@@ -1279,6 +1284,16 @@ describe("watch playbook (reference/watch.md)", () => {
       "A restore refused with `sessionFull` is lost; do not retry it",
       "If anything was lost or is uncertain, stop the whole watch and tell the user right away",
     ]);
+  });
+  it("spreads restore retries across wakeups and lets a pending restore win", () => {
+    expectAll(watchMd, [
+      "schedule a short wakeup (about 1 minute) for the retry",
+      "A pending restore takes priority over everything else on the next check",
+      "While a restore is pending, never attempt another swap",
+    ]);
+  });
+  it("tells the agent a watch is the one case where pre-confirmed cancels are allowed", () => {
+    expectAll(skillMd, ["never cancel conflicts automatically, except the reservations the user pre-confirmed on a watch's may-cancel list"]);
   });
   it("defers a repeat swap until the seat band changes", () => {
     expectAll(watchMd, [

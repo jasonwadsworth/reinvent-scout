@@ -30,6 +30,12 @@ describe("get_session tool", () => {
     expect(tool).toBeDefined();
     expect(Object.keys((tool!.inputSchema as { properties: object }).properties).sort()).toEqual(["event", "sessionId"]);
   });
+  it("tells reserve_sessions callers that a pre-confirmed may-cancel list is the one exception to never cancelling conflicts", async () => {
+    const client = await connect(home.path, () => stubClient(async () => live));
+    const tool = (await client.listTools()).tools.find(t => t.name === "reserve_sessions");
+    expect(tool?.description).toContain("never cancel conflicts without the user's explicit consent");
+    expect(tool?.description).toContain("pre-confirmed may-cancel list");
+  });
   it("returns the live seat band and bounded fields, never the abstract", async () => {
     const client = await connect(home.path, () => stubClient(async () => live));
     const result = await client.callTool({ name: "get_session", arguments: { sessionId: " abc123 " } });

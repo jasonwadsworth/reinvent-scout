@@ -26,6 +26,7 @@ Nothing is saved for you. Keep this in your own working notes and update it afte
 - the last thing you told the user about each target
 - the backoff level
 - the end time
+- pending restores (ids and attempt count)
 
 **If you lose track** (a new session, a compacted context, or memory you no longer trust):
 re-read `get_schedule`, re-confirm the targets and re-confirm the may-cancel list with the user,
@@ -79,9 +80,15 @@ To swap:
    - A cancel that says the reservation was already gone (404) is not something to restore.
    - If a cancel is uncertain, or `get_schedule` afterwards still shows the reservation or cannot
      be read: stop cancelling, do not reserve the target, re-reserve anything you already
-     cancelled, then stop the watch and tell the user.
-   - If a cancel is refused outright (429, auth), re-reserve the ones you already cancelled and
-     skip the target for this check.
+     cancelled, then stop the watch and tell the user. Restore every cancel that was confirmed. Handle
+     the uncertain one separately. If `get_schedule` shows the uncertain one gone, treat it as cancelled and
+     restore it. If `get_schedule` cannot be read, do not touch the uncertain one and tell the user
+     it may be cancelled.
+   - If a cancel is refused with a 429, re-reserve the ones you already cancelled and skip the
+     target for this check.
+   - If a cancel is refused because auth is required, you are not registered, or reservations are
+     closed (409), re-reserve the ones you already cancelled, then stop the whole watch and tell
+     the user.
 2. Reserve the target with `reserve_sessions`.
 3. Decide what the result means.
    - If the target reserve was refused (any failure code), or the read-back shows it absent,
@@ -91,7 +98,10 @@ To swap:
    - If it landed, the cancelled reservations are gone: remove them from the may-cancel list.
 4. Restore only what you actually cancelled. Retry a restore only when it was refused by a 429 or
    never sent, up to 3 times, about 1 minute apart. A restore refused with `sessionFull` is lost;
-   do not retry it.
+   do not retry it. A retry cannot wait inside one turn: record the ids and the attempt count under
+   pending restores and schedule a short wakeup (about 1 minute) for the retry. A pending restore
+   takes priority over everything else on the next check. While a restore is pending, never
+   attempt another swap.
 5. Verify with `get_schedule`. Report exactly what was kept, gained and lost. If anything was
    lost or is uncertain, stop the whole watch and tell the user right away. A schedule that
    changed in a way the user did not approve must not be changed further.
