@@ -1251,6 +1251,7 @@ describe("watch playbook (reference/watch.md)", () => {
     expectAll(watchMd, [
       "only if every id in `conflictsWith` is on the may-cancel list",
       "no partial swaps",
+      "if even one id is not on the list, do not swap",
       "Cancel exactly those ids and no others",
       "Otherwise do not cancel",
       "Tell the user once what it clashes with",
