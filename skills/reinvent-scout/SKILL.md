@@ -111,9 +111,8 @@ explained shortlist.
    result as an error. A 409 means reservations are closed: stop. Never automatically replay an
    uncertain write; use its schedule read-back, explain that observed state is not proof of what
    caused it, and ask before any later retry. Use `cancel_reservation` only for an explicitly
-   chosen cancellation; never cancel conflicts automatically, except the reservations the user
-   pre-confirmed on a watch's may-cancel list (see `reference/watch.md`).
-   Exception: inside a watch the user confirmed, the may-cancel list is the explicit choice of
+   chosen cancellation; never cancel conflicts automatically.
+   Exception (see `reference/watch.md`): inside a watch the user confirmed, the may-cancel list is the explicit choice of
    cancellations and the running watch is the standing request for re-attempts. Outside a watch,
    these rules hold.
 8. Ask for confirmation before favoriting anything. On confirmation, call `favorite_sessions` with

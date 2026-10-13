@@ -52,6 +52,17 @@ describe("get_session tool", () => {
     const result = await client.callTool({ name: "get_session", arguments: { sessionId: "x" } });
     expect(JSON.parse(textOf(result))).toEqual({ sessionId: "x", title: "Bare", fetchedAt: "2026-12-01T00:00:00.000Z" });
   });
+  it("picks only date, time and length from sessionTime", async () => {
+    const client = await connect(home.path, () => stubClient(async () => ({ sessionId: "x", title: "T", sessionTime: { date: "2026-12-02", time: "10:30", length: "60", timezone: "UTC", surprise: "no" } }) as Session));
+    const result = await client.callTool({ name: "get_session", arguments: { sessionId: "x" } });
+    expect(JSON.parse(textOf(result)).sessionTime).toEqual({ date: "2026-12-02", time: "10:30", length: "60" });
+  });
+  it("bounds an error message like cancel_reservation does", async () => {
+    const client = await connect(home.path, () => stubClient(async () => { throw new Error("boom " + "x".repeat(20000)); }));
+    const result = await client.callTool({ name: "get_session", arguments: { sessionId: "x" } });
+    expect(result.isError).toBe(true);
+    expect(textOf(result).length).toBeLessThan(600);
+  });
   it("caps a very long title", async () => {
     const client = await connect(home.path, () => stubClient(async () => ({ sessionId: "x", title: "t".repeat(5000) })));
     const result = await client.callTool({ name: "get_session", arguments: { sessionId: "x" } });

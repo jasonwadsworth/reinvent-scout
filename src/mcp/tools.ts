@@ -831,7 +831,11 @@ function pickLiveSession(session: Session, fetchedAt: string) {
     title: shortenDescription(session.title, 300),
     ...(session.venue === undefined ? {} : { venue: session.venue }),
     ...(session.room === undefined ? {} : { room: session.room }),
-    ...(session.sessionTime === undefined ? {} : { sessionTime: session.sessionTime }),
+    ...(session.sessionTime === undefined ? {} : { sessionTime: {
+      ...(session.sessionTime.date === undefined ? {} : { date: session.sessionTime.date }),
+      ...(session.sessionTime.time === undefined ? {} : { time: session.sessionTime.time }),
+      ...(session.sessionTime.length === undefined ? {} : { length: session.sessionTime.length }),
+    } }),
     ...(session.isReservable === undefined ? {} : { isReservable: session.isReservable }),
     ...(session.seatAvailability === undefined ? {} : { seatAvailability: session.seatAvailability }),
     fetchedAt,
@@ -848,7 +852,10 @@ function registerGetSessionTool(server: McpServer, deps: McpToolDeps): void {
       const session = await buildApiClient(deps.resolveStoreRoot()).getSession(event ?? DEFAULT_EVENT_ID, sessionId);
       return textResult(pickLiveSession(session, new Date((deps.now ?? Date.now)()).toISOString()));
     } catch (error) {
-      return error instanceof NotFoundError ? errorResult(SESSION_NOT_FOUND_MESSAGE) : toToolError(error);
+      if (error instanceof NotFoundError) return errorResult(SESSION_NOT_FOUND_MESSAGE);
+      const result = toToolError(error);
+      result.content[0].text = shortenDescription(result.content[0].text, 512);
+      return result;
     }
   });
 }

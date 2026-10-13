@@ -14,6 +14,8 @@ apply, not code to call.
 4. The user's answer is their consent to reserve the targets and to cancel only the reservations
    on that list. Never cancel anything that is not on the may-cancel list, and never add to it
    yourself. If you think another reservation should go, ask, and wait for a clear yes.
+5. If the may-cancel list is not empty, tell the user that a swap briefly frees their seat, and
+   that a restore refused as full means it is lost.
 
 This is the one exception to the general rules that you never cancel conflicts automatically and
 that a later retry needs an explicit new request: inside a watch the user confirmed, the may-cancel
@@ -34,9 +36,10 @@ Nothing is saved for you. Keep this in your own working notes and update it afte
 - pending restores (ids and attempt count)
 
 **If you lose track** (a new session, a compacted context, or memory you no longer trust):
-re-read `get_schedule`, re-confirm the targets and re-confirm the may-cancel list with the user,
-and do not cancel anything until the user re-confirms. Reserving a target needs no new consent;
-cancelling does.
+check the transcript or ask the user about in-flight swaps and pending restores before doing
+anything else. Then re-read `get_schedule` and re-confirm the targets with the user before anything
+else that writes: reserving without re-confirmation is not allowed. Also re-confirm the may-cancel list
+with the user, and do not cancel anything until the user re-confirms.
 
 ## Driving the loop
 
@@ -44,7 +47,8 @@ Use the client's own scheduling, such as `/loop` (self-paced) or a cron or wakeu
 Code. Check about every 3 minutes, and never more often than every 1 minute. Add jitter so
 checks do not land on a round minute. After a 429 or another transient error, double the wait,
 up to 30 minutes, and reset after a clean check. Stop scheduling when every target is resolved,
-when the end time passes, or on anything that needs the user.
+when the end time passes, or on anything that needs the user. Never stop the wakeups of a pending
+restore this way: restore wakeups keep running even after the rest of the watch stops.
 
 ## One check
 
@@ -73,6 +77,9 @@ when the end time passes, or on anything that needs the user.
 
 `scheduleConflict` names the reservations it clashes with in `conflictsWith`.
 
+- `reserve_sessions` may omit some of the clashes it lists and says how many in
+  `omittedConflicts`. Swap only when `omittedConflicts` is 0. Otherwise read the full set from
+  `get_schedule` first, and apply the every-id rule to the full set.
 - Swap only if every id in `conflictsWith` is on the may-cancel list. There are no partial
   swaps: if even one id is not on the list, do not swap. Cancel exactly those ids and no others,
   even if the list has more.
@@ -81,20 +88,26 @@ when the end time passes, or on anything that needs the user.
 
 To swap:
 
-1. Cancel one reservation at a time and read each result.
-   - A cancel that says the reservation was already gone (404) is not something to restore.
-   - If a cancel is uncertain, or `get_schedule` afterwards still shows the reservation or cannot
-     be read: stop cancelling, do not reserve the target, re-reserve anything you already
-     cancelled, then stop the watch and tell the user. Restore every cancel that was confirmed. Handle
-     the uncertain one separately. If `get_schedule` shows the uncertain one gone, treat it as cancelled and
-     restore it. If `get_schedule` still shows it, it is still held; do nothing for it. If
-     `get_schedule` cannot be read, do not touch the uncertain one and tell the user it may be
-     cancelled. In every uncertain-cancel case, stop the watch and tell the user.
+0. Before each swap, tell the user in the conversation which ids are about to be cancelled, so
+   the transcript is the durable record.
+1. Cancel one reservation at a time and read each result. `cancel_reservation` reports `outcome`
+   and `verifiedAbsent`: `outcome` is `cancelled`, `alreadyAbsent` or `uncertain`.
+   - A cancel that says the reservation was already gone (404) is not something to restore
+     (`alreadyAbsent`).
+   - A cancel is uncertain if `outcome` is `uncertain`, if `get_schedule` afterwards cannot be
+     read, or if it still lists the reservation: an acknowledged cancel (`outcome` is `cancelled`)
+     whose `verifiedAbsent` is not true counts as uncertain. Then stop cancelling, do not reserve
+     the target, re-reserve anything you already cancelled, and re-reserve the uncertain one
+     too. Restore every cancel that was confirmed. If it is still held, that returns
+     `alreadyScheduled`, which is harmless; if it was cancelled, the re-reserve restores it. The
+     target is never reserved on this path, so nothing can double-book. In every uncertain-cancel
+     case, stop the watch and tell the user.
    - If a cancel is refused with a 429, re-reserve the ones you already cancelled and skip the
      target for this check, and back off.
    - If a cancel is refused because auth is required, you are not registered, or reservations are
      closed (409), re-reserve the ones you already cancelled, then stop the whole watch and tell
-     the user.
+     the user. A 400 (validation error) or an OAuth failure on a cancel is treated like auth:
+     re-reserve what you cancelled, then stop the whole watch.
 2. Reserve the target with `reserve_sessions`.
 3. Decide what the result means.
    - If the target reserve was refused (any failure code), or the read-back shows it absent,
@@ -108,9 +121,12 @@ To swap:
 4. Restore only what you actually cancelled. Retry a restore only when it was refused by a 429 or
    never sent, up to 3 times, about 1 minute apart. A restore refused with `sessionFull` is lost;
    do not retry it. A retry cannot wait inside one turn: record the ids and the attempt count under
-   pending restores and schedule a short wakeup (about 1 minute) for the retry. A pending restore
-   takes priority over everything else on the next check. While a restore is pending, never
-   attempt another swap.
+   pending restores and schedule a short wakeup (about 1 minute) for the retry. Remember that a
+   pending restore is not lost until its retries run out or it is refused with `sessionFull`.
+   Every re-reserve-then-stop branch that gets a 429 becomes a pending restore: restore wakeups
+   keep running even after the rest of the watch stops, and you tell the user right away that a
+   restore is pending. A pending restore takes priority over everything else on the next check.
+   While a restore is pending, never attempt another swap.
 5. Verify with `get_schedule`. Report exactly what was kept, gained and lost. If anything was
    lost or is uncertain, stop the whole watch and tell the user right away. A schedule that
    changed in a way the user did not approve must not be changed further.
@@ -118,7 +134,7 @@ To swap:
 After a swap you undid (the target was full again), do not try it again until that target's seat
 band changes. Each attempt briefly frees the user's existing seat, and someone else could take
 it. Record the band at that moment as the deferred swap; going to `unavailable` and back counts
-as a change. Meanwhile keep trying a plain `reserve_sessions` on each check.
+as a change. Meanwhile, report the conflict once and wait for the seat band to change.
 
 ## Uncertain writes
 

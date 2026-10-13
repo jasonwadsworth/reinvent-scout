@@ -1264,10 +1264,14 @@ describe("watch playbook (reference/watch.md)", () => {
       "If a cancel is refused with a 429, re-reserve the ones you already cancelled and skip the target for this check, and back off",
       "If a cancel is refused because auth is required, you are not registered, or reservations are closed (409), re-reserve the ones you already cancelled, then stop the whole watch and tell the user",
       "Restore every cancel that was confirmed",
-      "If `get_schedule` shows the uncertain one gone, treat it as cancelled and restore it",
-      "If `get_schedule` still shows it, it is still held; do nothing for it",
-      "If `get_schedule` cannot be read, do not touch the uncertain one and tell the user it may be cancelled",
+      "re-reserve the uncertain one",
+      "If it is still held, that returns `alreadyScheduled`, which is harmless",
+      "if it was cancelled, the re-reserve restores it",
+      "The target is never reserved on this path, so nothing can double-book",
+      "an acknowledged cancel (`outcome` is `cancelled`) whose `verifiedAbsent` is not true counts as uncertain",
+      "`outcome` is `cancelled`, `alreadyAbsent` or `uncertain`",
       "In every uncertain-cancel case, stop the watch and tell the user",
+      "A 400 (validation error) or an OAuth failure on a cancel is treated like auth: re-reserve what you cancelled, then stop the whole watch",
       "A cancel that says the reservation was already gone (404) is not something to restore",
       "Restore only what you actually cancelled",
     ]);
@@ -1299,13 +1303,50 @@ describe("watch playbook (reference/watch.md)", () => {
   });
   it("spreads restore retries across wakeups and lets a pending restore win", () => {
     expectAll(watchMd, [
+      "a pending restore is not lost until its retries run out or it is refused with `sessionFull`",
+      "restore wakeups keep running even after the rest of the watch stops",
+      "tell the user right away that a restore is pending",
+      "Every re-reserve-then-stop branch that gets a 429 becomes a pending restore",
       "schedule a short wakeup (about 1 minute) for the retry",
       "A pending restore takes priority over everything else on the next check",
       "While a restore is pending, never attempt another swap",
     ]);
   });
-  it("tells the agent a watch is the one case where pre-confirmed cancels are allowed", () => {
-    expectAll(skillMd, ["never cancel conflicts automatically, except the reservations the user pre-confirmed on a watch's may-cancel list"]);
+  it("keeps a durable record in the conversation and recovers from it", () => {
+    expectAll(watchMd, [
+      "Before each swap, tell the user in the conversation which ids are about to be cancelled",
+      "so the transcript is the durable record",
+      "check the transcript or ask the user about in-flight swaps and pending restores before doing anything else",
+    ]);
+  });
+  it("warns the user about the swap risk when the may-cancel list is not empty", () => {
+    expectAll(watchMd, [
+      "tell the user that a swap briefly frees their seat, and that a restore refused as full means it is lost",
+    ]);
+    expect(readFileSync(join(skillRoot, "..", "..", "README.md"), "utf8").replace(/\s+/g, " ")).toContain("tries to put back");
+  });
+  it("reads the full conflict set when the tool omitted some of it", () => {
+    expectAll(watchMd, [
+      "`omittedConflicts`",
+      "Swap only when `omittedConflicts` is 0",
+      "read the full set from `get_schedule` first, and apply the every-id rule to the full set",
+    ]);
+  });
+  it("only reports and waits while a swap is deferred", () => {
+    expectAll(watchMd, ["report the conflict once and wait for the seat band to change"]);
+    expect(watchMd.replace(/\s+/g, " ")).not.toContain("keep trying a plain");
+  });
+  it("makes the agent re-confirm the targets after losing track before it reserves anything", () => {
+    expectAll(watchMd, [
+      "re-confirm the targets with the user before anything else",
+      "reserving without re-confirmation is not allowed",
+    ]);
+    expect(watchMd.replace(/\s+/g, " ")).not.toContain("Reserving a target needs no new consent");
+  });
+  it("states the watch exception once in SKILL.md", () => {
+    const flat = skillMd.replace(/\s+/g, " ");
+    expect(flat.split("Outside a watch, these rules hold").length - 1).toBe(1);
+    expect(flat).toContain("never cancel conflicts automatically.");
   });
   it("defers a repeat swap until the seat band changes", () => {
     expectAll(watchMd, [

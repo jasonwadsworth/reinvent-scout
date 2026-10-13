@@ -494,8 +494,9 @@ When a session you want is full, ask the agent to watch it. There is no watcher 
 polls the live seat band with the `get_session` tool about every 3 minutes, using the client's own
 scheduling, and reserves the moment a seat opens. Before it starts, it confirms the sessions and
 the exact reservations it may cancel to make room (often none). It cancels only those, only when
-every clashing reservation is on that list, and puts back anything it cancelled if the new session
-does not land. Travel time between venues is not checked. The rules it follows are in the
+every clashing reservation is on that list, and tries to put back anything it cancelled if the
+new session does not land. A swap briefly frees your existing seat, and a restore refused as full
+means that seat is lost. Travel time between venues is not checked. The rules it follows are in the
 [watch playbook](skills/reinvent-scout/reference/watch.md).
 
 ## Run the MCP server
