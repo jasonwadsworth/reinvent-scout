@@ -3,7 +3,7 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["dist/**", "node_modules/**", "coverage/**"],
+    ignores: ["dist/**", "node_modules/**", "coverage/**", "plugin/**/scripts/*.mjs"],
   },
   ...tseslint.configs.recommended,
   {
@@ -28,6 +28,18 @@ export default tseslint.config(
     rules: {
       "no-console": "error",
     },
+  },
+  {
+    // stdout carries exactly one JSON document, so nothing in the script or the commands may print.
+    files: ["src/script/**/*.ts", "src/commands/**/*.ts"],
+    rules: {
+      "no-console": "error",
+    },
+  },
+  {
+    // The build scripts are plain Node.
+    files: ["scripts/**/*.mjs"],
+    languageOptions: { globals: { process: "readonly", Buffer: "readonly" } },
   },
   {
     files: ["tests/**/*.ts"],
