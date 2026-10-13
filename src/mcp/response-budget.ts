@@ -1,6 +1,5 @@
 import { shortenDescription } from "../commands/output-budget.js";
 import { RESPONSE_BUDGET_BYTES, type ReserveSessionsResult, type CancelReservationResult } from "../schedule/reservations.js";
-import type { SchedulePlan } from "../schedule/plan.js";
 
 export function responseBytes(value: unknown, isError = false): number {
   return Buffer.byteLength(JSON.stringify({ content: [{ type: "text", text: JSON.stringify(value) }], ...(isError ? { isError: true } : {}) }), "utf8");
@@ -45,29 +44,4 @@ export function boundedCancelResult(raw: CancelReservationResult) {
     ...(raw.error === undefined ? {} : { error: shortenDescription(raw.error) }),
     ...(raw.verificationError === undefined ? {} : { verificationError: shortenDescription(raw.verificationError) }),
   };
-}
-/** Domain has already examined every hard commitment. Only the read presentation is bounded. */
-export function boundedSchedulePlan(raw: SchedulePlan) {
-  const result = { ...raw, selected: [...raw.selected], rejected: [...raw.rejected], alternatives: [...raw.alternatives], blockedBy: [...raw.blockedBy], alreadyReserved: [...raw.alreadyReserved], alreadyReservedAlternative: [...raw.alreadyReservedAlternative], omitted: { selected: 0, rejected: 0, alternatives: 0, blockedBy: 0, alreadyReserved: 0, alreadyReservedAlternative: 0 } };
-  for (const key of ["alternatives", "rejected", "selected", "blockedBy", "alreadyReserved", "alreadyReservedAlternative"] as const) {
-    while (responseBytes(result) >= RESPONSE_BUDGET_BYTES && result[key].length) {
-      result[key].pop(); result.omitted[key]++;
-    }
-  }
-  return result;
-}
-
-export function boundedNearbyResult(raw: import("../onsite/recommend.js").NearbyResult) {
-  const result = { ...raw, candidates: [...raw.candidates], coverage: { ...raw.coverage } };
-  while (responseBytes(result) >= RESPONSE_BUDGET_BYTES && result.candidates.length) {
-    result.candidates.pop(); result.coverage.omitted++;
-  }
-  return result;
-}
-export function boundedOnsitePreferences(raw: import("../onsite/config.js").OnsitePreferences) {
-  const result = { ...raw, sessionWalkUp: [...raw.sessionWalkUp], routes: [...raw.routes], omitted: { sessionWalkUp: 0, routes: 0 } };
-  for (const key of ["sessionWalkUp", "routes"] as const) {
-    while (responseBytes(result) >= RESPONSE_BUDGET_BYTES && result[key].length) { result[key].pop(); result.omitted[key]++; }
-  }
-  return result;
 }

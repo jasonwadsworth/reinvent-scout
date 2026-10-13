@@ -18,6 +18,7 @@ import { createMcpServer } from "../../src/mcp/server.js";
 import type { McpToolDeps } from "../../src/mcp/tools.js";
 import { resolveProfile } from "../../src/profile/profile.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
+import { OUTPUT_BUDGET_BYTES } from "../../src/commands/output-budget.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixture: Session[] = JSON.parse(
@@ -315,7 +316,7 @@ describe("validate_profile tool", () => {
 
     expect(result.isError).not.toBe(true);
     const raw = textOf(result);
-    expect(Buffer.byteLength(raw, "utf8")).toBeLessThanOrEqual(30 * 1024);
+    expect(Buffer.byteLength(raw, "utf8")).toBeLessThanOrEqual(OUTPUT_BUDGET_BYTES);
     const parsed = JSON.parse(raw) as { services: unknown[]; counts: { services: number } };
     expect(parsed.counts.services).toBe(120); // the true count, even if services[] itself is truncated
     expect(parsed.services).toHaveLength(120); // 120 tiny entries comfortably fit; nothing truncated
@@ -342,7 +343,7 @@ describe("validate_profile tool", () => {
 
     expect(result.isError).not.toBe(true);
     const raw = textOf(result);
-    expect(Buffer.byteLength(raw, "utf8")).toBeLessThanOrEqual(30 * 1024);
+    expect(Buffer.byteLength(raw, "utf8")).toBeLessThanOrEqual(OUTPUT_BUDGET_BYTES);
     const parsed = JSON.parse(raw) as {
       services: Array<{ name: string; catalogName: string | null }>;
       unresolvedServices: string[];
@@ -388,7 +389,7 @@ describe("validate_profile tool", () => {
 
     expect(result.isError).not.toBe(true);
     const raw = textOf(result);
-    expect(Buffer.byteLength(raw, "utf8")).toBeLessThanOrEqual(30 * 1024);
+    expect(Buffer.byteLength(raw, "utf8")).toBeLessThanOrEqual(OUTPUT_BUDGET_BYTES);
     const parsed = JSON.parse(raw) as {
       patterns: string[];
       truncated: boolean;
@@ -468,11 +469,11 @@ describe("match_sessions tool", () => {
     expect(parsed.candidates.map((candidate: { code: string }) => candidate.code)).toEqual(["LENS400"]);
     expect(parsed.candidates[0].reasons).toContainEqual(expect.objectContaining({ kind, profileEvidence: evidence }));
     expect(parsed.candidates[0].reasons[0].evidence).toBe(lens === "fix" ? "Dead-letter queues" : "Agentic");
-    expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(30 * 1024);
+    expect(Buffer.byteLength(textOf(result))).toBeLessThanOrEqual(OUTPUT_BUDGET_BYTES);
     evidence[0]!.note = "long citation ".repeat(4000);
     const huge = await client.callTool({ name: "match_sessions", arguments: { profile, lens } });
     expect(huge.isError).not.toBe(true);
-    expect(Buffer.byteLength(JSON.stringify(huge))).toBeLessThan(30 * 1024);
+    expect(Buffer.byteLength(textOf(huge))).toBeLessThanOrEqual(OUTPUT_BUDGET_BYTES);
     expect(JSON.parse(textOf(huge))).toMatchObject({ candidates: [], truncated: true, omitted: 1 });
   });
 
@@ -612,7 +613,7 @@ describe("match_sessions tool", () => {
       arguments: { profile: lambdaProfile() },
     });
 
-    expect(Buffer.byteLength(JSON.stringify(result), "utf8")).toBeLessThan(30 * 1024);
+    expect(Buffer.byteLength(textOf(result), "utf8")).toBeLessThanOrEqual(OUTPUT_BUDGET_BYTES);
     const parsed = JSON.parse(textOf(result)) as {
       candidates: unknown[];
       truncated: boolean;
@@ -639,8 +640,8 @@ describe("match_sessions tool", () => {
     });
 
     expect(result.isError).not.toBe(true);
-    const envelopeBytes = Buffer.byteLength(JSON.stringify(result), "utf8");
-    expect(envelopeBytes).toBeLessThan(30 * 1024);
+    const envelopeBytes = Buffer.byteLength(textOf(result), "utf8");
+    expect(envelopeBytes).toBeLessThanOrEqual(OUTPUT_BUDGET_BYTES);
 
     const parsed = JSON.parse(textOf(result)) as {
       candidates: Array<Record<string, unknown>>;
@@ -753,7 +754,7 @@ describe("match_sessions tool", () => {
     });
 
     expect(result.isError).not.toBe(true);
-    expect(Buffer.byteLength(JSON.stringify(result), "utf8")).toBeLessThan(30 * 1024);
+    expect(Buffer.byteLength(textOf(result), "utf8")).toBeLessThanOrEqual(OUTPUT_BUDGET_BYTES);
     const parsed = JSON.parse(textOf(result)) as { candidates: Array<{ why: { summary: string; sessionSays?: string } }>; requested: number };
     expect(parsed.requested).toBe(50);
     expect(parsed.candidates.length).toBeGreaterThan(0);
