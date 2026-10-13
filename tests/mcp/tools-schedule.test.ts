@@ -110,7 +110,7 @@ function textOf(result: Awaited<ReturnType<Client["callTool"]>>): string {
   return (result.content as Array<{ type: string; text: string }>)[0]!.text;
 }
 
-describe("the fourteen registered tools", () => {
+describe("the sixteen registered tools", () => {
   let home: TempHome;
 
   beforeEach(() => {
@@ -121,7 +121,7 @@ describe("the fourteen registered tools", () => {
     home.cleanup();
   });
 
-  it("lists exactly the fourteen expected tools, by name", async () => {
+  it("lists exactly the sixteen expected tools, by name", async () => {
     // Asserted as a set, not a count: the plan's own task 5 text still names `profile_repo`,
     // superseded by `validate_profile` in the rescope -- swapping one tool for another leaves the
     // count at seven, so a length-only assertion would pass with the wrong membership.
@@ -143,6 +143,7 @@ describe("the fourteen registered tools", () => {
         "plan_schedule",
         "reserve_sessions",
         "cancel_reservation",
+        "get_session",
         "nearby_sessions",
         "get_onsite_preferences",
         "set_onsite_preferences",

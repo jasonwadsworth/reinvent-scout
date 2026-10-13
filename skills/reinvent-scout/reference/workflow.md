@@ -654,6 +654,9 @@ gate. Stop on 409. Auth, registration, exhausted429, and OAuth failures also sto
 POST 500/503, network/timeout failures, and lost acknowledgements are not automatically replayed;
 one 401 refresh and bounded 429 retry remain safe. A later retry requires an explicit new request,
 fresh eligibility checks, and only the still-missing IDs. No command replaces or cancels conflicts.
+Exception: inside a watch the user confirmed ([watch.md](watch.md)), the may-cancel list is the
+explicit choice of cancellations and the running watch is the standing request for re-attempts.
+Outside a watch, these rules hold.
 
 For an explicitly requested cancellation, use one reserved offering ID:
 
@@ -682,6 +685,25 @@ reinvent-scout schedule reserve <selected-session-id> --json
 reinvent-scout schedule cancel <reserved-session-id> --json
 ```
 
+
+## Live session read, and watching a full session
+
+`get_session` reads one session live from the API, not from the local catalog (which can be
+stale), with one request and no writes:
+
+```json
+{"tool":"get_session","arguments":{"sessionId":"<session-id>"}}
+```
+
+It returns `sessionId`, `abbreviation`, `title`, `venue`, `room`, the raw `sessionTime`
+(`date`, `time`, `length`), `isReservable`, `seatAvailability` and `fetchedAt`. A field the API did
+not send is omitted. `seatAvailability` is one of `available`, `limited`, `veryLimited`,
+`unavailable` and `walkUp`; it is a hint, not a guarantee of a seat. A 404 comes back as
+`isError: true` and is not proof the session is gone: during an API outage real ids 404. Auth and
+registration failures read like the other tools'.
+
+To reserve a full session when a seat opens, follow [watch.md](watch.md). It is a playbook for
+you to carry out with these tools, not a command to run.
 
 ## On-site: confirm venue, inspect travel, then choose
 

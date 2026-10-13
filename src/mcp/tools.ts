@@ -8,6 +8,7 @@ import { boundedReservationResult, boundedCancelResult, boundedSchedulePlan, sho
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { createApiClient, type ApiClient } from "../api/client.js";
+import type { Session } from "../api/types.js";
 import { createTokenProviderAdapter } from "../auth/provider-adapter.js";
 import { readTokenStore } from "../auth/token-store.js";
 import { catalogServiceNames } from "../catalog/query.js";
@@ -19,6 +20,7 @@ import {
   AuthRequiredError,
   CatalogMissingError,
   CatalogUnusableError,
+  NotFoundError,
   NotRegisteredError,
   ValidationError,
 } from "../core/errors.js";
@@ -786,12 +788,13 @@ function registerUnfavoriteSessionTool(server: McpServer, deps: McpToolDeps): vo
   );
 }
 
+const idSchema = z.string().trim().min(1).refine(id => Array.from(id).length <= MAX_SESSION_ID_LENGTH, `Session IDs must have at most ${MAX_SESSION_ID_LENGTH} characters.`);
+
 function registerReservationTools(server: McpServer, deps: McpToolDeps): void {
-  const idSchema = z.string().trim().min(1).refine(id => Array.from(id).length <= MAX_SESSION_ID_LENGTH, `Session IDs must have at most ${MAX_SESSION_ID_LENGTH} characters.`);
   const buildApiClient = deps.buildApiClient ?? defaultBuildApiClient;
   for (const name of ["plan_schedule", "reserve_sessions"] as const) {
     server.registerTool(name, {
-      description: name === "plan_schedule" ? "Read the full schedule and plan up to 50 priority-ordered session IDs with repeat alternatives. No writes; proves time non-overlap only, not seats or travel." : "Reserve up to 30 explicitly confirmed offering IDs per call (larger batches would outlast the MCP request timeout; make several calls). Reports every outcome and uncertainty; never automatically replay an ambiguous write or cancel conflicts.",
+      description: name === "plan_schedule" ? "Read the full schedule and plan up to 50 priority-ordered session IDs with repeat alternatives. No writes; proves time non-overlap only, not seats or travel." : "Reserve up to 30 explicitly confirmed offering IDs per call (larger batches would outlast the MCP request timeout; make several calls). Reports every outcome and uncertainty; never automatically replay an ambiguous write, and never cancel conflicts without the user's explicit consent (the one exception is a pre-confirmed may-cancel list, see the watch playbook).",
       inputSchema: z.strictObject({ sessionIds: z.array(idSchema).min(name === "plan_schedule" ? 0 : 1).max(name === "plan_schedule" ? MAX_RESERVATION_IDS : MCP_MAX_WRITE_IDS), event: z.string().min(1).optional() }),
     }, async ({ sessionIds, event }) => {
       try {
@@ -817,12 +820,55 @@ function registerReservationTools(server: McpServer, deps: McpToolDeps): void {
   });
 }
 
-/** Registers every implemented tool: `status`, `catalog_sync`, `validate_profile`,
- * `match_sessions`, `get_schedule`, `favorite_sessions` and `unfavorite_session` -- the seven the
- * skill (task 7) is written against. */
+const SESSION_NOT_FOUND_MESSAGE =
+  "Session not found. This can also happen during an API outage, so it is not proof the session is gone: check the id and try again later.";
+
+/** The fields a caller needs to recognise a session and see its seat band; no abstract or taxonomy. */
+function pickLiveSession(session: Session, fetchedAt: string) {
+  return {
+    sessionId: session.sessionId,
+    ...(session.abbreviation === undefined ? {} : { abbreviation: session.abbreviation }),
+    title: shortenDescription(session.title, 300),
+    ...(session.venue === undefined ? {} : { venue: session.venue }),
+    ...(session.room === undefined ? {} : { room: session.room }),
+    ...(session.sessionTime === undefined ? {} : { sessionTime: {
+      ...(session.sessionTime.date === undefined ? {} : { date: session.sessionTime.date }),
+      ...(session.sessionTime.time === undefined ? {} : { time: session.sessionTime.time }),
+      ...(session.sessionTime.length === undefined ? {} : { length: session.sessionTime.length }),
+    } }),
+    ...(session.isReservable === undefined ? {} : { isReservable: session.isReservable }),
+    ...(session.seatAvailability === undefined ? {} : { seatAvailability: session.seatAvailability }),
+    fetchedAt,
+  };
+}
+
+function registerGetSessionTool(server: McpServer, deps: McpToolDeps): void {
+  const buildApiClient = deps.buildApiClient ?? defaultBuildApiClient;
+  server.registerTool("get_session", {
+    description: "Read one session live from the API (not the local catalog, which can be stale): its seat band (seatAvailability), whether it is reservable, and its time and place. Read-only, one request. Use it to poll a full session cheaply; it is not a reservation attempt.",
+    inputSchema: z.strictObject({ sessionId: idSchema, event: z.string().min(1).optional() }),
+  }, async ({ sessionId, event }) => {
+    try {
+      const session = await buildApiClient(deps.resolveStoreRoot()).getSession(event ?? DEFAULT_EVENT_ID, sessionId);
+      return textResult(pickLiveSession(session, new Date((deps.now ?? Date.now)()).toISOString()));
+    } catch (error) {
+      if (error instanceof NotFoundError) return errorResult(SESSION_NOT_FOUND_MESSAGE);
+      const result = toToolError(error);
+      result.content[0].text = shortenDescription(result.content[0].text, 512);
+      return result;
+    }
+  });
+}
+
+/** Registers every implemented tool: catalog and profile (`status`, `catalog_sync`,
+ * `validate_profile`, `match_sessions`, `map_profile`, `list_filters`), the schedule
+ * (`get_schedule`, `plan_schedule`, `favorite_sessions`, `unfavorite_session`,
+ * `reserve_sessions`, `cancel_reservation`), a live seat read (`get_session`) and the on-site
+ * tools (`nearby_sessions`, `get_onsite_preferences`, `set_onsite_preferences`). */
 export function registerTools(server: McpServer, deps: McpToolDeps): void {
   registerOnsiteTools(server, deps);
   registerReservationTools(server, deps);
+  registerGetSessionTool(server, deps);
   registerStatusTool(server, deps);
   registerCatalogSyncTool(server, deps);
   registerValidateProfileTool(server, deps);

@@ -112,6 +112,9 @@ explained shortlist.
    uncertain write; use its schedule read-back, explain that observed state is not proof of what
    caused it, and ask before any later retry. Use `cancel_reservation` only for an explicitly
    chosen cancellation; never cancel conflicts automatically.
+   Exception (see `reference/watch.md`): inside a watch the user confirmed, the may-cancel list is the explicit choice of
+   cancellations and the running watch is the standing request for re-attempts. Outside a watch,
+   these rules hold.
 8. Ask for confirmation before favoriting anything. On confirmation, call `favorite_sessions` with
    the chosen session ids. Report every outcome plainly: a `failed` entry is a real refusal (most
    often a schedule conflict, named with the conflicting session's own title) and must be reported
@@ -124,6 +127,12 @@ explained shortlist.
 10. For on-site choices, read `get_onsite_preferences`; use `set_onsite_preferences` for requested
     local changes. Confirm the current venue on this call, then call `nearby_sessions`. Present
     both travel legs, admission uncertainty and refresh coverage before any reservation.
+11. Watch a full session. When a session the user wants is full, offer to watch it: call
+    `get_session` for its live seat band (`seatAvailability`; one read, reserves nothing, and a 404
+    is not proof the session is gone), and reserve when a seat opens. Confirm the targets and the
+    exact reservations you may cancel to make room before you start; that confirmation is the only
+    consent to cancel anything. Follow `reference/watch.md` for the loop, the state to carry and the
+    swap rules.
 
 `reference/workflow.md` has the exact argument and output shape for every tool above, plus what
 each `isError` message means and how to react to it.
@@ -178,6 +187,7 @@ one without the actual remediation or destination signal.
 - `plan_schedule`
 - `reserve_sessions`
 - `cancel_reservation`
+- `get_session`
 - `nearby_sessions`
 - `get_onsite_preferences`
 - `set_onsite_preferences`
@@ -188,6 +198,7 @@ one without the actual remediation or destination signal.
 - `reference/taxonomy.md` -- the catalog's topic, role, level and session-type vocabulary.
 - `reference/workflow.md` -- exact tool argument/output contracts, error handling, and the CLI
   command reference.
+- `reference/watch.md` -- the playbook for watching a full session and reserving it when a seat opens.
 
 
 For on-site requests, confirm the attendee's current venue on every call, including location or
