@@ -94,6 +94,14 @@ describe("stageCatalogPage", () => {
     });
   });
 
+  it.each([["non-JSON", "SECRET-MARKER {not json"], ["the wrong shape", JSON.stringify({ SECRET: "SECRET-MARKER" })]])("reports %s staged data as unreadable without echoing it", (_name, content) => {
+    const one = first(pageOf(1, 2, { nextToken: "t1" }));
+    writeFileSync(join(stagingDir(), one.syncId, "page-0001.json"), content);
+    let message = "";
+    try { stageCatalogPage({ syncId: one.syncId, page: pageOf(3, 2) }, deps()); } catch (err) { expect(err).toBeInstanceOf(ValidationError); message = (err as Error).message; }
+    expect(message).toMatch(/unreadable.*start a new sync/);
+    expect(message).not.toContain("SECRET");
+  });
   it("flags a changed totalCount", () => {
     const one = first(pageOf(1, 2, { nextToken: "t1" }));
     const two = stageCatalogPage({ syncId: one.syncId, page: pageOf(3, 2, { totalCount: 5 }) }, deps());

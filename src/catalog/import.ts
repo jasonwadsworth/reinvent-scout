@@ -5,7 +5,7 @@ import { z } from "zod";
 import { writeFileAtomic } from "../core/atomic-write.js";
 import { ValidationError } from "../core/errors.js";
 import { ensureDirWithMode, STORE_DIR_MODE } from "../core/paths.js";
-import { resolveListSessionsPage, type ListSessionsPage, type PageReadOptions } from "./import-page.js";
+import { resolveListSessionsPage, SessionItemSchema, type ListSessionsPage, type PageReadOptions } from "./import-page.js";
 import { isRecognizedTimeZone } from "./store.js";
 
 const STAGING_DIR = ["catalog", "staging"] as const;
@@ -81,8 +81,14 @@ export function readManifest(storeRoot: string, syncId: string): ImportManifest 
   if (!parsed.success || parsed.data.syncId !== syncId) throw unknown;
   return parsed.data;
 }
+const StagedPageSchema = z.array(SessionItemSchema);
 export function readStagedPage(storeRoot: string, syncId: string, number: number): ListSessionsPage["items"] {
-  return JSON.parse(readFileSync(join(stagingDirFor(storeRoot, syncId), pageFileName(number)), "utf8")) as ListSessionsPage["items"];
+  // A corrupt staged file must not surface a parse error: Node quotes the text it choked on.
+  const unreadable = new ValidationError("Staged pages for this sync are unreadable; start a new sync.");
+  let parsed;
+  try { parsed = StagedPageSchema.safeParse(JSON.parse(readFileSync(join(stagingDirFor(storeRoot, syncId), pageFileName(number)), "utf8"))); } catch { throw unreadable; }
+  if (!parsed.success) throw unreadable;
+  return parsed.data as ListSessionsPage["items"];
 }
 
 function writeJson(path: string, value: unknown): void {

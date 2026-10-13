@@ -8,7 +8,7 @@ import type { Session } from "../api/types.js";
 export const MAX_PAGE_FILE_BYTES = 16 * 1024 * 1024;
 
 /** One item of an AWS `ListSessions` page. Loose on purpose: every field the API sends is kept verbatim. */
-const SessionItemSchema = z.looseObject({
+export const SessionItemSchema = z.looseObject({
   sessionId: z.string().min(1).max(128),
   title: z.string(),
 });
