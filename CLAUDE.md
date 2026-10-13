@@ -19,6 +19,14 @@ branching on business rules, computing something, deciding what's valid -- that 
 the domain module it's adapting, not the adapter. Business logic in an adapter is a review
 rejection, because it lets the CLI and the (future) MCP server drift apart from each other.
 
+## Agentic first
+
+Favor agentic work for everything the skill does. Code earns its place only for:
+- **catalog sync and the local index/search**, which keep 2,000+ sessions out of the agent's context;
+- **thin MCP wrappers over the AWS Events API**: fetch, pick bounded fields, map errors.
+
+Loops, decisions, failure handling, swaps and scheduling belong in skill guidance (`skills/reinvent-scout/**`) that the agent carries out through MCP calls. Don't add domain logic for them. When planning a feature, first ask whether it can be skill guidance over existing MCP tools. Add code only for a missing API wrapper, or when keeping session data out of context requires it.
+
 ## Injection
 
 Every module that touches time, randomness, the filesystem root, the network, or the process
