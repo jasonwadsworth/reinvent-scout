@@ -5,8 +5,12 @@ import { z } from "zod";
 import { writeFileAtomic } from "../core/atomic-write.js";
 import { ValidationError } from "../core/errors.js";
 import { ensureDirWithMode, STORE_DIR_MODE } from "../core/paths.js";
+import type { Session } from "../api/types.js";
+import { CatalogMissingError } from "../core/errors.js";
+import { diffCatalogs, summarizeCatalogChanges, writeCatalogChanges, type CatalogChangeSummary, type StoredCatalogChanges } from "./diff.js";
 import { resolveListSessionsPage, SessionItemSchema, type ListSessionsPage, type PageReadOptions } from "./import-page.js";
-import { isRecognizedTimeZone } from "./store.js";
+import { buildIndexRecord } from "./index-record.js";
+import { CURRENT_SCHEMA_VERSION, DEFAULT_EVENT_ID, isRecognizedTimeZone, readMeta, readRaw, readTimezoneAvailability, writeCatalog, type CatalogMeta } from "./store.js";
 
 const STAGING_DIR = ["catalog", "staging"] as const;
 const FILE_MODE = 0o600;
@@ -27,6 +31,8 @@ export class CatalogImportRejectedError extends ValidationError {
 
 export interface ImportDeps {
   storeRoot: string;
+  /** Replaces `writeCatalog`; tests use it to simulate a crash after `changes.json` is written. */
+  writeCatalogFn?: typeof writeCatalog;
   /** Defaults to `Date.now`. */
   now?: () => number;
   /** Defaults to `crypto.randomUUID`. */
@@ -170,4 +176,159 @@ export function stageCatalogPage(input: StagePageInput, deps: ImportDeps, option
     complete: page.nextToken === undefined,
     ...(last !== undefined && last.totalCount !== page.totalCount ? { totalCountChanged: true as const } : {}),
   };
+}
+
+/** The shrink guard: a pull below this fraction of the previous catalog is refused unless the user approves. */
+const SHRINK_FLOOR = 0.9;
+
+export interface CommitInput {
+  syncId: string;
+  /** Pass only after the user has seen both counts and said yes. */
+  allowShrink?: boolean;
+}
+export interface CommitResult {
+  committed: true;
+  eventId: string;
+  count: number;
+  totalCount: number;
+  syncedAt: number;
+  firstImport?: true;
+  replacedEventId?: string;
+  warnings?: string[];
+  summary?: CatalogChangeSummary;
+}
+
+function readStagedItems(manifest: ImportManifest, storeRoot: string): Session[] {
+  return manifest.pages.flatMap(entry => readStagedPage(storeRoot, manifest.syncId, entry.number)) as Session[];
+}
+
+/** Turns a completed staged sync into the stored catalog, refusing anything that looks wrong first.
+ * Every rejection leaves the stored catalog byte-identical (nothing is written before the last check). */
+export function commitCatalogImport(input: CommitInput, deps: ImportDeps): CommitResult {
+  const manifest = readManifest(deps.storeRoot, input.syncId);
+  const last = manifest.pages.at(-1);
+  if (last === undefined) throw new CatalogImportRejectedError("nothingStaged", "No pages are staged for this sync; stage the pages first.");
+  if (last.nextToken !== null) throw new CatalogImportRejectedError("incomplete", "The last staged page still has a nextToken; stage the remaining pages before committing.");
+  const items = readStagedItems(manifest, deps.storeRoot);
+  if (items.length === 0) throw new CatalogImportRejectedError("empty", "The import contains no sessions; the existing local data was left unchanged.");
+  const count = items.length;
+  const warnings: string[] = [];
+  if (count < last.totalCount) {
+    throw new CatalogImportRejectedError("partial", `Only ${count} of ${last.totalCount} sessions were staged (a page is missing); the existing local data was left unchanged.`);
+  }
+  if (count > last.totalCount) warnings.push("catalog grew during the import");
+
+  const previousMeta = readMeta(deps);
+  const previousRaw = previousMeta === null ? null : readRaw(deps);
+  const sameEvent = previousMeta !== null && previousMeta.eventId === manifest.eventId;
+  if (sameEvent && previousMeta.count > 0 && count < Math.floor(previousMeta.count * SHRINK_FLOOR) && input.allowShrink !== true) {
+    throw new CatalogImportRejectedError("shrunk", `The import has ${count} sessions, down from ${previousMeta.count} (more than 10% fewer); the existing local data was left unchanged. Ask the user, then commit again with allowShrink.`);
+  }
+
+  const syncedAt = (deps.now ?? Date.now)();
+  const includedAbstracts = items.some(session => typeof session.abstract === "string" && session.abstract.length > 0);
+  const compareAbstracts = includedAbstracts && previousMeta?.includedAbstracts === true;
+  const base = { schemaVersion: 1 as const, eventId: manifest.eventId, toSyncedAt: syncedAt };
+  let stored: StoredCatalogChanges;
+  let summary: CatalogChangeSummary | undefined;
+  if (previousMeta === null || previousRaw === null) {
+    stored = { ...base, fromSyncedAt: null, firstImport: true, counts: { added: 0, removed: 0, changed: 0, unchanged: 0 }, abstractsCompared: false, changes: [] };
+  } else if (!sameEvent) {
+    stored = { ...base, fromSyncedAt: previousMeta.syncedAt, replacedEventId: previousMeta.eventId, counts: { added: 0, removed: 0, changed: 0, unchanged: 0 }, abstractsCompared: false, changes: [] };
+  } else {
+    const diff = diffCatalogs(previousRaw, items, { compareAbstracts });
+    stored = { ...base, fromSyncedAt: previousMeta.syncedAt, counts: diff.counts, abstractsCompared: diff.abstractsCompared, changes: diff.changes };
+    summary = summarizeCatalogChanges(diff);
+  }
+  const meta: CatalogMeta = { schemaVersion: CURRENT_SCHEMA_VERSION, eventId: manifest.eventId, syncedAt, totalCount: last.totalCount, count, includedAbstracts, timezone: manifest.timezone };
+  // changes.json first: if the catalog write then fails, its toSyncedAt no longer matches the meta and the diff reads as superseded.
+  writeCatalogChanges(stored, deps);
+  (deps.writeCatalogFn ?? writeCatalog)({ raw: items, index: items.map(buildIndexRecord), meta }, deps);
+  rmSync(stagingDirFor(deps.storeRoot, manifest.syncId), { recursive: true, force: true });
+  pruneStaleStaging(deps);
+  return {
+    committed: true, eventId: manifest.eventId, count, totalCount: last.totalCount, syncedAt,
+    ...(stored.firstImport ? { firstImport: true as const } : {}),
+    ...(stored.replacedEventId === undefined ? {} : { replacedEventId: stored.replacedEventId }),
+    ...(warnings.length === 0 ? {} : { warnings }),
+    ...(summary === undefined ? {} : { summary }),
+  };
+}
+
+export interface ReindexResult {
+  reindexed: true;
+  eventId: string;
+  count: number;
+  totalCount: number;
+  timezone: string | null;
+}
+
+/** Rebuilds the index from the stored raw sessions without any AWS call: the remedy for a stale schema version. */
+export function reindexCatalog(input: { timezone?: string | null }, deps: ImportDeps): ReindexResult {
+  if (input.timezone !== undefined && input.timezone !== null && !isRecognizedTimeZone(input.timezone)) {
+    throw new ValidationError("`timezone` is not a recognized IANA timezone.");
+  }
+  const raw = readRaw(deps);
+  if (raw === null) throw new CatalogMissingError();
+  const stored = readMeta(deps);
+  const availability = readTimezoneAvailability(deps);
+  let timezone: string | null;
+  if (availability === null || (availability.status === "unavailable" && availability.reason === "syncedBeforeTimezoneSupport")) {
+    // The stored meta never asked the API for a timezone, and a reindex must not guess one.
+    if (input.timezone === undefined) throw new ValidationError("This catalog was imported before timezones were stored; call GetEvent and pass its `timezone` (or null when it has none).");
+    timezone = input.timezone;
+  } else {
+    timezone = stored?.timezone ?? null;
+  }
+  const meta: CatalogMeta = {
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    eventId: stored?.eventId ?? DEFAULT_EVENT_ID,
+    syncedAt: stored?.syncedAt ?? (deps.now ?? Date.now)(),
+    totalCount: typeof stored?.totalCount === "number" && Number.isFinite(stored.totalCount) ? stored.totalCount : raw.length,
+    count: raw.length,
+    includedAbstracts: stored?.includedAbstracts ?? raw.some(session => typeof session.abstract === "string" && session.abstract.length > 0),
+    timezone,
+  };
+  (deps.writeCatalogFn ?? writeCatalog)({ raw, index: raw.map(buildIndexRecord), meta }, deps);
+  return { reindexed: true, eventId: meta.eventId, count: meta.count, totalCount: meta.totalCount, timezone };
+}
+
+export interface ImportCommandInput {
+  action: "page" | "commit" | "reindex";
+  eventId?: string;
+  timezone?: string | null;
+  syncId?: string;
+  path?: string;
+  page?: unknown;
+  allowShrink?: boolean;
+}
+
+function forbid(input: ImportCommandInput, label: string, keys: readonly (keyof ImportCommandInput)[]): void {
+  for (const key of keys) {
+    if (input[key] !== undefined) throw new ValidationError(`\`${key}\` is not allowed for ${label}.`);
+  }
+}
+
+/** Dispatches one `catalog_import` call, enforcing which fields each action takes. */
+export function importCatalog(input: ImportCommandInput, deps: ImportDeps, options: PageReadOptions = {}): StagePageResult | CommitResult | ReindexResult {
+  switch (input.action) {
+    case "page": {
+      const first = input.syncId === undefined;
+      forbid(input, first ? "the first page" : "a later page", first ? ["allowShrink"] : ["eventId", "timezone", "allowShrink"]);
+      return stageCatalogPage({
+        ...(input.eventId === undefined ? {} : { eventId: input.eventId }),
+        ...(input.timezone === undefined ? {} : { timezone: input.timezone }),
+        ...(input.syncId === undefined ? {} : { syncId: input.syncId }),
+        ...(input.path === undefined ? {} : { path: input.path }),
+        ...(input.page === undefined ? {} : { page: input.page }),
+      }, deps, options);
+    }
+    case "commit":
+      forbid(input, "commit", ["path", "page", "eventId", "timezone"]);
+      if (input.syncId === undefined) throw new ValidationError("`commit` needs `syncId`.");
+      return commitCatalogImport({ syncId: input.syncId, ...(input.allowShrink === undefined ? {} : { allowShrink: input.allowShrink }) }, deps);
+    case "reindex":
+      forbid(input, "reindex", ["syncId", "path", "page", "eventId", "allowShrink"]);
+      return reindexCatalog(input.timezone === undefined ? {} : { timezone: input.timezone }, deps);
+  }
 }

@@ -1,4 +1,10 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { z } from "zod";
 import type { Session } from "../api/types.js";
+import { writeFileAtomic } from "../core/atomic-write.js";
+import { ensureDirWithMode, STORE_DIR_MODE } from "../core/paths.js";
+import { catalogDir, readMeta, type CatalogStoreDeps } from "./store.js";
 import { OUTPUT_BUDGET_BYTES, outputBytes, shortenDescription } from "../commands/output-budget.js";
 
 /** Fields that change all the time and say nothing about the catalog itself. */
@@ -106,4 +112,46 @@ export function summarizeCatalogChanges(diff: CatalogDiff): CatalogChangeSummary
     summary.omitted++;
   }
   return summary;
+}
+
+const CHANGES_FILE = "changes.json";
+const ChangeSchema = z.object({
+  kind: z.enum(["added", "removed", "changed"]),
+  sessionId: z.string(),
+  code: z.string().nullable(),
+  title: z.string(),
+  fields: z.array(z.string()).optional(),
+});
+const StoredChangesSchema = z.object({
+  schemaVersion: z.literal(1),
+  eventId: z.string(),
+  fromSyncedAt: z.number().nullable(),
+  toSyncedAt: z.number(),
+  firstImport: z.literal(true).optional(),
+  replacedEventId: z.string().optional(),
+  counts: z.object({ added: z.number(), removed: z.number(), changed: z.number(), unchanged: z.number() }),
+  abstractsCompared: z.boolean(),
+  changes: z.array(ChangeSchema),
+});
+/** The full diff of the last import, kept beside the catalog (the command output only carries a summary). */
+export type StoredCatalogChanges = z.infer<typeof StoredChangesSchema>;
+export type CatalogChangesUnavailable = "noImport" | "firstImport" | "eventReplaced" | "superseded";
+
+export function writeCatalogChanges(stored: StoredCatalogChanges, deps: CatalogStoreDeps): void {
+  ensureDirWithMode(catalogDir(deps.storeRoot), STORE_DIR_MODE);
+  writeFileAtomic(join(catalogDir(deps.storeRoot), CHANGES_FILE), () => JSON.stringify(stored), { mode: 0o600 });
+}
+
+/** Reads the last import's diff. It is only valid while it describes the stored catalog: if its
+ * `toSyncedAt` no longer matches the meta (a crash between the two writes, or a later sync), it is superseded. */
+export function readCatalogChanges(deps: CatalogStoreDeps): ({ available: true } & StoredCatalogChanges) | { available: false; reason: CatalogChangesUnavailable } {
+  let parsed;
+  try { parsed = StoredChangesSchema.safeParse(JSON.parse(readFileSync(join(catalogDir(deps.storeRoot), CHANGES_FILE), "utf8"))); }
+  catch { return { available: false, reason: "noImport" }; }
+  if (!parsed.success) return { available: false, reason: "noImport" };
+  const meta = readMeta(deps);
+  if (meta === null || meta.syncedAt !== parsed.data.toSyncedAt) return { available: false, reason: "superseded" };
+  if (parsed.data.firstImport) return { available: false, reason: "firstImport" };
+  if (parsed.data.replacedEventId !== undefined) return { available: false, reason: "eventReplaced" };
+  return { available: true, ...parsed.data };
 }
