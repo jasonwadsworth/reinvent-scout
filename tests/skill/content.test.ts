@@ -1260,23 +1260,34 @@ describe("watch playbook (reference/watch.md)", () => {
     expectAll(watchMd, [
       "Cancel one reservation at a time and read each result",
       "stop cancelling, do not reserve the target, re-reserve anything you already cancelled",
-      "If a cancel is refused with a 429, re-reserve the ones you already cancelled and skip the target for this check",
+      "If a cancel is refused with a 429, re-reserve the ones you already cancelled and skip the target for this check, and back off",
       "If a cancel is refused because auth is required, you are not registered, or reservations are closed (409), re-reserve the ones you already cancelled, then stop the whole watch and tell the user",
       "Restore every cancel that was confirmed",
       "If `get_schedule` shows the uncertain one gone, treat it as cancelled and restore it",
+      "If `get_schedule` still shows it, it is still held; do nothing for it",
       "If `get_schedule` cannot be read, do not touch the uncertain one and tell the user it may be cancelled",
+      "In every uncertain-cancel case, stop the watch and tell the user",
       "A cancel that says the reservation was already gone (404) is not something to restore",
       "Restore only what you actually cancelled",
     ]);
   });
-  it("splits a failed target reserve into refused and uncertain", () => {
+  it("splits a failed target reserve into refused and uncertain, and restores either way", () => {
     expectAll(watchMd, [
       "If the target reserve was refused",
       "or the read-back shows it absent, restore",
-      "If the target reserve is uncertain and the read-back cannot be done, do not restore",
-      "it could clash with a target that actually landed",
-      "stop the watch and tell the user",
+      "If the target reserve is uncertain and the read-back cannot be done, restore anyway",
+      "If the target did land, the API refuses the restore with `scheduleConflict`, so it cannot double-book",
+      "Then verify with `get_schedule` when you can, stop the whole watch, and tell the user exactly what is known",
     ]);
+    expect(watchMd.replace(/\s+/g, " ")).not.toContain("do not restore, because");
+  });
+  const exception = "the may-cancel list is the explicit choice of cancellations and the running watch is the standing request for re-attempts";
+  it("states the narrow watch exception to the no-auto-cancel and no-auto-retry rules in SKILL.md, workflow.md and watch.md", () => {
+    for (const [name, text] of [["SKILL.md", skillMd], ["workflow.md", workflowMd], ["watch.md", watchMd]] as const) {
+      const flat = text.replace(/\s+/g, " ");
+      expect(flat, `${name} exception`).toContain(exception);
+      expect(flat, `${name} outside`).toContain("Outside a watch, these rules hold");
+    }
   });
   it("retries a restore only when it was not a real refusal", () => {
     expectAll(watchMd, [

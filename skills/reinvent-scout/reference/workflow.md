@@ -654,6 +654,9 @@ gate. Stop on 409. Auth, registration, exhausted429, and OAuth failures also sto
 POST 500/503, network/timeout failures, and lost acknowledgements are not automatically replayed;
 one 401 refresh and bounded 429 retry remain safe. A later retry requires an explicit new request,
 fresh eligibility checks, and only the still-missing IDs. No command replaces or cancels conflicts.
+Exception: inside a watch the user confirmed ([watch.md](watch.md)), the may-cancel list is the
+explicit choice of cancellations and the running watch is the standing request for re-attempts.
+Outside a watch, these rules hold.
 
 For an explicitly requested cancellation, use one reserved offering ID:
 

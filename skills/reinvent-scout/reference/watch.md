@@ -15,6 +15,11 @@ apply, not code to call.
    on that list. Never cancel anything that is not on the may-cancel list, and never add to it
    yourself. If you think another reservation should go, ask, and wait for a clear yes.
 
+This is the one exception to the general rules that you never cancel conflicts automatically and
+that a later retry needs an explicit new request: inside a watch the user confirmed, the may-cancel
+list is the explicit choice of cancellations and the running watch is the standing request for
+re-attempts. Outside a watch, these rules hold.
+
 ## State you carry between checks
 
 Nothing is saved for you. Keep this in your own working notes and update it after every check:
@@ -82,10 +87,11 @@ To swap:
      be read: stop cancelling, do not reserve the target, re-reserve anything you already
      cancelled, then stop the watch and tell the user. Restore every cancel that was confirmed. Handle
      the uncertain one separately. If `get_schedule` shows the uncertain one gone, treat it as cancelled and
-     restore it. If `get_schedule` cannot be read, do not touch the uncertain one and tell the user
-     it may be cancelled.
+     restore it. If `get_schedule` still shows it, it is still held; do nothing for it. If
+     `get_schedule` cannot be read, do not touch the uncertain one and tell the user it may be
+     cancelled. In every uncertain-cancel case, stop the watch and tell the user.
    - If a cancel is refused with a 429, re-reserve the ones you already cancelled and skip the
-     target for this check.
+     target for this check, and back off.
    - If a cancel is refused because auth is required, you are not registered, or reservations are
      closed (409), re-reserve the ones you already cancelled, then stop the whole watch and tell
      the user.
@@ -93,8 +99,11 @@ To swap:
 3. Decide what the result means.
    - If the target reserve was refused (any failure code), or the read-back shows it absent,
      restore: re-reserve what you cancelled.
-   - If the target reserve is uncertain and the read-back cannot be done, do not restore, because
-     it could clash with a target that actually landed. Stop the watch and tell the user.
+   - If the target reserve is uncertain and the read-back cannot be done, restore anyway. If the
+     target did land, the API refuses the restore with `scheduleConflict`, so it cannot
+     double-book (the target overlaps the cancelled reservation by definition); if it did not land,
+     the restore saves the user's seat. Then verify with `get_schedule` when you can, stop the whole
+     watch, and tell the user exactly what is known.
    - If it landed, the cancelled reservations are gone: remove them from the may-cancel list.
 4. Restore only what you actually cancelled. Retry a restore only when it was refused by a 429 or
    never sent, up to 3 times, about 1 minute apart. A restore refused with `sessionFull` is lost;
