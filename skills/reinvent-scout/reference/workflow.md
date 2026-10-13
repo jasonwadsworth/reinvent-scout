@@ -683,6 +683,25 @@ reinvent-scout schedule cancel <reserved-session-id> --json
 ```
 
 
+## Live session read, and watching a full session
+
+`get_session` reads one session live from the API, not from the local catalog (which can be
+stale), with one request and no writes:
+
+```json
+{"tool":"get_session","arguments":{"sessionId":"<session-id>"}}
+```
+
+It returns `sessionId`, `abbreviation`, `title`, `venue`, `room`, the raw `sessionTime`
+(`date`, `time`, `length`), `isReservable`, `seatAvailability` and `fetchedAt`. A field the API did
+not send is omitted. `seatAvailability` is one of `available`, `limited`, `veryLimited`,
+`unavailable` and `walkUp`; it is a hint, not a guarantee of a seat. A 404 comes back as
+`isError: true` and is not proof the session is gone: during an API outage real ids 404. Auth and
+registration failures read like the other tools'.
+
+To reserve a full session when a seat opens, follow [watch.md](watch.md). It is a playbook for
+you to carry out with these tools, not a command to run.
+
 ## On-site: confirm venue, inspect travel, then choose
 
 Ask the attendee to confirm their current venue for this call. Location context and recent

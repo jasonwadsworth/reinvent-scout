@@ -31,13 +31,14 @@ const skillMd = readSkillFile("SKILL.md");
 const taxonomyMd = readSkillFile("reference", "taxonomy.md");
 const workflowMd = readSkillFile("reference", "workflow.md");
 const profilingMd = readSkillFile("reference", "profiling.md");
+const watchMd = readSkillFile("reference", "watch.md");
 
 /** Every skill file's raw text, concatenated -- the corpus a real reader (agent or human) actually
  * sees across the whole skill, not just one file. Reviewer's finding: checking only one dedicated
  * section (e.g. SKILL.md's own "## MCP tools used" list) lets a tool get renamed or removed
  * everywhere *else* in the doc -- the actual flow prose an agent follows -- while that one list
  * stays correct and the anti-drift check stays green. */
-const allSkillText = [skillMd, profilingMd, taxonomyMd, workflowMd].join("\n");
+const allSkillText = [skillMd, profilingMd, taxonomyMd, workflowMd, watchMd].join("\n");
 
 /**
  * Strips fenced ``` code blocks before any single-backtick scan runs. Load-bearing, not cosmetic:
@@ -1181,5 +1182,127 @@ describe("the map and focus documentation", () => {
     for (const expected of ["### Map your code, then choose what to look for", "reinvent-scout profile map --profile", "--focus \"DynamoDB:understand,gap-no-dlq:improve,event-driven:deepen\"", "**understand**", "**deepen**", "**improve**", "`--focus` replaces `--lens` and `--limit`", "title names the topic"]) {
       expect(text, expected).toContain(expected);
     }
+  });
+});
+
+describe("watch playbook (reference/watch.md)", () => {
+  /** Line wrapping in the markdown must not matter, so whitespace is collapsed before matching. */
+  const expectAll = (text: string, phrases: string[]) => {
+    const flat = text.replace(/\s+/g, " ");
+    for (const phrase of phrases) expect(flat, phrase).toContain(phrase);
+  };
+
+  it("is reachable from SKILL.md, the workflow reference and the README", () => {
+    expectAll(skillMd, ["Watch a full session", "`get_session`", "reference/watch.md"]);
+    expect(workflowMd).toContain("watch.md");
+    expect(readFileSync(join(skillRoot, "..", "..", "README.md"), "utf8")).toContain("Watch a full session");
+  });
+  it("documents the get_session contract in workflow.md, including that a 404 is not proof", () => {
+    expectAll(workflowMd, ["get_session", "seatAvailability", "fetchedAt", "is not proof the session is gone"]);
+  });
+  it("gets consent before starting and limits what may be cancelled", () => {
+    expectAll(watchMd, [
+      "Confirm the target sessions",
+      "the exact list of reservations you may cancel to make room",
+      "consent to reserve the targets and to cancel only the reservations on that list",
+      "Never cancel anything that is not on the may-cancel list, and never add to it yourself",
+    ]);
+  });
+  it("tells the agent which state to carry and what to do when it loses track", () => {
+    expectAll(watchMd, [
+      "State you carry between checks",
+      "the targets (id, title, day and time)",
+      "the exact may-cancel list",
+      "the last seat band you saw for each target",
+      "which targets have a deferred swap, and at which band",
+      "the last thing you told the user about each target",
+      "the backoff level",
+      "the end time",
+      "If you lose track",
+      "re-read `get_schedule`",
+      "re-confirm the may-cancel list with the user",
+      "do not cancel anything until the user re-confirms",
+    ]);
+  });
+  it("paces the loop with the client's own scheduler, jitter and backoff", () => {
+    expectAll(watchMd, [
+      "`/loop`",
+      "about every 3 minutes",
+      "never more often than every 1 minute",
+      "jitter",
+      "double the wait, up to 30 minutes",
+      "reset after a clean check",
+      "Stop scheduling when every target is resolved",
+    ]);
+  });
+  it("defines one check, with every failure code and the 404 and fatal cases", () => {
+    expectAll(watchMd, [
+      "`get_schedule`", "`get_session`", "`reserve_sessions`",
+      "`sessionFull`: keep watching",
+      "`alreadyScheduled`: done",
+      "`timePassed`", "`sessionNotReservable`", "`insufficientAccess`", "`walkUp`",
+      "An unknown code: stop that target and tell the user",
+      "A `get_session` 404 in the middle of a watch is transient",
+      "Auth required, not registered, or a 409 (reservations closed): stop the whole watch",
+    ]);
+  });
+  it("restricts swaps to conflicts fully inside the may-cancel list", () => {
+    expectAll(watchMd, [
+      "only if every id in `conflictsWith` is on the may-cancel list",
+      "no partial swaps",
+      "Cancel exactly those ids and no others",
+      "Otherwise do not cancel",
+      "Tell the user once what it clashes with",
+    ]);
+  });
+  it("cancels one at a time, reads each result and restores only what it cancelled", () => {
+    expectAll(watchMd, [
+      "Cancel one reservation at a time and read each result",
+      "stop cancelling, do not reserve the target, re-reserve anything you already cancelled",
+      "If a cancel is refused outright (429, auth), re-reserve the ones you already cancelled and skip the target for this check",
+      "A cancel that says the reservation was already gone (404) is not something to restore",
+      "Restore only what you actually cancelled",
+    ]);
+  });
+  it("splits a failed target reserve into refused and uncertain", () => {
+    expectAll(watchMd, [
+      "If the target reserve was refused",
+      "or the read-back shows it absent, restore",
+      "If the target reserve is uncertain and the read-back cannot be done, do not restore",
+      "it could clash with a target that actually landed",
+      "stop the watch and tell the user",
+    ]);
+  });
+  it("retries a restore only when it was not a real refusal", () => {
+    expectAll(watchMd, [
+      "Retry a restore only when it was refused by a 429 or never sent, up to 3 times, about 1 minute apart",
+      "A restore refused with `sessionFull` is lost; do not retry it",
+      "If anything was lost or is uncertain, stop the whole watch and tell the user right away",
+    ]);
+  });
+  it("defers a repeat swap until the seat band changes", () => {
+    expectAll(watchMd, [
+      "After a swap you undid",
+      "do not try it again until that target's seat band changes",
+      "Each attempt briefly frees the user's existing seat",
+      "going to `unavailable` and back counts as a change",
+    ]);
+  });
+  it("never replays uncertain writes and treats a contradicted acknowledgement as uncertain", () => {
+    expectAll(watchMd, [
+      "Never blindly replay a write",
+      "let the next `get_schedule` decide whether it landed",
+      "A reserve acknowledged as successful but missing from the `get_schedule` read-back is uncertain, not reserved",
+    ]);
+  });
+  it("uses judgment, stays quiet, and states its limits", () => {
+    expectAll(watchMd, [
+      "offer it to the user",
+      "Do not reserve a repeat without asking",
+      "Stay quiet on checks where nothing changed",
+      "one watch per account at a time",
+      "up to about 10 targets",
+      "Travel time between venues is not checked",
+    ]);
   });
 });
