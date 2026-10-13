@@ -16,6 +16,7 @@ import {
   AuthRequiredError,
   CatalogMissingError,
   CatalogUnusableError,
+  EmptyCatalogError,
   NotRegisteredError,
   ValidationError,
 } from "../../core/errors.js";
@@ -170,11 +171,11 @@ export function registerCatalogCommands(program: Command, deps: CatalogCommandDe
 
         print(options.json ? JSON.stringify(result) : formatHumanSummary(result));
       } catch (err) {
-        // Both of these are the two specific, actionable failures a user can hit here -- give
-        // each its own message rather than letting a raw stack trace reach the terminal.
+        // These actionable failures have a clear remedy in their message, so print it rather
+        // than letting a raw stack trace reach the terminal.
         // Everything else (a network error, a 5xx after retries, a programmer error) is a real
         // bug or outage and should surface with its full detail, so it is deliberately rethrown.
-        if (err instanceof AuthRequiredError || err instanceof NotRegisteredError) {
+        if (err instanceof AuthRequiredError || err instanceof NotRegisteredError || err instanceof EmptyCatalogError) {
           print(err.message);
           process.exitCode = 1;
           return;

@@ -205,6 +205,19 @@ describe("catalog_sync tool", () => {
     expect(result.isError).toBe(true);
     expect(textOf(result)).toMatch(/will not help/i);
   });
+
+  it("reports an empty API catalog as an error", async () => {
+    const apiClient = fakeApiClient(async () => ({ sessions: [], totalCount: 0 }));
+    const client = await connectedClient({
+      resolveStoreRoot: () => home.path,
+      buildApiClient: () => apiClient,
+    });
+
+    const result = await client.callTool({ name: "catalog_sync", arguments: {} });
+
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toMatch(/empty catalog/i);
+  });
 });
 
 describe("validate_profile tool", () => {

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ApiClient, ListAllSessionsOptions, ListAllSessionsResult } from "../../src/api/client.js";
 import type { Event, Session } from "../../src/api/types.js";
-import { NotRegisteredError, ServiceError } from "../../src/core/errors.js";
+import { EmptyCatalogError, NotRegisteredError, ServiceError } from "../../src/core/errors.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import {
   CURRENT_SCHEMA_VERSION,
@@ -113,7 +113,7 @@ describe("syncCatalog", () => {
   it("passes the same event id to getEvent as to listAllSessions", async () => {
     let seenGetEventId: string | undefined;
     const client = fakeApiClient(
-      async () => ({ sessions: [], totalCount: 0 }),
+      async () => ({ sessions: fixture.slice(0, 1), totalCount: 1 }),
       async (eventId) => {
         seenGetEventId = eventId;
         return { eventId };
@@ -369,6 +369,46 @@ describe("syncCatalog", () => {
     expect(readMeta({ storeRoot: home.path })).toEqual(previousMeta);
   });
 
+  it("rejects an empty API catalog and leaves a previous catalog byte-identical", async () => {
+    writeCatalog(
+      { raw: fixture, index: fixture.map(buildIndexRecord), meta: sampleMeta() },
+      { storeRoot: home.path },
+    );
+    const catalogDir = join(home.path, "catalog");
+    const before = ["raw.json", "index.json", "meta.json"].map((file) =>
+      readFileSync(join(catalogDir, file), "utf8"),
+    );
+    const client = fakeApiClient(async () => ({ sessions: [], totalCount: 0 }));
+
+    await expect(syncCatalog({ apiClient: client, storeRoot: home.path })).rejects.toThrow(
+      EmptyCatalogError,
+    );
+
+    expect(["raw.json", "index.json", "meta.json"].map((file) =>
+      readFileSync(join(catalogDir, file), "utf8"),
+    )).toEqual(before);
+  });
+
+  it("rejects an empty API catalog without creating a new local catalog", async () => {
+    const client = fakeApiClient(async () => ({ sessions: [], totalCount: 0 }));
+
+    await expect(syncCatalog({ apiClient: client, storeRoot: home.path })).rejects.toThrow(
+      EmptyCatalogError,
+    );
+
+    expect(readRaw({ storeRoot: home.path })).toBeNull();
+    expect(readMeta({ storeRoot: home.path })).toBeNull();
+  });
+
+  it("rejects an empty session list even when the API reports a nonzero total", async () => {
+    const client = fakeApiClient(async () => ({ sessions: [], totalCount: fixture.length }));
+
+    await expect(syncCatalog({ apiClient: client, storeRoot: home.path })).rejects.toThrow(
+      EmptyCatalogError,
+    );
+    expect(readRaw({ storeRoot: home.path })).toBeNull();
+  });
+
   it("fetches the event before pulling sessions, so a getEvent failure aborts the sync without a single listAllSessions call -- never wasting a completed paced pull", async () => {
     // Reviewer's point: getEvent is a cheap, unauthenticated-shaped call, while listAllSessions is
     // a paced, potentially multi-page pull of the whole catalog. Fetching the event first means a
@@ -427,7 +467,7 @@ describe("syncCatalog", () => {
     let seenEventId: string | undefined;
     const client = fakeApiClient(async (eventId) => {
       seenEventId = eventId;
-      return { sessions: [], totalCount: 0 };
+      return { sessions: fixture.slice(0, 1), totalCount: 1 };
     });
 
     await syncCatalog({ apiClient: client, storeRoot: home.path });
@@ -440,7 +480,7 @@ describe("syncCatalog", () => {
     let seenEventId: string | undefined;
     const client = fakeApiClient(async (eventId) => {
       seenEventId = eventId;
-      return { sessions: [], totalCount: 0 };
+      return { sessions: fixture.slice(0, 1), totalCount: 1 };
     });
 
     await syncCatalog({ apiClient: client, storeRoot: home.path, eventId: "reinvent2027-summit" });
@@ -453,7 +493,7 @@ describe("syncCatalog", () => {
     let seenOptions: ListAllSessionsOptions | undefined;
     const client = fakeApiClient(async (_eventId, options) => {
       seenOptions = options;
-      return { sessions: [], totalCount: 0 };
+      return { sessions: fixture.slice(0, 1), totalCount: 1 };
     });
 
     await syncCatalog({ apiClient: client, storeRoot: home.path });
@@ -466,7 +506,7 @@ describe("syncCatalog", () => {
     let seenOptions: ListAllSessionsOptions | undefined;
     const client = fakeApiClient(async (_eventId, options) => {
       seenOptions = options;
-      return { sessions: [], totalCount: 0 };
+      return { sessions: fixture.slice(0, 1), totalCount: 1 };
     });
 
     await syncCatalog({ apiClient: client, storeRoot: home.path, includeAbstracts: false });

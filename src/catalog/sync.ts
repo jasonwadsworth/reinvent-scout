@@ -1,4 +1,5 @@
 import type { ApiClient } from "../api/client.js";
+import { EmptyCatalogError } from "../core/errors.js";
 import { buildIndexRecord } from "./index-record.js";
 import {
   CURRENT_SCHEMA_VERSION,
@@ -138,8 +139,9 @@ async function tryReindexFromStoredRaw(deps: SyncCatalogDeps): Promise<SyncResul
  *
  * Nothing is written until every page of a full pull has been received: `apiClient.listAllSessions`
  * either resolves with the complete list or rejects (a mid-pagination failure, `NotRegisteredError`,
- * exhausting the 429/503 retries), and `writeCatalog` is only ever called after it resolves. So a
- * pull that fails partway leaves the previously-stored catalog completely untouched -- this
+ * exhausting the 429/503 retries), and an empty completed list is rejected. `writeCatalog` is
+ * only ever called after these checks. A pull that fails partway leaves the previously-stored
+ * catalog completely untouched -- this
  * function never starts a write on an incomplete pull, which is a stronger guarantee than
  * `writeCatalog`'s own write-ordering (meta written last protects a crash *during* a write that
  * has already started; this is about never starting one on bad input in the first place).
@@ -176,6 +178,9 @@ export async function syncCatalog(deps: SyncCatalogDeps): Promise<SyncResult> {
   const { sessions, totalCount: reportedTotalCount } = await deps.apiClient.listAllSessions(eventId, {
     includeAbstracts,
   });
+  if (sessions.length === 0) {
+    throw new EmptyCatalogError(eventId);
+  }
   const index = sessions.map(buildIndexRecord);
   const { totalCount, totalCountMissing } = resolveTotalCount(reportedTotalCount, sessions.length);
   const meta: CatalogMeta = {

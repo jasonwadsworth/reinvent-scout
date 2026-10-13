@@ -107,7 +107,9 @@ Options:
 - `--json` -- machine-readable output.
 
 A sync never touches the previously-stored catalog until every page has been pulled successfully,
-so a failed sync (network trouble, not being registered for the event) leaves what you had intact.
+so a failed sync (network trouble, not being registered for the event, or the API returning zero
+sessions) leaves what you had intact. An empty response exits with an error; if there was no local
+catalog yet, none is created. Try again when the event API has sessions.
 
 ## Search the catalog
 

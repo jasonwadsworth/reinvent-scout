@@ -129,7 +129,7 @@ describe("catalog sync command", () => {
   });
 
   it("defaults the event to reinvent2026", async () => {
-    const h = harness(home.path, async () => ({ sessions: [], totalCount: 0 }));
+    const h = harness(home.path, async () => ({ sessions: fixture.slice(0, 1), totalCount: 1 }));
 
     await h.run(["catalog", "sync"]);
 
@@ -137,7 +137,7 @@ describe("catalog sync command", () => {
   });
 
   it("uses the --event flag when given", async () => {
-    const h = harness(home.path, async () => ({ sessions: [], totalCount: 0 }));
+    const h = harness(home.path, async () => ({ sessions: fixture.slice(0, 1), totalCount: 1 }));
 
     await h.run(["catalog", "sync", "--event", "reinvent2027-summit"]);
 
@@ -145,7 +145,7 @@ describe("catalog sync command", () => {
   });
 
   it("excludes abstracts under --no-abstracts", async () => {
-    const h = harness(home.path, async () => ({ sessions: [], totalCount: 0 }));
+    const h = harness(home.path, async () => ({ sessions: fixture.slice(0, 1), totalCount: 1 }));
 
     await h.run(["catalog", "sync", "--no-abstracts"]);
 
@@ -153,7 +153,7 @@ describe("catalog sync command", () => {
   });
 
   it("includes abstracts by default", async () => {
-    const h = harness(home.path, async () => ({ sessions: [], totalCount: 0 }));
+    const h = harness(home.path, async () => ({ sessions: fixture.slice(0, 1), totalCount: 1 }));
 
     await h.run(["catalog", "sync"]);
 
@@ -204,6 +204,17 @@ describe("catalog sync command", () => {
     await h.run(["catalog", "sync"]);
 
     expect(h.printed.join("\n")).toContain("not registered");
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
+  });
+
+  it("reports an empty API catalog clearly and exits non-zero", async () => {
+    const h = harness(home.path, async () => ({ sessions: [], totalCount: 0 }));
+
+    await h.run(["catalog", "sync"]);
+
+    expect(h.printed.join("\n")).toMatch(/empty catalog/i);
+    expect(h.printed.join("\n")).toMatch(/no catalog was written/i);
     expect(process.exitCode).toBe(1);
     process.exitCode = 0;
   });
