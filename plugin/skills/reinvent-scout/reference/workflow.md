@@ -2,12 +2,11 @@
 
 The exact input and output of every local command this skill uses, in the order a normal run calls
 them, then how to use the AWS Events tools for the schedule. Every command is run through the one
-bundled script, with its input as a single JSON object on stdin (or `--input <file>`):
+bundled script, with its input as a single JSON object: `--json '<one-line JSON>'` for a small one (no apostrophes), or
+`--input <file>` for a larger one such as a profile (`--input -` reads stdin; never use a heredoc for JSON, since Claude Code's Bash check rejects a brace beside a quote there):
 
 ```sh
-node "${CLAUDE_SKILL_DIR}/scripts/reinvent-scout.mjs" status --input - <<'JSON'
-{}
-JSON
+node "${CLAUDE_SKILL_DIR}/scripts/reinvent-scout.mjs" status
 ```
 
 It prints exactly one JSON document. On success the shapes below are that document (exit code 0).

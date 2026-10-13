@@ -23977,7 +23977,15 @@ var done = (value, exitCode) => ({ stdout: `${JSON.stringify(value)}
 `, exitCode });
 var usageError = (message) => done({ error: message }, 2);
 var isCommandName = (name) => Object.hasOwn(registry2, name);
-function readInput(path, io) {
+function readInput(json2, path, io) {
+  if (json2 !== void 0 && path !== void 0) return { error: "Pass either --json or --input, not both." };
+  if (json2 !== void 0) {
+    try {
+      return { value: JSON.parse(json2) };
+    } catch {
+      return { error: "--json is not valid JSON." };
+    }
+  }
   if (path === void 0) return { value: {} };
   let text;
   try {
@@ -23994,19 +24002,19 @@ function readInput(path, io) {
 async function runScript(argv, io) {
   let parsed;
   try {
-    parsed = parseArgs({ args: [...argv], allowPositionals: true, options: { input: { type: "string" }, help: { type: "boolean" }, version: { type: "boolean" } } });
+    parsed = parseArgs({ args: [...argv], allowPositionals: true, options: { input: { type: "string" }, json: { type: "string" }, help: { type: "boolean" }, version: { type: "boolean" } } });
   } catch (err) {
     return usageError(err instanceof Error ? err.message : "Invalid arguments.");
   }
   if (parsed.values.version) return done({ version: VERSION }, 0);
   if (parsed.values.help) {
-    return done({ usage: "reinvent-scout.mjs <command> [--input <file> | --input -]", commands: Object.entries(registry2).map(([name2, entry2]) => ({ name: name2, description: entry2.description })) }, 0);
+    return done({ usage: "reinvent-scout.mjs <command> [--json '<one-line JSON>' | --input <file> | --input -]", commands: Object.entries(registry2).map(([name2, entry2]) => ({ name: name2, description: entry2.description })) }, 0);
   }
   const [name, ...extra] = parsed.positionals;
   if (name === void 0) return usageError("Name a command. Run with --help for the list.");
   if (extra.length > 0) return usageError("Expected a single command name.");
   if (!isCommandName(name)) return usageError(`Unknown command "${name.slice(0, 64)}". Run with --help for the list.`);
-  const input2 = readInput(parsed.values.input, io);
+  const input2 = readInput(parsed.values.json, parsed.values.input, io);
   if ("error" in input2) return usageError(input2.error);
   const entry = registry2[name];
   try {

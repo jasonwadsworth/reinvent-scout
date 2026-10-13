@@ -14,12 +14,11 @@ AWS Events tools are `mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-M
 `mcp__awsevents__AWSEventsPublicApi-Mcp-prod___<Name>` when your own `awsevents` server shadows the plugin's; use whichever is
 available. Below, `GetEvent` and `ListSessions` mean those tools.
 
-The script is run like this, with one JSON object on stdin and one JSON document on stdout:
+The script takes one JSON object as `--json '<one-line JSON>'` and prints one JSON document. Do not put JSON in a
+heredoc: Claude Code's Bash check rejects it. It is run like this:
 
 ```sh
-node "${CLAUDE_PLUGIN_ROOT}/skills/reinvent-scout/scripts/reinvent-scout.mjs" catalog_import --input - <<'JSON'
-{ "action": "commit", "syncId": "<syncId>" }
-JSON
+node "${CLAUDE_PLUGIN_ROOT}/skills/reinvent-scout/scripts/reinvent-scout.mjs" catalog_import --json '{"action":"commit","syncId":"<syncId>"}'
 ```
 
 ## The sync

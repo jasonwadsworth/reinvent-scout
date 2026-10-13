@@ -211,6 +211,15 @@ describe("plugin skill conventions", () => {
     }
     for (const [name, text] of [["SKILL.md", skillMd], ["workflow.md", workflowMd], ["catalog-sync.md", agentMd]] as const) expect(text, name).toMatch(/node "[^"]*reinvent-scout\.mjs" [a-z_]+/);
   });
+  it("never puts JSON in a heredoc (Claude Code's Bash check rejects a brace beside a quote there); small inputs use --json, large ones a file", () => {
+    for (const [name, text] of [["SKILL.md", skillMd], ["workflow.md", workflowMd], ["watch.md", watchMd], ["profiling.md", profilingMd], ["catalog-sync.md", agentMd]] as const) {
+      for (const match of text.matchAll(/<<-?'?(\w+)'?\n([\s\S]*?)\n\s*\1\b/g)) {
+        expect(/[{]/.test(match[2]!) && /"/.test(match[2]!), `${name}: heredoc body\n${match[2]}`).toBe(false);
+      }
+    }
+    expect(flat(skillMd)).toContain("--json '<one-line JSON>'");
+    expect(flat(skillMd)).toContain("A profile always goes in a file");
+  });
   it("names no CLI subcommand anywhere in the skill's files", () => {
     for (const span of spansOf(allSkillText)) expect(span, span).not.toMatch(/^reinvent-scout [a-z]/);
     for (const line of allSkillText.split("\n")) expect(line, line).not.toMatch(/^\s*(?:\$ )?reinvent-scout [a-z]/);

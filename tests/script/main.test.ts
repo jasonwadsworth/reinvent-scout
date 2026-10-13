@@ -37,6 +37,18 @@ describe("the bundled script", () => {
     expect(Object.keys(JSON.parse(run(["list_filters", "--input", path]).stdout).fields)).toEqual(["venue"]);
     expect(run(["list_filters"]).code).toBe(0);
   });
+  it("takes a small input as --json '<json>' (no heredoc needed)", () => {
+    seed();
+    const result = run(["list_filters", "--json", JSON.stringify({ field: "venue" })]);
+    expect(result.code).toBe(0);
+    expect(Object.keys(JSON.parse(result.stdout).fields)).toEqual(["venue"]);
+  });
+  it("refuses --json together with --input, and bad --json without quoting it", () => {
+    const both = run(["list_filters", "--json", "{}", "--input", "-"], "{}");
+    expect(both.code).toBe(2); expect(JSON.parse(both.stdout).error).toMatch(/not both/);
+    const bad = run(["list_filters", "--json", "SECRET-MARKER {nope"]);
+    expect(bad.code).toBe(2); expect(bad.stdout).not.toContain("SECRET-MARKER");
+  });
   it("reports an unknown command as a usage error, exit 2", () => {
     const result = run(["nope"]);
     expect(result.code).toBe(2);

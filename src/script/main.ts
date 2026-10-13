@@ -23,9 +23,14 @@ const done = (value: unknown, exitCode: 0 | 1 | 2): ScriptResult => ({ stdout: `
 const usageError = (message: string): ScriptResult => done({ error: message } satisfies CommandError, 2);
 const isCommandName = (name: string): name is CommandName => Object.hasOwn(registry, name);
 
-/** Reads and parses `--input`: a file, or `-` for stdin, or nothing for `{}`. A bad file or bad JSON
+/** Reads and parses the input: `--json` (a small one-line object), `--input` (a file, or `-` for stdin), or nothing for `{}`. A bad file or bad JSON
  * is a usage error whose message never quotes the content. */
-function readInput(path: string | undefined, io: ScriptIo): { value: unknown } | { error: string } {
+function readInput(json: string | undefined, path: string | undefined, io: ScriptIo): { value: unknown } | { error: string } {
+  if (json !== undefined && path !== undefined) return { error: "Pass either --json or --input, not both." };
+  if (json !== undefined) {
+    try { return { value: JSON.parse(json) as unknown }; }
+    catch { return { error: "--json is not valid JSON." }; }
+  }
   if (path === undefined) return { value: {} };
   let text: string;
   try { text = path === "-" ? io.readStdin() : readFileSync(path, "utf8"); }
@@ -39,19 +44,19 @@ function readInput(path: string | undefined, io: ScriptIo): { value: unknown } |
 export async function runScript(argv: readonly string[], io: ScriptIo): Promise<ScriptResult> {
   let parsed;
   try {
-    parsed = parseArgs({ args: [...argv], allowPositionals: true, options: { input: { type: "string" }, help: { type: "boolean" }, version: { type: "boolean" } } });
+    parsed = parseArgs({ args: [...argv], allowPositionals: true, options: { input: { type: "string" }, json: { type: "string" }, help: { type: "boolean" }, version: { type: "boolean" } } });
   } catch (err) {
     return usageError(err instanceof Error ? err.message : "Invalid arguments.");
   }
   if (parsed.values.version) return done({ version: VERSION }, 0);
   if (parsed.values.help) {
-    return done({ usage: "reinvent-scout.mjs <command> [--input <file> | --input -]", commands: Object.entries(registry).map(([name, entry]) => ({ name, description: entry.description })) }, 0);
+    return done({ usage: "reinvent-scout.mjs <command> [--json '<one-line JSON>' | --input <file> | --input -]", commands: Object.entries(registry).map(([name, entry]) => ({ name, description: entry.description })) }, 0);
   }
   const [name, ...extra] = parsed.positionals;
   if (name === undefined) return usageError("Name a command. Run with --help for the list.");
   if (extra.length > 0) return usageError("Expected a single command name.");
   if (!isCommandName(name)) return usageError(`Unknown command "${name.slice(0, 64)}". Run with --help for the list.`);
-  const input = readInput(parsed.values.input, io);
+  const input = readInput(parsed.values.json, parsed.values.input, io);
   if ("error" in input) return usageError(input.error);
   const entry = registry[name];
   try {

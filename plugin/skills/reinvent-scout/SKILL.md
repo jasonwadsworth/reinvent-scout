@@ -15,14 +15,15 @@ context on purpose (over 2,000 sessions is far too much to hold in a conversatio
 
 ## How to run
 
-**Local commands** go through one script. Pass the command's input as one JSON object on stdin
-(or `--input <file>`); it prints exactly one JSON document, and on a failure `{"error": ...}`
-(exit code 1, or 2 for a usage error):
+**Local commands** go through one script. Pass the command's input as one JSON object: `--json '<one-line JSON>'`
+for a small one (no apostrophes in it), or `--input <file>` for a larger one such as a profile (write the file first;
+`--input -` reads stdin). Do not put JSON in a heredoc: Claude Code's Bash check rejects a brace beside a quote
+there. A profile always goes in a file: write the whole input object (`{ "profile": ..., "preferences": ... }`) with the Write
+tool, then pass that file with `--input`. The script prints exactly one JSON document, and on a failure `{"error": ...}` (exit code 1, or 2 for a usage
+error):
 
 ```sh
-node "${CLAUDE_SKILL_DIR}/scripts/reinvent-scout.mjs" list_filters --input - <<'JSON'
-{ "field": "venue" }
-JSON
+node "${CLAUDE_SKILL_DIR}/scripts/reinvent-scout.mjs" list_filters --json '{"field":"venue"}'
 ```
 
 AWS Events tools are `mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___<Name>`, or
