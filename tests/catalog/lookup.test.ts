@@ -70,6 +70,16 @@ describe("lookupSessions", () => {
       expect(() => lookupSessions({ ids: Array.from({ length: 11 }, (_, i) => `id-${i}`), includeAbstract: true }, deps())).toThrow(ValidationError);
     });
   });
+  it("keeps to the budget even when ambiguous entries dominate, moving whole entries to notReturned", () => {
+    const raw = Array.from({ length: 1000 }, (_, i) => s(`${"i".repeat(100)}-${i}`, `CODE${String(Math.floor(i / 10)).padStart(3, "0")}`));
+    seed(raw);
+    const ids = Array.from({ length: 100 }, (_, i) => `CODE${String(i).padStart(3, "0")}`);
+    const result = lookupSessions({ ids }, deps());
+    expect(outputBytes(result)).toBeLessThanOrEqual(OUTPUT_BUDGET_BYTES);
+    const accounted = [...result.rows.map(row => row.query), ...result.notFound, ...result.ambiguous.map(entry => entry.query), ...result.notReturned];
+    expect(accounted.sort()).toEqual([...ids].sort());
+    expect(result.notReturned.length).toBeGreaterThan(0);
+  });
   it("refuses 0 or more than 100 ids", () => {
     seed([s("id-1", "ARC330")]);
     expect(() => lookupSessions({ ids: [] }, deps())).toThrow(ValidationError);

@@ -23374,6 +23374,9 @@ function lookupSessions(input2, deps) {
   while (outputBytes(result2) > OUTPUT_BUDGET_BYTES && result2.rows.length > 0) {
     result2.notReturned.unshift(result2.rows.pop().query);
   }
+  while (outputBytes(result2) > OUTPUT_BUDGET_BYTES && result2.ambiguous.length > 0) {
+    result2.notReturned.unshift(result2.ambiguous.pop().query);
+  }
   return result2;
 }
 

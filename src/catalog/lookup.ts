@@ -108,8 +108,12 @@ export function lookupSessions(input: LookupInput, deps: LookupDeps): LookupResu
   }
   const warnings = timezone === null ? timezoneWarnings(availability) : [];
   if (warnings.length > 0) result.warnings = warnings;
+  // Whole entries go, never part of one: rows first, then ambiguous entries.
   while (outputBytes(result) > OUTPUT_BUDGET_BYTES && result.rows.length > 0) {
     result.notReturned.unshift(result.rows.pop()!.query);
+  }
+  while (outputBytes(result) > OUTPUT_BUDGET_BYTES && result.ambiguous.length > 0) {
+    result.notReturned.unshift(result.ambiguous.pop()!.query);
   }
   return result;
 }
