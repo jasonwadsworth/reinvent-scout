@@ -83,10 +83,11 @@ describe("get_session tool", () => {
   });
   it("never leaks the access token, on success or failure", async () => {
     const token = "tok-SENTINEL-123";
-    for (const response of [{ status: 200, json: { session: live } }, { status: 404, json: { message: "Session not found." } }]) {
+    for (const [response, isError] of [[{ status: 200, json: { session: live } }, false], [{ status: 404, json: { message: "Session not found." } }, true]] as const) {
       const fake = createFakeFetch([response]);
       const client = await connect(home.path, () => createApiClient({ fetchFn: fake.fetch, getAccessToken: async () => token }));
       const result = await client.callTool({ name: "get_session", arguments: { sessionId: "abc123" } });
+      expect(result.isError === true).toBe(isError);
       expect(JSON.stringify(result)).not.toContain(token);
       expect(fake.calls).toHaveLength(1);
       expect(new Headers(fake.calls[0]!.init?.headers).get("Authorization")).toBe(`Bearer ${token}`);

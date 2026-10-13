@@ -788,8 +788,9 @@ function registerUnfavoriteSessionTool(server: McpServer, deps: McpToolDeps): vo
   );
 }
 
+const idSchema = z.string().trim().min(1).refine(id => Array.from(id).length <= MAX_SESSION_ID_LENGTH, `Session IDs must have at most ${MAX_SESSION_ID_LENGTH} characters.`);
+
 function registerReservationTools(server: McpServer, deps: McpToolDeps): void {
-  const idSchema = z.string().trim().min(1).refine(id => Array.from(id).length <= MAX_SESSION_ID_LENGTH, `Session IDs must have at most ${MAX_SESSION_ID_LENGTH} characters.`);
   const buildApiClient = deps.buildApiClient ?? defaultBuildApiClient;
   for (const name of ["plan_schedule", "reserve_sessions"] as const) {
     server.registerTool(name, {
@@ -841,7 +842,7 @@ function registerGetSessionTool(server: McpServer, deps: McpToolDeps): void {
   const buildApiClient = deps.buildApiClient ?? defaultBuildApiClient;
   server.registerTool("get_session", {
     description: "Read one session live from the API (not the local catalog, which can be stale): its seat band (seatAvailability), whether it is reservable, and its time and place. Read-only, one request. Use it to poll a full session cheaply; it is not a reservation attempt.",
-    inputSchema: z.strictObject({ sessionId: z.string().trim().min(1).refine(id => Array.from(id).length <= MAX_SESSION_ID_LENGTH, `Session IDs must have at most ${MAX_SESSION_ID_LENGTH} characters.`), event: z.string().min(1).optional() }),
+    inputSchema: z.strictObject({ sessionId: idSchema, event: z.string().min(1).optional() }),
   }, async ({ sessionId, event }) => {
     try {
       const session = await buildApiClient(deps.resolveStoreRoot()).getSession(event ?? DEFAULT_EVENT_ID, sessionId);
