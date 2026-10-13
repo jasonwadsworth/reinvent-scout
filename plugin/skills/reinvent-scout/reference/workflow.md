@@ -88,7 +88,7 @@ answer is `{ "available": false, "reason": "noImport" | "firstImport" | "eventRe
 
 ## 2b. `lookup_sessions`
 
-Input: `{ "ids": string[] (1 to 100 session ids or codes, like ARC330 or ARC330-R1), "includeAbstract"?: boolean }`; with `includeAbstract` at most 10 ids.
+Input: `{ "ids": string[] (1 to 100 session ids or codes of at most 64 characters, like ARC330 or ARC330-R1), "includeAbstract"?: boolean }`; with `includeAbstract` at most 10 ids.
 
 ```json
 { "rows": [{ "query": "ARC330", "sessionId": "1780441461150001GGoc", "code": "ARC330", "title": "...", "type": "Chalk talk", "level": "300 - Advanced",

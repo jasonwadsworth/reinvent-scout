@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Session } from "../../src/api/types.js";
-import { lookupSessions } from "../../src/catalog/lookup.js";
+import { LOOKUP_MAX_QUERY_LENGTH, lookupSessions } from "../../src/catalog/lookup.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { requireCurrentIndex } from "../../src/catalog/query.js";
 import { CURRENT_SCHEMA_VERSION, writeCatalog } from "../../src/catalog/store.js";
@@ -79,6 +79,18 @@ describe("lookupSessions", () => {
     const accounted = [...result.rows.map(row => row.query), ...result.notFound, ...result.ambiguous.map(entry => entry.query), ...result.notReturned];
     expect(accounted.sort()).toEqual([...ids].sort());
     expect(result.notReturned.length).toBeGreaterThan(0);
+  });
+  it("fits the budget by construction in the worst case: 100 maximum-length queries that all resolve to nothing", () => {
+    seed([s("id-1", "ARC330")]);
+    const ids = Array.from({ length: 100 }, (_, i) => `${String(i).padStart(3, "0")}${"界".repeat(LOOKUP_MAX_QUERY_LENGTH - 3)}`);
+    const result = lookupSessions({ ids }, deps());
+    expect(result.notFound).toHaveLength(100);
+    expect(outputBytes(result)).toBeLessThanOrEqual(OUTPUT_BUDGET_BYTES);
+  });
+  it("refuses a query longer than the limit that keeps the worst case within the budget", () => {
+    seed([s("id-1", "ARC330")]);
+    expect(() => lookupSessions({ ids: ["x".repeat(LOOKUP_MAX_QUERY_LENGTH + 1)] }, deps())).toThrow(ValidationError);
+    expect(lookupSessions({ ids: ["x".repeat(LOOKUP_MAX_QUERY_LENGTH)] }, deps()).notFound).toHaveLength(1);
   });
   it("refuses 0 or more than 100 ids", () => {
     seed([s("id-1", "ARC330")]);

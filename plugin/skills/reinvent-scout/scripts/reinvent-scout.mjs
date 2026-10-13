@@ -23305,15 +23305,15 @@ function timezoneWarnings(availability) {
 // src/catalog/lookup.ts
 var LOOKUP_MAX_IDS = 100;
 var LOOKUP_MAX_ABSTRACT_IDS = 10;
-var MAX_QUERY_LENGTH = 128;
+var LOOKUP_MAX_QUERY_LENGTH = 64;
 var MAX_TITLE = 200;
 var MAX_ABSTRACT = 1500;
 var MAX_OTHER_SITTINGS = 5;
 var MAX_AMBIGUOUS_IDS = 10;
 function validateLookupInput(input2) {
   const ids2 = [...new Set(input2.ids.map((id3) => typeof id3 === "string" ? id3.trim() : id3))];
-  if (ids2.length < 1 || ids2.length > LOOKUP_MAX_IDS || ids2.some((id3) => typeof id3 !== "string" || id3.length === 0 || Array.from(id3).length > MAX_QUERY_LENGTH)) {
-    throw new ValidationError(`Expected 1\u2013${LOOKUP_MAX_IDS} ids or codes, each 1\u2013${MAX_QUERY_LENGTH} characters.`);
+  if (ids2.length < 1 || ids2.length > LOOKUP_MAX_IDS || ids2.some((id3) => typeof id3 !== "string" || id3.length === 0 || Array.from(id3).length > LOOKUP_MAX_QUERY_LENGTH)) {
+    throw new ValidationError(`Expected 1\u2013${LOOKUP_MAX_IDS} ids or codes, each 1\u2013${LOOKUP_MAX_QUERY_LENGTH} characters.`);
   }
   if (input2.includeAbstract === true && ids2.length > LOOKUP_MAX_ABSTRACT_IDS) {
     throw new ValidationError(`Abstracts are returned for at most ${LOOKUP_MAX_ABSTRACT_IDS} ids at a time.`);
@@ -23921,7 +23921,7 @@ var catalogChangesCommand = {
   }, { storeRoot: deps.storeRoot })
 };
 var LookupSessionsInputSchema = external_exports.strictObject({
-  ids: external_exports.array(external_exports.string().trim().min(1).max(MAX_SESSION_ID_LENGTH)).min(1).max(LOOKUP_MAX_IDS),
+  ids: external_exports.array(external_exports.string().trim().min(1).max(LOOKUP_MAX_QUERY_LENGTH)).min(1).max(LOOKUP_MAX_IDS),
   includeAbstract: external_exports.boolean().optional()
 });
 var lookupSessionsCommand = {

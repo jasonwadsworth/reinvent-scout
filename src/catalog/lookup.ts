@@ -8,7 +8,8 @@ import type { Venue } from "./venue.js";
 
 export const LOOKUP_MAX_IDS = 100;
 export const LOOKUP_MAX_ABSTRACT_IDS = 10;
-const MAX_QUERY_LENGTH = 128;
+/** Short enough that even 100 queries of 3-byte characters, all echoed back, fit the output budget. */
+export const LOOKUP_MAX_QUERY_LENGTH = 64;
 const MAX_TITLE = 200;
 const MAX_ABSTRACT = 1500;
 const MAX_OTHER_SITTINGS = 5;
@@ -53,8 +54,8 @@ export interface LookupResult {
 
 function validateLookupInput(input: LookupInput): string[] {
   const ids = [...new Set(input.ids.map(id => (typeof id === "string" ? id.trim() : id)))];
-  if (ids.length < 1 || ids.length > LOOKUP_MAX_IDS || ids.some(id => typeof id !== "string" || id.length === 0 || Array.from(id).length > MAX_QUERY_LENGTH)) {
-    throw new ValidationError(`Expected 1–${LOOKUP_MAX_IDS} ids or codes, each 1–${MAX_QUERY_LENGTH} characters.`);
+  if (ids.length < 1 || ids.length > LOOKUP_MAX_IDS || ids.some(id => typeof id !== "string" || id.length === 0 || Array.from(id).length > LOOKUP_MAX_QUERY_LENGTH)) {
+    throw new ValidationError(`Expected 1–${LOOKUP_MAX_IDS} ids or codes, each 1–${LOOKUP_MAX_QUERY_LENGTH} characters.`);
   }
   if (input.includeAbstract === true && ids.length > LOOKUP_MAX_ABSTRACT_IDS) {
     throw new ValidationError(`Abstracts are returned for at most ${LOOKUP_MAX_ABSTRACT_IDS} ids at a time.`);

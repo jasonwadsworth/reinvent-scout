@@ -17,7 +17,7 @@ import { buildValidateReport } from "../profile/report.js";
 import { MAX_RESERVATION_IDS, MAX_SESSION_ID_LENGTH, validateSessionIds } from "../schedule/reservations.js";
 import { queryCatalogChanges } from "../catalog/diff.js";
 import { importCatalog } from "../catalog/import.js";
-import { LOOKUP_MAX_ABSTRACT_IDS, LOOKUP_MAX_IDS, lookupSessions } from "../catalog/lookup.js";
+import { LOOKUP_MAX_ABSTRACT_IDS, LOOKUP_MAX_IDS, LOOKUP_MAX_QUERY_LENGTH, lookupSessions } from "../catalog/lookup.js";
 import { searchSessions } from "../catalog/search.js";
 import { catalogStatus } from "../catalog/status.js";
 import { VENUES } from "../catalog/venue.js";
@@ -299,7 +299,7 @@ const catalogChangesCommand = {
 } satisfies CommandDefinition<typeof CatalogChangesInputSchema>;
 
 const LookupSessionsInputSchema = z.strictObject({
-  ids: z.array(z.string().trim().min(1).max(MAX_SESSION_ID_LENGTH)).min(1).max(LOOKUP_MAX_IDS),
+  ids: z.array(z.string().trim().min(1).max(LOOKUP_MAX_QUERY_LENGTH)).min(1).max(LOOKUP_MAX_IDS),
   includeAbstract: z.boolean().optional(),
 });
 const lookupSessionsCommand = {
