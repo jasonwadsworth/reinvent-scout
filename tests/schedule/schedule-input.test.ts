@@ -24,6 +24,13 @@ describe("schedule input", () => {
     const parsed = scheduleInputSchema.parse({ ...aws, personalTime: [{ ...personal, surprise: "x" }] });
     expect(parsed.personalTime[0]).not.toHaveProperty("surprise");
   });
+  it("shortens long personal-time text instead of rejecting the whole schedule", () => {
+    const long = { ...personal, title: "t".repeat(5000), description: "d".repeat(5000), location: "l".repeat(5000) };
+    const parsed = readScheduleInput({ schedule: { ...aws, personalTime: [long] } });
+    expect(parsed.personalTime[0]!.title).toHaveLength(300);
+    expect(parsed.personalTime[0]!.description).toHaveLength(2000);
+    expect(parsed.personalTime[0]!.location).toHaveLength(300);
+  });
   it("reads a bare schedule or a {schedule} wrapper from a file", () => {
     expect(readScheduleInput({ scheduleFile: file("bare.json", aws) })).toEqual(aws);
     expect(readScheduleInput({ scheduleFile: file("wrapped.json", { schedule: aws }) })).toEqual(aws);

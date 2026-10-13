@@ -9,13 +9,16 @@ const id = z.string().min(1).max(128);
 const localDateTime = z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/, "expected YYYY-MM-DDTHH:MM:SS (UTC, no offset, no milliseconds)");
 
 /** One personal-time block, as AWS `GetSchedule` returns it. Unknown keys are stripped. */
+/** Free text is shortened, not rejected: one long note must not make the whole schedule unusable. */
+const shortened = (max: number) => z.string().transform(text => text.slice(0, max));
+
 export const personalTimeSchema = z.object({
   personalTimeId: id,
   startDateTime: localDateTime,
   endDateTime: localDateTime,
-  title: z.string().max(300).default(""),
-  description: z.string().max(2000).default(""),
-  location: z.string().max(300).optional(),
+  title: shortened(300).default(""),
+  description: shortened(2000).default(""),
+  location: shortened(300).optional(),
 });
 
 /** The AWS `GetSchedule` `schedule` object, verbatim: the agent passes it through unchanged. */
