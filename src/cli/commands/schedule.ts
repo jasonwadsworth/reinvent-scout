@@ -17,7 +17,7 @@ import { favoriteSessions, unfavoriteSession, type FavoriteSessionsResult } from
 import { mergeAndSortScheduleEntries, timezoneWarnings, type MergedScheduleEntry } from "../../schedule/merge.js";
 import { getSchedule, type ScheduleResult } from "../../schedule/schedule.js";
 import { formatEventLocalTime, utcIsoToZonedWallClock } from "../../schedule/timezone.js";
-import { formatZodError } from "../zod-errors.js";
+import { formatZodError } from "../../core/zod-errors.js";
 
 export interface ScheduleCommandDeps {
   /** Defaults to the real store root (`ensureStoreRoot`). Inject a fixed path in tests so

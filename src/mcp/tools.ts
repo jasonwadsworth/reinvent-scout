@@ -15,7 +15,7 @@ import { catalogServiceNames } from "../catalog/query.js";
 import { buildServiceAliasIndex } from "../catalog/service-aliases.js";
 import { getCatalogState, readTimezoneAvailability, type CatalogState } from "../catalog/store.js";
 import { syncCatalog } from "../catalog/sync.js";
-import { formatZodError } from "../cli/zod-errors.js";
+import { formatZodError } from "../core/zod-errors.js";
 import {
   AuthRequiredError,
   CatalogMissingError,

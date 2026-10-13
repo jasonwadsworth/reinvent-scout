@@ -15,7 +15,7 @@ import { matchSessionsDetailed, type MatchCandidate, type MatchResult } from "..
 import { buildFocusResponse, buildMatchResponse, toLeanCandidate, toLeanFocusCandidate } from "../../match/response.js";
 import { describePreferences } from "../../match/preferences.js";
 import { addPreferenceOptions } from "../level-option.js";
-import { formatZodError } from "../zod-errors.js";
+import { formatZodError } from "../../core/zod-errors.js";
 import { loadResolvedProfile } from "../profile-input.js";
 
 export interface MatchCommandDeps {

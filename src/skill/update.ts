@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { z } from "zod";
-import { formatZodError } from "../cli/zod-errors.js";
+import { formatZodError } from "../core/zod-errors.js";
 import { readPackageVersion } from "../cli/version.js";
 import {
   DEFAULT_SKILL_SOURCE_DIR,
