@@ -38,15 +38,17 @@ both server names (see below). The writes (`ReserveSessions`, `CancelReservation
 Replace `<your-claude-dir>` with the absolute path of your Claude config directory, for example `/Users/you/.claude` (it is
 `~/.claude` unless you set `CLAUDE_CONFIG_DIR`), written out in full. The script rule appears twice, with and without quotes
 around the path, because a rule only matches the command text it was written with. It is anchored on purpose: a wildcard before the
-path would also approve `node --require ...` or `node -e ...` with that path in it, so only the version segment is a wildcard.
+path would also approve `node --require ...` or `node -e ...` with that path in it, and a wildcard for the version could be
+stretched with `../` to a same-named script elsewhere, so the version is written out. After you update the plugin, change `0.1.0`
+to the installed version (until you do, the script asks before it runs, which is the safe failure).
 
 ```json
 {
   "permissions": {
     "allow": [
       "Skill(reinvent-scout:reinvent-scout)",
-      "Bash(node \"<your-claude-dir>/plugins/cache/reinvent-scout/reinvent-scout/*/skills/reinvent-scout/scripts/reinvent-scout.mjs\" *)",
-      "Bash(node <your-claude-dir>/plugins/cache/reinvent-scout/reinvent-scout/*/skills/reinvent-scout/scripts/reinvent-scout.mjs *)",
+      "Bash(node \"<your-claude-dir>/plugins/cache/reinvent-scout/reinvent-scout/0.1.0/skills/reinvent-scout/scripts/reinvent-scout.mjs\" *)",
+      "Bash(node <your-claude-dir>/plugins/cache/reinvent-scout/reinvent-scout/0.1.0/skills/reinvent-scout/scripts/reinvent-scout.mjs *)",
       "mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___ListEvents",
       "mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___GetEvent",
       "mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___ListSessions",
