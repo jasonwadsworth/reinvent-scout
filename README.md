@@ -13,7 +13,60 @@ This build includes sign-in, the catalog, agent-authored profiles, matching thro
 Reservation writes and a time-conflict-free dry-run planner are also available. Fix maps cited architecture gaps to remediation
 sessions; Next-level offers named migration paths with gains and costs.
 
-## What's here right now
+## Install as a Claude Code plugin
+
+reinvent-scout is a Claude Code plugin: a skill that finds the re:Invent sessions your code points at,
+a small script that keeps the 2,000-session catalog in a local index (so it never fills the
+conversation), a sync agent, and a declaration of the official AWS Events MCP, which handles every
+call to AWS (the catalog pull, your schedule, favorites, reservations). It runs where Claude Code runs
+with a shell and a persistent home directory (Claude Code, the Code tab of Claude Desktop, or the
+Agent SDK); the AWS sign-in opens in your browser on localhost port 8484.
+
+```text
+/plugin marketplace add jasonwadsworth/reinvent-scout
+/plugin install reinvent-scout@reinvent-scout
+```
+
+Then ask for sessions for your repo, or "sync the re:Invent catalog". The first AWS call opens the AWS
+sign-in. The catalog and your profiles live in `~/.reinvent-scout` (set `REINVENT_SCOUT_HOME` to
+move it); nothing else is stored, and sign-in tokens belong to the AWS Events MCP, not to this tool.
+
+**Fewer permission prompts.** A plugin cannot ship permission rules, so add this once to
+`~/.claude/settings.json`. It lets the bundled script and the read-only AWS tools run without asking, under
+both server names (see below). The writes (`ReserveSessions`, `CancelReservation`, `AssociateFavorites`,
+`DisassociateFavorite`) are deliberately not listed: they keep their prompt, which is also your confirmation.
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(node \"*reinvent-scout/scripts/reinvent-scout.mjs\" *)",
+      "mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___ListEvents",
+      "mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___GetEvent",
+      "mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___ListSessions",
+      "mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___GetSession",
+      "mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___GetSchedule",
+      "mcp__awsevents__AWSEventsPublicApi-Mcp-prod___ListEvents",
+      "mcp__awsevents__AWSEventsPublicApi-Mcp-prod___GetEvent",
+      "mcp__awsevents__AWSEventsPublicApi-Mcp-prod___ListSessions",
+      "mcp__awsevents__AWSEventsPublicApi-Mcp-prod___GetSession",
+      "mcp__awsevents__AWSEventsPublicApi-Mcp-prod___GetSchedule"
+    ]
+  }
+}
+```
+
+**If you already have an `awsevents` server.** You may keep your own `awsevents` entry. Claude Code treats a
+plugin server and a user server at the same endpoint as one: with the exact URL `https://api.awsevents.com/mcp`
+in your entry you get one connection (yours), and the tools are named `mcp__awsevents__AWSEventsPublicApi-Mcp-prod___<Name>`; otherwise they
+are `mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___<Name>`. The skill accepts either. With any other spelling of the
+URL (another path, a query string, a non-default port) there are two servers and two sign-ins, one after the
+other; use the exact URL in your own entry to avoid that. The permission rules above list both names for the same reason.
+
+The rest of this README describes the earlier command-line tool and local MCP server, which still work and are
+removed in the next release; the plugin replaces them.
+
+## What's here right now (legacy command-line tool, removed in the next release)
 
 - `auth login` / `auth logout` / `auth status` -- sign in once with AWS Builder ID (PKCE, no
   password ever touches this tool) and check your session.

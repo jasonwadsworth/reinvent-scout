@@ -331,7 +331,7 @@ before favoriting anything.
 ## 7. The schedule, favorites and reservations (AWS tools)
 
 All account access is the AWS Events MCP: `GetSchedule`, `ReserveSessions`, `CancelReservation`, `AssociateFavorites`
-and `DisassociateFavorite`, as `mcp__plugin_reinvent-scout_awsevents__<Name>` or `mcp__awsevents__<Name>` (use whichever is available).
+and `DisassociateFavorite`, under the names in SKILL.md (`mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___<Name>` or `mcp__awsevents__AWSEventsPublicApi-Mcp-prod___<Name>`; use whichever is available).
 The writes keep their permission prompt, which is also your confirmation: never call one without the user's go-ahead.
 
 - **Read the schedule** with `GetSchedule`, and resolve its ids with `lookup_sessions`. Its `reserved` and `favorites` are session ids; `personalTime`

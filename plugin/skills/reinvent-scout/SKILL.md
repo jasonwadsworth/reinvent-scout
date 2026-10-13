@@ -1,7 +1,7 @@
 ---
 name: reinvent-scout
 description: Finds re:Invent sessions relevant to a codebase by profiling the repo against the services and patterns it actually uses, matching that profile against the imported session catalog with evidence and reasons, and managing the attendee's own schedule through the AWS Events MCP. Use when the user wants re:Invent session recommendations for their repo or team, asks what talks to attend for their tech stack, or wants to review, favorite, reserve or watch sessions on their schedule.
-allowed-tools: Bash(node ${CLAUDE_SKILL_DIR}/scripts/reinvent-scout.mjs *)
+allowed-tools: Bash(node "${CLAUDE_SKILL_DIR}/scripts/reinvent-scout.mjs" *)
 ---
 
 # reinvent-scout
@@ -25,8 +25,9 @@ node "${CLAUDE_SKILL_DIR}/scripts/reinvent-scout.mjs" list_filters --input - <<'
 JSON
 ```
 
-AWS Events tools are `mcp__plugin_reinvent-scout_awsevents__<Name>`, or `mcp__awsevents__<Name>`
-when your own `awsevents` server shadows the plugin's; use whichever is available. They need no
+AWS Events tools are `mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___<Name>`, or
+`mcp__awsevents__AWSEventsPublicApi-Mcp-prod___<Name>` when your own `awsevents` server shadows the plugin's; use whichever is
+available. The docs here write the bare operation name (`GetSchedule`). They need no
 sign-in of their own here: the first call opens the AWS sign-in in the browser. If one reports you are not signed in,
 tell the user to complete it, and try again.
 

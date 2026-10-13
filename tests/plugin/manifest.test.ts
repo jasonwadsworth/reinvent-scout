@@ -10,7 +10,9 @@ const readJson = (...parts: string[]) => JSON.parse(read(...parts)) as Record<st
 const pkg = readJson("package.json");
 
 const AWS_READ_TOOLS = ["GetEvent", "ListSessions"];
-const PREFIXES = ["mcp__plugin_reinvent-scout_awsevents__", "mcp__awsevents__"];
+// The AWS Events MCP names its tools with a stage prefix, so the full names carry it (checked against a live session).
+const INFIX = "AWSEventsPublicApi-Mcp-prod___";
+const PREFIXES = [`mcp__plugin_reinvent-scout_awsevents__${INFIX}`, `mcp__awsevents__${INFIX}`];
 
 /** The frontmatter block of a markdown file, as raw text. */
 function frontmatter(text: string): string {

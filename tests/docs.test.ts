@@ -133,3 +133,42 @@ describe("README rationale", () => {
     expect(readme).toMatch(/one PKCE sign-in/i);
   });
 });
+
+describe("README: Install as a Claude Code plugin", () => {
+  const readme = readFileSync(readmePath, "utf8");
+  const start = readme.indexOf("## Install as a Claude Code plugin");
+  const section = start === -1 ? "" : readme.slice(start, readme.indexOf("\n## ", start + 5) === -1 ? undefined : readme.indexOf("\n## ", start + 5));
+  const flat = section.replace(/\s+/g, " ");
+
+  it("has the section, near the top, ahead of the legacy install", () => {
+    expect(start).toBeGreaterThan(-1);
+    expect(start).toBeLessThan(readme.indexOf("## What's here right now"));
+  });
+  it("shows the two install commands", () => {
+    expect(section).toContain("/plugin marketplace add jasonwadsworth/reinvent-scout");
+    expect(section).toContain("/plugin install reinvent-scout@reinvent-scout");
+  });
+  it("gives a permission rule that allows the script and only the read-only AWS tools, under both prefixes", () => {
+    const block = /```json\n([\s\S]*?)```/.exec(section);
+    expect(block).not.toBeNull();
+    const allow = (JSON.parse(block![1]!) as { permissions: { allow: string[] } }).permissions.allow;
+    expect(allow).toContain('Bash(node "*reinvent-scout/scripts/reinvent-scout.mjs" *)');
+    for (const prefix of ["mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___", "mcp__awsevents__AWSEventsPublicApi-Mcp-prod___"]) {
+      for (const tool of ["ListEvents", "GetEvent", "ListSessions", "GetSession", "GetSchedule"]) expect(allow).toContain(`${prefix}${tool}`);
+    }
+    for (const write of ["ReserveSessions", "CancelReservation", "AssociateFavorites", "DisassociateFavorite", "CreatePersonalTime", "UpdatePersonalTime", "DeletePersonalTime"]) {
+      expect(allow.join(" "), write).not.toContain(write);
+    }
+    expect(flat).toContain("keep their prompt");
+  });
+  it("explains the user's own awsevents entry: keep it, use the exact URL to share one connection, any other spelling means two sign-ins", () => {
+    expect(flat).toContain("keep your own `awsevents` entry");
+    expect(flat).toContain("https://api.awsevents.com/mcp");
+    expect(flat).toMatch(/exact URL.*one connection/);
+    expect(flat).toMatch(/any other spelling.*two (?:servers|sign-ins)/i);
+  });
+  it("says where the data lives and that it needs a local shell", () => {
+    expect(flat).toContain("~/.reinvent-scout");
+    expect(flat).toMatch(/Claude Code|Agent SDK/);
+  });
+});

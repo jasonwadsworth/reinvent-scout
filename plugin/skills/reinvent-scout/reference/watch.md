@@ -5,8 +5,9 @@ program. You run the loop yourself, one check at a time, with the AWS Events MCP
 `GetSchedule`, `GetSession`, `ReserveSessions` and `CancelReservation`. Everything below is your
 judgment to apply, not code to call.
 
-AWS Events tools are `mcp__plugin_reinvent-scout_awsevents__<Name>`, or `mcp__awsevents__<Name>`
-when your own `awsevents` server shadows the plugin's; use whichever is available.
+AWS Events tools are `mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___<Name>`, or
+`mcp__awsevents__AWSEventsPublicApi-Mcp-prod___<Name>` when your own `awsevents` server shadows the plugin's; use whichever is
+available. The docs here write the bare operation name (`GetSchedule`).
 
 ## Starting a watch
 

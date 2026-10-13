@@ -186,10 +186,11 @@ describe("skill files tool names", () => {
 describe("plugin skill conventions", () => {
   const flat = (text: string): string => text.replace(/\s+/g, " ");
   const expectAll = (text: string, phrases: string[]) => { for (const phrase of phrases) expect(flat(text), phrase).toContain(phrase); };
-  const SCRIPT_RULE = "Bash(node ${CLAUDE_SKILL_DIR}/scripts/reinvent-scout.mjs *)";
+  // Quoted on purpose: the docs quote the path (it may hold spaces), and a rule only matches the command text it was written with.
+  const SCRIPT_RULE = 'Bash(node "${CLAUDE_SKILL_DIR}/scripts/reinvent-scout.mjs" *)';
   const SKILL_SCRIPT = "${CLAUDE_SKILL_DIR}/scripts/reinvent-scout.mjs";
   const AGENT_SCRIPT = "${CLAUDE_PLUGIN_ROOT}/skills/reinvent-scout/scripts/reinvent-scout.mjs";
-  const EITHER_NAME = "AWS Events tools are `mcp__plugin_reinvent-scout_awsevents__<Name>`, or `mcp__awsevents__<Name>` when your own `awsevents` server shadows the plugin's; use whichever is available.";
+  const EITHER_NAME = "AWS Events tools are `mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___<Name>`, or `mcp__awsevents__AWSEventsPublicApi-Mcp-prod___<Name>` when your own `awsevents` server shadows the plugin's; use whichever is available.";
   const AWS_TOOLS = ["AssociateFavorites", "CancelReservation", "CreatePersonalTime", "DeletePersonalTime", "DisassociateFavorite", "GetEvent", "GetSchedule", "GetSession", "ListEvents", "ListSessions", "ReserveSessions", "UpdatePersonalTime"];
   const spansOf = (text: string): string[] => [...stripFences(text).matchAll(/`([^`]+)`/g)].map(match => match[1]!);
 
@@ -199,12 +200,13 @@ describe("plugin skill conventions", () => {
   });
   it("writes every script invocation with the plugin-relative path and a registry command", () => {
     const files: Array<[string, string, string]> = [["SKILL.md", skillMd, SKILL_SCRIPT], ["workflow.md", workflowMd, SKILL_SCRIPT], ["watch.md", watchMd, SKILL_SCRIPT], ["profiling.md", profilingMd, SKILL_SCRIPT], ["catalog-sync.md", agentMd, AGENT_SCRIPT]];
-    for (const [name, text, expected] of files) {
+    for (const [name, rawText, expected] of files) {
+      const text = rawText.replace(/^---\n[\s\S]*?\n---\n/, "");
       for (const match of text.matchAll(/node "([^"]*reinvent-scout\.mjs)"(?: ([a-z_]+))?/g)) {
         expect(match[1], `${name} script path`).toBe(expected);
         expect(Object.keys(registry), `${name} command ${match[2]}`).toContain(match[2]);
       }
-      const body = text.replace(/^---\n[\s\S]*?\n---\n/, "");
+      const body = text;
       expect(body.match(/reinvent-scout\.mjs/g)?.length ?? 0, `${name} mentions of the script`).toBe(body.match(/node "[^"]*reinvent-scout\.mjs" [a-z_]+/g)?.length ?? 0);
     }
     for (const [name, text] of [["SKILL.md", skillMd], ["workflow.md", workflowMd], ["catalog-sync.md", agentMd]] as const) expect(text, name).toMatch(/node "[^"]*reinvent-scout\.mjs" [a-z_]+/);
@@ -217,14 +219,14 @@ describe("plugin skill conventions", () => {
     for (const span of spansOf(allSkillText)) {
       if (/^(List|Get|Associate|Disassociate|Reserve|Cancel|Create|Update|Delete)[A-Z]\w+$/.test(span)) expect(AWS_TOOLS, span).toContain(span);
       if (span.startsWith("mcp__")) {
-        if (span === "mcp__plugin_reinvent-scout_awsevents__<Name>" || span === "mcp__awsevents__<Name>") continue;
-        const match = /^mcp__(?:plugin_reinvent-scout_awsevents|awsevents)__(\w+)$/.exec(span);
+        if (span === "mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___<Name>" || span === "mcp__awsevents__AWSEventsPublicApi-Mcp-prod___<Name>") continue;
+        const match = /^mcp__(?:plugin_reinvent-scout_awsevents|awsevents)__AWSEventsPublicApi-Mcp-prod___(\w+)$/.exec(span);
         expect(match, span).not.toBeNull();
         expect(AWS_TOOLS, span).toContain(match![1]);
       }
     }
     for (const tool of /^tools: (.+)$/m.exec(agentMd)![1]!.split(",").map(entry => entry.trim()).filter(entry => entry.startsWith("mcp__"))) {
-      const match = /^mcp__(?:plugin_reinvent-scout_awsevents|awsevents)__(\w+)$/.exec(tool);
+      const match = /^mcp__(?:plugin_reinvent-scout_awsevents|awsevents)__AWSEventsPublicApi-Mcp-prod___(\w+)$/.exec(tool);
       expect(match, tool).not.toBeNull();
       expect(AWS_TOOLS, tool).toContain(match![1]);
     }

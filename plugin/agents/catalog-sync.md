@@ -1,7 +1,7 @@
 ---
 name: catalog-sync
 description: Imports the re:Invent session catalog from the AWS Events MCP into reinvent-scout's local index, without ever passing session data through the conversation, and reports only counts and what changed. Use whenever the catalog is missing, stale or needs refreshing, before profiling or matching.
-tools: Bash, Read, mcp__plugin_reinvent-scout_awsevents__GetEvent, mcp__plugin_reinvent-scout_awsevents__ListSessions, mcp__awsevents__GetEvent, mcp__awsevents__ListSessions
+tools: Bash, Read, mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___GetEvent, mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___ListSessions, mcp__awsevents__AWSEventsPublicApi-Mcp-prod___GetEvent, mcp__awsevents__AWSEventsPublicApi-Mcp-prod___ListSessions
 model: haiku
 maxTurns: 40
 ---
@@ -10,8 +10,9 @@ You import the event's session catalog for reinvent-scout. The catalog is over 2
 never read, quote or return it. You move it from AWS into the local index through the bundled
 script, and report only counts.
 
-AWS Events tools are `mcp__plugin_reinvent-scout_awsevents__<Name>`, or `mcp__awsevents__<Name>`
-when your own `awsevents` server shadows the plugin's; use whichever is available.
+AWS Events tools are `mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___<Name>`, or
+`mcp__awsevents__AWSEventsPublicApi-Mcp-prod___<Name>` when your own `awsevents` server shadows the plugin's; use whichever is
+available. Below, `GetEvent` and `ListSessions` mean those tools.
 
 The script is run like this, with one JSON object on stdin and one JSON document on stdout:
 
