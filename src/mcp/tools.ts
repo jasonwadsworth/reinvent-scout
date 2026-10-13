@@ -19,6 +19,7 @@ import {
   AuthRequiredError,
   CatalogMissingError,
   CatalogUnusableError,
+  NotFoundError,
   NotRegisteredError,
   ValidationError,
 } from "../core/errors.js";
@@ -35,6 +36,7 @@ import { buildFocusResponse, buildMapResponse, buildMatchResponse } from "../mat
 import { favoriteSessions, unfavoriteSession } from "../schedule/favorites.js";
 import { mergeAndSortScheduleEntries, timezoneWarnings, type MergedScheduleEntry } from "../schedule/merge.js";
 import { getSchedule } from "../schedule/schedule.js";
+import { getLiveSession } from "../schedule/session-live.js";
 
 function defaultBuildApiClient(storeRoot: string): ApiClient {
   return createApiClient({ getAccessToken: createTokenProviderAdapter({ storeRoot }) });
@@ -817,12 +819,33 @@ function registerReservationTools(server: McpServer, deps: McpToolDeps): void {
   });
 }
 
-/** Registers every implemented tool: `status`, `catalog_sync`, `validate_profile`,
- * `match_sessions`, `get_schedule`, `favorite_sessions` and `unfavorite_session` -- the seven the
- * skill (task 7) is written against. */
+const SESSION_NOT_FOUND_MESSAGE =
+  "Session not found. This can also happen during an API outage, so it is not proof the session is gone: check the id and try again later.";
+
+function registerGetSessionTool(server: McpServer, deps: McpToolDeps): void {
+  const buildApiClient = deps.buildApiClient ?? defaultBuildApiClient;
+  server.registerTool("get_session", {
+    description: "Read one session live from the API (not the local catalog, which can be stale): its seat band (seatAvailability), whether it is reservable, and its time and place. Read-only, one request. Use it to poll a full session cheaply; it is not a reservation attempt.",
+    inputSchema: z.strictObject({ sessionId: z.string().trim().min(1).refine(id => Array.from(id).length <= MAX_SESSION_ID_LENGTH, `Session IDs must have at most ${MAX_SESSION_ID_LENGTH} characters.`), event: z.string().min(1).optional() }),
+  }, async ({ sessionId, event }) => {
+    try {
+      const storeRoot = deps.resolveStoreRoot();
+      return textResult(await getLiveSession(sessionId, { storeRoot, apiClient: buildApiClient(storeRoot), ...(event ? { eventId: event } : {}), ...(deps.now ? { now: deps.now } : {}) }));
+    } catch (error) {
+      return error instanceof NotFoundError ? errorResult(SESSION_NOT_FOUND_MESSAGE) : toToolError(error);
+    }
+  });
+}
+
+/** Registers every implemented tool: catalog and profile (`status`, `catalog_sync`,
+ * `validate_profile`, `match_sessions`, `map_profile`, `list_filters`), the schedule
+ * (`get_schedule`, `plan_schedule`, `favorite_sessions`, `unfavorite_session`,
+ * `reserve_sessions`, `cancel_reservation`), a live seat read (`get_session`) and the on-site
+ * tools (`nearby_sessions`, `get_onsite_preferences`, `set_onsite_preferences`). */
 export function registerTools(server: McpServer, deps: McpToolDeps): void {
   registerOnsiteTools(server, deps);
   registerReservationTools(server, deps);
+  registerGetSessionTool(server, deps);
   registerStatusTool(server, deps);
   registerCatalogSyncTool(server, deps);
   registerValidateProfileTool(server, deps);

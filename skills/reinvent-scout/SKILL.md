@@ -124,6 +124,8 @@ explained shortlist.
 10. For on-site choices, read `get_onsite_preferences`; use `set_onsite_preferences` for requested
     local changes. Confirm the current venue on this call, then call `nearby_sessions`. Present
     both travel legs, admission uncertainty and refresh coverage before any reservation.
+11. To see whether a full session has a seat now, call `get_session`. It reads the live seat band
+    (`seatAvailability`) with one request and reserves nothing; a 404 is not proof the session is gone.
 
 `reference/workflow.md` has the exact argument and output shape for every tool above, plus what
 each `isError` message means and how to react to it.
@@ -178,6 +180,7 @@ one without the actual remediation or destination signal.
 - `plan_schedule`
 - `reserve_sessions`
 - `cancel_reservation`
+- `get_session`
 - `nearby_sessions`
 - `get_onsite_preferences`
 - `set_onsite_preferences`
