@@ -282,6 +282,23 @@ describe("commitCatalogImport", () => {
       expect(existsSync(join(home.path, "catalog", "staging", syncId))).toBe(true);
       expect(commitCatalogImport({ syncId, allowShrink: true }, deps())).toMatchObject({ committed: true, count: 85 });
     });
+    it("still guards when meta.json is corrupt but raw.json is intact (the event is unknown)", () => {
+      seed(100);
+      writeFileSync(join(home.path, "catalog", "meta.json"), "{ truncated");
+      const syncId = stage([sessions(50)]);
+      const before = catalogBytes();
+      expect(reasonOf(() => commitCatalogImport({ syncId }, deps())).reason).toBe("shrunk");
+      expect(catalogBytes()).toEqual(before);
+      expect(commitCatalogImport({ syncId, allowShrink: true }, deps())).toMatchObject({ committed: true, firstImport: true });
+    });
+    it("falls back to the stored session count when meta has no usable count", () => {
+      seed(100);
+      const metaPath = join(home.path, "catalog", "meta.json");
+      const m = JSON.parse(readFileSync(metaPath, "utf8")); delete m.count;
+      writeFileSync(metaPath, JSON.stringify(m));
+      const syncId = stage([sessions(50)]);
+      expect(reasonOf(() => commitCatalogImport({ syncId }, deps())).reason).toBe("shrunk");
+    });
     it("accepts exactly 90 percent of the previous count", () => {
       seed(100);
       const syncId = stage([sessions(90)]);

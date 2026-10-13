@@ -219,11 +219,16 @@ export function commitCatalogImport(input: CommitInput, deps: ImportDeps): Commi
   if (count > last.totalCount) warnings.push("catalog grew during the import");
 
   const previousMeta = readMeta(deps);
-  const previousRaw = previousMeta === null ? null : readRaw(deps);
-  const sameEvent = previousMeta !== null && previousMeta.eventId === manifest.eventId;
-  if (sameEvent && previousMeta.count > 0 && count < Math.floor(previousMeta.count * SHRINK_FLOOR) && input.allowShrink !== true) {
-    throw new CatalogImportRejectedError("shrunk", `The import has ${count} sessions, down from ${previousMeta.count} (more than 10% fewer); the existing local data was left unchanged. Ask the user, then commit again with allowShrink.`);
+  const storedRaw = readRaw(deps);
+  const eventMatches = previousMeta === null ? storedRaw !== null : previousMeta.eventId === manifest.eventId;
+  // meta.json is unreadable but raw.json is not: the event is unknown, so the guard still applies
+  // (skipping it would let a tiny pull overwrite a good catalog), counting the stored sessions.
+  const previousCount = typeof previousMeta?.count === "number" ? previousMeta.count : storedRaw?.length ?? 0;
+  if (eventMatches && previousCount > 0 && count < Math.floor(previousCount * SHRINK_FLOOR) && input.allowShrink !== true) {
+    throw new CatalogImportRejectedError("shrunk", `The import has ${count} sessions, down from ${previousCount} (more than 10% fewer); the existing local data was left unchanged. Ask the user, then commit again with allowShrink.`);
   }
+  const previousRaw = previousMeta === null ? null : storedRaw;
+  const sameEvent = previousMeta !== null && previousMeta.eventId === manifest.eventId;
 
   const syncedAt = (deps.now ?? Date.now)();
   const includedAbstracts = items.some(session => typeof session.abstract === "string" && session.abstract.length > 0);
