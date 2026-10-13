@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -54,6 +55,11 @@ describe("ListSessions page validation", () => {
     it("a directory", () => {
       const dir = join(home.path, "dir"); mkdirSync(dir);
       expect(() => resolveListSessionsPage({ path: dir })).toThrow(/regular file/);
+    });
+    it.skipIf(process.platform === "win32")("a FIFO, without hanging", () => {
+      const fifo = join(home.path, "pipe");
+      execFileSync("mkfifo", [fifo]);
+      expect(() => resolveListSessionsPage({ path: fifo })).toThrow(/regular file/);
     });
     it("a missing file", () => {
       expect(() => resolveListSessionsPage({ path: join(home.path, "nope.json") })).toThrow(ValidationError);

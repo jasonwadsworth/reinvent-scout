@@ -1,4 +1,4 @@
-import { lstatSync, readFileSync } from "node:fs";
+import { closeSync, constants, fstatSync, openSync, readFileSync } from "node:fs";
 import { basename, isAbsolute } from "node:path";
 import { z } from "zod";
 import { ValidationError } from "../core/errors.js";
@@ -76,13 +76,26 @@ export function parseListSessionsPage(value: unknown): ListSessionsPage {
 export function readListSessionsPageFile(path: string, options: PageReadOptions = {}): ListSessionsPage {
   const name = basename(path);
   if (!isAbsolute(path)) throw new ValidationError("The page path must be absolute.");
-  let stat;
-  try { stat = lstatSync(path); } catch { throw new ValidationError(`Cannot read page file ${name}.`); }
-  if (stat.isSymbolicLink()) throw new ValidationError(`Page file ${name} is a symbolic link; pass the real file.`);
-  if (!stat.isFile()) throw new ValidationError(`Page file ${name} is not a regular file.`);
-  if (stat.size > (options.maxBytes ?? MAX_PAGE_FILE_BYTES)) throw new ValidationError(`Page file ${name} is too large.`);
+  // One open, then every check on the handle: a path swapped for a symlink or a FIFO between a
+  // stat and a read can neither be followed nor block.
+  let fd: number;
+  try { fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK); }
+  catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ELOOP") throw new ValidationError(`Page file ${name} is a symbolic link; pass the real file.`);
+    throw new ValidationError(`Cannot read page file ${name}.`);
+  }
   let text: string;
-  try { text = readFileSync(path, "utf8"); } catch { throw new ValidationError(`Cannot read page file ${name}.`); }
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) throw new ValidationError(`Page file ${name} is not a regular file.`);
+    if (stat.size > (options.maxBytes ?? MAX_PAGE_FILE_BYTES)) throw new ValidationError(`Page file ${name} is too large.`);
+    text = readFileSync(fd, "utf8");
+  } catch (err) {
+    if (err instanceof ValidationError) throw err;
+    throw new ValidationError(`Cannot read page file ${name}.`);
+  } finally {
+    closeSync(fd);
+  }
   const first = tryParseJson(text);
   if (first === undefined) throw new ValidationError(`Page file ${name} is not valid JSON.`);
   const value = unwrapTextEnvelope(first.value);
