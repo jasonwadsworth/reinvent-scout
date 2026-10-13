@@ -39,7 +39,8 @@ Nothing is saved for you. Keep this in your own working notes and update it afte
 check the transcript or ask the user about in-flight swaps and pending restores before doing
 anything else. Then re-read `get_schedule` and re-confirm the targets with the user before anything
 else that writes: reserving without re-confirmation is not allowed. Also re-confirm the may-cancel list
-with the user, and do not cancel anything until the user re-confirms.
+with the user, and do not cancel anything until the user re-confirms. Retrying a pending restore
+of a reservation this watch cancelled is exempt from re-confirmation.
 
 ## Driving the loop
 
@@ -78,8 +79,8 @@ restore this way: restore wakeups keep running even after the rest of the watch 
 `scheduleConflict` names the reservations it clashes with in `conflictsWith`.
 
 - `reserve_sessions` may omit some of the clashes it lists and says how many in
-  `omittedConflicts`. Swap only when `omittedConflicts` is 0. Otherwise read the full set from
-  `get_schedule` first, and apply the every-id rule to the full set.
+  `omittedConflicts`. If `omittedConflicts` is not 0, read the full set from `get_schedule` and
+  apply the every-id rule to it before swapping.
 - Swap only if every id in `conflictsWith` is on the may-cancel list. There are no partial
   swaps: if even one id is not on the list, do not swap. Cancel exactly those ids and no others,
   even if the list has more.
@@ -93,7 +94,8 @@ To swap:
 1. Cancel one reservation at a time and read each result. `cancel_reservation` reports `outcome`
    and `verifiedAbsent`: `outcome` is `cancelled`, `alreadyAbsent` or `uncertain`.
    - A cancel that says the reservation was already gone (404) is not something to restore
-     (`alreadyAbsent`).
+     (`alreadyAbsent`). A cancel with outcome `alreadyAbsent` is never re-reserved, even when the
+     read-back fails: it was gone before this watch touched it.
    - A cancel is uncertain if `outcome` is `uncertain`, if `get_schedule` afterwards cannot be
      read, or if it still lists the reservation: an acknowledged cancel (`outcome` is `cancelled`)
      whose `verifiedAbsent` is not true counts as uncertain. Then stop cancelling, do not reserve

@@ -1270,6 +1270,7 @@ describe("watch playbook (reference/watch.md)", () => {
       "The target is never reserved on this path, so nothing can double-book",
       "an acknowledged cancel (`outcome` is `cancelled`) whose `verifiedAbsent` is not true counts as uncertain",
       "`outcome` is `cancelled`, `alreadyAbsent` or `uncertain`",
+      "A cancel with outcome `alreadyAbsent` is never re-reserved, even when the read-back fails",
       "In every uncertain-cancel case, stop the watch and tell the user",
       "A 400 (validation error) or an OAuth failure on a cancel is treated like auth: re-reserve what you cancelled, then stop the whole watch",
       "A cancel that says the reservation was already gone (404) is not something to restore",
@@ -1328,8 +1329,7 @@ describe("watch playbook (reference/watch.md)", () => {
   it("reads the full conflict set when the tool omitted some of it", () => {
     expectAll(watchMd, [
       "`omittedConflicts`",
-      "Swap only when `omittedConflicts` is 0",
-      "read the full set from `get_schedule` first, and apply the every-id rule to the full set",
+      "If `omittedConflicts` is not 0, read the full set from `get_schedule` and apply the every-id rule to it before swapping",
     ]);
   });
   it("only reports and waits while a swap is deferred", () => {
@@ -1340,6 +1340,7 @@ describe("watch playbook (reference/watch.md)", () => {
     expectAll(watchMd, [
       "re-confirm the targets with the user before anything else",
       "reserving without re-confirmation is not allowed",
+      "Retrying a pending restore of a reservation this watch cancelled is exempt from re-confirmation",
     ]);
     expect(watchMd.replace(/\s+/g, " ")).not.toContain("Reserving a target needs no new consent");
   });
