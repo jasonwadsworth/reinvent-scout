@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "awsevents": {
+      "type": "http",
+      "url": "https://api.awsevents.com/mcp",
+      "oauth": {
+        "clientId": "7vmom55m1qstvq8i71ph127bfq",
+        "callbackPort": 8484
+      }
+    }
+  }
+}

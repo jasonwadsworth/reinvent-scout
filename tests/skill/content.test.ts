@@ -6,21 +6,21 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import type { Command } from "commander";
 import { describe, expect, it } from "vitest";
 import type { Session } from "../../src/api/types.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { buildServiceAliasIndex } from "../../src/catalog/service-aliases.js";
 import { CURRENT_SCHEMA_VERSION, writeCatalog } from "../../src/catalog/store.js";
 import { DEFAULT_EVENT_ID } from "../../src/catalog/sync.js";
-import { buildProgram } from "../../src/cli/main.js";
+import { registry } from "../../src/commands/registry.js";
 import { createMcpServer } from "../../src/mcp/server.js";
 import { resolveProfile, type ResolvedProfile } from "../../src/profile/profile.js";
 import { buildValidateReport } from "../../src/profile/report.js";
+import { callCommand } from "../helpers/call-command.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const skillRoot = join(here, "..", "..", "skills", "reinvent-scout");
+const skillRoot = join(here, "..", "..", "plugin", "skills", "reinvent-scout");
 const referenceDir = join(skillRoot, "reference");
 
 function readSkillFile(...parts: string[]): string {
@@ -31,6 +31,7 @@ const skillMd = readSkillFile("SKILL.md");
 const taxonomyMd = readSkillFile("reference", "taxonomy.md");
 const workflowMd = readSkillFile("reference", "workflow.md");
 const profilingMd = readSkillFile("reference", "profiling.md");
+const agentMd = readFileSync(join(skillRoot, "..", "..", "agents", "catalog-sync.md"), "utf8");
 const watchMd = readSkillFile("reference", "watch.md");
 
 /** Every skill file's raw text, concatenated -- the corpus a real reader (agent or human) actually
@@ -38,7 +39,7 @@ const watchMd = readSkillFile("reference", "watch.md");
  * section (e.g. SKILL.md's own "## MCP tools used" list) lets a tool get renamed or removed
  * everywhere *else* in the doc -- the actual flow prose an agent follows -- while that one list
  * stays correct and the anti-drift check stays green. */
-const allSkillText = [skillMd, profilingMd, taxonomyMd, workflowMd, watchMd].join("\n");
+const allSkillText = [skillMd, profilingMd, taxonomyMd, workflowMd, watchMd, agentMd].join("\n");
 
 /**
  * Strips fenced ``` code blocks before any single-backtick scan runs. Load-bearing, not cosmetic:
@@ -86,74 +87,6 @@ function backtickIdentifiers(text: string): string[] {
   return spans.filter((span) => /^status$|^[a-z]+(?:_[a-z]+)+$/.test(span));
 }
 
-/** Language tags treated as a shell example -- content an agent would actually copy and run,
- * unlike a ```json response example. An untagged fence ("```\n...\n```") counts too, since a
- * plain command example is often left untagged. */
-const SHELL_FENCE_LANGS = new Set(["", "sh", "bash", "shell", "console", "text"]);
-
-/**
- * Every `reinvent-scout <path>` mention across a document -- both backtick-quoted inline spans
- * (from fence-stripped text, for the same desync reason `backtickIdentifiers` strips fences) and
- * lines inside a fenced shell-like code block (scanned from the *unstripped* text, since fence-
- * stripping would erase exactly the blocks this half exists to catch). `<path>` is the leading run
- * of one or two lowercase, space-separated words after the "reinvent-scout " prefix (a leaf command
- * is never more than two words in this CLI) -- an optional leading shell prompt ("$ ") and trailing
- * content in the same span or line (an argument placeholder, a flag) don't prevent extraction.
- *
- * Reviewer's finding: a command written inside a ```sh block is exactly what an agent copies and
- * runs, so a misnamed command hiding there has to be caught the same way an inline backtick mention
- * already is -- fence-stripping alone (needed for the tool-name/backtick-pairing scan) would
- * otherwise erase it from the corpus entirely, at exactly the spot a real reader acts on it.
- */
-function cliCommandMentions(text: string): string[] {
-  const paths: string[] = [];
-
-  const inlineSpans = [...stripFences(text).matchAll(/`reinvent-scout ([^`]*)`/g)].map(
-    (match) => match[1]!,
-  );
-  for (const remainder of inlineSpans) {
-    const pathMatch = /^[a-z][a-z-]*(?: [a-z][a-z-]*)?/.exec(remainder);
-    paths.push(`reinvent-scout ${pathMatch ? pathMatch[0] : remainder.trim()}`);
-  }
-
-  for (const fence of text.matchAll(/```([a-zA-Z]*)\n([\s\S]*?)```/g)) {
-    const lang = fence[1]!.toLowerCase();
-    if (!SHELL_FENCE_LANGS.has(lang)) {
-      continue;
-    }
-    for (const line of fence[2]!.split("\n")) {
-      const lineMatch = /^[\s$]*(?:npx\s+)?reinvent-scout\s+([a-z][a-z-]*(?: [a-z][a-z-]*)?)/.exec(line);
-      if (lineMatch) {
-        paths.push(`reinvent-scout ${lineMatch[1]!}`);
-      }
-    }
-  }
-
-  return paths;
-}
-
-/**
- * Walks a commander program's command tree and returns every full invocation path for a leaf
- * command ("auth login", "catalog sync", "match") -- not just top-level group names, which are
- * never invocable on their own. Commander's auto-added "help" pseudo-command is excluded at every
- * level. Mirrors tests/docs.test.ts's own helper -- the same authoritative source the README's own
- * command-coverage test already trusts.
- */
-function collectLeafCommandPaths(command: Command, prefix: string[] = []): string[] {
-  const paths: string[] = [];
-  for (const sub of command.commands) {
-    if (sub.name() === "help") {
-      continue;
-    }
-    const path = [...prefix, sub.name()];
-    if (sub.commands.length === 0) {
-      paths.push(path.join(" "));
-    } else {
-      paths.push(...collectLeafCommandPaths(sub, path));
-    }
-  }
-  return paths;
-}
 
 const fixture: Session[] = JSON.parse(
   readFileSync(join(here, "..", "fixtures", "catalog-sample.json"), "utf8"),
@@ -232,128 +165,134 @@ describe("skill files tool names", () => {
     "on_failure",
   ]);
 
-  it("names only tools the mcp server actually registers or explicitly documents as absent, anywhere in the skill's files", async () => {
-    const home: TempHome = createTempHome();
-    try {
-      const server = createMcpServer({ resolveStoreRoot: () => home.path });
-      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-      const client = new Client({ name: "test-client", version: "0.0.1" });
-      await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
-      const { tools } = await client.listTools();
-      const registered = new Set(tools.map((tool) => tool.name));
-
-      // A sanity check on the test itself: if the server ever registered nothing, the forward
-      // direction below would pass vacuously.
-      expect(registered.size).toBeGreaterThan(0);
-
-      for (const name of documentedAbsentTools) {
-        expect(registered.has(name)).toBe(false);
-      }
-      for (const name of documentedNonToolIdentifiers) {
-        expect(registered.has(name)).toBe(false);
-      }
-
-      const extracted = new Set(backtickIdentifiers(allSkillText));
-      // A sanity check on the test itself: if every skill file were ever emptied of these
-      // identifiers, this would pass vacuously with nothing left to check.
-      expect(extracted.size).toBeGreaterThan(0);
-
-      const allowed = new Set([...registered, ...documentedAbsentTools, ...documentedNonToolIdentifiers]);
-      for (const name of extracted) {
-        expect(allowed.has(name)).toBe(true);
-      }
-    } finally {
-      home.cleanup();
-    }
+  it("names only commands the registry actually holds or explicitly documents as absent, anywhere in the skill's files", () => {
+    const registered = new Set(Object.keys(registry));
+    expect(registered.size).toBeGreaterThan(0);
+    for (const name of documentedAbsentTools) expect(registered.has(name)).toBe(false);
+    for (const name of documentedNonToolIdentifiers) expect(registered.has(name)).toBe(false);
+    const extracted = new Set(backtickIdentifiers(allSkillText));
+    expect(extracted.size).toBeGreaterThan(0);
+    const allowed = new Set([...registered, ...documentedAbsentTools, ...documentedNonToolIdentifiers]);
+    for (const name of extracted) expect(allowed.has(name), name).toBe(true);
   });
 
-  it("names every registered tool in the flow an agent actually follows, not just in a reference list", async () => {
-    const home: TempHome = createTempHome();
-    try {
-      const server = createMcpServer({ resolveStoreRoot: () => home.path });
-      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-      const client = new Client({ name: "test-client", version: "0.0.1" });
-      await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
-      const { tools } = await client.listTools();
-      const registered = new Set(tools.map((tool) => tool.name));
-      expect(registered.size).toBeGreaterThan(0);
-
-      const namedInFlow = new Set(backtickIdentifiers(extractSection(skillMd, "## The flow")));
-      expect(namedInFlow.size).toBeGreaterThan(0);
-
-      for (const name of registered) {
-        expect(namedInFlow.has(name)).toBe(true);
-      }
-    } finally {
-      home.cleanup();
-    }
+  it("names every registry command in the flow an agent actually follows, not just in a reference list", () => {
+    const namedInFlow = new Set(backtickIdentifiers(extractSection(skillMd, "## The flow")));
+    expect(namedInFlow.size).toBeGreaterThan(0);
+    for (const name of Object.keys(registry)) expect(namedInFlow.has(name), name).toBe(true);
   });
 });
 
-describe("skill files CLI command names", () => {
-  it("names only commands the cli actually registers, anywhere in the skill's files", () => {
-    const program = buildProgram();
-    const leafPaths = collectLeafCommandPaths(program);
-    expect(leafPaths.length).toBeGreaterThan(0);
-    const registered = new Set(leafPaths.map((path) => `reinvent-scout ${path}`));
+describe("plugin skill conventions", () => {
+  const flat = (text: string): string => text.replace(/\s+/g, " ");
+  const expectAll = (text: string, phrases: string[]) => { for (const phrase of phrases) expect(flat(text), phrase).toContain(phrase); };
+  // Both spellings of the command: a rule only matches the command text it was written with, and the model sometimes drops the quotes the docs use.
+  const SCRIPT_RULE = 'Bash(node "${CLAUDE_SKILL_DIR}/scripts/reinvent-scout.mjs" *) Bash(node ${CLAUDE_SKILL_DIR}/scripts/reinvent-scout.mjs *)';
+  const SKILL_SCRIPT = "${CLAUDE_SKILL_DIR}/scripts/reinvent-scout.mjs";
+  const AGENT_SCRIPT = "${CLAUDE_PLUGIN_ROOT}/skills/reinvent-scout/scripts/reinvent-scout.mjs";
+  const EITHER_NAME = "AWS Events tools are `mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___<Name>`, or `mcp__awsevents__AWSEventsPublicApi-Mcp-prod___<Name>` when your own `awsevents` server shadows the plugin's; use whichever is available.";
+  const AWS_TOOLS = ["AssociateFavorites", "CancelReservation", "CreatePersonalTime", "DeletePersonalTime", "DisassociateFavorite", "GetEvent", "GetSchedule", "GetSession", "ListEvents", "ListSessions", "ReserveSessions", "UpdatePersonalTime"];
+  const spansOf = (text: string): string[] => [...stripFences(text).matchAll(/`([^`]+)`/g)].map(match => match[1]!);
 
-    const extracted = new Set(cliCommandMentions(allSkillText));
-    expect(extracted.size).toBeGreaterThan(0);
-
-    for (const path of extracted) {
-      expect(registered.has(path)).toBe(true);
+  it("pre-approves exactly the bundled script in SKILL.md's allowed-tools", () => {
+    const frontmatter = /^---\n([\s\S]*?)\n---\n/.exec(skillMd)![1]!;
+    expect(/^allowed-tools: (.+)$/m.exec(frontmatter)?.[1]).toBe(SCRIPT_RULE);
+  });
+  it("writes every script invocation with the plugin-relative path and a registry command", () => {
+    const files: Array<[string, string, string]> = [["SKILL.md", skillMd, SKILL_SCRIPT], ["workflow.md", workflowMd, SKILL_SCRIPT], ["watch.md", watchMd, SKILL_SCRIPT], ["profiling.md", profilingMd, SKILL_SCRIPT], ["catalog-sync.md", agentMd, AGENT_SCRIPT]];
+    for (const [name, rawText, expected] of files) {
+      const text = rawText.replace(/^---\n[\s\S]*?\n---\n/, "");
+      for (const match of text.matchAll(/node "([^"]*reinvent-scout\.mjs)"(?: ([a-z_]+))?/g)) {
+        expect(match[1], `${name} script path`).toBe(expected);
+        expect(Object.keys(registry), `${name} command ${match[2]}`).toContain(match[2]);
+      }
+      const body = text;
+      expect(body.match(/reinvent-scout\.mjs/g)?.length ?? 0, `${name} mentions of the script`).toBe(body.match(/node "[^"]*reinvent-scout\.mjs" [a-z_]+/g)?.length ?? 0);
+    }
+    for (const [name, text] of [["SKILL.md", skillMd], ["workflow.md", workflowMd], ["catalog-sync.md", agentMd]] as const) expect(text, name).toMatch(/node "[^"]*reinvent-scout\.mjs" [a-z_]+/);
+  });
+  it("never puts JSON in a heredoc (Claude Code's Bash check rejects a brace beside a quote there); small inputs use --json, large ones a file", () => {
+    for (const [name, text] of [["SKILL.md", skillMd], ["workflow.md", workflowMd], ["watch.md", watchMd], ["profiling.md", profilingMd], ["catalog-sync.md", agentMd]] as const) {
+      for (const match of text.matchAll(/<<-?'?(\w+)'?\n([\s\S]*?)\n\s*\1\b/g)) {
+        expect(/[{]/.test(match[2]!) && /"/.test(match[2]!), `${name}: heredoc body\n${match[2]}`).toBe(false);
+      }
+    }
+    expect(flat(skillMd)).toContain("--json '<one-line JSON>'");
+    expect(flat(skillMd)).toContain("A profile always goes in a file");
+  });
+  it("names no CLI subcommand anywhere in the skill's files", () => {
+    for (const span of spansOf(allSkillText)) expect(span, span).not.toMatch(/^reinvent-scout [a-z]/);
+    for (const line of allSkillText.split("\n")) expect(line, line).not.toMatch(/^\s*(?:\$ )?reinvent-scout [a-z]/);
+  });
+  it("names only real AWS Events tools, under the two server prefixes", () => {
+    for (const span of spansOf(allSkillText)) {
+      if (/^(List|Get|Associate|Disassociate|Reserve|Cancel|Create|Update|Delete)[A-Z]\w+$/.test(span)) expect(AWS_TOOLS, span).toContain(span);
+      if (span.startsWith("mcp__")) {
+        if (span === "mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___<Name>" || span === "mcp__awsevents__AWSEventsPublicApi-Mcp-prod___<Name>") continue;
+        const match = /^mcp__(?:plugin_reinvent-scout_awsevents|awsevents)__AWSEventsPublicApi-Mcp-prod___(\w+)$/.exec(span);
+        expect(match, span).not.toBeNull();
+        expect(AWS_TOOLS, span).toContain(match![1]);
+      }
+    }
+    for (const tool of /^tools: (.+)$/m.exec(agentMd)![1]!.split(",").map(entry => entry.trim()).filter(entry => entry.startsWith("mcp__"))) {
+      const match = /^mcp__(?:plugin_reinvent-scout_awsevents|awsevents)__AWSEventsPublicApi-Mcp-prod___(\w+)$/.exec(tool);
+      expect(match, tool).not.toBeNull();
+      expect(AWS_TOOLS, tool).toContain(match![1]);
     }
   });
-
-  it("names every registered command somewhere in the skill's files", () => {
-    const program = buildProgram();
-    const leafPaths = collectLeafCommandPaths(program);
-    expect(leafPaths.length).toBeGreaterThan(0);
-    const registered = leafPaths.map((path) => `reinvent-scout ${path}`);
-
-    const extracted = new Set(cliCommandMentions(allSkillText));
-    expect(extracted.size).toBeGreaterThan(0);
-
-    for (const path of registered) {
-      expect(extracted.has(path)).toBe(true);
-    }
+  it("says in SKILL.md, the sync agent and watch.md that either server name works", () => {
+    for (const [name, text] of [["SKILL.md", skillMd], ["catalog-sync.md", agentMd], ["watch.md", watchMd]] as const) expect(flat(text), name).toContain(EITHER_NAME);
+  });
+  it("never asks the user to remove their own awsevents entry", () => {
+    expect(flat(allSkillText)).not.toMatch(/remove your (?:own )?`?awsevents/i);
   });
 
-  it("extracts a command written inside a fenced sh/bash/console/untagged block, not just an inline backtick span", () => {
-    // Reviewer's finding: fence-stripping (needed so the backtick-pairing scan isn't desynced by a
-    // ```json block's own triple backticks) also erases a command that's an example of something
-    // to *run*, not to read -- exactly what an agent would copy out of a fenced shell block. This
-    // locks in that such a block is scanned on its own terms, from the unstripped text.
-    const sample =
-      "```sh\nreinvent-scout auth login\n```\n\n" +
-      "```bash\nreinvent-scout catalog sync --reindex\n```\n\n" +
-      "```console\n$ reinvent-scout schedule show\n```\n\n" +
-      "```\nreinvent-scout mcp\n```\n";
-
-    expect(new Set(cliCommandMentions(sample))).toEqual(
-      new Set([
-        "reinvent-scout auth login",
-        "reinvent-scout catalog sync",
-        "reinvent-scout schedule show",
-        "reinvent-scout mcp",
-      ]),
-    );
+  describe("catalog sync through the plugin agent", () => {
+    it("has SKILL.md run the agent, keep the catalog out of context, relay only the summary and ask before allowShrink", () => {
+      expectAll(extractSection(skillMd, "## The flow"), [
+        "run the `reinvent-scout:catalog-sync` agent",
+        "The catalog never enters your context",
+        "relay only its summary",
+        "ask the user, with both counts, before passing `allowShrink`",
+        "call `catalog_changes`",
+      ]);
+    });
+    it("gives the agent the whole sync brief", () => {
+      expectAll(agentMd, [
+        "Call `GetEvent`",
+        "`ListSessions` with `includeAbstracts: true`",
+        "saved to a file",
+        "pass its absolute path as `path`",
+        "pass it as `page`",
+        "`action: \"page\"`",
+        "`action: \"commit\"`",
+        "until the output says `complete: true`",
+        "Never pass allowShrink",
+        "Never return session data",
+      ]);
+    });
+    it("documents the same brief and the protocol in workflow.md", () => {
+      expectAll(workflowMd, ["`catalog_import`", "`syncId`", "`shrunk`", "`allowShrink`", "`catalog_changes`", "reinvent-scout:catalog-sync"]);
+    });
   });
 
-  it("extracts text-fenced and npx commands including invalid commands for registry checking", () => {
-    const sample = "```text\n$ npx reinvent-scout match --lens fix\nnpx reinvent-scout catalog invented --json\nreinvent-scout profile validate --help\n```";
-    const extracted = cliCommandMentions(sample);
-    expect(extracted).toEqual(["reinvent-scout match", "reinvent-scout catalog invented", "reinvent-scout profile validate"]);
-    const registered = new Set(collectLeafCommandPaths(buildProgram()).map(path => `reinvent-scout ${path}`));
-    expect(extracted.filter(path => !registered.has(path))).toEqual(["reinvent-scout catalog invented"]);
-  });
-
-  it("does not extract a command mentioned only inside a non-shell fence, such as a json example", () => {
-    const sample = '```json\n{ "next": "reinvent-scout catalog refresh" }\n```\n';
-
-    expect(cliCommandMentions(sample)).toEqual([]);
+  describe("the schedule and favorites through AWS", () => {
+    it("has SKILL.md use GetSchedule, plan_schedule, ReserveSessions, CancelReservation, AssociateFavorites and DisassociateFavorite", () => {
+      expectAll(extractSection(skillMd, "## The flow"), [
+        "call `GetSchedule`", "pass the whole `schedule` object to `plan_schedule`",
+        "`ReserveSessions`", "`CancelReservation`",
+        "`AssociateFavorites`", "at most 10 ids per call", "on a 429, pause",
+        "`DisassociateFavorite`", "`GetSession`",
+        "resolve the ids on a `GetSchedule` result with `lookup_sessions`",
+        "`includeAbstract`",
+      ]);
+    });
+    it("gives the write rules in workflow.md", () => {
+      expectAll(workflowMd, ["at most 10 ids per call", "read every `failed` entry", "A 409 means reservations are closed: stop", "on a 429, pause", "Never replay an uncertain write"]);
+    });
   });
 });
+
 
 describe("SKILL.md reference file coverage", () => {
   it("references every file in the reference directory", () => {
@@ -432,10 +371,10 @@ describe("the sessionSays quote", () => {
 describe("offering end times and conflicts", () => {
   it("tells the agent to use plan_schedule for any overlap question and never infer it from the times", () => {
     const flow = extractSection(skillMd, "## The flow").replace(/\s+/g, " ");
-    expect(flow).toContain("Never judge yourself whether two sessions overlap or whether the user can attend both: that is a `plan_schedule` question, whatever the times look like, and `plan_schedule` needs a sign-in");
+    expect(flow).toContain("Never judge yourself whether two sessions overlap or whether the user can attend both: that is a `plan_schedule` question, whatever the times look like, and `plan_schedule` needs the schedule from `GetSchedule`");
     expect(flow).toContain("with its `endTime` when it has one");
     const text = workflowMd.replace(/\s+/g, " ");
-    for (const expected of ["\"startTime\": \"10:30\", \"endTime\": \"11:30\"", "An offering also has `endTime` (`startTime` plus the catalog's length", "is the first thing left off, before ranking reasons and before any candidate", "which checks time overlap (not travel or seats)", "(it needs a sign-in)", "Never infer that two sittings overlap or do not, or answer \"can I attend both\", from these times", "call `plan_schedule` with the offerings"]) {
+    for (const expected of ["\"startTime\": \"10:30\", \"endTime\": \"11:30\"", "An offering also has `endTime` (`startTime` plus the catalog's length", "is the first thing left off, before ranking reasons and before any candidate", "which checks time overlap (not travel or seats)", "(it needs the schedule from `GetSchedule`)", "Never infer that two sittings overlap or do not, or answer \"can I attend both\", from these times", "call `plan_schedule` with the offerings"]) {
       expect(text, expected).toContain(expected);
     }
     expect(readFileSync(join(here, "..", "..", "README.md"), "utf8").replace(/\s+/g, " ")).toContain("overlap and \"can I attend both\" are `plan_schedule` questions, never guessed from the times");
@@ -450,28 +389,6 @@ describe("platform services the map leaves out", () => {
       expect(text, expected).toContain(expected);
     }
     expect(readFileSync(join(here, "..", "..", "README.md"), "utf8").replace(/\s+/g, " ")).toContain("a \"Not shown\" line naming the platform services");
-  });
-});
-
-describe("sign-in is not needed to browse", () => {
-  const flow = (): string => extractSection(skillMd, "## The flow").replace(/\s+/g, " ");
-  it("tells the agent to profile, map and match without signing in when the catalog is present, and to sign in only to sync or touch the schedule", () => {
-    for (const expected of ["Not being signed in is not an error", "returns `signedIn: false` with the catalog state", "Browsing needs no sign-in", "or `\"stale\"` with `reason: \"age\"`", "`\"stale\"` for `reason: \"schema-version\"`", "call `catalog_sync` with `reindex: true`: it rebuilds the local index from what is already stored and needs no sign-in", "(steps 6 and 7)", "go straight to profiling, mapping and matching without signing in",
-      "Sign in only when you need a real fetch from the catalog sync (step 2) or the schedule, favorite, reservation and `plan_schedule` tools (steps 6 and 7)", "run `reinvent-scout auth login` yourself in the shell"]) {
-      expect(flow(), expected).toContain(expected);
-    }
-  });
-  it("documents status's signedIn false result and which tools need no sign-in in workflow.md", () => {
-    const text = workflowMd.replace(/\s+/g, " ");
-    for (const expected of ["`status` is not an error: it returns `{ \"signedIn\": false,", "no `accessTokenExpiresAt`", "`validate_profile`, `map_profile`, `match_sessions` and `list_filters` do not need a sign-in", "only for `catalog_sync` and the schedule, favorite and reservation tools"]) {
-      expect(text, expected).toContain(expected);
-    }
-  });
-});
-
-describe("SKILL.md auth login instructions", () => {
-  it("tells the agent how to run auth login itself rather than deferring to the user", () => {
-    expect(skillMd).toMatch(/run\s+`reinvent-scout auth login`\s+yourself/);
   });
 });
 
@@ -727,18 +644,16 @@ describe("explain lens documentation", () => {
     expect(workflowMd).toContain("`uncovered`");
     expect(workflowMd).toContain("explainsConcept");
     expect(skillMd).toContain("`uncovered`");
-    expect(readFileSync(join(here, "..", "..", "skills", "reinvent-scout", "reference", "taxonomy.md"), "utf8")).toContain("tiebreak");
+    expect(readFileSync(join(skillRoot, "reference", "taxonomy.md"), "utf8")).toContain("tiebreak");
     expect(readmeMd).toContain("`uncovered`");
   });
 });
 describe("lens-quality documentation", () => {
-  it("lists all eight reason kinds, the lens fields, and that the CLI prints the MCP objects", () => {
+  it("lists all eight reason kinds and the lens fields", () => {
     for (const kind of ["service", "topic", "areaOfInterest", "text", "level", "format", "pillarGap", "migrationPath", "explainsConcept"]) {
       expect(workflowMd).toContain(`\`${kind}\``);
     }
     for (const field of ["lensRules", "skippedRules", "startDate: null", "profile already has agentic"]) expect(workflowMd).toContain(field);
-    expect(workflowMd).toContain("`reinvent-scout match --json` returns exactly what `match_sessions`");
-    expect(workflowMd).toContain("exactly the `validate_profile`");
   });
   it("documents role, the explain lens, partial gaps, and tool-free utility calls in profiling.md", () => {
     for (const text of ['"role": "supporting"', "The explain lens", "which components lack it", "tag both `agentic` and `genai-single-call`", "fewer than 3% of catalog sessions"]) {
@@ -993,37 +908,23 @@ describe("newer gap guidance in profiling.md", () => {
   });
 });
 
-it("executes the documented plan-confirm-reserve-cancel contracts using plan-returned IDs", async () => {
-  const blocks = [...workflowMd.matchAll(/```json\n([\s\S]*?)```/g)].map(match => JSON.parse(match[1]!) as { tool?: string; arguments?: { sessionIds?: string[]; sessionId?: string } }).filter(value => ["plan_schedule", "reserve_sessions", "cancel_reservation"].includes(value.tool ?? ""));
-  expect(blocks.map(value => value.tool)).toEqual(["plan_schedule", "reserve_sessions", "cancel_reservation"]);
+it("runs the documented plan_schedule example against a catalog, and shows the AWS reserve and cancel calls it leads to", async () => {
+  const blocks = [...workflowMd.matchAll(/```json\n([\s\S]*?)```/g)].map(match => JSON.parse(match[1]!) as { tool?: string; arguments?: Record<string, unknown> }).filter(value => ["plan_schedule", "ReserveSessions", "CancelReservation"].includes(value.tool ?? ""));
+  expect(blocks.map(value => value.tool)).toEqual(["plan_schedule", "ReserveSessions", "CancelReservation"]);
   const home = createTempHome();
   try {
-    const { createApiClient } = await import("../../src/api/client.js");
-    let reserved: string[] = []; let writes = 0;
-    const apiClient = createApiClient({ getAccessToken: async () => "fixture-token", fetchFn: async (_url, init) => {
-      if (init?.method === "POST") { writes++; reserved = (JSON.parse(init.body as string) as { sessionIds: string[] }).sessionIds; return new Response(JSON.stringify({ result: { successful: reserved, failed: [] } }), { status: 200 }); }
-      if (init?.method === "DELETE") { reserved = []; return new Response(null, { status: 204 }); }
-      return new Response(JSON.stringify({ schedule: { reserved, favorites: [], personalTime: [] } }), { status: 200 });
-    } });
     const raw = [{ sessionId: "example-offering", title: "Example", sessionTime: { date: "2099-12-02", time: "10:00", length: "60" } }];
     writeCatalog({ raw, index: raw.map(buildIndexRecord), meta: { schemaVersion: CURRENT_SCHEMA_VERSION, eventId: DEFAULT_EVENT_ID, syncedAt: 1, count: 1, totalCount: 1, includedAbstracts: true, timezone: "America/Los_Angeles" } }, { storeRoot: home.path });
-    const server = createMcpServer({ resolveStoreRoot: () => home.path, buildApiClient: () => apiClient });
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    const client = new Client({ name: "doc-reservation-test", version: "0.0.1" });
-    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
-    const plan = await client.callTool({ name: blocks[0]!.tool!, arguments: blocks[0]!.arguments! });
-    expect(plan.isError).not.toBe(true); expect(writes).toBe(0);
-    const selectedId = JSON.parse((plan.content as Array<{ text: string }>)[0]!.text).selected[0].sessionId as string;
-    for (const step of blocks.slice(1)) {
-      const args = JSON.parse(JSON.stringify(step.arguments).replaceAll("<selected-session-id>", selectedId));
-      const result = await client.callTool({ name: step.tool!, arguments: args });
-      expect(result.isError).not.toBe(true);
-    }
-    expect(writes).toBe(1); expect(reserved).toEqual([]);
-    expect(skillMd).toMatch(/confirmation before.*reserv/i);
-    expect(workflowMd).toContain("uncertain");
-    await client.close(); await server.close();
+    const plan = await callCommand("plan_schedule", blocks[0]!.arguments, { storeRoot: home.path });
+    expect(plan.isError).toBe(false);
+    const selected = JSON.parse(plan.text).selected as Array<{ sessionId: string }>;
+    expect(selected.map(entry => entry.sessionId)).toEqual(["example-offering"]);
+    // The writes are AWS calls with AWS argument shapes: at most 10 ids to reserve, one id to cancel.
+    expect(blocks[1]!.arguments).toEqual({ sessionIds: ["<selected-session-id>"] });
+    expect(blocks[2]!.arguments).toEqual({ sessionId: "<selected-session-id>" });
   } finally { home.cleanup(); }
+  expect(skillMd).toMatch(/confirmation before.*reserv/i);
+  expect(workflowMd).toContain("uncertain");
 });
 
 describe("why documentation", () => {
@@ -1044,7 +945,7 @@ describe("why documentation", () => {
   });
 
   it("documents the why block, its omissions and the budget order in workflow.md", () => {
-    for (const text of ["`why`", "`summary`", "`yourCode`", "`more`", "`sessionSays`", "`rankingReasonsOmitted`", "`--verbose`"]) {
+    for (const text of ["`why`", "`summary`", "`yourCode`", "`more`", "`sessionSays`", "`rankingReasonsOmitted`"]) {
       expect(workflowMd, text).toContain(text);
     }
     expect(extractSection(workflowMd, "## 6. Present candidates")).toContain("`why.summary`");
@@ -1062,11 +963,10 @@ describe("why documentation", () => {
     expect(presenting).not.toContain("names only the first");
   });
 
-  it("says CLI --json differs from MCP only by the ranking reasons MCP may drop, and that no full abstract is included", () => {
-    const cli = workflowMd.slice(workflowMd.indexOf("The CLI prints the same object"), workflowMd.indexOf("## 6. Present candidates"));
-    expect(cli).toContain("`rankingReasonsOmitted`");
+  it("says no full abstract is included in a match", () => {
     expect(workflowMd).not.toContain("Never includes abstracts.");
     expect(workflowMd).toContain("Never includes full abstracts");
+    expect(workflowMd).toContain("`rankingReasonsOmitted`");
   });
 
   it("documents --verbose in the README", () => {
@@ -1117,7 +1017,7 @@ describe("the session preferences documentation", () => {
   it("documents the preferences argument, its order of application and its refusals in workflow.md", () => {
     const text = collapse(workflowMd);
     for (const expected of ["\"preferences\"?: { \"levels\"?: { \"min\": number, \"max\": number }, \"rules\"?:", "applied after admission and before the per-concept cap", "a session's own score does not change",
-      "4 sessions match, none at 400\u2013500", "explain lists introductory (100\u2013200) sessions, which is outside 400\u2013500; use deepen or all", "`profile map --level 400-500`", "`--level 400-500` is the CLI form"]) {
+      "4 sessions match, none at 400\u2013500", "explain lists introductory (100\u2013200) sessions, which is outside 400\u2013500; use deepen or all", "`--level 400-500` is the CLI form"]) {
       expect(text, expected).toContain(expected);
     }
   });
@@ -1139,9 +1039,8 @@ describe("the session preferences documentation", () => {
   it("documents the facet rules and list_filters in workflow.md and the readme", () => {
     const text = collapse(workflowMd);
     for (const expected of ["\"rules\"?: [{ \"field\": string, \"value\": string, \"action\": \"only\" | \"prefer\" | \"avoid\" | \"exclude\"", "the first rule that matches winning within a field", "an unknown or ambiguous value is an `isError` listing the closest values and pointing at `list_filters`",
-      "several on one field are a union, on different fields an intersection", "across fields the effects add up", "the per-concept cap applies within each tier", "a level-scoped `only` also leaves out a session with no level", "`fix` and `next-level` re-interleave their rules over what remains", "`explain` and `understand` included",
-      "`--only <field>:<value>[@band]`, and `--prefer`, `--avoid` and `--exclude` taking `[<field>:]<value>[@band]`", "## 4b. `list_filters`", "Read-only, from the local catalog: it needs no profile and no sign-in",
-      "every field lists its first 40 values", "`reinvent-scout catalog filters [--field <field>] [--json]`"]) {
+      "several on one field are a union, on different fields an intersection", "across fields the effects add up", "the per-concept cap applies within each tier", "a level-scoped `only` also leaves out a session with no level", "`fix` and `next-level` re-interleave their rules over what remains", "`explain` and `understand` included", "## 4b. `list_filters`", "Read-only, from the local catalog: it needs no profile",
+      "every field lists its first 40 values"] ) {
       expect(text, expected).toContain(expected);
     }
     const readme = collapse(readmeMd);
@@ -1173,7 +1072,7 @@ describe("the map and focus documentation", () => {
   });
   it("documents the map shape, the focus shape and the refusals in workflow.md", () => {
     const text = collapse(workflowMd);
-    for (const expected of ["## 4a. `map_profile`", "`service:Amazon DynamoDB`", "`gap:gap-no-dlq`", "`path:genai-single-call`", "a goal with `0` is a dead end (its `reason` says why", "`perTopic` defaults to 3 and is at most 3 here", "never together with `lens` or `limit`", "`alsoMatches`", "whose title names the topic", "`reinvent-scout profile map --profile <file|name> [--json]`", "reinvent-scout match --focus"]) {
+    for (const expected of ["## 4a. `map_profile`", "`service:Amazon DynamoDB`", "`gap:gap-no-dlq`", "`path:genai-single-call`", "a goal with `0` is a dead end (its `reason` says why", "`perTopic` defaults to 3 and is at most 3 here", "never together with `lens` or `limit`", "`alsoMatches`", "whose title names the topic"]) {
       expect(text, expected).toContain(expected);
     }
   });
@@ -1193,12 +1092,12 @@ describe("watch playbook (reference/watch.md)", () => {
   };
 
   it("is reachable from SKILL.md, the workflow reference and the README", () => {
-    expectAll(skillMd, ["Watch a full session", "`get_session`", "reference/watch.md"]);
+    expectAll(skillMd, ["Watch a full session", "`GetSession`", "reference/watch.md"]);
     expect(workflowMd).toContain("watch.md");
-    expect(readFileSync(join(skillRoot, "..", "..", "README.md"), "utf8")).toContain("Watch a full session");
+    expect(readFileSync(join(skillRoot, "..", "..", "..", "README.md"), "utf8")).toContain("Watch a full session");
   });
   it("documents the get_session contract in workflow.md, including that a 404 is not proof", () => {
-    expectAll(workflowMd, ["get_session", "seatAvailability", "fetchedAt", "is not proof the session is gone"]);
+    expectAll(workflowMd, ["GetSession", "seatAvailability", "is not proof the session is gone"]);
   });
   it("gets consent before starting and limits what may be cancelled", () => {
     expectAll(watchMd, [
@@ -1220,7 +1119,7 @@ describe("watch playbook (reference/watch.md)", () => {
       "the end time",
       "pending restores (ids and attempt count)",
       "If you lose track",
-      "re-read `get_schedule`",
+      "re-read `GetSchedule`",
       "re-confirm the may-cancel list with the user",
       "do not cancel anything until the user re-confirms",
     ]);
@@ -1238,12 +1137,12 @@ describe("watch playbook (reference/watch.md)", () => {
   });
   it("defines one check, with every failure code and the 404 and fatal cases", () => {
     expectAll(watchMd, [
-      "`get_schedule`", "`get_session`", "`reserve_sessions`",
+      "`GetSchedule`", "`GetSession`", "`ReserveSessions`",
       "`sessionFull`: keep watching",
       "`alreadyScheduled`: done",
       "`timePassed`", "`sessionNotReservable`", "`insufficientAccess`", "`walkUp`",
       "An unknown code: stop that target and tell the user",
-      "A `get_session` 404 in the middle of a watch is transient",
+      "A `GetSession` 404 in the middle of a watch is transient",
       "Auth required, not registered, or a 409 (reservations closed): stop the whole watch",
     ]);
   });
@@ -1259,7 +1158,7 @@ describe("watch playbook (reference/watch.md)", () => {
   });
   it("cancels one at a time, reads each result and restores only what it cancelled", () => {
     expectAll(watchMd, [
-      "Cancel one reservation at a time and read each result",
+      "Cancel one reservation at a time, then read the result and call `GetSchedule`",
       "stop cancelling, do not reserve the target, re-reserve anything you already cancelled",
       "If a cancel is refused with a 429, re-reserve the ones you already cancelled and skip the target for this check, and back off",
       "If a cancel is refused because auth is required, you are not registered, or reservations are closed (409), re-reserve the ones you already cancelled, then stop the whole watch and tell the user",
@@ -1268,12 +1167,11 @@ describe("watch playbook (reference/watch.md)", () => {
       "If it is still held, that returns `alreadyScheduled`, which is harmless",
       "if it was cancelled, the re-reserve restores it",
       "The target is never reserved on this path, so nothing can double-book",
-      "an acknowledged cancel (`outcome` is `cancelled`) whose `verifiedAbsent` is not true counts as uncertain",
-      "`outcome` is `cancelled`, `alreadyAbsent` or `uncertain`",
-      "A cancel with outcome `alreadyAbsent` is never re-reserved, even when the read-back fails",
+      "A cancel is uncertain if the call times out or fails in transit, or if the `GetSchedule` that follows still lists the reservation or cannot be read",
+      "A `CancelReservation` 404 means the reservation is already gone",
+      "it is never re-reserved, even when the read-back fails",
       "In every uncertain-cancel case, stop the watch and tell the user",
       "A 400 (validation error) or an OAuth failure on a cancel is treated like auth: re-reserve what you cancelled, then stop the whole watch",
-      "A cancel that says the reservation was already gone (404) is not something to restore",
       "Restore only what you actually cancelled",
     ]);
   });
@@ -1283,7 +1181,7 @@ describe("watch playbook (reference/watch.md)", () => {
       "or the read-back shows it absent, restore",
       "If the target reserve is uncertain and the read-back cannot be done, restore anyway",
       "If the target did land, the API refuses the restore with `scheduleConflict`, so it cannot double-book",
-      "Then verify with `get_schedule` when you can, stop the whole watch, and tell the user exactly what is known",
+      "Then verify with `GetSchedule` when you can, stop the whole watch, and tell the user exactly what is known",
     ]);
     expect(watchMd.replace(/\s+/g, " ")).not.toContain("do not restore, because");
   });
@@ -1324,13 +1222,16 @@ describe("watch playbook (reference/watch.md)", () => {
     expectAll(watchMd, [
       "tell the user that a swap briefly frees their seat, and that a restore refused as full means it is lost",
     ]);
-    expect(readFileSync(join(skillRoot, "..", "..", "README.md"), "utf8").replace(/\s+/g, " ")).toContain("tries to put back");
+    expect(readFileSync(join(skillRoot, "..", "..", "..", "README.md"), "utf8").replace(/\s+/g, " ")).toContain("tries to put back");
   });
-  it("reads the full conflict set when the tool omitted some of it", () => {
+  it("works with the whole conflict set AWS returns, and defines uncertain and a 404 cancel for AWS", () => {
     expectAll(watchMd, [
-      "`omittedConflicts`",
-      "If `omittedConflicts` is not 0, read the full set from `get_schedule` and apply the every-id rule to it before swapping",
+      "AWS returns up to 100 `conflictsWith` ids",
+      "Uncertain means a transport error or a timeout from a write, or an effect that a following `GetSchedule` contradicts",
+      "A `CancelReservation` 404 means the reservation is already gone",
+      "at most 10 ids per `ReserveSessions` call",
     ]);
+    for (const gone of ["omittedConflicts", "get_schedule", "get_session", "reserve_sessions", "cancel_reservation"]) expect(watchMd, gone).not.toContain(gone);
   });
   it("only reports and waits while a swap is deferred", () => {
     expectAll(watchMd, ["report the conflict once and wait for the seat band to change"]);
@@ -1360,8 +1261,8 @@ describe("watch playbook (reference/watch.md)", () => {
   it("never replays uncertain writes and treats a contradicted acknowledgement as uncertain", () => {
     expectAll(watchMd, [
       "Never blindly replay a write",
-      "let the next `get_schedule` decide whether it landed",
-      "A reserve acknowledged as successful but missing from the `get_schedule` read-back is uncertain, not reserved",
+      "let the next `GetSchedule` decide whether it landed",
+      "A reserve acknowledged as successful but missing from the `GetSchedule` read-back is uncertain, not reserved",
     ]);
   });
   it("uses judgment, stays quiet, and states its limits", () => {

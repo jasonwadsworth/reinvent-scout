@@ -12,6 +12,7 @@ import { buildServiceAliasIndex } from "../../src/catalog/service-aliases.js";
 import { createMcpServer } from "../../src/mcp/server.js";
 import type { McpToolDeps } from "../../src/mcp/tools.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
+import { OUTPUT_BUDGET_BYTES } from "../../src/commands/output-budget.js";
 
 const cite = (file: string, line: number) => ({ repo: "app", file, line });
 const PROFILE = {
@@ -105,7 +106,7 @@ describe("map_profile and match_sessions with a focus", () => {
     const focus = [{ topic: "service:AWS Lambda", goal: "deepen" }, { topic: "service:AWS Lambda", goal: "understand" }, { topic: "service:Amazon DynamoDB", goal: "deepen" }, { topic: "service:Amazon DynamoDB", goal: "understand" }, { topic: "gap:gap-no-dlq", goal: "improve" }, { topic: "service:AWS Lambda", goal: "deepen" }];
     const result = await (await client()).callTool({ name: "match_sessions", arguments: { profile, focus, perTopic: 3 } });
     expect(result.isError).not.toBe(true);
-    expect(Buffer.byteLength(JSON.stringify(result), "utf8")).toBeLessThan(30 * 1024);
+    expect(Buffer.byteLength(textOf(result), "utf8")).toBeLessThanOrEqual(OUTPUT_BUDGET_BYTES);
     const response = JSON.parse(textOf(result));
     expect(response.results).toHaveLength(6);
     expect(response.results[0].candidates.length + response.results[2].candidates.length).toBeGreaterThan(0);

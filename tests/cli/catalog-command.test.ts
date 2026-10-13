@@ -659,7 +659,7 @@ describe("catalog search and show against an unusable index", () => {
 
     await h.run(["catalog", "search", "graviton"]);
 
-    expect(h.printed.join("\n")).toContain("catalog sync");
+    expect(h.printed.join("\n")).toContain("catalog_import");
     expect(h.printed.join("\n")).toMatch(/older format|rebuilt/);
     expect(process.exitCode).toBe(1);
   });
@@ -669,7 +669,7 @@ describe("catalog search and show against an unusable index", () => {
 
     await h.run(["catalog", "show", "ANT301"]);
 
-    expect(h.printed.join("\n")).toContain("catalog sync");
+    expect(h.printed.join("\n")).toContain("catalog_import");
     expect(process.exitCode).toBe(1);
   });
 });

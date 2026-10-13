@@ -1,0 +1,9 @@
+{
+  "name": "reinvent-scout",
+  "displayName": "reinvent-scout",
+  "version": "0.1.0",
+  "description": "Find the re:Invent sessions that match your code, and manage your schedule, through the AWS Events MCP and local scripts.",
+  "author": { "name": "Jason Wadsworth" },
+  "repository": "https://github.com/jasonwadsworth/reinvent-scout",
+  "license": "MIT"
+}

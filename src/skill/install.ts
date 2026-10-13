@@ -11,8 +11,8 @@ import { readPackageVersion } from "../cli/version.js";
 const SKILL_FILE_MODE = 0o644;
 
 /** The name this skill installs under, and the one name `skill update` (task 9) looks for --
- * matches the source directory name, `skills/reinvent-scout`, and the product name everywhere
- * else (amendment 5: "the skill directory `skills/reinvent-scout/`"). */
+ * matches the source directory name, `plugin/skills/reinvent-scout`, and the product name everywhere
+ * else (amendment 5: "the skill directory `plugin/skills/reinvent-scout/`"). */
 export const SKILL_NAME = "reinvent-scout";
 
 /** Written inside the installed skill's own directory, alongside `SKILL.md` -- never inside the
@@ -21,10 +21,10 @@ export const MANIFEST_FILE_NAME = ".install-manifest.json";
 
 const here = dirname(fileURLToPath(import.meta.url));
 /** This module compiles to `dist/skill/install.js`; the skill's own content ships at the package
- * root's `skills/reinvent-scout` (see `package.json`'s `files` list), two levels up from
+ * root's `plugin/skills/reinvent-scout` (see `package.json`'s `files` list), two levels up from
  * `dist/skill`. Mirrors `cli/version.ts`'s own `defaultPackageJsonPath` convention exactly.
  * Exported so `skill/update.ts` shares the exact same default, rather than recomputing it. */
-export const DEFAULT_SKILL_SOURCE_DIR = join(here, "..", "..", "skills", SKILL_NAME);
+export const DEFAULT_SKILL_SOURCE_DIR = join(here, "..", "..", "plugin", "skills", SKILL_NAME);
 
 export interface InstallSkillManifest {
   version: string;
@@ -36,7 +36,7 @@ export interface InstallSkillManifest {
 }
 
 export interface InstallSkillDeps {
-  /** Defaults to this package's own bundled `skills/reinvent-scout` directory. Inject a fixture
+  /** Defaults to this package's own bundled `plugin/skills/reinvent-scout` directory. Inject a fixture
    * directory in tests so nothing here depends on the built skill content actually matching. */
   sourceDir?: string;
   /** The skills directory to install into -- the skill itself is written to

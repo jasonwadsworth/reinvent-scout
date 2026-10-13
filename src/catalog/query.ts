@@ -82,7 +82,7 @@ function compareByAbbreviation(a: IndexRecord, b: IndexRecord): number {
 }
 
 const REBUILD_REMEDY =
-  "Run `reinvent-scout catalog sync` (or `catalog sync --reindex` to skip re-fetching).";
+  'Rebuild it locally with catalog_import action "reindex", or re-import it.';
 
 /**
  * Loads the local index, refusing rather than serving it when it can't be trusted. Two cases
@@ -264,7 +264,11 @@ export function compareByStartDateTime(a: IndexRecord, b: IndexRecord): number {
  * candidate rather than silently resolving to the first match.
  */
 export function resolveSessionRecord(deps: CatalogStoreDeps, token: string): SessionLookupResult {
-  const index = requireCurrentIndex(deps);
+  return resolveSessionToken(requireCurrentIndex(deps), token);
+}
+
+/** The same resolution over an index already in hand, so a caller resolving many tokens reads the index once. */
+export function resolveSessionToken(index: readonly IndexRecord[], token: string): SessionLookupResult {
 
   const bySessionId = index.find((record) => record.sessionId === token);
   if (bySessionId !== undefined) {

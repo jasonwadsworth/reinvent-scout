@@ -1,13 +1,13 @@
 import { z } from "zod";
-import type { ApiClient } from "../api/client.js";
 import type { Schedule, Session } from "../api/types.js";
 import { buildIndexRecord, type IndexRecord } from "../catalog/index-record.js";
 import { requireCurrentIndex } from "../catalog/query.js";
-import { readMeta, readRaw, readTimezoneAvailability } from "../catalog/store.js";
-import { DEFAULT_EVENT_ID } from "../catalog/sync.js";
+import { SessionItemSchema } from "../catalog/import-page.js";
+import { DEFAULT_EVENT_ID, readMeta, readRaw, readTimezoneAvailability, type CatalogMeta } from "../catalog/store.js";
 import { isKnownVenue, VENUES, type Venue } from "../catalog/venue.js";
-import { AuthRequiredError, NotRegisteredError, ThrottledError, ValidationError } from "../core/errors.js";
+import { ValidationError } from "../core/errors.js";
 import { overlaps, sessionInterval, type TimeInterval } from "../schedule/plan.js";
+import { readScheduleInput, scheduleInputSchema } from "../schedule/schedule-input.js";
 import { effectiveOnsitePreferences, readOnsiteConfig, walkUpAllowed, type OnsitePreferences } from "./config.js";
 import { estimateTravel, type TravelEstimate } from "./travel.js";
 
@@ -17,8 +17,13 @@ export const nearbyInputSchema = z.strictObject({
   location: z.strictObject({ venue: z.enum(VENUES), source: z.enum(["user", "location", "schedule"]), confirmed: z.boolean() }).optional(),
   skipSessionIds: z.array(z.string().min(1).max(128)).max(50).optional(),
   withinMinutes: z.number().int().min(1).max(240).optional(), limit: z.number().int().min(1).max(20).optional(),
+  /** The AWS `GetSchedule` result, inline or as a saved file: exactly one. */
+  schedule: scheduleInputSchema.optional(), scheduleFile: z.string().min(1).optional(),
+  /** Call 2: the `session` objects the agent read with AWS `GetSession` for the previous call's `refreshIds`. */
+  liveSessions: z.array(SessionItemSchema).max(MAX_NEARBY_REFRESH).optional(),
 });
-export type NearbyInput = z.infer<typeof nearbyInputSchema>;
+/** `liveSessions` is typed as `Session[]`: the schema only checks the identity fields, and the rest passes through verbatim. */
+export type NearbyInput = Omit<z.input<typeof nearbyInputSchema>, "liveSessions"> & { liveSessions?: Session[] };
 export interface NearbyCandidate extends TimeInterval {
   sessionId: string; title: string; venue: Venue; reserved: boolean;
   availability: string; availabilitySource: "live" | "cache"; observedAt: number | null; ageMinutes: number | null; minutesToStart: number;
@@ -26,11 +31,13 @@ export interface NearbyCandidate extends TimeInterval {
 }
 export interface NearbyResult {
   needsVenueConfirmation: boolean; suggestedVenue?: Venue; candidates: NearbyCandidate[];
+  /** Eligible candidates still without live data (up to 20): read each with AWS `GetSession`, then call again with `liveSessions`. */
+  refreshIds: string[];
   rejected: Array<{ reason: string; count: number }>; warnings: string[]; limitations: string;
-  coverage: { examined: number; eligible: number; refreshAttempts: number; refreshed: number; unrefreshed: number; refreshStopped: boolean; omitted: number };
+  coverage: { examined: number; eligible: number; liveProvided: number; liveUsed: number; liveIgnored: number; unrefreshed: number; omitted: number };
 }
 export interface NearbyDeps {
-  storeRoot: string; apiClient: Pick<ApiClient, "getSchedule" | "getSession">; now?: () => number;
+  storeRoot: string; now?: () => number;
 }
 interface Commitment { kind: "reserved" | "personal"; id: string; interval: TimeInterval | null; venue: Venue | null }
 function commitments(index: readonly IndexRecord[], schedule: Schedule, timezone: string, skips: Set<string>): Commitment[] {
@@ -63,19 +70,24 @@ function feasible(record: IndexRecord, allDay: boolean, context: { now: number; 
   if (Date.parse(interval.endsAt) + (onward.totalMinutes + onward.checkInMinutes) * 60_000 > Date.parse(next.interval!.startsAt)) return "onwardTravel";
   return { interval, outbound, onward, nextCommitmentId: next.id };
 }
-export async function recommendNearbySessions(input: NearbyInput, deps: NearbyDeps): Promise<NearbyResult> {
-  const parsed = nearbyInputSchema.parse(input);
-  const now = (deps.now ?? Date.now)();
-  const result: NearbyResult = { needsVenueConfirmation: !parsed.location?.confirmed, candidates: [], rejected: [], warnings: [], limitations: "Travel times are conservative assumptions, not live routing. Availability bands are not seat counts; admission and arrival are not guaranteed. No reservations are changed.", coverage: { examined: 0, eligible: 0, refreshAttempts: 0, refreshed: 0, unrefreshed: 0, refreshStopped: false, omitted: 0 } };
+/** The checks that need no schedule: a current catalog for the event, and its known timezone. */
+export function assertNearbyPreconditions(eventId: string, deps: { storeRoot: string }): { index: IndexRecord[]; meta: CatalogMeta; timezone: string } {
   const index = requireCurrentIndex(deps), meta = readMeta(deps);
-  const eventId = parsed.eventId ?? DEFAULT_EVENT_ID;
   if (meta?.eventId !== eventId) throw new ValidationError(`Sync the catalog for event ${eventId} before nearby recommendations.`);
   const zone = readTimezoneAvailability(deps);
   if (zone?.status !== "known") throw new ValidationError("Nearby recommendations require the event's recognized IANA timezone.");
-  const schedule = await deps.apiClient.getSchedule(eventId);
+  return { index, meta, timezone: zone.timezone };
+}
+export function recommendNearbySessions(input: NearbyInput, deps: NearbyDeps): NearbyResult {
+  const parsed = nearbyInputSchema.parse(input);
+  const now = (deps.now ?? Date.now)();
+  const result: NearbyResult = { needsVenueConfirmation: !parsed.location?.confirmed, candidates: [], refreshIds: [], rejected: [], warnings: [], limitations: "Travel times are conservative assumptions, not live routing. Availability bands are not seat counts; admission and arrival are not guaranteed. No reservations are changed.", coverage: { examined: 0, eligible: 0, liveProvided: 0, liveUsed: 0, liveIgnored: 0, unrefreshed: 0, omitted: 0 } };
+  const eventId = parsed.eventId ?? DEFAULT_EVENT_ID;
+  const { index, meta, timezone } = assertNearbyPreconditions(eventId, deps);
+  const schedule = readScheduleInput(parsed);
   const prefs = effectiveOnsitePreferences(readOnsiteConfig(deps), eventId);
   const skips = new Set(parsed.skipSessionIds ?? []);
-  const hard = commitments(index, schedule, zone.timezone, skips);
+  const hard = commitments(index, schedule, timezone, skips);
   if (result.needsVenueConfirmation) {
     const recent = hard.filter(c => c.interval && Date.parse(c.interval.startsAt) <= now && Date.parse(c.interval.endsAt) >= now - 60 * 60_000).sort((a, b) => b.interval!.endsAt.localeCompare(a.interval!.endsAt))[0];
     if (recent?.venue) result.suggestedVenue = recent.venue;
@@ -86,29 +98,34 @@ export async function recommendNearbySessions(input: NearbyInput, deps: NearbyDe
   if (unknownHard) result.warnings.push(`Cannot establish hard commitment timing: ${unknownHard.id.slice(0, 128)}. Resolve it before relying on nearby suggestions.`);
   const counts = new Map<string, number>();
   const reject = (reason: string) => counts.set(reason, (counts.get(reason) ?? 0) + 1);
-  const context = { now, horizon: now + (parsed.withinMinutes ?? 60) * 60_000, from: parsed.location!.venue, timezone: zone.timezone, prefs, hard };
+  const context = { now, horizon: now + (parsed.withinMinutes ?? 60) * 60_000, from: parsed.location!.venue, timezone: timezone, prefs, hard };
   const raw = new Map((readRaw(deps) ?? []).map(s => [s.sessionId, s]));
   const eligible = [...new Map(index.map(record => [record.sessionId, record])).values()].filter(record => { const check = feasible(record, raw.get(record.sessionId)?.isAllDaySession === true, context); if (typeof check === "string") { reject(check); return false; } return true; }).sort((a, b) => Number(schedule.reserved.includes(b.sessionId)) - Number(schedule.reserved.includes(a.sessionId)) || (a.startTime ?? "").localeCompare(b.startTime ?? "") || a.sessionId.localeCompare(b.sessionId));
   result.coverage.examined = index.length; result.coverage.eligible = eligible.length;
   const evaluatedRecords = new Map<string, IndexRecord>();
-  for (const cached of eligible.slice(0, MAX_NEARBY_REFRESH)) {
+  // Call 2's live reads, each keyed once. The band is stamped at the moment the script received this call.
+  const refreshable = eligible.slice(0, MAX_NEARBY_REFRESH);
+  const refreshableIds = new Set(refreshable.map(record => record.sessionId));
+  const liveById = new Map<string, Session>();
+  for (const live of parsed.liveSessions ?? []) {
+    if (refreshableIds.has(live.sessionId) && !liveById.has(live.sessionId)) liveById.set(live.sessionId, live as Session);
+  }
+  result.coverage.liveProvided = parsed.liveSessions?.length ?? 0;
+  result.coverage.liveUsed = liveById.size;
+  result.coverage.liveIgnored = result.coverage.liveProvided - liveById.size;
+  result.refreshIds = refreshable.filter(record => !liveById.has(record.sessionId)).map(record => record.sessionId);
+  for (const cached of refreshable) {
     let record = cached, allDay = raw.get(cached.sessionId)?.isAllDaySession === true;
     let source: "live" | "cache" = "cache", observedAt = Number.isFinite(meta.syncedAt) ? meta.syncedAt : null;
-    if (!result.coverage.refreshStopped) {
-      result.coverage.refreshAttempts++;
-      try {
-        const fresh: Session = await deps.apiClient.getSession(eventId, cached.sessionId);
-        if (!fresh || fresh.sessionId !== cached.sessionId) throw new Error("Unexpected session identity");
-        record = buildIndexRecord(fresh); allDay = fresh.isAllDaySession === true;
-        source = "live"; observedAt = (deps.now ?? Date.now)(); result.coverage.refreshed++;
-      } catch (err) {
-        if (err instanceof AuthRequiredError || err instanceof NotRegisteredError || err instanceof ThrottledError) result.coverage.refreshStopped = true;
-      }
+    const fresh = liveById.get(cached.sessionId);
+    if (fresh !== undefined) {
+      record = buildIndexRecord(fresh); allDay = fresh.isAllDaySession === true;
+      source = "live"; observedAt = now;
     }
     const evaluatedAt = (deps.now ?? Date.now)();
     const route = feasible(record, allDay, { ...context, now: evaluatedAt }); if (typeof route === "string") { reject(route); continue; }
-    const fresh = source === "live" && observedAt !== null && observedAt <= evaluatedAt && evaluatedAt - observedAt <= prefs.freshnessMinutes * 60_000;
-    const availability = fresh && ["available", "limited", "veryLimited", "unavailable", "walkUp"].includes(record.seatAvailability ?? "") ? record.seatAvailability! : "unknown";
+    const isFresh = source === "live" && observedAt !== null && observedAt <= evaluatedAt && evaluatedAt - observedAt <= prefs.freshnessMinutes * 60_000;
+    const availability = isFresh && ["available", "limited", "veryLimited", "unavailable", "walkUp"].includes(record.seatAvailability ?? "") ? record.seatAvailability! : "unknown";
     const reserved = schedule.reserved.includes(record.sessionId);
     if (!reserved && (availability === "unavailable" || ((availability === "unknown" || availability === "walkUp") && !walkUpAllowed(prefs, record.sessionId)))) { reject("admissionNotAllowed"); continue; }
     evaluatedRecords.set(record.sessionId, record);
@@ -132,8 +149,8 @@ export async function recommendNearbySessions(input: NearbyInput, deps: NearbyDe
     return true;
   });
   result.rejected = Array.from(counts, ([reason, count]) => ({ reason, count }));
-  result.coverage.unrefreshed = eligible.length - result.coverage.refreshed;
-  if (result.coverage.unrefreshed) result.warnings.push("Some local candidates were not refreshed. Cached bands retain their original observation time; coverage is limited to the local prefilter and at most 20 serial reads.");
+  result.coverage.unrefreshed = eligible.length - result.coverage.liveUsed;
+  if (result.coverage.unrefreshed) result.warnings.push("Some local candidates have no live read. Cached bands retain their original observation time; coverage is limited to the local prefilter and at most 20 live reads.");
   result.candidates.sort((a, b) => Number(b.reserved) - Number(a.reserved) || Number(a.availability === "unknown") - Number(b.availability === "unknown") || a.outbound.totalMinutes - b.outbound.totalMinutes || a.startsAt.localeCompare(b.startsAt) || a.sessionId.localeCompare(b.sessionId));
   result.coverage.omitted = Math.max(0, result.candidates.length - (parsed.limit ?? 10)); result.candidates = result.candidates.slice(0, parsed.limit ?? 10);
   return result;

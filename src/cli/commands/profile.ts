@@ -12,7 +12,7 @@ import { ensureStoreRoot } from "../../core/paths.js";
 import { parseProfile, resolveProfile, type ResolvedProfile } from "../../profile/profile.js";
 import { buildValidateReport } from "../../profile/report.js";
 import { readProfileFile, saveProfileFile } from "../../profile/store.js";
-import { formatZodError } from "../zod-errors.js";
+import { formatZodError } from "../../core/zod-errors.js";
 import { loadResolvedProfile } from "../profile-input.js";
 import { allowsIntroductory, describePreferences, INTRODUCTORY_LABEL, restrictionText, type SessionPreferences } from "../../match/preferences.js";
 import { addPreferenceOptions } from "../level-option.js";

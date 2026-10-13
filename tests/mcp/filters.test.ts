@@ -7,6 +7,7 @@ import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { CURRENT_SCHEMA_VERSION, writeCatalog } from "../../src/catalog/store.js";
 import { createMcpServer } from "../../src/mcp/server.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
+import { OUTPUT_BUDGET_BYTES } from "../../src/commands/output-budget.js";
 
 const s = (code: string, extra: Partial<Session> = {}): Session =>
   ({ sessionId: code, abbreviation: code, title: code, level: "300 - Advanced", type: "Breakout session", ...extra });
@@ -49,11 +50,11 @@ describe("list_filters", () => {
     expect(JSON.parse((await call({ field: "topic" })).text).fields.topic.values).toHaveLength(60);
   });
 
-  it("stays within the 30 KB budget, however many values a field has", async () => {
+  it("stays within the output budget, however many values a field has", async () => {
     seed(Array.from({ length: 1500 }, (_, i) => s(`T${i}`, { topics: [`A very long topic name number ${i} ${"x".repeat(40)}`] })));
     const { error, text } = await call({ field: "topic" });
     expect(error).toBe(false);
-    expect(Buffer.byteLength(text, "utf8")).toBeLessThan(30 * 1024);
+    expect(Buffer.byteLength(text, "utf8")).toBeLessThanOrEqual(OUTPUT_BUDGET_BYTES);
     const topic = JSON.parse(text).fields.topic;
     expect(topic.total).toBe(1500);
     expect(topic.more).toBe(1500 - topic.values.length);
