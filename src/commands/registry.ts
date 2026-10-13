@@ -14,7 +14,11 @@ import { GOALS } from "../match/topics.js";
 import { effectiveOnsitePreferences, onsitePatchSchema, readOnsiteConfig, updateOnsiteConfig } from "../onsite/config.js";
 import { resolveProfile } from "../profile/profile.js";
 import { buildValidateReport } from "../profile/report.js";
-import { boundedOnsitePreferences, OUTPUT_BUDGET_BYTES, outputBytes } from "./output-budget.js";
+import { MAX_RESERVATION_IDS, MAX_SESSION_ID_LENGTH, validateSessionIds } from "../schedule/reservations.js";
+import { nearbyInputSchema, recommendNearbySessions, type NearbyInput } from "../onsite/recommend.js";
+import { planSchedule } from "../schedule/plan.js";
+import { readScheduleInput, scheduleInputSchema } from "../schedule/schedule-input.js";
+import { boundedNearbyResult, boundedOnsitePreferences, boundedSchedulePlan, OUTPUT_BUDGET_BYTES, outputBytes } from "./output-budget.js";
 
 /** What every command is given: the store root, a clock and a source of ids, all injected. */
 export interface CommandDeps {
@@ -118,6 +122,38 @@ const MatchSessionsInputSchema = z.strictObject({
 
 
 const eventIdSchema = z.string().min(1).max(128).optional();
+export const idSchema = z.string().trim().min(1).refine(id => Array.from(id).length <= MAX_SESSION_ID_LENGTH, `Session IDs must have at most ${MAX_SESSION_ID_LENGTH} characters.`);
+
+const PlanScheduleInputSchema = z.strictObject({
+  sessionIds: z.array(idSchema).max(MAX_RESERVATION_IDS),
+  /** The `schedule` object from AWS `GetSchedule`, passed verbatim. */
+  schedule: scheduleInputSchema.optional(),
+  /** Or a saved `GetSchedule` result (`{schedule}` or the bare object). */
+  scheduleFile: z.string().min(1).optional(),
+  event: z.string().min(1).optional(),
+});
+
+const planScheduleCommand = {
+  description: "Plan up to 50 priority-ordered session IDs against the schedule you pass in (the whole `schedule` object from AWS GetSchedule, called immediately before, as `schedule` or a saved `scheduleFile`), with repeat alternatives. No writes; proves time non-overlap only, not seats or travel.",
+  inputSchema: PlanScheduleInputSchema,
+  run: ({ sessionIds, schedule, scheduleFile, event }, deps) => {
+    const ids = validateSessionIds(sessionIds, true, false);
+    const resolved = readScheduleInput({ schedule, scheduleFile }, { optional: true });
+    return boundedSchedulePlan(planSchedule(ids, {
+      storeRoot: deps.storeRoot,
+      ...(resolved === undefined ? {} : { schedule: resolved }),
+      ...(event === undefined ? {} : { eventId: event }),
+      ...(deps.now ? { now: deps.now } : {}),
+    }));
+  },
+} satisfies CommandDefinition<typeof PlanScheduleInputSchema>;
+
+const nearbySessionsCommand = {
+  description: "Read-only nearby suggestions after confirming your current venue for this call. Two calls: the first returns `refreshIds` (up to 20 eligible sessions); read each with AWS GetSession, one at a time, then call again with the same input plus `liveSessions` (the `session` objects you read). Pass the whole AWS GetSchedule `schedule` (or a `scheduleFile`) both times. Skipping does not cancel reservations.",
+  inputSchema: nearbyInputSchema,
+  errorMaxChars: 512,
+  run: (input, deps) => boundedNearbyResult(recommendNearbySessions(input as NearbyInput, { storeRoot: deps.storeRoot, ...(deps.now ? { now: deps.now } : {}) })),
+} satisfies CommandDefinition<typeof nearbyInputSchema>;
 
 const validateProfile = {
   description:
@@ -228,5 +264,7 @@ export const registry = {
   list_filters: listFiltersCommand,
   get_onsite_preferences: getOnsitePreferences,
   set_onsite_preferences: setOnsitePreferences,
+  plan_schedule: planScheduleCommand,
+  nearby_sessions: nearbySessionsCommand,
 };
 export type CommandName = keyof typeof registry;

@@ -1,9 +1,9 @@
-import { recommendNearbySessions, nearbyInputSchema } from "../onsite/recommend.js";
-import { registry, type CommandDeps } from "../commands/registry.js";
+import { nearbyInputSchema } from "../onsite/recommend.js";
+import { planScheduleViaApi, recommendNearbyViaApi } from "../legacy/api-adapters.js";
+import { idSchema, registry, type CommandDeps } from "../commands/registry.js";
 import { DEFAULT_EVENT_ID } from "../catalog/sync.js";
 import { boundedNearbyResult, boundedSchedulePlan } from "../commands/output-budget.js";
-import { planSchedule } from "../schedule/plan.js";
-import { reserveSessions, cancelReservation, validateSessionIds, reservationNeedsAttention, cancellationNeedsAttention, MAX_RESERVATION_IDS, MAX_SESSION_ID_LENGTH } from "../schedule/reservations.js";
+import { reserveSessions, cancelReservation, validateSessionIds, reservationNeedsAttention, cancellationNeedsAttention, MAX_RESERVATION_IDS } from "../schedule/reservations.js";
 import { boundedReservationResult, boundedCancelResult, shortenDescription } from "./response-budget.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -571,7 +571,6 @@ function registerUnfavoriteSessionTool(server: McpServer, deps: McpToolDeps): vo
   );
 }
 
-const idSchema = z.string().trim().min(1).refine(id => Array.from(id).length <= MAX_SESSION_ID_LENGTH, `Session IDs must have at most ${MAX_SESSION_ID_LENGTH} characters.`);
 
 function registerReservationTools(server: McpServer, deps: McpToolDeps): void {
   const buildApiClient = deps.buildApiClient ?? defaultBuildApiClient;
@@ -584,7 +583,7 @@ function registerReservationTools(server: McpServer, deps: McpToolDeps): void {
         const ids = validateSessionIds(sessionIds, name === "plan_schedule", name === "reserve_sessions");
         const storeRoot = deps.resolveStoreRoot();
         const domainDeps = { storeRoot, apiClient: buildApiClient(storeRoot), ...(event ? { eventId: event } : {}), ...(deps.now ? { now: deps.now } : {}) };
-        if (name === "plan_schedule") return textResult(boundedSchedulePlan(await planSchedule(ids, domainDeps)));
+        if (name === "plan_schedule") return textResult(boundedSchedulePlan(await planScheduleViaApi(ids, domainDeps)));
         const result = await reserveSessions(ids, domainDeps);
         return { ...textResult(boundedReservationResult(result)), ...(reservationNeedsAttention(result) ? { isError: true as const } : {}) };
       } catch (error) { const result = toToolError(error); result.content[0].text = shortenDescription(result.content[0].text, 512); return result; }
@@ -663,6 +662,8 @@ export function registerTools(server: McpServer, deps: McpToolDeps): void {
 /** Registers every command in the shared registry as an MCP tool. */
 function registerRegistryTools(server: McpServer, deps: McpToolDeps): void {
   for (const [name, entry] of Object.entries(registry)) {
+    // plan_schedule and nearby_sessions take the schedule as data in the registry; the legacy server registers its own versions that fetch it through the API client.
+    if (name === "plan_schedule" || name === "nearby_sessions") continue;
     server.registerTool(name, { description: entry.description, inputSchema: entry.inputSchema }, async (input: unknown) => {
       try {
         const run = entry.run as (input: unknown, deps: CommandDeps) => unknown;
@@ -677,8 +678,8 @@ function registerRegistryTools(server: McpServer, deps: McpToolDeps): void {
 }
 
 function registerNearbyTool(server: McpServer, deps: McpToolDeps): void {
-  server.registerTool("nearby_sessions", { description: "Read-only nearby suggestions after confirming your current venue for this call. Uses full hard schedule, conservative travel, fresh bands and at most 20 serial session reads. Skipping does not cancel reservations.", inputSchema: nearbyInputSchema }, async input => {
-    try { const storeRoot = deps.resolveStoreRoot(); return textResult(boundedNearbyResult(await recommendNearbySessions(input, { storeRoot, apiClient: (deps.buildApiClient ?? defaultBuildApiClient)(storeRoot), ...(deps.now ? { now: deps.now } : {}) }))); }
+  server.registerTool("nearby_sessions", { description: "Read-only nearby suggestions after confirming your current venue for this call. Uses full hard schedule, conservative travel, fresh bands and at most 20 serial session reads. Skipping does not cancel reservations.", inputSchema: nearbyInputSchema.omit({ schedule: true, scheduleFile: true, liveSessions: true }) }, async input => {
+    try { const storeRoot = deps.resolveStoreRoot(); return textResult(boundedNearbyResult(await recommendNearbyViaApi(input, { storeRoot, apiClient: (deps.buildApiClient ?? defaultBuildApiClient)(storeRoot), ...(deps.now ? { now: deps.now } : {}) }))); }
     catch (err) { const result = toToolError(err); result.content[0].text = shortenDescription(result.content[0].text, 512); return result; }
   });
 }

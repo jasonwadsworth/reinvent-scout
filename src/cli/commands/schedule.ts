@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs";
 import { z } from "zod";
-import { recommendNearbySessions, nearbyInputSchema } from "../../onsite/recommend.js";
+import { nearbyInputSchema } from "../../onsite/recommend.js";
+import { planScheduleViaApi, recommendNearbyViaApi } from "../../legacy/api-adapters.js";
 import { readOnsiteConfig, updateOnsiteConfig, effectiveOnsitePreferences, onsitePatchSchema, type OnsitePatch } from "../../onsite/config.js";
 import { resolveStoreRoot as resolveRootWithoutCreation } from "../../core/paths.js";
-import { planSchedule, type SchedulePlan } from "../../schedule/plan.js";
+import type { SchedulePlan } from "../../schedule/plan.js";
 import { reserveSessions, cancelReservation, reservationNeedsAttention, cancellationNeedsAttention, validateSessionIds, type ReserveSessionsResult } from "../../schedule/reservations.js";
 import type { Command } from "commander";
 import { createApiClient, type ApiClient } from "../../api/client.js";
@@ -391,7 +392,7 @@ export function registerScheduleCommands(program: Command, deps: ScheduleCommand
       try {
         const input = nearbyInputSchema.parse({ eventId: options.event, ...(options.venue ? { location: { venue: options.venue, source: options.source, confirmed: options.confirmVenue } } : {}), ...(options.skipSession ? { skipSessionIds: options.skipSession } : {}), withinMinutes: Number(options.within), limit: Number(options.limit) });
         const storeRoot = resolveStoreRoot();
-        const result = await recommendNearbySessions(input, { storeRoot, apiClient: buildApiClient(storeRoot), ...(deps.now ? { now: deps.now } : {}) });
+        const result = await recommendNearbyViaApi(input, { storeRoot, apiClient: buildApiClient(storeRoot), ...(deps.now ? { now: deps.now } : {}) });
         if (options.json) print(JSON.stringify(result));
         else {
           const timezone = knownEventTimezone(storeRoot);
@@ -399,7 +400,7 @@ export function registerScheduleCommands(program: Command, deps: ScheduleCommand
           for (const rejection of result.rejected) print(`Excluded ${rejection.count}: ${rejection.reason}`);
           for (const warning of result.warnings) print(warning);
           if (!result.candidates.length) print("No feasible candidates with the current confirmation, travel and admission settings.");
-          print(`${result.limitations} Refreshed ${result.coverage.refreshed}/${result.coverage.eligible}; omitted ${result.coverage.omitted}.`);
+          print(`${result.limitations} Refreshed ${result.coverage.liveUsed}/${result.coverage.eligible}; omitted ${result.coverage.omitted}.`);
         }
       } catch (error) { reportCommandError(error, options.event, print); }
     });
@@ -537,7 +538,7 @@ export function registerScheduleCommands(program: Command, deps: ScheduleCommand
           const storeRoot = resolveStoreRoot(); const apiClient = buildApiClient(storeRoot);
           const domainDeps = { storeRoot, apiClient, eventId: options.event, ...(deps.now ? { now: deps.now } : {}) };
           if (command === "plan") {
-            const result = await planSchedule(input, domainDeps);
+            const result = await planScheduleViaApi(input, domainDeps);
             print(options.json ? JSON.stringify(result) : formatPlan(result, knownEventTimezone(storeRoot)));
             if (!result.conflictFree) process.exitCode = 1;
           } else {
