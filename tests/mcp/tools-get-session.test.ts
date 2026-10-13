@@ -8,7 +8,7 @@ import { createMcpServer } from "../../src/mcp/server.js";
 import { createFakeFetch } from "../helpers/fake-fetch.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
 
-const live: Session = { sessionId: "abc123", abbreviation: "ARC330", title: "SaaS agents", abstract: "never returned", isReservable: true, seatAvailability: "unavailable", sessionTime: { date: "2026-12-02", time: "10:30", length: "60" } };
+const live: Session = { sessionId: "abc123", abbreviation: "ARC330", title: "SaaS agents", abstract: "never returned", type: "Chalk talk", level: "400", venue: "MGM Grand", room: "Room 1", isReservable: true, seatAvailability: "unavailable", sessionTime: { date: "2026-12-02", time: "10:30", length: "60" }, topics: ["x"] };
 
 async function connect(storeRoot: string, buildApiClient: () => ApiClient): Promise<Client> {
   const server = createMcpServer({ resolveStoreRoot: () => storeRoot, buildApiClient, now: () => Date.parse("2026-12-01T00:00:00Z") });
@@ -34,8 +34,22 @@ describe("get_session tool", () => {
     const client = await connect(home.path, () => stubClient(async () => live));
     const result = await client.callTool({ name: "get_session", arguments: { sessionId: " abc123 " } });
     expect(result.isError).not.toBe(true);
-    expect(JSON.parse(textOf(result))).toMatchObject({ sessionId: "abc123", abbreviation: "ARC330", title: "SaaS agents", isReservable: true, seatAvailability: "unavailable", fetchedAt: "2026-12-01T00:00:00.000Z" });
+    expect(JSON.parse(textOf(result))).toEqual({
+      sessionId: "abc123", abbreviation: "ARC330", title: "SaaS agents", venue: "MGM Grand", room: "Room 1",
+      sessionTime: { date: "2026-12-02", time: "10:30", length: "60" },
+      isReservable: true, seatAvailability: "unavailable", fetchedAt: "2026-12-01T00:00:00.000Z",
+    });
     expect(textOf(result)).not.toContain("never returned");
+  });
+  it("omits fields the API did not send instead of inventing values", async () => {
+    const client = await connect(home.path, () => stubClient(async () => ({ sessionId: "x", title: "Bare" })));
+    const result = await client.callTool({ name: "get_session", arguments: { sessionId: "x" } });
+    expect(JSON.parse(textOf(result))).toEqual({ sessionId: "x", title: "Bare", fetchedAt: "2026-12-01T00:00:00.000Z" });
+  });
+  it("caps a very long title", async () => {
+    const client = await connect(home.path, () => stubClient(async () => ({ sessionId: "x", title: "t".repeat(5000) })));
+    const result = await client.callTool({ name: "get_session", arguments: { sessionId: "x" } });
+    expect(JSON.parse(textOf(result)).title.length).toBeLessThan(400);
   });
   it("passes the event through", async () => {
     const seen: string[] = [];

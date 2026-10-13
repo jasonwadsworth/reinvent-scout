@@ -8,6 +8,7 @@ import { boundedReservationResult, boundedCancelResult, boundedSchedulePlan, sho
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { createApiClient, type ApiClient } from "../api/client.js";
+import type { Session } from "../api/types.js";
 import { createTokenProviderAdapter } from "../auth/provider-adapter.js";
 import { readTokenStore } from "../auth/token-store.js";
 import { catalogServiceNames } from "../catalog/query.js";
@@ -36,7 +37,6 @@ import { buildFocusResponse, buildMapResponse, buildMatchResponse } from "../mat
 import { favoriteSessions, unfavoriteSession } from "../schedule/favorites.js";
 import { mergeAndSortScheduleEntries, timezoneWarnings, type MergedScheduleEntry } from "../schedule/merge.js";
 import { getSchedule } from "../schedule/schedule.js";
-import { getLiveSession } from "../schedule/session-live.js";
 
 function defaultBuildApiClient(storeRoot: string): ApiClient {
   return createApiClient({ getAccessToken: createTokenProviderAdapter({ storeRoot }) });
@@ -822,6 +822,21 @@ function registerReservationTools(server: McpServer, deps: McpToolDeps): void {
 const SESSION_NOT_FOUND_MESSAGE =
   "Session not found. This can also happen during an API outage, so it is not proof the session is gone: check the id and try again later.";
 
+/** The fields a caller needs to recognise a session and see its seat band; no abstract or taxonomy. */
+function pickLiveSession(session: Session, fetchedAt: string) {
+  return {
+    sessionId: session.sessionId,
+    ...(session.abbreviation === undefined ? {} : { abbreviation: session.abbreviation }),
+    title: shortenDescription(session.title, 300),
+    ...(session.venue === undefined ? {} : { venue: session.venue }),
+    ...(session.room === undefined ? {} : { room: session.room }),
+    ...(session.sessionTime === undefined ? {} : { sessionTime: session.sessionTime }),
+    ...(session.isReservable === undefined ? {} : { isReservable: session.isReservable }),
+    ...(session.seatAvailability === undefined ? {} : { seatAvailability: session.seatAvailability }),
+    fetchedAt,
+  };
+}
+
 function registerGetSessionTool(server: McpServer, deps: McpToolDeps): void {
   const buildApiClient = deps.buildApiClient ?? defaultBuildApiClient;
   server.registerTool("get_session", {
@@ -829,8 +844,8 @@ function registerGetSessionTool(server: McpServer, deps: McpToolDeps): void {
     inputSchema: z.strictObject({ sessionId: z.string().trim().min(1).refine(id => Array.from(id).length <= MAX_SESSION_ID_LENGTH, `Session IDs must have at most ${MAX_SESSION_ID_LENGTH} characters.`), event: z.string().min(1).optional() }),
   }, async ({ sessionId, event }) => {
     try {
-      const storeRoot = deps.resolveStoreRoot();
-      return textResult(await getLiveSession(sessionId, { storeRoot, apiClient: buildApiClient(storeRoot), ...(event ? { eventId: event } : {}), ...(deps.now ? { now: deps.now } : {}) }));
+      const session = await buildApiClient(deps.resolveStoreRoot()).getSession(event ?? DEFAULT_EVENT_ID, sessionId);
+      return textResult(pickLiveSession(session, new Date((deps.now ?? Date.now)()).toISOString()));
     } catch (error) {
       return error instanceof NotFoundError ? errorResult(SESSION_NOT_FOUND_MESSAGE) : toToolError(error);
     }
