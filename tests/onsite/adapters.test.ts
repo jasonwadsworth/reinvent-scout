@@ -39,7 +39,7 @@ it("documented MCP preferences→confirmed nearby→printed ID reservation agree
     const server = createMcpServer({ resolveStoreRoot: () => home.path, buildApiClient: () => api, now: () => now });
     const [a, b] = InMemoryTransport.createLinkedPair(); const client = new Client({ name: "onsite-docs", version: "1" });
     await Promise.all([server.connect(b), client.connect(a)]);
-    const workflow = readFileSync(new URL("../../skills/reinvent-scout/reference/workflow.md", import.meta.url), "utf8");
+    const workflow = readFileSync(new URL("../../plugin/skills/reinvent-scout/reference/workflow.md", import.meta.url), "utf8");
     const examples = [...workflow.matchAll(/```json\n([\s\S]*?)```/g)].map(m => JSON.parse(m[1]!) as { tool?: string; arguments?: Record<string, unknown> }).filter(x => ["get_onsite_preferences", "set_onsite_preferences", "nearby_sessions"].includes(x.tool ?? ""));
     expect(examples.map(x => x.tool)).toEqual(["get_onsite_preferences", "set_onsite_preferences", "nearby_sessions"]);
     let result!: NearbyResult;

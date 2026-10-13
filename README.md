@@ -382,8 +382,8 @@ CLI prints source locations. Every candidate also carries a `why` (`summary`, up
 abstract; omitted when nothing can be quoted). MCP keeps `why` and the lens reasons complete; to honor its existing
 response budget it drops every candidate's ranking reasons first (`rankingReasonsOmitted`), then whole candidates if necessary. Phrase signals use titles and available abstracts; a
 catalog synced without abstracts can miss an abstract-only signal. See the complete synthetic
-[profile and executable examples](skills/reinvent-scout/reference/workflow.md#evidence-lens-example)
-and [profiling guidance](skills/reinvent-scout/reference/profiling.md#supported-evidence-lenses).
+[profile and executable examples](plugin/skills/reinvent-scout/reference/workflow.md#evidence-lens-example)
+and [profiling guidance](plugin/skills/reinvent-scout/reference/profiling.md#supported-evidence-lenses).
 
 
 ## Read your schedule and manage favorites
@@ -485,7 +485,7 @@ windows help avoid bursts; concurrent processes still rely on API 429 handling.
 MCP exposes `plan_schedule`, `reserve_sessions`, and `cancel_reservation` with the same domain
 behavior. Write responses never drop requested IDs/outcomes to fit 30 KiB: optional descriptions
 may be marked shortened, conflict lists carry explicit omitted counts, and oversized mandatory
-ledgers are rejected before writing. See the [complete contracts](skills/reinvent-scout/reference/workflow.md#reservation-workflow).
+ledgers are rejected before writing. See the [complete contracts](plugin/skills/reinvent-scout/reference/workflow.md#reservation-workflow).
 
 
 ### Watch a full session
@@ -497,7 +497,7 @@ the exact reservations it may cancel to make room (often none). It cancels only 
 every clashing reservation is on that list, and tries to put back anything it cancelled if the
 new session does not land. A swap briefly frees your existing seat, and a restore refused as full
 means that seat is lost. Travel time between venues is not checked. The rules it follows are in the
-[watch playbook](skills/reinvent-scout/reference/watch.md).
+[watch playbook](plugin/skills/reinvent-scout/reference/watch.md).
 
 ## Run the MCP server
 

@@ -20,7 +20,7 @@ import { buildValidateReport } from "../../src/profile/report.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const skillRoot = join(here, "..", "..", "skills", "reinvent-scout");
+const skillRoot = join(here, "..", "..", "plugin", "skills", "reinvent-scout");
 const referenceDir = join(skillRoot, "reference");
 
 function readSkillFile(...parts: string[]): string {
@@ -727,7 +727,7 @@ describe("explain lens documentation", () => {
     expect(workflowMd).toContain("`uncovered`");
     expect(workflowMd).toContain("explainsConcept");
     expect(skillMd).toContain("`uncovered`");
-    expect(readFileSync(join(here, "..", "..", "skills", "reinvent-scout", "reference", "taxonomy.md"), "utf8")).toContain("tiebreak");
+    expect(readFileSync(join(skillRoot, "reference", "taxonomy.md"), "utf8")).toContain("tiebreak");
     expect(readmeMd).toContain("`uncovered`");
   });
 });
@@ -1195,7 +1195,7 @@ describe("watch playbook (reference/watch.md)", () => {
   it("is reachable from SKILL.md, the workflow reference and the README", () => {
     expectAll(skillMd, ["Watch a full session", "`get_session`", "reference/watch.md"]);
     expect(workflowMd).toContain("watch.md");
-    expect(readFileSync(join(skillRoot, "..", "..", "README.md"), "utf8")).toContain("Watch a full session");
+    expect(readFileSync(join(skillRoot, "..", "..", "..", "README.md"), "utf8")).toContain("Watch a full session");
   });
   it("documents the get_session contract in workflow.md, including that a 404 is not proof", () => {
     expectAll(workflowMd, ["get_session", "seatAvailability", "fetchedAt", "is not proof the session is gone"]);
@@ -1324,7 +1324,7 @@ describe("watch playbook (reference/watch.md)", () => {
     expectAll(watchMd, [
       "tell the user that a swap briefly frees their seat, and that a restore refused as full means it is lost",
     ]);
-    expect(readFileSync(join(skillRoot, "..", "..", "README.md"), "utf8").replace(/\s+/g, " ")).toContain("tries to put back");
+    expect(readFileSync(join(skillRoot, "..", "..", "..", "README.md"), "utf8").replace(/\s+/g, " ")).toContain("tries to put back");
   });
   it("reads the full conflict set when the tool omitted some of it", () => {
     expectAll(watchMd, [
