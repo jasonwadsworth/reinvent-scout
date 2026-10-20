@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Session } from "../api/types.js";
+import type { Session } from "../aws/types.js";
 import { ensureDirWithMode, STORE_DIR_MODE } from "../core/paths.js";
 import { writeFileAtomic } from "../core/atomic-write.js";
 import type { IndexRecord } from "./index-record.js";

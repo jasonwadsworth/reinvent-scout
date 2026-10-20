@@ -1,7 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { Session } from "../../src/api/types.js";
+import type { Session } from "../../src/aws/types.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { CURRENT_SCHEMA_VERSION, writeCatalog } from "../../src/catalog/store.js";
 import { OUTPUT_BUDGET_BYTES, outputBytes } from "../../src/commands/output-budget.js";

@@ -1,4 +1,4 @@
-import type { Session, SeatAvailability } from "../api/types.js";
+import type { Session, SeatAvailability } from "../aws/types.js";
 import { deriveVenue, type Venue } from "./venue.js";
 
 /**

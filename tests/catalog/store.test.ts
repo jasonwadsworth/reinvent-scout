@@ -12,7 +12,7 @@ import {
   writeCatalog,
   type CatalogMeta,
 } from "../../src/catalog/store.js";
-import type { Session } from "../../src/api/types.js";
+import type { Session } from "../../src/aws/types.js";
 import type { IndexRecord } from "../../src/catalog/index-record.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { Session, Schedule } from "../../src/api/types.js";
+import type { Session, Schedule } from "../../src/aws/types.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { CURRENT_SCHEMA_VERSION, writeCatalog } from "../../src/catalog/store.js";
 import { updateOnsiteConfig } from "../../src/onsite/config.js";

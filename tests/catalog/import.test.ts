@@ -5,7 +5,7 @@ import { commitCatalogImport, importCatalog, pruneStaleStaging, reindexCatalog, 
 import { readCatalogChanges } from "../../src/catalog/diff.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { CURRENT_SCHEMA_VERSION, readIndex, readMeta, readRaw, writeCatalog, type CatalogMeta } from "../../src/catalog/store.js";
-import type { Session } from "../../src/api/types.js";
+import type { Session } from "../../src/aws/types.js";
 import { CatalogMissingError } from "../../src/core/errors.js";
 import { ValidationError } from "../../src/core/errors.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";

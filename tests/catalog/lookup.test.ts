@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { Session } from "../../src/api/types.js";
+import type { Session } from "../../src/aws/types.js";
 import { LOOKUP_MAX_QUERY_LENGTH, lookupSessions } from "../../src/catalog/lookup.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { requireCurrentIndex } from "../../src/catalog/query.js";

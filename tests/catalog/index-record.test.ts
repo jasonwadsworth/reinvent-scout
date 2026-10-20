@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { buildIndexRecord, tokenize } from "../../src/catalog/index-record.js";
-import type { Session } from "../../src/api/types.js";
+import type { Session } from "../../src/aws/types.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixture: Session[] = JSON.parse(

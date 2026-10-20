@@ -3,7 +3,7 @@ import { z } from "zod";
 import { ValidationError } from "../core/errors.js";
 import { readSafeJsonFile } from "../core/safe-read.js";
 import { formatZodError } from "../core/zod-errors.js";
-import type { Session } from "../api/types.js";
+import type { Session } from "../aws/types.js";
 
 export const MAX_PAGE_FILE_BYTES = 16 * 1024 * 1024;
 

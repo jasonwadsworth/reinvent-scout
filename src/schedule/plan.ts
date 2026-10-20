@@ -1,4 +1,4 @@
-import type { Schedule } from "../api/types.js";
+import type { Schedule } from "../aws/types.js";
 import type { IndexRecord } from "../catalog/index-record.js";
 import { baseSessionCode, requireCurrentIndex } from "../catalog/query.js";
 import { DEFAULT_EVENT_ID, readMeta, readTimezoneAvailability, type CatalogStoreDeps } from "../catalog/store.js";

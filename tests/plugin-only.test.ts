@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 // Modules that import only types are erased by esbuild, so they never appear in the bundle's graph.
-const TYPE_ONLY = ["src/api/types.ts"];
+const TYPE_ONLY = ["src/aws/types.ts"];
 // Empty: add nothing here; delete the module instead.
 const KNOWN_DEAD: string[] = [];
 

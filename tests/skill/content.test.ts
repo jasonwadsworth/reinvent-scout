@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import type { Session } from "../../src/api/types.js";
+import type { Session } from "../../src/aws/types.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { buildServiceAliasIndex } from "../../src/catalog/service-aliases.js";
 import { CURRENT_SCHEMA_VERSION, DEFAULT_EVENT_ID, writeCatalog } from "../../src/catalog/store.js";

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import type { Session } from "../../src/api/types.js";
+import type { Session } from "../../src/aws/types.js";
 import { buildIndexRecord, type IndexRecord } from "../../src/catalog/index-record.js";
 import { buildCorpusStats, scoreSession, type MatchQuery } from "../../src/match/score.js";
 

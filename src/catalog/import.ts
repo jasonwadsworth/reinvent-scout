@@ -5,7 +5,7 @@ import { z } from "zod";
 import { writeFileAtomic } from "../core/atomic-write.js";
 import { ValidationError } from "../core/errors.js";
 import { ensureDirWithMode, STORE_DIR_MODE } from "../core/paths.js";
-import type { Session } from "../api/types.js";
+import type { Session } from "../aws/types.js";
 import { CatalogMissingError } from "../core/errors.js";
 import { diffCatalogs, summarizeCatalogChanges, writeCatalogChanges, type CatalogChangeSummary, type StoredCatalogChanges } from "./diff.js";
 import { resolveListSessionsPage, SessionItemSchema, type ListSessionsPage, type PageReadOptions } from "./import-page.js";
