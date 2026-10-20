@@ -30,7 +30,7 @@ export class CatalogUnusableError extends Error {
   }
 }
 
-/** The request was rejected as sent (the API's 400): a field is missing, too long, or
+/** The input was refused as given: a field is missing, too long, or
  * malformed. Not retriable -- the same request will be refused again. */
 export class ValidationError extends Error {
   constructor(message: string) {

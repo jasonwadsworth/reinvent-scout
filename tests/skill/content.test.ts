@@ -219,6 +219,7 @@ describe("plugin skill conventions", () => {
   });
   it("names no CLI subcommand anywhere in the skill's files", () => {
     for (const span of spansOf(allSkillText)) expect(span, span).not.toMatch(/^reinvent-scout [a-z]/);
+    for (const span of spansOf(allSkillText)) expect(span, span).not.toMatch(/^(?:auth|catalog|profile|match|schedule|skill|mcp) [a-z]/);
     for (const line of allSkillText.split("\n")) expect(line, line).not.toMatch(/^\s*(?:\$ )?reinvent-scout [a-z]/);
     expect(allSkillText).not.toMatch(/`--(?:level|only|prefer|avoid|exclude|per-topic|verbose|focus|lens|limit|profile)\b/);
     expect(allSkillText).not.toMatch(/\bthe CLI(?:'s)?\b/);
@@ -1304,7 +1305,12 @@ describe("AWS Events tool-call examples", () => {
     expect(codes).toContain("insufficientAccess");
     expect(codes).not.toContain("walkUp");
     const failureWording = /\b(?:fail(?:s|ed|ure|ures)?|codes?|refus\w*|reject\w*|BulkFailure\w*)\b/i;
-    const walkUpSentences = allSkillText.split(/(?<=[.!?])\s+|\n/).filter(sentence => sentence.includes("walkUp"));
+    // Step 5 of "One check" is the list of results a ReserveSessions call can return: every identifier in it is a real code.
+    const stepFive = /\n5\. Read the result[\s\S]*?(?=\n6\. )/.exec(watchMd)?.[0] ?? "";
+    expect(stepFive).toContain("`sessionFull`");
+    const named = [...stepFive.matchAll(/`([A-Za-z]+)`/g)].map(match => match[1]!);
+    for (const name of named) expect(codes, `${name} in step 5`).toContain(name);
+    const walkUpSentences = allSkillText.replace(/\s*\n\s*(?=\S)/g, " ").split(/(?<=[.!?])\s+/).filter(sentence => sentence.includes("walkUp"));
     expect(walkUpSentences.length).toBeGreaterThan(0);
     for (const sentence of walkUpSentences) {
       expect(sentence, sentence).not.toMatch(failureWording);
