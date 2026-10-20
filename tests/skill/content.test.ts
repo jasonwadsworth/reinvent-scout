@@ -958,8 +958,7 @@ describe("why documentation", () => {
     expect(workflowMd).toContain("`rankingReasonsOmitted`");
   });
 
-  it("documents --verbose in the README", () => {
-    expect(readmeMd).toContain("--verbose");
+  it("documents rankingReasonsOmitted in the README", () => {
     expect(readmeMd).toContain("rankingReasonsOmitted");
   });
 });
@@ -1037,13 +1036,13 @@ describe("the session preferences documentation", () => {
       expect(text, expected).toContain(expected);
     }
     const readme = collapse(readmeMd);
-    for (const expected of ["#### Chalk talks more than anything, no workshops, only this venue", "--only venue:mgm --prefer \"chalk talk\" --avoid \"breakout session@300-500\" --exclude workshop", "demoted sessions still come last", "`preferences: { levels, rules: [{ field, value, action, levels? }] }`", "#### What can I filter on?", "reinvent-scout catalog filters --field venue"]) {
+    for (const expected of ["#### Chalk talks more than anything, no workshops, only this venue", "demoted sessions still come last", "`preferences: { levels, rules: [{ field, value, action, levels? }] }`", "#### What can I filter on?", "`list_filters` with `field: \"venue\"`"]) {
       expect(readme, expected).toContain(expected);
     }
   });
-  it("documents --level in the readme", () => {
+  it("documents level ranges in the readme", () => {
     const text = collapse(readmeMd);
-    for (const expected of ["#### Only the levels you want", "`--level 400-500`", "filtering removes sessions, the remaining ones are re-ranked by the same rules", "none at 400-500"]) {
+    for (const expected of ["#### Only the levels you want", "filtering removes sessions, the remaining ones are re-ranked by the same rules", "none at 400-500"]) {
       expect(text, expected).toContain(expected);
     }
   });
@@ -1069,9 +1068,9 @@ describe("the map and focus documentation", () => {
       expect(text, expected).toContain(expected);
     }
   });
-  it("documents the commands and the three goals in the readme", () => {
+  it("documents the map, the focus and the three goals in the readme", () => {
     const text = collapse(readmeMd);
-    for (const expected of ["### Map your code, then choose what to look for", "reinvent-scout profile map --profile", "--focus \"DynamoDB:understand,gap-no-dlq:improve,event-driven:deepen\"", "**understand**", "**deepen**", "**improve**", "`--focus` replaces `--lens` and `--limit`", "title names the topic"]) {
+    for (const expected of ["### Map your code, then choose what to look for", "**understand**", "**deepen**", "**improve**", "`focus` replaces `lens` and `limit`", "title names the topic"]) {
       expect(text, expected).toContain(expected);
     }
   });

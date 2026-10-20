@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { Session } from "../src/aws/types.js";
 import { buildServiceAliasIndex } from "../src/catalog/service-aliases.js";
+import { registry } from "../src/commands/registry.js";
 import { resolveProfile } from "../src/profile/profile.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -43,20 +44,66 @@ describe("README example profile", () => {
   });
 });
 
-describe("README: Install as a Claude Code plugin", () => {
-  const readme = readFileSync(readmePath, "utf8");
-  const start = readme.indexOf("## Install as a Claude Code plugin");
-  const section = start === -1 ? "" : readme.slice(start, readme.indexOf("\n## ", start + 5) === -1 ? undefined : readme.indexOf("\n## ", start + 5));
-  const flat = section.replace(/\s+/g, " ");
+const readme = readFileSync(readmePath, "utf8");
+/** The text of one `## ` section, from its heading to the next `## ` heading. */
+function sectionOf(heading: string): string {
+  const start = readme.indexOf(`\n## ${heading}\n`);
+  if (start === -1) return "";
+  const next = readme.indexOf("\n## ", start + 5);
+  return readme.slice(start, next === -1 ? undefined : next);
+}
+const flatOf = (text: string): string => text.replace(/\s+/g, " ");
 
-  it("has the section, near the top, ahead of the legacy install", () => {
-    expect(start).toBeGreaterThan(-1);
-    expect(start).toBeLessThan(readme.indexOf("## What's here right now"));
+describe("README structure", () => {
+  it("has exactly these sections, in this order", () => {
+    expect([...readme.matchAll(/^## (.+)$/gm)].map(match => match[1])).toEqual(["Install", "Permissions", "Use the skill", "How it works", "Where your data lives", "Development"]);
   });
+  it("explains how it works: the catalog stays out of context, the sync agent, the one MCP, the output budget", () => {
+    const how = flatOf(sectionOf("How it works"));
+    expect(how).toMatch(/never passed through agent context/i);
+    expect(how).toContain("catalog-sync");
+    expect(how).toContain("api.awsevents.com/mcp");
+    expect(how).toContain("24 KiB");
+  });
+  it("documents no command-line tool: no CLI lines, no MCP server config, no removed flags", () => {
+    expect(readme.split("\n").filter(line => /^\s*(?:\$ )?reinvent-scout [a-z]/.test(line))).toEqual([]);
+    expect([...readme.matchAll(/`([^`\n]+)`/g)].map(match => match[1]!).filter(span => /^reinvent-scout [a-z]/.test(span))).toEqual([]);
+    expect(readme).not.toContain("mcpServers");
+    // The script's own `--json '<one-line JSON>'` and `--input` usage is the only flag syntax left.
+    expect(readme.replaceAll("--json '<one-line JSON>'", "").replaceAll("--input", "")).not.toMatch(/--(?:level|only|prefer|avoid|exclude|focus|lens|verbose|json)\b/);
+  });
+  it("names only real commands in snake_case code spans", () => {
+    const notCommands = ["node_modules"];
+    expect(Object.keys(registry)).not.toContain("node_modules");
+    const spans = [...readme.matchAll(/`([a-z]+(?:_[a-z]+)+)`/g)].map(match => match[1]!);
+    expect(spans.length).toBeGreaterThan(0);
+    for (const span of spans) if (!notCommands.includes(span)) expect(Object.keys(registry), span).toContain(span);
+  });
+});
+
+describe("README: Install", () => {
+  const section = sectionOf("Install");
+  const flat = flatOf(section);
+
   it("shows the two install commands", () => {
     expect(section).toContain("/plugin marketplace add jasonwadsworth/reinvent-scout");
     expect(section).toContain("/plugin install reinvent-scout@reinvent-scout");
   });
+  it("explains the user's own awsevents entry: keep it, use the exact URL to share one connection, any other spelling means two sign-ins", () => {
+    expect(flat).toContain("keep your own `awsevents` entry");
+    expect(flat).toContain("https://api.awsevents.com/mcp");
+    expect(flat).toMatch(/exact URL.*one connection/);
+    expect(flat).toMatch(/any other spelling.*two (?:servers|sign-ins)/i);
+  });
+  it("says it needs a local shell", () => {
+    expect(flat).toMatch(/Claude Code|Agent SDK/);
+  });
+});
+
+describe("README: Permissions", () => {
+  const section = sectionOf("Permissions");
+  const flat = flatOf(section);
+
   it("gives a permission rule that allows the script and only the read-only AWS tools, under both prefixes", () => {
     const block = /```json\n([\s\S]*?)```/.exec(section);
     expect(block).not.toBeNull();
@@ -100,14 +147,14 @@ describe("README: Install as a Claude Code plugin", () => {
     }
     expect(flat).toContain("keep their prompt");
   });
-  it("explains the user's own awsevents entry: keep it, use the exact URL to share one connection, any other spelling means two sign-ins", () => {
-    expect(flat).toContain("keep your own `awsevents` entry");
-    expect(flat).toContain("https://api.awsevents.com/mcp");
-    expect(flat).toMatch(/exact URL.*one connection/);
-    expect(flat).toMatch(/any other spelling.*two (?:servers|sign-ins)/i);
-  });
-  it("says where the data lives and that it needs a local shell", () => {
+});
+
+describe("README: Where your data lives", () => {
+  const flat = flatOf(sectionOf("Where your data lives"));
+  it("says where the data lives, and that an old token store and profiles directory can be deleted", () => {
     expect(flat).toContain("~/.reinvent-scout");
-    expect(flat).toMatch(/Claude Code|Agent SDK/);
+    expect(flat).toContain("REINVENT_SCOUT_HOME");
+    expect(flat).toMatch(/tokens\.json.*can be deleted/);
+    expect(flat).toContain("`profiles/`");
   });
 });

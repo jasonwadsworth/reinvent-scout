@@ -63,7 +63,7 @@ describe("plugin only", () => {
   it("no config or doc names a removed path or command", () => {
     const removed = /src\/(?:cli|mcp|skill|auth|api|legacy)\b|dist\/cli|tests\/(?:cli|mcp|auth|api|integration|legacy)\b|fake-fetch|@modelcontextprotocol|\bcommander\b|skill (?:install|update)|reinvent-scout mcp|npm run build/;
     const files = [
-      "package.json", "eslint.config.js", "tsconfig.json", "tsconfig.tests.json", "vitest.config.ts", "CLAUDE.md",
+      "package.json", "README.md", "eslint.config.js", "tsconfig.json", "tsconfig.tests.json", "vitest.config.ts", "CLAUDE.md",
       ".claude-plugin/marketplace.json", "plugin/.claude-plugin/plugin.json", "plugin/.mcp.json",
       ...filesUnder(".github/workflows").filter(p => p.endsWith(".yml")),
       ...filesUnder("scripts").filter(p => p.endsWith(".mjs")),
