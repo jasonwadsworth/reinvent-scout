@@ -263,13 +263,18 @@ describe("plugin skill conventions", () => {
         "`ListSessions` with `includeAbstracts: true`",
         "saved to a file",
         "pass its absolute path as `path`",
-        "pass it as `page`",
+        "Never Read the saved page file",
+        "came back inline, stop and report it",
         "`action: \"page\"`",
         "`action: \"commit\"`",
         "until the output says `complete: true`",
         "Never pass allowShrink",
         "Never return session data",
       ]);
+    });
+    it("never has the agent carry a page inline: it cannot write a file or quote an apostrophe", () => {
+      expect(agentMd).not.toContain("pass it as `page`");
+      expect(workflowMd).not.toContain("the inline page");
     });
     it("documents the same brief and the protocol in workflow.md", () => {
       expectAll(workflowMd, ["`catalog_import`", "`syncId`", "`shrunk`", "`allowShrink`", "`catalog_changes`", "reinvent-scout:catalog-sync"]);

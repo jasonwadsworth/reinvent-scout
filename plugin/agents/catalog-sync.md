@@ -26,11 +26,13 @@ node "${CLAUDE_PLUGIN_ROOT}/skills/reinvent-scout/scripts/reinvent-scout.mjs" ca
 1. Call `GetEvent` for the event (`reinvent2026` unless you were told another). Note its `timezone`
    (an IANA name such as `America/Los_Angeles`), or null when it has none.
 2. Call `ListSessions` with `includeAbstracts: true`. Each page is large, so the tool result is
-   usually saved to a file and you are given its path.
+   saved to a file and you are given its path. Never Read the saved page file: one page is about 80k
+   tokens, and the script reads it for you.
 3. For each page, run `catalog_import` with `action: "page"`.
-   - On the first page pass `eventId`, `timezone` and the page. If the result was saved to a file,
-     pass its absolute path as `path`; if it came back inline, pass it as `page`.
-   - On every later page pass the `syncId` from the first page's output, and the page the same way.
+   - On the first page pass `eventId`, `timezone` and the page: the result was saved to a file, so
+     pass its absolute path as `path`. If a result came back inline, stop and report it: you cannot write a file, and a page quoted into
+     `--json` breaks on apostrophes.
+   - On every later page pass the `syncId` from the first page's output, and the page's `path`.
      Do not pass `eventId` or `timezone` again.
    - Follow `nextToken` (give it to `ListSessions`) until the output says `complete: true`.
 4. Run `catalog_import` with `action: "commit"` and the `syncId`.

@@ -66,7 +66,7 @@ A refusal is an error whose `error` starts with its `reason` (`shrunk: ...`), an
 The staged pages of a refused commit are kept for 24 hours, so a user-approved `allowShrink` commit needs no new pull.
 
 The sync brief (what the `reinvent-scout:catalog-sync` agent does): `GetEvent` and note its `timezone`; `ListSessions` with
-`includeAbstracts: true`; for each page `catalog_import` with `action: "page"` (the saved file's path, or the inline page), following
+`includeAbstracts: true`; for each page `catalog_import` with `action: "page"` (always the saved file's path), following
 `nextToken` until `complete`; then `action: "commit"`. On `shrunk` it stops and reports both counts and never passes `allowShrink`;
 on any other refusal it reports the reason and stops; it returns at most about 15 lines and never session data.
 
