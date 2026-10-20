@@ -4,16 +4,13 @@ import { LENS_RULE_SELECTORS } from "../../src/match/lens-signals.js";
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import type { Session } from "../../src/api/types.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { buildServiceAliasIndex } from "../../src/catalog/service-aliases.js";
-import { CURRENT_SCHEMA_VERSION, writeCatalog } from "../../src/catalog/store.js";
-import { DEFAULT_EVENT_ID } from "../../src/catalog/sync.js";
+import { CURRENT_SCHEMA_VERSION, DEFAULT_EVENT_ID, writeCatalog } from "../../src/catalog/store.js";
 import { registry } from "../../src/commands/registry.js";
-import { createMcpServer } from "../../src/mcp/server.js";
 import { resolveProfile, type ResolvedProfile } from "../../src/profile/profile.js";
 import { buildValidateReport } from "../../src/profile/report.js";
 import { callCommand } from "../helpers/call-command.js";
@@ -401,7 +398,7 @@ describe("truncation advice consistency", () => {
   it("never tells the agent a smaller limit can reach omitted match_sessions candidates", () => {
     // Reviewer's finding: SKILL.md once suggested "a smaller limit" as a way to narrow a
     // truncated match_sessions response, contradicting both workflow.md and the tool's own
-    // truncationHint (src/mcp/tools.ts), which say a smaller limit returns fewer of the exact
+    // truncationHint (the match_sessions command), which say a smaller limit returns fewer of the exact
     // same top-ranked candidates and can never reach the ones already omitted for size. It's fine
     // for the phrase to appear as part of explicitly saying *not* to do it (which is what should
     // be there now) -- the bug was offering it as one of the narrowing options in the same breath
@@ -419,9 +416,9 @@ describe("truncation advice consistency", () => {
     // "2026-11-30T18:30:00.000Z", but zonedWallClockToUtcIso/addMinutesToIso (src/schedule/
     // timezone.ts) always strip the ".000" for these two fields specifically -- real output never
     // carries it. Scoped to startsAt/endsAt by name, not every timestamp in the skill corpus:
-    // `accessTokenExpiresAt` (the `status` tool, src/mcp/tools.ts) is a genuinely different field,
-    // built with a plain `new Date(...).toISOString()` that is never stripped -- its own example
-    // correctly does show milliseconds, and must not be flagged as if it were the same bug.
+    // Other timestamps in the skill corpus are built with a plain `new Date(...).toISOString()`
+    // that is never stripped, so their examples correctly do show milliseconds and must not be
+    // flagged as if they were the same bug.
     const startsAtOrEndsAtWithMs = /"(?:startsAt|endsAt)":\s*"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z"/;
     expect(allSkillText).not.toMatch(startsAtOrEndsAtWithMs);
     // Positive check that a real startsAt example is still present, so this isn't trivially
@@ -543,18 +540,9 @@ describe("workflow.md's validate_profile contract", () => {
         );
       expect(profileBlocks).toHaveLength(1);
 
-      const server = createMcpServer({ resolveStoreRoot: () => home.path });
-      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-      const client = new Client({ name: "test-client", version: "0.0.1" });
-      await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
-
-      const result = await client.callTool({
-        name: "validate_profile",
-        arguments: { profile: profileBlocks[0] },
-      });
+      const result = await callCommand("validate_profile", { profile: profileBlocks[0] }, { storeRoot: home.path });
       expect(result.isError).not.toBe(true);
-      const content = result.content as Array<{ type: string; text: string }>;
-      const realKeys = Object.keys(JSON.parse(content[0]!.text) as Record<string, unknown>).sort();
+      const realKeys = Object.keys(JSON.parse(result.text) as Record<string, unknown>).sort();
 
       const documentedBlocks = [...extractSection(workflowMd, "## 4. `validate_profile`").matchAll(
         /```json\n([\s\S]*?)```/g,
@@ -577,15 +565,10 @@ describe("workflow.md's validate_profile contract", () => {
 });
 
 describe("documented evidence lenses", () => {
-  it("documents the exact MCP lens enum and executes every example pattern through matching", async () => {
+  it("documents the exact match_sessions lens enum and executes every example pattern through matching", async () => {
     const home = createTempHome();
     try {
-      const server = createMcpServer({ resolveStoreRoot: () => home.path });
-      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-      const client = new Client({ name: "lens-doc-test", version: "0.0.1" });
-      await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
-      const { tools } = await client.listTools();
-      const lensSchema = tools.find(tool => tool.name === "match_sessions")!.inputSchema.properties!.lens as { enum: string[] };
+      const lensSchema = (z.toJSONSchema(registry.match_sessions.inputSchema).properties as Record<string, { enum: string[] }>).lens!;
       const declaration = /"lens"\?: ([^,]+)/.exec(workflowMd)![1]!;
       expect([...declaration.matchAll(/"([a-z-]+)"/g)].map(match => match[1])).toEqual(lensSchema.enum);
       const profiles = [...workflowMd.matchAll(/```json\n([\s\S]*?)```/g)]
@@ -607,18 +590,16 @@ describe("documented evidence lenses", () => {
         writeCatalog({ raw, index: raw.map(buildIndexRecord), meta: { schemaVersion: CURRENT_SCHEMA_VERSION, eventId: DEFAULT_EVENT_ID, syncedAt: 1, totalCount: 1, count: 1, includedAbstracts: true, timezone: null } }, { storeRoot: home.path });
         const pattern = resolved.patterns.find(entry => entry.name === name)!;
         const input = { ...profiles[0], patterns: [pattern] };
-        const validation = await client.callTool({ name: "validate_profile", arguments: { profile: input } });
+        const validation = await callCommand("validate_profile", { profile: input }, { storeRoot: home.path });
         expect(validation.isError).not.toBe(true);
         const lens = name!.startsWith("gap-") ? "fix" : "next-level";
-        const result = await client.callTool({ name: "match_sessions", arguments: { profile: input, lens } });
+        const result = await callCommand("match_sessions", { profile: input, lens }, { storeRoot: home.path });
         expect(result.isError).not.toBe(true);
-        const parsed = JSON.parse((result.content as Array<{ text: string }>)[0]!.text);
+        const parsed = JSON.parse(result.text);
         expect(parsed.candidates).toHaveLength(1);
         expect(parsed.candidates[0].code).toBe("DOC400");
         expect(parsed.candidates[0].reasons).toContainEqual(expect.objectContaining({ kind: lens === "fix" ? "pillarGap" : "migrationPath", profileEvidence: pattern.evidence }));
       }
-      await client.close();
-      await server.close();
     } finally { home.cleanup(); }
   });
   it("states the evidence boundary and migration trade-offs throughout the guidance", () => {

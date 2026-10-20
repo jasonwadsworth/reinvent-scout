@@ -1,5 +1,5 @@
+import { toCommandError } from "../../src/commands/errors.js";
 import { registry, type CommandName } from "../../src/commands/registry.js";
-import { toToolError } from "../../src/mcp/tools.js";
 
 export interface CallCommandOptions {
   storeRoot: string;
@@ -7,9 +7,9 @@ export interface CallCommandOptions {
   randomId?: () => string;
 }
 
-/** Runs one registry command the way the MCP server does and returns the same `{ text, isError }`
- * shape the MCP tests read, so a ported test changes one line. */
-export async function callCommand(name: CommandName, input: unknown, options: CallCommandOptions): Promise<{ text: string; isError: boolean }> {
+/** Runs one registry command and returns `{ text, isError, reason? }`: the same output the script
+ * prints. On error, `text` is the script's `error` field and `reason` is its `reason`, if any. */
+export async function callCommand(name: CommandName, input: unknown, options: CallCommandOptions): Promise<{ text: string; isError: boolean; reason?: string }> {
   const entry = registry[name];
   try {
     const parsed = entry.inputSchema.parse(input) as never;
@@ -20,6 +20,7 @@ export async function callCommand(name: CommandName, input: unknown, options: Ca
     });
     return { text: JSON.stringify(output), isError: false };
   } catch (err) {
-    return { text: toToolError(err).content[0].text, isError: true };
+    const { error, reason } = toCommandError(err);
+    return { text: error, isError: true, ...(reason === undefined ? {} : { reason }) };
   }
 }
