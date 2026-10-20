@@ -8,23 +8,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 // Modules that import only types are erased by esbuild, so they never appear in the bundle's graph.
 const TYPE_ONLY = ["src/api/types.ts"];
-// Each deletion task shrinks this list; it ends empty.
-const KNOWN_DEAD: string[] = [
-  "src/api/client.ts",
-  "src/auth/browser.ts",
-  "src/auth/callback-server.ts",
-  "src/auth/login.ts",
-  "src/auth/pkce.ts",
-  "src/auth/provider-adapter.ts",
-  "src/auth/token-provider.ts",
-  "src/auth/token-store.ts",
-  "src/auth/oauth.ts",
-  "src/catalog/sync.ts",
-  "src/schedule/favorites.ts",
-  "src/schedule/reservations.ts",
-  "src/schedule/schedule.ts",
-  "src/schedule/write-quota.ts",
-];
+// Empty: add nothing here; delete the module instead.
+const KNOWN_DEAD: string[] = [];
 
 describe("plugin only", () => {
   it("every src module is in the bundle's import graph, apart from the known-dead list", async () => {
@@ -36,8 +21,8 @@ describe("plugin only", () => {
   });
 
   it("no source or test file imports the MCP SDK, commander, or a removed directory", () => {
-    const REMOVED_DIRS = ["src/cli/", "src/mcp/", "src/skill/", "src/legacy/"];
-    const REMOVED_FILES = ["src/profile/store.ts"];
+    const REMOVED_DIRS = ["src/cli/", "src/mcp/", "src/skill/", "src/legacy/", "src/auth/"];
+    const REMOVED_FILES = ["src/profile/store.ts", "src/api/client.ts", "src/catalog/sync.ts", "src/schedule/favorites.ts", "src/schedule/reservations.ts", "src/schedule/schedule.ts", "src/schedule/write-quota.ts"];
     const offenders: string[] = tsFilesUnder("src").filter(file => REMOVED_DIRS.some(dir => file.startsWith(dir)) || REMOVED_FILES.includes(file)).map(file => `${file}: still exists`);
     for (const file of tsFilesUnder("src").concat(tsFilesUnder("tests"))) {
       const text = readFileSync(join(root, file), "utf8");
@@ -59,7 +44,7 @@ function tsFilesUnder(dir: string): string[] {
   return (readdirSync(join(root, dir), { recursive: true }) as string[]).filter(p => p.endsWith(".ts")).map(p => `${dir}/${p}`);
 }
 
-/** Every `from "..."` and `import("...")` specifier in a source text. */
+/** Every `from "..."`, `import "..."` and `import("...")` specifier in a source text. */
 function importSpecifiers(text: string): string[] {
-  return [...text.matchAll(/\bfrom\s+["']([^"']+)["']|\bimport\(\s*["']([^"']+)["']\s*\)/g)].map(match => match[1] ?? match[2]!);
+  return [...text.matchAll(/\b(?:from|import)\s*["']([^"']+)["']|\bimport\(\s*["']([^"']+)["']\s*\)/g)].map(match => match[1] ?? match[2]!);
 }

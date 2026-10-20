@@ -1,7 +1,39 @@
 import type { PersonalTime } from "../api/types.js";
 import type { TimezoneAvailability } from "../catalog/store.js";
+import type { Venue } from "../catalog/venue.js";
 import { addMinutesToIso, zonedWallClockToUtcIso } from "./timezone.js";
-import type { ScheduleResult, ScheduleSession } from "./schedule.js";
+
+/** One session of a schedule that resolved against the local catalog index. */
+export interface ResolvedScheduleSession {
+  sessionId: string;
+  resolved: true;
+  title: string;
+  abbreviation: string | null;
+  startDate: string | null;
+  startTime: string | null;
+  /** Minutes, from the index record's own `lengthMinutes` -- used with `startDate`/`startTime`
+   * and the event's timezone to derive the session's `endsAt`. `null` when the source event
+   * doesn't supply a length, same as an unscheduled session's null date/time. */
+  lengthMinutes: number | null;
+  venue: Venue | null;
+  room: string | null;
+}
+
+/** One session of a schedule that the local catalog index has no record for -- most often
+ * because it was imported after the last catalog import, or because nothing has ever been
+ * imported at all. Kept, not dropped. */
+export interface UnresolvedScheduleSession {
+  sessionId: string;
+  resolved: false;
+}
+
+export type ScheduleSession = ResolvedScheduleSession | UnresolvedScheduleSession;
+
+export interface ScheduleResult {
+  reserved: ScheduleSession[];
+  favorites: ScheduleSession[];
+  personalTime: PersonalTime[];
+}
 
 /**
  * Merges `reserved`, `favorites` and `personalTime` into one genuinely time-ordered list, and

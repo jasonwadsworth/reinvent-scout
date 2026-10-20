@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { PersonalTime } from "../../src/api/types.js";
 import type { TimezoneAvailability } from "../../src/catalog/store.js";
 import { mergeAndSortScheduleEntries, timezoneWarnings } from "../../src/schedule/merge.js";
-import type { ResolvedScheduleSession, ScheduleSession } from "../../src/schedule/schedule.js";
+import type { ResolvedScheduleSession, ScheduleSession } from "../../src/schedule/merge.js";
 
 function resolvedSession(overrides: Partial<ResolvedScheduleSession> & { sessionId: string }): ScheduleSession {
   return {
