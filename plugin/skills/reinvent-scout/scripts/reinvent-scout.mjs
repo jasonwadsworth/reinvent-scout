@@ -23269,7 +23269,7 @@ function utcIsoToZonedWallClock(iso, timeZone) {
   return { date: `${value.year}-${value.month}-${value.day}`, time: `${value.hour}:${value.minute}` };
 }
 
-// src/schedule/merge.ts
+// src/schedule/session-times.ts
 function deriveSessionTimes(session, eventTimezone) {
   if (eventTimezone === null || !session.resolved || session.startDate === null || session.startTime === null) {
     return { startsAt: null, endsAt: null };
@@ -23284,16 +23284,16 @@ function timezoneWarnings(availability) {
   }
   if (availability.status === "unrecognized") {
     return [
-      `The stored event timezone (${JSON.stringify(availability.value)}) is not a recognized IANA timezone, so session start times could not be converted to a common startsAt -- session and personal-time ordering across kinds is unreliable. Re-syncing (\`catalog_sync\`, or \`reinvent-scout catalog sync\`) may resolve this, but is not guaranteed to: if the API reports the same value again, syncing again will not help.`
+      `The stored event timezone (${JSON.stringify(availability.value)}) is not a recognized IANA timezone, so \`startsAt\` and \`endsAt\` could not be computed. Re-importing with the catalog-sync agent may resolve this, but is not guaranteed to: if \`GetEvent\` reports the same value again, importing again will not help.`
     ];
   }
   if (availability.reason === "syncedBeforeTimezoneSupport") {
     return [
-      "This catalog was synced before timezone support was added, so session start times could not be converted to a common startsAt -- session and personal-time ordering across kinds is unreliable. Run `catalog_sync` (or `reinvent-scout catalog sync`) to fetch the event's timezone; it will very likely resolve this."
+      "This catalog was imported before timezone support was added, so `startsAt` and `endsAt` could not be computed. Re-import it with the catalog-sync agent; that will very likely resolve this."
     ];
   }
   return [
-    "The event's timezone is unknown (GetEvent's response omitted it), so session start times could not be converted to a common startsAt -- session and personal-time ordering across kinds is unreliable. Sessions still sort correctly relative to each other by their local date and time."
+    "The event's timezone is unknown (GetEvent's response omitted it), so `startsAt` and `endsAt` could not be computed. Local dates and times are still correct."
   ];
 }
 

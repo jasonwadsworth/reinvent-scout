@@ -3,7 +3,7 @@ import type { IndexRecord } from "../catalog/index-record.js";
 import { baseSessionCode, requireCurrentIndex } from "../catalog/query.js";
 import { DEFAULT_EVENT_ID, readMeta, readTimezoneAvailability, type CatalogStoreDeps } from "../catalog/store.js";
 import { ValidationError } from "../core/errors.js";
-import { deriveSessionTimes } from "./merge.js";
+import { deriveSessionTimes } from "./session-times.js";
 import { validateSessionIds } from "./session-ids.js";
 import { utcIsoToZonedWallClock } from "./timezone.js";
 
