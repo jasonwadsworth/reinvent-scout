@@ -1,5 +1,5 @@
-import { readdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { describe, expect, it } from "vitest";
@@ -18,27 +18,8 @@ const KNOWN_DEAD: string[] = [
   "src/auth/provider-adapter.ts",
   "src/auth/token-provider.ts",
   "src/auth/token-store.ts",
-  "src/cli/commands/auth.ts",
-  "src/cli/commands/catalog.ts",
-  "src/cli/commands/match.ts",
-  "src/cli/commands/mcp.ts",
-  "src/cli/commands/profile.ts",
-  "src/cli/commands/schedule.ts",
-  "src/cli/commands/skill.ts",
-  "src/cli/entry.ts",
-  "src/cli/level-option.ts",
-  "src/cli/main.ts",
-  "src/cli/profile-input.ts",
-  "src/cli/version.ts",
-  "src/legacy/api-adapters.ts",
-  "src/mcp/response-budget.ts",
-  "src/mcp/server.ts",
-  "src/mcp/tools.ts",
-  "src/profile/store.ts",
   "src/schedule/favorites.ts",
   "src/schedule/schedule.ts",
-  "src/skill/install.ts",
-  "src/skill/update.ts",
 ];
 
 describe("plugin only", () => {
@@ -49,4 +30,32 @@ describe("plugin only", () => {
     const all = (readdirSync(join(root, "src"), { recursive: true }) as string[]).filter((p) => p.endsWith(".ts")).map((p) => `src/${p}`);
     expect(all.filter((p) => !reachable.includes(p) && !TYPE_ONLY.includes(p)).sort()).toEqual([...KNOWN_DEAD].sort());
   });
+
+  it("no source or test file imports the MCP SDK, commander, or a removed directory", () => {
+    const REMOVED_DIRS = ["src/cli/", "src/mcp/", "src/skill/", "src/legacy/"];
+    const REMOVED_FILES = ["src/profile/store.ts"];
+    const offenders: string[] = tsFilesUnder("src").filter(file => REMOVED_DIRS.some(dir => file.startsWith(dir)) || REMOVED_FILES.includes(file)).map(file => `${file}: still exists`);
+    for (const file of tsFilesUnder("src").concat(tsFilesUnder("tests"))) {
+      const text = readFileSync(join(root, file), "utf8");
+      for (const specifier of importSpecifiers(text)) {
+        if (/^(?:@modelcontextprotocol\/sdk|commander)(?:\/|$)/.test(specifier)) {
+          offenders.push(`${file}: ${specifier}`);
+          continue;
+        }
+        if (!specifier.startsWith(".")) continue;
+        const target = relative(root, resolve(join(root, dirname(file)), specifier)).replace(/\.js$/, ".ts");
+        if (REMOVED_DIRS.some(dir => target.startsWith(dir)) || REMOVED_FILES.includes(target)) offenders.push(`${file}: ${specifier}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
 });
+
+function tsFilesUnder(dir: string): string[] {
+  return (readdirSync(join(root, dir), { recursive: true }) as string[]).filter(p => p.endsWith(".ts")).map(p => `${dir}/${p}`);
+}
+
+/** Every `from "..."` and `import("...")` specifier in a source text. */
+function importSpecifiers(text: string): string[] {
+  return [...text.matchAll(/\bfrom\s+["']([^"']+)["']|\bimport\(\s*["']([^"']+)["']\s*\)/g)].map(match => match[1] ?? match[2]!);
+}
