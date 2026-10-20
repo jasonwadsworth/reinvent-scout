@@ -134,7 +134,7 @@ one:
 
 Prefer the service's own name over an SDK package or resource-type spelling when you can -- write
 what you'd say out loud ("DynamoDB", "Step Functions", "Amazon Bedrock"), not
-`@aws-sdk/client-dynamodb` or `aws_dynamodb_table`, though the CLI will resolve either: it strips
+`@aws-sdk/client-dynamodb` or `aws_dynamodb_table`, though `validate_profile` will resolve either: it strips
 known wrapper affixes (`@aws-sdk/client-`, `aws-sdk-`, `aws_`, `aws-cdk-lib/aws-`, an SDK's own
 module path) and, for a Terraform-style compound resource name left over after stripping (like
 `aws_elasticache_serverless_cache`), resolves it by longest matching prefix against the catalog so

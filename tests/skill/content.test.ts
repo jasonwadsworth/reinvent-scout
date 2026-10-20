@@ -220,6 +220,9 @@ describe("plugin skill conventions", () => {
   it("names no CLI subcommand anywhere in the skill's files", () => {
     for (const span of spansOf(allSkillText)) expect(span, span).not.toMatch(/^reinvent-scout [a-z]/);
     for (const line of allSkillText.split("\n")) expect(line, line).not.toMatch(/^\s*(?:\$ )?reinvent-scout [a-z]/);
+    expect(allSkillText).not.toMatch(/`--(?:level|only|prefer|avoid|exclude|per-topic|verbose|focus|lens|limit|profile)\b/);
+    expect(allSkillText).not.toMatch(/\bthe CLI(?:'s)?\b/);
+    expect(allSkillText).not.toMatch(/\bMCP drops\b|whole-candidate MCP budget/);
   });
   it("names only real AWS Events tools, under the two server prefixes", () => {
     for (const span of spansOf(allSkillText)) {
@@ -1007,7 +1010,7 @@ describe("the session preferences documentation", () => {
   it("documents the preferences argument, its order of application and its refusals in workflow.md", () => {
     const text = collapse(workflowMd);
     for (const expected of ["\"preferences\"?: { \"levels\"?: { \"min\": number, \"max\": number }, \"rules\"?:", "applied after admission and before the per-concept cap", "a session's own score does not change",
-      "4 sessions match, none at 400\u2013500", "explain lists introductory (100\u2013200) sessions, which is outside 400\u2013500; use deepen or all", "`--level 400-500` is the CLI form"]) {
+      "4 sessions match, none at 400\u2013500", "explain lists introductory (100\u2013200) sessions, which is outside 400\u2013500; use deepen or all"]) {
       expect(text, expected).toContain(expected);
     }
   });
@@ -1295,7 +1298,19 @@ describe("AWS Events tool-call examples", () => {
   });
 
   it("names only BulkFailureCode values as failure codes", () => {
-    expect(extractSection(watchMd, "## One check")).not.toMatch(/`insufficientAccess` or `walkUp`/);
+    // `walkUp` is a seat-availability band, never a failure code: derive the real codes from the API document, and
+    // fail any sentence that puts `walkUp` beside a code or in failure wording, however it is phrased.
+    const spec = JSON.parse(readFileSync(join(here, "..", "..", "docs", "api", "openapi.json"), "utf8")) as { components: { schemas: { BulkFailureCode: { enum: string[] } } } };
+    const codes = spec.components.schemas.BulkFailureCode.enum;
+    expect(codes).toContain("insufficientAccess");
+    expect(codes).not.toContain("walkUp");
+    const failureWording = /\b(?:fail(?:s|ed|ure|ures)?|codes?|refus\w*|reject\w*|BulkFailure\w*)\b/i;
+    const walkUpSentences = allSkillText.split(/(?<=[.!?])\s+|\n/).filter(sentence => sentence.includes("walkUp"));
+    expect(walkUpSentences.length).toBeGreaterThan(0);
+    for (const sentence of walkUpSentences) {
+      expect(sentence, sentence).not.toMatch(failureWording);
+      for (const code of codes) expect(sentence, `${code} beside walkUp`).not.toContain(code);
+    }
     expect(skillMd).toMatch(/`alreadyFavorited`/);
     expect(skillMd).toMatch(/`insufficientAccess`/);
     expect(skillMd).not.toMatch(/most\s+often a schedule conflict/);
