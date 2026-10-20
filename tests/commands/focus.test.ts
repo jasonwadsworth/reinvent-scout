@@ -56,6 +56,15 @@ describe("map_profile and match_sessions with a focus", () => {
     expect(reversed.patterns.map((topic: { id: string }) => topic.id)).toEqual(["pattern:ecs", "pattern:zz-unmatched"]);
   });
 
+  it("holds the map to the 24 KiB budget by trimming each topic's evidence, however much the profile cites", async () => {
+    const evidence = (i: number) => Array.from({ length: 10 }, (_, n) => ({ repo: "app", file: `src/very/long/path/to/service-${i}/module-${n}.ts`, line: n + 1, note: "a long note about this place ".repeat(4) }));
+    const services = Array.from({ length: 40 }, (_, i) => ({ name: i === 0 ? "AWS Lambda" : `Example Synthetic Cloud Service Number ${i} For Response Size Testing`, evidence: evidence(i) }));
+    const result = await run("map_profile", { profile: { ...PROFILE, services } });
+    expect(result.isError).toBe(false);
+    expect(Buffer.byteLength(result.text, "utf8")).toBeLessThanOrEqual(OUTPUT_BUDGET_BYTES);
+    expect(JSON.parse(result.text).services[0].evidence.length).toBeLessThan(10);
+  });
+
   it("reports a bad profile and a missing catalog as command errors", async () => {
     const bad = await run("map_profile", { profile: { schemaVersion: 1 } });
     expect(bad.isError).toBe(true);

@@ -28,7 +28,8 @@ describe("validateSessionIds", () => {
   });
 
   it("counts code points: 128 are accepted, 129 are not", () => {
-    expect(validateSessionIds(["界".repeat(128)])).toEqual(["界".repeat(128)]);
-    expect(() => validateSessionIds(["界".repeat(129)])).toThrow(new ValidationError(MESSAGE));
+    // An astral character is two UTF-16 units but one code point.
+    expect(validateSessionIds(["😀".repeat(128)])).toEqual(["😀".repeat(128)]);
+    expect(() => validateSessionIds(["😀".repeat(129)])).toThrow(new ValidationError(MESSAGE));
   });
 });

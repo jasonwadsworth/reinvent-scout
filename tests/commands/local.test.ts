@@ -45,6 +45,20 @@ describe("plan_schedule and nearby_sessions as commands", () => {
       const bad = await call("plan_schedule", { sessionIds: ["a"], schedule: { reserved: "nope", personalTime: [] } });
       expect(bad.isError).toBe(true);
     });
+    it("does not hide a hard commitment beyond the display-page limits", async () => {
+      seed([session("future", "10:00", { sessionTime: { date: "2099-12-02", time: "10:00", length: "60" } })]);
+      const personalTime = Array.from({ length: 101 }, (_, i) => ({ personalTimeId: String(i), title: "Block", description: "", startDateTime: "2099-12-02T15:00:00", endDateTime: "2099-12-02T16:00:00" }));
+      personalTime.push({ personalTimeId: "last", title: "Last block", description: "", startDateTime: "2099-12-02T18:00:00", endDateTime: "2099-12-02T19:00:00" });
+      const result = JSON.parse((await call("plan_schedule", { sessionIds: ["future"], schedule: { reserved: [], favorites: [], personalTime } })).text);
+      expect(result.selected).toEqual([]);
+      expect(result.rejected[0].conflictsWith).toEqual(["last"]);
+    });
+    it("takes fifty ids, since it never writes, and trims padded ones", async () => {
+      seed([session("a")]);
+      const fifty = await call("plan_schedule", { sessionIds: Array.from({ length: 50 }, (_, i) => `id${i}`), schedule: empty });
+      expect(fifty.text).not.toMatch(/Expected 0–50|too_big/i);
+      expect(JSON.parse((await call("plan_schedule", { sessionIds: [" a "], schedule: empty })).text).selected[0].sessionId).toBe("a");
+    });
     it("an empty request needs nothing", async () => {
       expect(JSON.parse((await call("plan_schedule", { sessionIds: [] })).text).selected).toEqual([]);
     });
