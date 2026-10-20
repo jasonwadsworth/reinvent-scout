@@ -1,9 +1,5 @@
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { Command } from "commander";
-import { registerMatchCommands } from "../../src/cli/commands/match.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { Session } from "../../src/api/types.js";
+import type { Session } from "../../src/aws/types.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { CURRENT_SCHEMA_VERSION, writeCatalog } from "../../src/catalog/store.js";
 import { endOf } from "../../src/match/offering-time.js";
@@ -92,19 +88,5 @@ describe("offerings carry their length and end", () => {
     expect(sittings.map(offering => offering.endTime)).toEqual(["10:00", "16:30"]);
     const [entry] = matchFocus(profile(), { storeRoot: home.path }, [{ topic: "service:AWS Lambda", goal: "deepen" }]).results;
     expect(entry!.candidates[0]!.offerings.map(offering => offering.endTime)).toEqual(["10:00", "16:30"]);
-  });
-
-  it("prints the end next to the start in the match text, and the date when it passes midnight", async () => {
-    seed([session("L5", { time: "10:00", length: "60" }), session("L6", { time: "23:30", length: "60" }), session("L7", { length: undefined })]);
-    const printed: string[] = [];
-    const program = new Command().exitOverride();
-    registerMatchCommands(program, { resolveStoreRoot: () => home.path, print: (message: string) => { printed.push(message); } });
-    const file = join(home.path, "profile.json");
-    writeFileSync(file, JSON.stringify({ schemaVersion: 1, repos: [{ root: "repo", languages: [] }], services: [{ name: "AWS Lambda", evidence: [{ repo: "repo", file: "a.ts", line: 1 }] }], patterns: [] }));
-    await program.parseAsync(["node", "reinvent-scout", "match", "--profile", file]);
-    const text = printed.join("\n");
-    expect(text).toContain("2026-12-02 -- 10:00-11:00");
-    expect(text).toContain("2026-12-02 -- 23:30-00:30 (ends 2026-12-03)");
-    expect(text).toMatch(/2026-12-02 -- 10:00$/m);
   });
 });

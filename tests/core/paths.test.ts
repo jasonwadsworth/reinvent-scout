@@ -2,7 +2,7 @@ import { chmodSync, existsSync, mkdirSync, rmSync, statSync, writeFileSync } fro
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ensureStoreRoot, resolveStoreRoot } from "../../src/core/paths.js";
+import { ensureDirWithMode, resolveStoreRoot, STORE_DIR_MODE } from "../../src/core/paths.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
 
 describe("resolveStoreRoot", () => {
@@ -23,7 +23,7 @@ describe("resolveStoreRoot", () => {
   });
 });
 
-describe("ensureStoreRoot", () => {
+describe("ensureDirWithMode", () => {
   let home: TempHome;
 
   beforeEach(() => {
@@ -36,15 +36,13 @@ describe("ensureStoreRoot", () => {
 
   it("creates the store directory with mode 0700", () => {
     // createTempHome's own directory already exists (mkdtempSync creates it), so point the
-    // store root at a not-yet-existing child of it -- otherwise this test would pass even if
-    // ensureStoreRoot never created anything at all.
-    const env = { REINVENT_SCOUT_HOME: join(home.path, ".reinvent-scout") };
-    const root = resolveStoreRoot({ env });
+    // directory at a not-yet-existing child of it -- otherwise this test would pass even if
+    // ensureDirWithMode never created anything at all.
+    const root = join(home.path, ".reinvent-scout");
     expect(existsSync(root)).toBe(false);
 
-    const created = ensureStoreRoot({ env });
+    ensureDirWithMode(root, STORE_DIR_MODE);
 
-    expect(created).toBe(root);
     expect(existsSync(root)).toBe(true);
     expect(statSync(root).mode & 0o777).toBe(0o700);
   });
@@ -52,9 +50,8 @@ describe("ensureStoreRoot", () => {
   it("refuses a regular file sitting where the store directory should be, naming the path", () => {
     const rootPath = join(home.path, ".reinvent-scout");
     writeFileSync(rootPath, "not a directory", "utf8");
-    const env = { REINVENT_SCOUT_HOME: rootPath };
 
-    expect(() => ensureStoreRoot({ env })).toThrow(rootPath);
+    expect(() => ensureDirWithMode(rootPath, STORE_DIR_MODE)).toThrow(rootPath);
     // The file must be left exactly as it was: never replaced, never removed.
     expect(statSync(rootPath).isFile()).toBe(true);
   });
@@ -69,10 +66,9 @@ describe("ensureStoreRoot", () => {
     // leaves an existing directory untouched).
     chmodSync(preexisting, 0o755);
     try {
-      const root = ensureStoreRoot({ env: { REINVENT_SCOUT_HOME: preexisting } });
+      ensureDirWithMode(preexisting, STORE_DIR_MODE);
 
-      expect(root).toBe(preexisting);
-      expect(statSync(root).mode & 0o777).toBe(0o755);
+      expect(statSync(preexisting).mode & 0o777).toBe(0o755);
     } finally {
       rmSync(preexisting, { recursive: true, force: true });
     }
@@ -82,9 +78,8 @@ describe("ensureStoreRoot", () => {
     const nestedRoot = join(home.path, "does-not-exist-yet", "also-missing", ".reinvent-scout");
     expect(existsSync(nestedRoot)).toBe(false);
 
-    const created = ensureStoreRoot({ env: { REINVENT_SCOUT_HOME: nestedRoot } });
+    ensureDirWithMode(nestedRoot, STORE_DIR_MODE);
 
-    expect(created).toBe(nestedRoot);
     expect(statSync(nestedRoot).mode & 0o777).toBe(0o700);
     expect(statSync(join(home.path, "does-not-exist-yet")).mode & 0o777).toBe(0o700);
     expect(statSync(join(home.path, "does-not-exist-yet", "also-missing")).mode & 0o777).toBe(

@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { Session } from "../../src/api/types.js";
+import type { Session } from "../../src/aws/types.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { CURRENT_SCHEMA_VERSION, writeCatalog } from "../../src/catalog/store.js";
 import { matchFocus } from "../../src/match/focus.js";
 import { mapProfile } from "../../src/match/map.js";
 import { matchSessionsDetailed } from "../../src/match/match.js";
-import { describePreferences, formatNote, resolvePreferences, type SessionPreferences } from "../../src/match/preferences.js";
+import { formatNote, resolvePreferences, type SessionPreferences } from "../../src/match/preferences.js";
 import type { ResolvedProfile } from "../../src/profile/profile.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
 
@@ -191,11 +191,6 @@ describe("facet preferences", () => {
     it("says both directions when the fields disagree", () => {
       const prefs: SessionPreferences = { rules: [{ field: "format", value: "Chalk talk", action: "prefer" }, { field: "venue", value: VEN, action: "avoid", levels: { min: 300, max: 500 } }] };
       expect(formatNote(prefs, record(VEN, "Chalk talk"))).toBe("a chalk talk, which you prefer; ranked lower: at Venetian, which you asked to avoid at 300–500");
-    });
-
-    it("says the filters in the readable line", () => {
-      expect(describePreferences({ rules: [{ field: "venue", value: MGM, action: "only" }, { field: "venue", value: VEN, action: "only" }, { field: "topic", value: "Serverless", action: "exclude" }, { field: "format", value: "Chalk talk", action: "prefer" }] }))
-        .toBe("Only venue MGM Grand, venue Venetian. Preferring chalk talks. Excluding topic Serverless.");
     });
   });
 

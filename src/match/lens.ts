@@ -1,4 +1,4 @@
-/** Shared CLI/MCP lens vocabulary; new evidence lenses have no level or format bias. */
+/** The lens vocabulary of `match_sessions`; new evidence lenses have no level or format bias. */
 export const LENSES = ["all", "explain", "fix", "next-level"] as const;
 export type Lens = (typeof LENSES)[number];
 

@@ -194,8 +194,7 @@ export type SessionLookupResult =
       relatedAbbreviations: string[];
       /** The same sittings as `relatedAbbreviations`, as full records rather than just their
        * abbreviations -- sorted by start date/time, never including `record` itself. Exists for a
-       * caller (the CLI's own human-readable `catalog show`) that needs each other sitting's own
-       * day, time, venue and room, not just its name. */
+       * caller that needs each other sitting's own day, time, venue and room, not just its name. */
       relatedRecords: IndexRecord[];
     }
   | { status: "not-found" }
@@ -208,7 +207,7 @@ export type SessionLookupResult =
  * marker for a sponsored session, and the real catalog has at least one base code where that
  * collision is not hypothetical -- `AIM214` (a SageMaker session) and `AIM214-S` (an unrelated
  * sponsored talk) share a base string but are two different sessions. Exported so `match.ts`
- * groups repeat sittings by the exact same rule this module resolves `catalog show <base code>`
+ * groups repeat sittings by the exact same rule this module resolves a base code
  * with, rather than each maintaining its own copy that could drift apart.
  */
 export const REPEAT_SUFFIX_PATTERN = /-R\d*$/;
@@ -225,10 +224,9 @@ export function baseSessionCode(record: IndexRecord): string {
 }
 
 /** Ascending by start date then start time; a record with no `startDate` at all (unscheduled)
- * sorts last, since there's nothing yet to place it relative to a scheduled one. Exported so the
- * CLI's own `catalog show` can merge a resolved record back in with its `relatedRecords` into one
- * time-ordered list of every sitting, using the exact same order this module already sorts
- * siblings by. */
+ * sorts last, since there's nothing yet to place it relative to a scheduled one. Exported so a
+ * caller can merge a resolved record back in with its `relatedRecords` into one time-ordered list
+ * of every sitting, using the exact same order this module already sorts siblings by. */
 export function compareByStartDateTime(a: IndexRecord, b: IndexRecord): number {
   if (a.startDate !== b.startDate) {
     if (a.startDate === null) {
@@ -243,15 +241,16 @@ export function compareByStartDateTime(a: IndexRecord, b: IndexRecord): number {
 }
 
 /**
- * Resolves `catalog show`'s argument against the local index: first as an exact `sessionId`, then
- * -- case-insensitively -- as an `abbreviation`, then -- also case-insensitively -- as a *base*
- * code with any repeat suffix stripped (see `baseSessionCode`). `catalog search` prints only the
- * abbreviation (real session ids are opaque, e.g. `1780441461150001GGoc`), so the abbreviation is
- * the only thing a user actually has to paste back in; resolving only by id would make the
- * documented search-then-show flow unusable for every session in the catalog. The base-code
- * fallback matters because `match`'s own grouped output prints a candidate's `code`, not any one
- * sitting's abbreviation (see `match.ts`), and that code often isn't a real abbreviation on its
- * own -- `catalog show` needs to resolve exactly what `match` just printed.
+ * Resolves a session token against an index already in hand (so a caller resolving many tokens
+ * reads the index once): first as an exact `sessionId`, then -- case-insensitively -- as an
+ * `abbreviation`, then -- also case-insensitively -- as a *base* code with any repeat suffix
+ * stripped (see `baseSessionCode`). Search results show only the abbreviation (real session ids
+ * are opaque, e.g. `1780441461150001GGoc`), so the abbreviation is the only thing a user actually
+ * has to paste back in; resolving only by id would make the search-then-look-up flow unusable for
+ * every session in the catalog. The base-code fallback matters because a match's grouped output
+ * prints a candidate's `code`, not any one sitting's abbreviation (see `match.ts`), and that code
+ * often isn't a real abbreviation on its own -- a lookup needs to resolve exactly what the match
+ * just printed.
  *
  * When several sittings share a base code, the *earliest* by start date and time is the `record`
  * returned, and every other sitting's abbreviation is listed in `relatedAbbreviations` -- this is
@@ -263,11 +262,6 @@ export function compareByStartDateTime(a: IndexRecord, b: IndexRecord): number {
  * token that matches more than one record *by abbreviation* is reported `"ambiguous"` with every
  * candidate rather than silently resolving to the first match.
  */
-export function resolveSessionRecord(deps: CatalogStoreDeps, token: string): SessionLookupResult {
-  return resolveSessionToken(requireCurrentIndex(deps), token);
-}
-
-/** The same resolution over an index already in hand, so a caller resolving many tokens reads the index once. */
 export function resolveSessionToken(index: readonly IndexRecord[], token: string): SessionLookupResult {
 
   const bySessionId = index.find((record) => record.sessionId === token);

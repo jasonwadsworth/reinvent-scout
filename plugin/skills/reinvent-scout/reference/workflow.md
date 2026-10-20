@@ -187,15 +187,14 @@ several on one field are a union, on different fields an intersection, and a ses
 tier after the demotion tier and before every other ranking key: within one field the first matching prefer or avoid rule decides, across fields the effects add up (+1 each, -1 each) and the highest sum comes
 first, then neutral, then the lowest, with the lens's own order within each tier, so a preferred session outranks a neutral one even if it matches less strongly; the per-concept cap applies within each tier, so a preferred session the cap holds back still ranks ahead of every neutral one, and the focus dedupe runs after the tier. `why.summary` names every preference that moved the session, for example "(a chalk talk at MGM Grand, which you prefer)" and "(ranked lower: a breakout session, which you asked to avoid at 300–500)".
 Rules apply to every lens and focus goal, `explain` and `understand` included. The map counts under `only`, `exclude` and `levels`, not under `prefer` and `avoid`, which only reorder.
-`--only <field>:<value>[@band]`, and `--prefer`, `--avoid` and `--exclude` taking `[<field>:]<value>[@band]` (the field is a format when left out), are the CLI form: repeatable, kept in the order typed.
 `preferences.levels` restricts every lens and every focus choice to the sessions in that inclusive band range (100 to 500; a session with no level is left out;
-the same rule as `catalog search --level`). It is applied after admission and before the per-concept cap, the focus dedupe and `limit`, so a list is filled
+the same rule as `search_sessions`' level range). It is applied after admission and before the per-concept cap, the focus dedupe and `limit`, so a list is filled
 from sessions in range; filtering removes sessions and the remaining ones are re-ranked by the same rules (the All lens and `explain` keep their relative order apart from the cap; `fix` and `next-level` re-interleave their rules over what remains), and a session's own score does not change. The response echoes `preferences`; when the range leaves nothing of a
 result that has sessions without it, `reason` says "4 sessions match, none at 400–500" (for a focus, in that choice's `reason`). The `explain` lens and `understand` are introductory
 (100 to 200): they keep the sessions in both, and above 200 `explain` is an `isError` ("explain lists introductory (100–200) sessions, which is outside 400–500; use deepen or all")
-and `understand` shows 0 with that reason. A range with `min` above `max`, or a value that is not a band, is an `isError`. `--level 400-500` is the CLI form, on `match` and `profile map`.
+and `understand` shows 0 with that reason. A range with `min` above `max`, or a value that is not a band, is an `isError`.
 With a `focus` (one to six choices, never together with `lens` or `limit`; `perTopic` defaults to 3 and is at most 3 here, the most six choices
-can list within the response budget on the profiles measured; the CLI's `--per-topic` takes up to 10) the response is instead
+can list within the response budget on the profiles measured) the response is instead
 `{ "results": [{ "topic", "goal", "total", "candidates", "reason"? }], "truncated", "omitted", "rankingReasonsOmitted"? }`: each choice runs the lens its
 goal stands for (explain, all, or fix or next-level) restricted to that topic, with that lens's own admission, demotions and ranking. Every
 candidate keeps its full `why`. `total` is how many sessions the choice alone would list, before the cap. A session listed under
@@ -278,10 +277,9 @@ left out and is absent when none were. `sessionSays` is the abstract sentence th
 ("learn", "build", "walk through", "dive into", "see how", "you'll", "demo", "hands-on", "deep dive", "patterns for", "best practices") is preferred over a marketing opener, and the first sentence that names it is the fallback, trimmed to about 160 characters, and is absent (not empty) when nothing could be quoted. Lead with
 `why.summary` and `sessionSays` when presenting, and cite `yourCode`.
 
-When the response would not fit the budget, MCP drops every candidate's ranking reasons first and
+When the response would not fit the budget, the script drops every candidate's ranking reasons first and
 sets `rankingReasonsOmitted` to true; `why` and the lens reasons stay whole. Only then are whole
-candidates left out (`truncated`). The CLI's `--verbose` flag shows every reason, lens and ranking, in the
-human table (they are always in `--json`); it has no effect on `--json`.
+candidates left out (`truncated`).
 
 Each `reasons` entry is `{ "kind": ..., "detail": string, "weight": number, "evidence": string }`.
 `kind` is one of `service`, `topic`, `areaOfInterest`, `text`, `level`, `format` (the ranking reasons of
@@ -289,7 +287,7 @@ the Fix and Next-level lenses), `pillarGap` or `migrationPath` (the Fix and Next
 they also carry `profileEvidence`), `explainsConcept` (Explain lens only: the concept the session
 explains and the profile files that use it, also carried as `profileEvidence`) or `matchesConcept`
 (All lens only: the concept of yours, or stated interest, the session is about, the phrase that says so and the files that use it,
-also carried as `profileEvidence`; `why` already says it, so MCP drops it first when the response is tight). `weight` is
+also carried as `profileEvidence`; `why` already says it, so the script drops it first when the response is tight). `weight` is
 that reason's own contribution to `score` (every reason's `weight` sums to `score` exactly).
 `evidence` is the specific catalog value that matched -- a service name, a topic, or the matched
 query terms -- not a file path; when presenting a service reason to the user, the file citation
@@ -536,7 +534,7 @@ Fix reasons say “not evident in the cited scope” rather than asserting a glo
 evaluation, and control requirements. For serverless → containers discuss runtime control versus
 operational ownership; for ECS → EKS discuss portability/ecosystem versus platform complexity.
 These are options, not prescriptions. Open issues are intent to connect to evidence, not proof of
-a gap or permission to migrate. Large cited reasons retain the same whole-candidate MCP budget:
+a gap or permission to migrate. Large cited reasons retain the same whole-candidate output budget:
 read `truncated` and `omitted`; citations are not silently clipped to make a candidate fit.
 
 ## Reservation workflow

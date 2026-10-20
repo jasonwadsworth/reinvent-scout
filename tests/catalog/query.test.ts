@@ -2,11 +2,11 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { Session } from "../../src/api/types.js";
+import type { Session } from "../../src/aws/types.js";
 import { CatalogMissingError, CatalogUnusableError } from "../../src/core/errors.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { CURRENT_SCHEMA_VERSION, writeCatalog, type CatalogMeta } from "../../src/catalog/store.js";
-import { catalogServiceNames, queryCatalog, resolveSessionRecord, resolveSessionToken } from "../../src/catalog/query.js";
+import { catalogServiceNames, queryCatalog, requireCurrentIndex, resolveSessionToken } from "../../src/catalog/query.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -285,7 +285,7 @@ describe("queryCatalog", () => {
   });
 });
 
-describe("resolveSessionRecord", () => {
+describe("resolveSessionToken against a stored catalog", () => {
   let home: TempHome;
 
   beforeEach(() => {
@@ -302,7 +302,7 @@ describe("resolveSessionRecord", () => {
       { storeRoot: home.path },
     );
 
-    const result = resolveSessionRecord({ storeRoot: home.path }, "1780441461150001GGoc");
+    const result = resolveSessionToken(requireCurrentIndex({ storeRoot: home.path }), "1780441461150001GGoc");
 
     expect(result).toEqual({
       status: "found",
@@ -318,7 +318,7 @@ describe("resolveSessionRecord", () => {
       { storeRoot: home.path },
     );
 
-    const result = resolveSessionRecord({ storeRoot: home.path }, "ant301");
+    const result = resolveSessionToken(requireCurrentIndex({ storeRoot: home.path }), "ant301");
 
     expect(result.status).toBe("found");
     expect(result.status === "found" && result.record.sessionId).toBe("1780441461150001GGoc");
@@ -334,14 +334,14 @@ describe("resolveSessionRecord", () => {
       { storeRoot: home.path },
     );
 
-    const result = resolveSessionRecord({ storeRoot: home.path }, "API303");
+    const result = resolveSessionToken(requireCurrentIndex({ storeRoot: home.path }), "API303");
 
     expect(result.status).toBe("found");
     // API303-R sits 2026-11-30, API303-R1 sits 2026-12-02 -- the earlier one is the "found" record.
     expect(result.status === "found" && result.record.abbreviation).toBe("API303-R");
     expect(result.status === "found" && result.relatedAbbreviations).toEqual(["API303-R1"]);
     // relatedRecords is the same sibling, as a full record rather than just its abbreviation --
-    // `catalog show`'s human output needs each sitting's own day/time/venue/room, not just its name.
+    // a caller needs each sitting's own day/time/venue/room, not just its name.
     expect(result.status === "found" && result.relatedRecords.map((r) => r.abbreviation)).toEqual([
       "API303-R1",
     ]);
@@ -360,12 +360,12 @@ describe("resolveSessionRecord", () => {
       { storeRoot: home.path },
     );
 
-    const first = resolveSessionRecord({ storeRoot: home.path }, "API303-R");
+    const first = resolveSessionToken(requireCurrentIndex({ storeRoot: home.path }), "API303-R");
     expect(first.status).toBe("found");
     expect(first.status === "found" && first.record.abbreviation).toBe("API303-R");
     expect(first.status === "found" && first.relatedAbbreviations).toEqual(["API303-R1"]);
 
-    const second = resolveSessionRecord({ storeRoot: home.path }, "API303-R1");
+    const second = resolveSessionToken(requireCurrentIndex({ storeRoot: home.path }), "API303-R1");
     expect(second.status).toBe("found");
     expect(second.status === "found" && second.record.abbreviation).toBe("API303-R1");
     expect(second.status === "found" && second.relatedAbbreviations).toEqual(["API303-R"]);
@@ -377,7 +377,7 @@ describe("resolveSessionRecord", () => {
       { storeRoot: home.path },
     );
 
-    const result = resolveSessionRecord({ storeRoot: home.path }, "api303");
+    const result = resolveSessionToken(requireCurrentIndex({ storeRoot: home.path }), "api303");
 
     expect(result.status).toBe("found");
     expect(result.status === "found" && result.record.abbreviation).toBe("API303-R");
@@ -406,7 +406,7 @@ describe("resolveSessionRecord", () => {
       { storeRoot: home.path },
     );
 
-    const result = resolveSessionRecord({ storeRoot: home.path }, "AIM214");
+    const result = resolveSessionToken(requireCurrentIndex({ storeRoot: home.path }), "AIM214");
 
     expect(result.status).toBe("found");
     expect(result.status === "found" && result.record.abbreviation).toBe("AIM214");
@@ -432,7 +432,7 @@ describe("resolveSessionRecord", () => {
       { storeRoot: home.path },
     );
 
-    const result = resolveSessionRecord({ storeRoot: home.path }, "AIM214");
+    const result = resolveSessionToken(requireCurrentIndex({ storeRoot: home.path }), "AIM214");
 
     expect(result).toEqual({ status: "not-found" });
   });
@@ -443,7 +443,7 @@ describe("resolveSessionRecord", () => {
       { storeRoot: home.path },
     );
 
-    expect(resolveSessionRecord({ storeRoot: home.path }, "NOPE999")).toEqual({ status: "not-found" });
+    expect(resolveSessionToken(requireCurrentIndex({ storeRoot: home.path }), "NOPE999")).toEqual({ status: "not-found" });
   });
 
   it("reports every candidate as ambiguous when an abbreviation matches more than one session", () => {
@@ -458,7 +458,7 @@ describe("resolveSessionRecord", () => {
       { storeRoot: home.path },
     );
 
-    const result = resolveSessionRecord({ storeRoot: home.path }, "DUP100");
+    const result = resolveSessionToken(requireCurrentIndex({ storeRoot: home.path }), "DUP100");
 
     expect(result.status).toBe("ambiguous");
     expect(result.status === "ambiguous" && result.candidates.map((c) => c.sessionId).sort()).toEqual([
@@ -468,7 +468,7 @@ describe("resolveSessionRecord", () => {
   });
 
   it("throws CatalogMissingError when nothing has been synced", () => {
-    expect(() => resolveSessionRecord({ storeRoot: home.path }, "anything")).toThrow(
+    expect(() => resolveSessionToken(requireCurrentIndex({ storeRoot: home.path }), "anything")).toThrow(
       CatalogMissingError,
     );
   });
@@ -506,7 +506,7 @@ describe("catalogServiceNames", () => {
 
 describe("resolveSessionToken (pure, over an index already in hand)", () => {
   const index = fixture.map(buildIndexRecord);
-  it("resolves an id, an abbreviation (any case) and a base code like resolveSessionRecord", () => {
+  it("resolves an id, an abbreviation (any case) and a base code", () => {
     expect(resolveSessionToken(index, "1780441461150001GGoc")).toMatchObject({ status: "found", record: { sessionId: "1780441461150001GGoc" } });
     expect(resolveSessionToken(index, "ant301")).toMatchObject({ status: "found", record: { abbreviation: "ANT301" } });
     expect(resolveSessionToken(index, "API303")).toMatchObject({ status: "found", relatedAbbreviations: expect.any(Array) });
@@ -515,12 +515,5 @@ describe("resolveSessionToken (pure, over an index already in hand)", () => {
     expect(resolveSessionToken(index, "NOPE999")).toEqual({ status: "not-found" });
     const duplicated = [...index, { ...index[0]!, sessionId: "dup" }];
     expect(resolveSessionToken(duplicated, index[0]!.abbreviation!)).toMatchObject({ status: "ambiguous" });
-  });
-  it("is the logic resolveSessionRecord uses", () => {
-    const home = createTempHome();
-    try {
-      writeCatalog({ raw: fixture, index, meta: sampleMeta() }, { storeRoot: home.path });
-      expect(resolveSessionRecord({ storeRoot: home.path }, "API303")).toEqual(resolveSessionToken(index, "API303"));
-    } finally { home.cleanup(); }
   });
 });

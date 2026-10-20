@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { Session } from "../../src/api/types.js";
+import type { Session } from "../../src/aws/types.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { CURRENT_SCHEMA_VERSION, writeCatalog } from "../../src/catalog/store.js";
 import { ValidationError } from "../../src/core/errors.js";
-import { describePreferences, formatNote, resolvePreferences, type SessionPreferences } from "../../src/match/preferences.js";
+import { formatNote, resolvePreferences, type SessionPreferences } from "../../src/match/preferences.js";
 import { matchFocus } from "../../src/match/focus.js";
 import { mapProfile } from "../../src/match/map.js";
 import { matchSessionsDetailed } from "../../src/match/match.js";
@@ -105,11 +105,6 @@ describe("session type preferences", () => {
       expect(resolvePreferences({ rules: rules }, index())).toEqual({ rules: [{ field: "format", value: CHALK, action: "prefer" }, { field: "format", value: BREAKOUT, action: "avoid", levels: { min: 300, max: 500 } }] });
       expect(resolvePreferences({ rules: [] }, index())).toBeUndefined();
       expect(resolvePreferences({}, index())).toBeUndefined();
-    });
-
-    it("says what is applied, in a line", () => {
-      expect(describePreferences({ levels: { min: 400, max: 500 }, rules: [{ field: "format", value: CHALK, action: "prefer" }, { field: "format", value: BREAKOUT, action: "avoid", levels: { min: 300, max: 500 } }, { field: "format", value: WORKSHOP, action: "exclude" }] }))
-        .toBe("Only sessions at level 400–500. Preferring chalk talks. Avoiding breakout sessions at 300–500. Excluding workshops.");
     });
   });
 

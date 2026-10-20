@@ -23197,20 +23197,15 @@ function buildValidateReport(resolved, fits2 = () => true) {
   );
 }
 
-// src/schedule/reservations.ts
+// src/schedule/session-ids.ts
 var MAX_RESERVATION_IDS = 50;
 var MAX_SESSION_ID_LENGTH = 128;
-var RESPONSE_BUDGET_BYTES = 30 * 1024;
-function validateSessionIds(input2, allowEmpty = false, writeLedger = true) {
+function validateSessionIds(input2) {
   const trimmed = input2.map((id3) => typeof id3 === "string" ? id3.trim() : id3);
-  if (!allowEmpty && trimmed.length === 0 || trimmed.length > MAX_RESERVATION_IDS || trimmed.some((id3) => typeof id3 !== "string" || id3.length === 0 || Array.from(id3).length > MAX_SESSION_ID_LENGTH)) {
-    throw new ValidationError(`Expected ${allowEmpty ? "0" : "1"}\u2013${MAX_RESERVATION_IDS} session IDs, each 1\u2013${MAX_SESSION_ID_LENGTH} characters.`);
+  if (trimmed.length > MAX_RESERVATION_IDS || trimmed.some((id3) => typeof id3 !== "string" || id3.length === 0 || Array.from(id3).length > MAX_SESSION_ID_LENGTH)) {
+    throw new ValidationError(`Expected 0\u2013${MAX_RESERVATION_IDS} session IDs, each 1\u2013${MAX_SESSION_ID_LENGTH} characters.`);
   }
-  const ids2 = [...new Set(trimmed)];
-  if (writeLedger && Buffer.byteLength(JSON.stringify(JSON.stringify(ids2)), "utf8") * 2 + 8192 > RESPONSE_BUDGET_BYTES) {
-    throw new ValidationError("These IDs cannot fit the mandatory outcome ledger; submit a smaller batch before any write.");
-  }
-  return ids2;
+  return [...new Set(trimmed)];
 }
 
 // src/schedule/timezone.ts
@@ -23274,7 +23269,7 @@ function utcIsoToZonedWallClock(iso, timeZone) {
   return { date: `${value.year}-${value.month}-${value.day}`, time: `${value.hour}:${value.minute}` };
 }
 
-// src/schedule/merge.ts
+// src/schedule/session-times.ts
 function deriveSessionTimes(session, eventTimezone) {
   if (eventTimezone === null || !session.resolved || session.startDate === null || session.startTime === null) {
     return { startsAt: null, endsAt: null };
@@ -23289,16 +23284,16 @@ function timezoneWarnings(availability) {
   }
   if (availability.status === "unrecognized") {
     return [
-      `The stored event timezone (${JSON.stringify(availability.value)}) is not a recognized IANA timezone, so session start times could not be converted to a common startsAt -- session and personal-time ordering across kinds is unreliable. Re-syncing (\`catalog_sync\`, or \`reinvent-scout catalog sync\`) may resolve this, but is not guaranteed to: if the API reports the same value again, syncing again will not help.`
+      `The stored event timezone (${JSON.stringify(availability.value)}) is not a recognized IANA timezone, so \`startsAt\` and \`endsAt\` could not be computed. Re-importing with the catalog-sync agent may resolve this, but is not guaranteed to: if \`GetEvent\` reports the same value again, importing again will not help.`
     ];
   }
   if (availability.reason === "syncedBeforeTimezoneSupport") {
     return [
-      "This catalog was synced before timezone support was added, so session start times could not be converted to a common startsAt -- session and personal-time ordering across kinds is unreliable. Run `catalog_sync` (or `reinvent-scout catalog sync`) to fetch the event's timezone; it will very likely resolve this."
+      "This catalog was imported before timezone support was added, so `startsAt` and `endsAt` could not be computed. Re-import it with the catalog-sync agent; that will very likely resolve this."
     ];
   }
   return [
-    "The event's timezone is unknown (GetEvent's response omitted it), so session start times could not be converted to a common startsAt -- session and personal-time ordering across kinds is unreliable. Sessions still sort correctly relative to each other by their local date and time."
+    "The event's timezone is unknown (GetEvent's response omitted it), so `startsAt` and `endsAt` could not be computed. Local dates and times are still correct."
   ];
 }
 
@@ -23439,7 +23434,7 @@ function overlaps2(a, b) {
   return a.startsAt < b.endsAt && a.endsAt > b.startsAt;
 }
 function buildSchedulePlan(input2, context) {
-  const ids2 = validateSessionIds(input2, true, false);
+  const ids2 = validateSessionIds(input2);
   const result2 = { selected: [], alreadyReserved: [], alreadyReservedAlternative: [], rejected: [], alternatives: [], blockedBy: [], conflictFree: true, limitations: "Time non-overlap only; no seat or travel guarantee. Recheck the schedule before reserving." };
   if (ids2.length === 0) return result2;
   const now = (context.now ?? Date.now)();
@@ -23511,7 +23506,7 @@ function buildSchedulePlan(input2, context) {
   return result2;
 }
 function preparePlan(ids2, deps) {
-  const trimmed = validateSessionIds(ids2, true, false);
+  const trimmed = validateSessionIds(ids2);
   if (!trimmed.length) return null;
   const index = requireCurrentIndex(deps);
   const eventId = deps.eventId ?? DEFAULT_EVENT_ID;
@@ -23779,8 +23774,7 @@ var MatchSessionsInputSchema = external_exports.strictObject({
   profile: external_exports.unknown(),
   preferences: PreferencesSchema.optional(),
   lens: external_exports.enum(LENSES).optional(),
-  /** Silently capped at `MAX_MATCH_SESSIONS_LIMIT`, never rejected -- unlike the CLI's own
-   * `--limit`, which refuses a too-large value outright. An agent asking for "a lot" of
+  /** Silently capped at `MAX_MATCH_SESSIONS_LIMIT`, never rejected. An agent asking for "a lot" of
    * candidates should get the largest sensible set rather than a validation error it has to
    * retry past. */
   limit: external_exports.number().int().positive().optional(),
@@ -23803,7 +23797,7 @@ var planScheduleCommand = {
   description: "Plan up to 50 priority-ordered session IDs against the schedule you pass in (the whole `schedule` object from AWS GetSchedule, called immediately before, as `schedule` or a saved `scheduleFile`), with repeat alternatives. No writes; proves time non-overlap only, not seats or travel.",
   inputSchema: PlanScheduleInputSchema,
   run: ({ sessionIds, schedule, scheduleFile, event }, deps) => {
-    const ids2 = validateSessionIds(sessionIds, true, false);
+    const ids2 = validateSessionIds(sessionIds);
     const resolved = readScheduleInput({ schedule, scheduleFile }, { optional: true });
     return boundedSchedulePlan(planSchedule(ids2, {
       storeRoot: deps.storeRoot,
@@ -23816,7 +23810,6 @@ var planScheduleCommand = {
 var nearbySessionsCommand = {
   description: "Read-only nearby suggestions after confirming your current venue for this call. Two calls: the first returns `refreshIds` (up to 20 eligible sessions); read each with AWS GetSession, one at a time, then call again with the same input plus `liveSessions` (the `session` objects you read). Pass the whole AWS GetSchedule `schedule` (or a `scheduleFile`) both times. Skipping does not cancel reservations.",
   inputSchema: nearbyInputSchema,
-  errorMaxChars: 512,
   run: (input2, deps) => boundedNearbyResult(recommendNearbySessions(input2, { storeRoot: deps.storeRoot, ...deps.now ? { now: deps.now } : {} }))
 };
 var validateProfile = {
@@ -23875,13 +23868,11 @@ var mapProfileCommand = {
 var getOnsitePreferences = {
   description: "Read effective on-site preferences for one event without creating config or contacting the account. Explicit session false overrides global walk-up preference.",
   inputSchema: external_exports.strictObject({ eventId: eventIdSchema }),
-  errorMaxChars: 512,
   run: ({ eventId }, deps) => boundedOnsitePreferences(effectiveOnsitePreferences(readOnsiteConfig({ storeRoot: deps.storeRoot }), eventId ?? DEFAULT_EVENT_ID))
 };
 var setOnsitePreferences = {
   description: "Persist local on-site preferences atomically. Session walk-up null resets inheritance; false is explicit. Routes and windows replace their lists. No AWS schedule writes.",
   inputSchema: external_exports.strictObject({ eventId: eventIdSchema, patch: onsitePatchSchema }),
-  errorMaxChars: 512,
   run: ({ eventId, patch }, deps) => {
     const event = eventId ?? DEFAULT_EVENT_ID;
     return boundedOnsitePreferences(effectiveOnsitePreferences(updateOnsiteConfig(event, patch, { storeRoot: deps.storeRoot }), event));

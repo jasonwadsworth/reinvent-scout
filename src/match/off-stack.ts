@@ -23,7 +23,7 @@ const PREFIX = /^(?:Amazon|AWS)\s+/i;
  * How a title names a catalog service unmistakably: the full name in any case; the parenthesized short form only when it
  * carries its own "Amazon" or "AWS" ("Amazon EKS", never "US" of "AWS GovCloud (US)"); and the name without its prefix
  * only when it is a product word (DynamoDB, ElastiCache, S3), as written, never an ordinary word or an acronym
- * ("Transform", "Context", "CLI").
+ * ("Transform", "Context", "SDK").
  */
 function distinctiveForms(catalogName: string): RegExp[] {
   const parenthesized = /^(.*?)\s*\(([^)]+)\)\s*$/.exec(catalogName);

@@ -60,4 +60,14 @@ describe("writeFileAtomic", () => {
     expect(readFileSync(target, "utf8")).toBe("old");
     expect(readdirSync(dir)).toEqual(["data.json"]);
   });
+
+  it("removes the temp file when the write fails", () => {
+    // Renaming a file over a directory fails after the temp file was written.
+    mkdirSync(target);
+
+    expect(() => writeFileAtomic(target, () => "new", { mode: 0o600 })).toThrow();
+
+    expect(readdirSync(dir)).toEqual(["data.json"]);
+    expect(statSync(target).isDirectory()).toBe(true);
+  });
 });

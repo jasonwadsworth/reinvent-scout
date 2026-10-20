@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Schedule, Session } from "../api/types.js";
+import type { Schedule, Session } from "../aws/types.js";
 import { buildIndexRecord, type IndexRecord } from "../catalog/index-record.js";
 import { requireCurrentIndex } from "../catalog/query.js";
 import { SessionItemSchema } from "../catalog/import-page.js";

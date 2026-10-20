@@ -26,11 +26,11 @@ function withoutEnds<T extends MatchCandidate>(candidate: T): T {
   return { ...candidate, offerings: candidate.offerings.map(bare) };
 }
 
-/** The MCP-facing candidate shape, deliberately leaner than the CLI's own (which reuses the full
- * `toPublicIndexRecord` -- reasonable for a human terminal, too heavy for metered agent context
- * held to a real 30 KB response budget; see the size note above `DEFAULT_MATCH_SESSIONS_LIMIT`).
+/** The candidate shape of `match_sessions`, deliberately lean (not the full `toPublicIndexRecord`,
+ * too heavy for metered agent context held to a real 24 KiB response budget; see the size note
+ * above `DEFAULT_MATCH_SESSIONS_LIMIT`).
  * Keeps only what a caller needs to identify, explain and schedule a candidate: `code`/`sessionId`
- * to reference it (e.g. for `favorite_sessions`), `title`/`type`/`levelBand` to describe it,
+ * to reference it (e.g. for `plan_schedule`), `title`/`type`/`levelBand` to describe it,
  * `score`/`reasons` (and, for Fix and Next-level, `lensRules`) for why it matched, and `offerings` for when and where.
  *
  * `type` was dropped in an earlier revision to fit the size budget by shape-trimming alone, then
@@ -124,9 +124,8 @@ function buildResponse(
   };
 }
 
-/** The one match response shape, shared by the CLI's `match --json` and the MCP `match_sessions`
- * tool. `fits` decides whether a candidate response is within the caller's size budget; the
- * default accepts everything (the CLI has no budget). */
+/** The one match response shape of `match_sessions`. `fits` decides whether a candidate response is within the
+ * caller's size budget; the default accepts everything. */
 export function buildMatchResponse(
   result: MatchResult,
   requested: number,
@@ -213,8 +212,7 @@ export function toLeanFocusCandidate(candidate: FocusCandidate): Record<string, 
 }
 
 /**
- * The one focused-match response shape, shared by the CLI's `match --focus --json` and the MCP `match_sessions` tool with a
- * `focus`. Budgeted like `buildMatchResponse`: when it does not fit, every candidate's ranking reasons go first, then sessions
+ * The one focused-match response shape of `match_sessions` with a `focus`. Budgeted like `buildMatchResponse`: when it does not fit, every candidate's ranking reasons go first, then sessions
  * from the end of the longest list, one at a time, so every choice keeps its first sessions; nothing is ever partly serialized.
  */
 export function buildFocusResponse(

@@ -14,7 +14,7 @@ import { GOALS } from "../match/topics.js";
 import { effectiveOnsitePreferences, onsitePatchSchema, readOnsiteConfig, updateOnsiteConfig } from "../onsite/config.js";
 import { resolveProfile } from "../profile/profile.js";
 import { buildValidateReport } from "../profile/report.js";
-import { MAX_RESERVATION_IDS, MAX_SESSION_ID_LENGTH, validateSessionIds } from "../schedule/reservations.js";
+import { MAX_RESERVATION_IDS, MAX_SESSION_ID_LENGTH, validateSessionIds } from "../schedule/session-ids.js";
 import { queryCatalogChanges } from "../catalog/diff.js";
 import { importCatalog } from "../catalog/import.js";
 import { LOOKUP_MAX_ABSTRACT_IDS, LOOKUP_MAX_IDS, LOOKUP_MAX_QUERY_LENGTH, lookupSessions } from "../catalog/lookup.js";
@@ -35,14 +35,12 @@ export interface CommandDeps {
   randomId?: () => string;
 }
 
-/** One local command. `run` returns the output value and throws on any error; the adapters (the
- * script, and during the transition the legacy MCP server) turn that into their own error shape. */
+/** One local command. `run` returns the output value and throws on any error; the adapter (the
+ * script) turns that into its error shape. */
 export interface CommandDefinition<S extends z.ZodObject = z.ZodObject> {
   description: string;
   inputSchema: S;
   run: (input: z.infer<S>, deps: CommandDeps) => unknown;
-  /** The legacy MCP server cuts this command's error text to this many characters. */
-  errorMaxChars?: number;
 }
 
 const fits = (value: unknown): boolean => outputBytes(value) <= OUTPUT_BUDGET_BYTES;
@@ -55,14 +53,14 @@ const ValidateProfileInputSchema = z.strictObject({
 /** Shared by `validate_profile` and `match_sessions`: builds the service alias index the current
  * catalog supports and resolves a raw, agent-authored profile against it. Throws
  * `CatalogMissingError`/`CatalogUnusableError` (from `catalogServiceNames`) or `z.ZodError` (from
- * `resolveProfile`'s own schema) -- both handled by `toToolError` at each call site. */
+ * `resolveProfile`'s own schema) -- both turned into the script's error object by `toCommandError`. */
 function resolveProfileAgainstCatalog(rawProfile: unknown, storeRoot: string) {
   const serviceNames = catalogServiceNames({ storeRoot });
   const serviceAliasIndex = buildServiceAliasIndex(serviceNames);
   return resolveProfile(rawProfile, serviceAliasIndex);
 }
 
-/** Mirrors the CLI's own `match` default/cap (30/100) at a smaller size deliberately -- an agent
+/** The default and cap of `limit`, at a size chosen deliberately -- an agent
  * asking for candidates should get a genuinely useful set, and every response (at any limit, for
  * any profile) is held to a real 24 KiB budget (`OUTPUT_BUDGET_BYTES`) by `buildMatchResponse` below, not by these numbers
  * alone.
@@ -87,7 +85,7 @@ const MAX_MATCH_SESSIONS_LIMIT = 50;
 
 /** The most sessions per choice `match_sessions` accepts with a `focus`, and what it lists when `perTopic` is not given: six choices
  * of this many fit the 24 KiB response budget (`OUTPUT_BUDGET_BYTES`) without trimming on all seven profiles measured, taking each profile's six largest
- * choices (four per choice already trims policy-tracker's). The CLI, with no budget, takes up to 10. */
+ * choices (four per choice already trims policy-tracker's). */
 const MAX_FOCUS_PER_TOPIC = 3;
 
 /** What the user asked of the sessions, shared by `match_sessions` and `map_profile`. Bands and values are checked against the catalog by `resolvePreferences`, which
@@ -115,8 +113,7 @@ const MatchSessionsInputSchema = z.strictObject({
   profile: z.unknown(),
   preferences: PreferencesSchema.optional(),
   lens: z.enum(LENSES).optional(),
-  /** Silently capped at `MAX_MATCH_SESSIONS_LIMIT`, never rejected -- unlike the CLI's own
-   * `--limit`, which refuses a too-large value outright. An agent asking for "a lot" of
+  /** Silently capped at `MAX_MATCH_SESSIONS_LIMIT`, never rejected. An agent asking for "a lot" of
    * candidates should get the largest sensible set rather than a validation error it has to
    * retry past. */
   limit: z.number().int().positive().optional(),
@@ -143,7 +140,7 @@ const planScheduleCommand = {
   description: "Plan up to 50 priority-ordered session IDs against the schedule you pass in (the whole `schedule` object from AWS GetSchedule, called immediately before, as `schedule` or a saved `scheduleFile`), with repeat alternatives. No writes; proves time non-overlap only, not seats or travel.",
   inputSchema: PlanScheduleInputSchema,
   run: ({ sessionIds, schedule, scheduleFile, event }, deps) => {
-    const ids = validateSessionIds(sessionIds, true, false);
+    const ids = validateSessionIds(sessionIds);
     const resolved = readScheduleInput({ schedule, scheduleFile }, { optional: true });
     return boundedSchedulePlan(planSchedule(ids, {
       storeRoot: deps.storeRoot,
@@ -157,7 +154,6 @@ const planScheduleCommand = {
 const nearbySessionsCommand = {
   description: "Read-only nearby suggestions after confirming your current venue for this call. Two calls: the first returns `refreshIds` (up to 20 eligible sessions); read each with AWS GetSession, one at a time, then call again with the same input plus `liveSessions` (the `session` objects you read). Pass the whole AWS GetSchedule `schedule` (or a `scheduleFile`) both times. Skipping does not cancel reservations.",
   inputSchema: nearbyInputSchema,
-  errorMaxChars: 512,
   run: (input, deps) => boundedNearbyResult(recommendNearbySessions(input as NearbyInput, { storeRoot: deps.storeRoot, ...(deps.now ? { now: deps.now } : {}) })),
 } satisfies CommandDefinition<typeof nearbyInputSchema>;
 
@@ -248,14 +244,12 @@ const mapProfileCommand = {
 const getOnsitePreferences = {
   description: "Read effective on-site preferences for one event without creating config or contacting the account. Explicit session false overrides global walk-up preference.",
   inputSchema: z.strictObject({ eventId: eventIdSchema }),
-  errorMaxChars: 512,
   run: ({ eventId }, deps) => boundedOnsitePreferences(effectiveOnsitePreferences(readOnsiteConfig({ storeRoot: deps.storeRoot }), eventId ?? DEFAULT_EVENT_ID)),
 } satisfies CommandDefinition<z.ZodObject<{ eventId: typeof eventIdSchema }, z.core.$strict>>;
 
 const setOnsitePreferences = {
   description: "Persist local on-site preferences atomically. Session walk-up null resets inheritance; false is explicit. Routes and windows replace their lists. No AWS schedule writes.",
   inputSchema: z.strictObject({ eventId: eventIdSchema, patch: onsitePatchSchema }),
-  errorMaxChars: 512,
   run: ({ eventId, patch }, deps) => {
     const event = eventId ?? DEFAULT_EVENT_ID;
     return boundedOnsitePreferences(effectiveOnsitePreferences(updateOnsiteConfig(event, patch, { storeRoot: deps.storeRoot }), event));
@@ -336,7 +330,7 @@ const statusCommand = {
   run: (_input, deps) => catalogStatus({ storeRoot: deps.storeRoot, ...(deps.now ? { now: deps.now } : {}) }),
 } satisfies CommandDefinition<typeof StatusInputSchema>;
 
-/** Every command the script and the legacy MCP server share, keyed by its snake_case name. */
+/** Every command the script runs, keyed by its snake_case name. */
 export const registry = {
   validate_profile: validateProfile,
   match_sessions: matchSessions,

@@ -1,6 +1,6 @@
 import { ValidationError } from "../core/errors.js";
 import { OUTPUT_BUDGET_BYTES, outputBytes, shortenDescription } from "../commands/output-budget.js";
-import { deriveSessionTimes, timezoneWarnings } from "../schedule/merge.js";
+import { deriveSessionTimes, timezoneWarnings } from "../schedule/session-times.js";
 import type { IndexRecord } from "./index-record.js";
 import { baseSessionCode, compareByStartDateTime, requireCurrentIndex, resolveSessionToken } from "./query.js";
 import { readRaw, readTimezoneAvailability, type CatalogStoreDeps } from "./store.js";

@@ -11,7 +11,7 @@ likely to line up with a session's own tags at all.
 ## Session types
 
 The `type` a session carries (surfaced as `type` on a `match_sessions` candidate and on
-`catalog show`):
+a `lookup_sessions` or `search_sessions` row):
 
 - Bootcamp
 - Breakout session
@@ -158,7 +158,7 @@ Format tags, mostly informational rather than something a profile matches agains
 
 The catalog's own `services` field always carries the full display name ("Amazon DynamoDB", "AWS
 Step Functions") -- see `reference/profiling.md`'s "Naming services" section for how to write a
-service name in a profile and what spellings the CLI resolves automatically. In short: prefer the
+service name in a profile and what spellings `validate_profile` resolves automatically. In short: prefer the
 display name; a short key (`s3`), an SDK package name (`@aws-sdk/client-dynamodb`), or a Terraform
 resource name (`aws_dynamodb_table`) all resolve too, and a name that doesn't resolve against the
 currently-synced catalog is reported in `unresolvedServices` rather than dropped or rejected.

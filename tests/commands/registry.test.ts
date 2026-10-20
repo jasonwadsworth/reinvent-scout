@@ -1,18 +1,17 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { Session } from "../../src/api/types.js";
+import type { Session } from "../../src/aws/types.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { CURRENT_SCHEMA_VERSION, writeCatalog } from "../../src/catalog/store.js";
-import { registry } from "../../src/commands/registry.js";
-import { createMcpServer } from "../../src/mcp/server.js";
+import { registry, type CommandName } from "../../src/commands/registry.js";
 import { callCommand } from "../helpers/call-command.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
+const bundle = join(here, "..", "..", "plugin", "skills", "reinvent-scout", "scripts", "reinvent-scout.mjs");
 const fixture: Session[] = JSON.parse(readFileSync(join(here, "..", "fixtures", "catalog-sample.json"), "utf8"));
 
 describe("command registry", () => {
@@ -31,17 +30,35 @@ describe("command registry", () => {
     }
   });
 
-  it("gives the same text through the registry as through the MCP tool for the same input", async () => {
-    const server = createMcpServer({ resolveStoreRoot: () => home.path });
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    const client = new Client({ name: "test-client", version: "0.0.1" });
-    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  it("gives callCommand the script's own output, error text included", async () => {
     const profile = { schemaVersion: 1, repos: [{ root: ".", languages: [] }], services: [{ name: "lambda", evidence: [{ repo: ".", file: "a" }] }], patterns: [] };
-    for (const [name, input] of [["validate_profile", { profile }], ["list_filters", {}], ["get_onsite_preferences", {}]] as const) {
-      const viaMcp = await client.callTool({ name, arguments: input });
-      const viaRegistry = await callCommand(name, input, { storeRoot: home.path });
-      expect(viaRegistry.text).toBe((viaMcp.content as Array<{ text: string }>)[0]!.text);
-      expect(viaRegistry.isError).toBe(viaMcp.isError === true);
+    const empty = createTempHome();
+    try {
+      const cases: Array<[CommandName, unknown, string]> = [
+        ["validate_profile", { profile }, home.path],
+        ["list_filters", {}, home.path],
+        ["get_onsite_preferences", {}, home.path],
+        ["match_sessions", { profile }, empty.path],
+      ];
+      // A rejected commit prints a machine-readable `reason` beside its error: stage an incomplete import, then try to commit it.
+      const page = await callCommand("catalog_import", { action: "page", eventId: "reinvent2026", timezone: null, page: { items: fixture.slice(0, 3), nextToken: "t", totalCount: fixture.length } }, { storeRoot: empty.path });
+      const syncId = (JSON.parse(page.text) as { syncId: string }).syncId;
+      cases.push(["catalog_import", { action: "commit", syncId }, empty.path]);
+      for (const [name, input, storeRoot] of cases) {
+        const spawned = spawnSync(process.execPath, [bundle, name, "--json", JSON.stringify(input)], { env: { ...process.env, REINVENT_SCOUT_HOME: storeRoot }, encoding: "utf8" });
+        const viaRegistry = await callCommand(name, input, { storeRoot });
+        if (spawned.status === 0) {
+          expect(viaRegistry.text, name).toBe(spawned.stdout.trim());
+        } else {
+          const printed = JSON.parse(spawned.stdout) as { error: string; reason?: string };
+          expect(viaRegistry.text, name).toBe(printed.error);
+          expect(viaRegistry.reason, name).toBe(printed.reason);
+          if (name === "catalog_import") expect(printed.reason).toBe("incomplete");
+        }
+        expect(viaRegistry.isError, name).toBe(spawned.status === 1);
+      }
+    } finally {
+      empty.cleanup();
     }
   });
 

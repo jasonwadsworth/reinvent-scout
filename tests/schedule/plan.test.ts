@@ -3,7 +3,7 @@ import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { buildSchedulePlan, planSchedule, sessionInterval } from "../../src/schedule/plan.js";
 import { createTempHome } from "../helpers/temp-home.js";
 import { CURRENT_SCHEMA_VERSION, writeCatalog } from "../../src/catalog/store.js";
-import type { Schedule } from "../../src/api/types.js";
+import type { Schedule } from "../../src/aws/types.js";
 
 const session = (sessionId: string, startTime = "10:00", abbreviation = sessionId, date = "2026-12-02", length = "60") => buildIndexRecord({ sessionId, title: sessionId, abbreviation, sessionTime: { date, time: startTime, length } });
 const empty = (): Schedule => ({ reserved: [], favorites: [], personalTime: [] });

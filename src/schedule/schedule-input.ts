@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Schedule } from "../api/types.js";
+import type { Schedule } from "../aws/types.js";
 import { ValidationError } from "../core/errors.js";
 import { readSafeJsonFile } from "../core/safe-read.js";
 import { formatZodError } from "../core/zod-errors.js";

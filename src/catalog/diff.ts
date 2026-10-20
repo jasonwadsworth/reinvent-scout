@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import type { Session } from "../api/types.js";
+import type { Session } from "../aws/types.js";
 import { writeFileAtomic } from "../core/atomic-write.js";
 import { ensureDirWithMode, STORE_DIR_MODE } from "../core/paths.js";
 import { catalogDir, readMeta, type CatalogStoreDeps } from "./store.js";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Session } from "../../src/api/types.js";
+import type { Session } from "../../src/aws/types.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { buildConcepts } from "../../src/match/concepts.js";
 import { explainReason, matchConcepts, selectExplain, type ExplainSession } from "../../src/match/explain.js";

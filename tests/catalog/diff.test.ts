@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Session } from "../../src/api/types.js";
+import type { Session } from "../../src/aws/types.js";
 import { diffCatalogs, summarizeCatalogChanges } from "../../src/catalog/diff.js";
 import { OUTPUT_BUDGET_BYTES, outputBytes } from "../../src/commands/output-budget.js";
 
