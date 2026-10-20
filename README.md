@@ -13,7 +13,68 @@ This build includes sign-in, the catalog, agent-authored profiles, matching thro
 Reservation writes and a time-conflict-free dry-run planner are also available. Fix maps cited architecture gaps to remediation
 sessions; Next-level offers named migration paths with gains and costs.
 
-## What's here right now
+## Install as a Claude Code plugin
+
+reinvent-scout is a Claude Code plugin: a skill that finds the re:Invent sessions your code points at,
+a small script that keeps the 2,000-session catalog in a local index (so it never fills the
+conversation), a sync agent, and a declaration of the official AWS Events MCP, which handles every
+call to AWS (the catalog pull, your schedule, favorites, reservations). It runs where Claude Code runs
+with a shell and a persistent home directory (Claude Code, the Code tab of Claude Desktop, or the
+Agent SDK); the AWS sign-in opens in your browser on localhost port 8484.
+
+```text
+/plugin marketplace add jasonwadsworth/reinvent-scout
+/plugin install reinvent-scout@reinvent-scout
+```
+
+Then ask for sessions for your repo, or "sync the re:Invent catalog". The first AWS call opens the AWS
+sign-in. The catalog and your profiles live in `~/.reinvent-scout` (set `REINVENT_SCOUT_HOME` to
+move it); nothing else is stored, and sign-in tokens belong to the AWS Events MCP, not to this tool.
+
+**Fewer permission prompts.** A plugin cannot ship permission rules, so add this once to
+`~/.claude/settings.json`. It lets the skill, the bundled script and the read-only AWS tools run without asking, under
+both server names (see below). The writes (`ReserveSessions`, `CancelReservation`, `AssociateFavorites`,
+`DisassociateFavorite`) are deliberately not listed: they keep their prompt, which is also your confirmation.
+Replace `<your-claude-dir>` with the absolute path of your Claude config directory, for example `/Users/you/.claude` (it is
+`~/.claude` unless you set `CLAUDE_CONFIG_DIR`), written out in full. The script rule appears twice, with and without quotes
+around the path, because a rule only matches the command text it was written with. It is anchored on purpose: a wildcard before the
+path would also approve `node --require ...` or `node -e ...` with that path in it, and a wildcard for the version could be
+stretched with `../` to a same-named script elsewhere, so the version is written out. After you update the plugin, change `0.1.0`
+to the installed version (until you do, the script asks before it runs, which is the safe failure).
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Skill(reinvent-scout:reinvent-scout)",
+      "Bash(node \"<your-claude-dir>/plugins/cache/reinvent-scout/reinvent-scout/0.1.0/skills/reinvent-scout/scripts/reinvent-scout.mjs\" *)",
+      "Bash(node <your-claude-dir>/plugins/cache/reinvent-scout/reinvent-scout/0.1.0/skills/reinvent-scout/scripts/reinvent-scout.mjs *)",
+      "mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___ListEvents",
+      "mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___GetEvent",
+      "mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___ListSessions",
+      "mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___GetSession",
+      "mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___GetSchedule",
+      "mcp__awsevents__AWSEventsPublicApi-Mcp-prod___ListEvents",
+      "mcp__awsevents__AWSEventsPublicApi-Mcp-prod___GetEvent",
+      "mcp__awsevents__AWSEventsPublicApi-Mcp-prod___ListSessions",
+      "mcp__awsevents__AWSEventsPublicApi-Mcp-prod___GetSession",
+      "mcp__awsevents__AWSEventsPublicApi-Mcp-prod___GetSchedule"
+    ]
+  }
+}
+```
+
+**If you already have an `awsevents` server.** You may keep your own `awsevents` entry. Claude Code treats a
+plugin server and a user server at the same endpoint as one: with the exact URL `https://api.awsevents.com/mcp`
+in your entry you get one connection (yours), and the tools are named `mcp__awsevents__AWSEventsPublicApi-Mcp-prod___<Name>`; otherwise they
+are `mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___<Name>`. The skill accepts either. With any other spelling of the
+URL (another path, a query string, a non-default port) there are two servers and two sign-ins, one after the
+other; use the exact URL in your own entry to avoid that. The permission rules above list both names for the same reason.
+
+The rest of this README describes the earlier command-line tool and local MCP server, which still work and are
+removed in the next release; the plugin replaces them.
+
+## What's here right now (legacy command-line tool, removed in the next release)
 
 - `auth login` / `auth logout` / `auth status` -- sign in once with AWS Builder ID (PKCE, no
   password ever touches this tool) and check your session.
@@ -382,8 +443,8 @@ CLI prints source locations. Every candidate also carries a `why` (`summary`, up
 abstract; omitted when nothing can be quoted). MCP keeps `why` and the lens reasons complete; to honor its existing
 response budget it drops every candidate's ranking reasons first (`rankingReasonsOmitted`), then whole candidates if necessary. Phrase signals use titles and available abstracts; a
 catalog synced without abstracts can miss an abstract-only signal. See the complete synthetic
-[profile and executable examples](skills/reinvent-scout/reference/workflow.md#evidence-lens-example)
-and [profiling guidance](skills/reinvent-scout/reference/profiling.md#supported-evidence-lenses).
+[profile and executable examples](plugin/skills/reinvent-scout/reference/workflow.md#evidence-lens-example)
+and [profiling guidance](plugin/skills/reinvent-scout/reference/profiling.md#supported-evidence-lenses).
 
 
 ## Read your schedule and manage favorites
@@ -485,7 +546,7 @@ windows help avoid bursts; concurrent processes still rely on API 429 handling.
 MCP exposes `plan_schedule`, `reserve_sessions`, and `cancel_reservation` with the same domain
 behavior. Write responses never drop requested IDs/outcomes to fit 30 KiB: optional descriptions
 may be marked shortened, conflict lists carry explicit omitted counts, and oversized mandatory
-ledgers are rejected before writing. See the [complete contracts](skills/reinvent-scout/reference/workflow.md#reservation-workflow).
+ledgers are rejected before writing. See the [complete contracts](plugin/skills/reinvent-scout/reference/workflow.md#reservation-workflow).
 
 
 ### Watch a full session
@@ -497,7 +558,7 @@ the exact reservations it may cancel to make room (often none). It cancels only 
 every clashing reservation is on that list, and tries to put back anything it cancelled if the
 new session does not land. A swap briefly frees your existing seat, and a restore refused as full
 means that seat is lost. Travel time between venues is not checked. The rules it follows are in the
-[watch playbook](skills/reinvent-scout/reference/watch.md).
+[watch playbook](plugin/skills/reinvent-scout/reference/watch.md).
 
 ## Run the MCP server
 

@@ -5,6 +5,10 @@ import { ensureDirWithMode, STORE_DIR_MODE } from "../core/paths.js";
 import { writeFileAtomic } from "../core/atomic-write.js";
 import type { IndexRecord } from "./index-record.js";
 
+/** The event this tool targets when nothing else is specified. The API is multi-event, so every
+ * command that takes an event id treats this as only a default, never a hard-coded assumption. */
+export const DEFAULT_EVENT_ID = "reinvent2026";
+
 const CATALOG_DIR_NAME = "catalog";
 const RAW_FILE_NAME = "raw.json";
 const INDEX_FILE_NAME = "index.json";
@@ -78,7 +82,7 @@ export interface ClockDeps {
   now?: () => number;
 }
 
-function catalogDir(storeRoot: string): string {
+export function catalogDir(storeRoot: string): string {
   return join(storeRoot, CATALOG_DIR_NAME);
 }
 

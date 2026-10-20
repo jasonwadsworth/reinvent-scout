@@ -1,62 +1,116 @@
-# Tool call sequence and contracts
+# Command contracts, the sync protocol and the AWS tools
 
-The exact argument and output shape of every MCP tool this skill uses, in the order a normal run
-calls them. Every tool response is a single JSON object; the shapes below are the parsed JSON, not
-the outer MCP envelope. A tool that fails returns `isError: true` with a plain-text message
-(see "Error handling" below) instead of throwing.
+The exact input and output of every local command this skill uses, in the order a normal run calls
+them, then how to use the AWS Events tools for the schedule. Every command is run through the one
+bundled script, with its input as a single JSON object: `--json '<one-line JSON>'` for a small one (no apostrophes), or
+`--input <file>` for a larger one such as a profile (`--input -` reads stdin; never use a heredoc for JSON, since Claude Code's Bash check rejects a brace beside a quote there):
+
+```sh
+node "${CLAUDE_SKILL_DIR}/scripts/reinvent-scout.mjs" status
+```
+
+It prints exactly one JSON document. On success the shapes below are that document (exit code 0).
+On a failure it prints `{ "error": string, "reason"?: string }` (exit code 1; 2 for a usage error such
+as an unknown command or unreadable input), with the message cut to 512 characters. Output is held to
+24 KiB, so the shapes below say how a long answer is shortened. The `{"tool": ..., "arguments": ...}`
+blocks in this file show a command name and its input; run them as above.
 
 ## 1. `status`
 
-Arguments: none.
+Input: `{}`.
 
 ```json
 {
-  "signedIn": true,
-  "accessTokenExpiresAt": "2026-12-01T12:00:00.000Z",
-  "catalog": { "status": "fresh", "syncedAt": 1234567890000, "count": 2043 }
+  "catalog": { "status": "fresh", "syncedAt": 1234567890000, "count": 2043 },
+  "lastImport": { "toSyncedAt": 1234567890000, "counts": { "added": 3, "removed": 1, "changed": 12, "unchanged": 2027 } }
 }
 ```
 
-With no signed-in session (or unreadable stored tokens) `status` is not an error: it returns `{ "signedIn": false, "catalog": { ... }, "signIn": "Not signed in. ..." }`, with no `accessTokenExpiresAt`.
-Browsing needs only a synced catalog: `validate_profile`, `map_profile`, `match_sessions` and `list_filters` do not need a sign-in. Sign in (run `reinvent-scout auth login` yourself) only for
-`catalog_sync` and the schedule, favorite and reservation tools.
+`status` needs no sign-in and reports none. AWS access is the AWS Events MCP's own: if an AWS tool says
+you are not signed in, the MCP client opens the sign-in; ask the user to complete it and retry.
+`lastImport` is present only while it still describes the stored catalog (a first import adds `firstImport: true`, a
+catalog that replaced another event's adds `replacedEventId`).
 
 `catalog.status` is one of:
 
-- `"missing"` -- nothing has been synced yet; call `catalog_sync`.
-- `"stale"` -- `{ "status": "stale", "reason": "schema-version" | "age" | "corrupt", "syncedAt"?: number }`; call `catalog_sync` (`reindex: true` is enough for `"schema-version"` alone -- see `catalog_sync` below).
+- `"missing"` -- nothing has been imported yet; run the `reinvent-scout:catalog-sync` agent.
+- `"stale"` -- `{ "status": "stale", "reason": "schema-version" | "age" | "corrupt", "syncedAt"?: number }`; `catalog_import` with `action: "reindex"` is enough for `"schema-version"` alone (no AWS call); otherwise run the agent.
 - `"fresh"` -- `{ "status": "fresh", "syncedAt": number, "count": number }`; no sync needed.
 
 
-## 2. `catalog_sync`
+## 2. `catalog_import`
 
-Arguments (all optional): `{ "event"?: string, "includeAbstracts"?: boolean, "reindex"?: boolean }`.
-Never pass `includeAbstracts: true` unless you specifically need session abstracts locally --
-`match_sessions` never returns them regardless, and the pull is slower and heavier with them
-included. `reindex: true` rebuilds the local index from what's already stored, without contacting
-the API again -- the fast path when `status` reports a stale `"schema-version"` catalog.
+The catalog comes from AWS `ListSessions`, 250 sessions a page, and never passes through the conversation:
+each page is saved to a file by the tool result, and `catalog_import` reads that file. Run the
+`reinvent-scout:catalog-sync` agent to do the whole sync; its brief is below so you can see what it does and
+finish a refused commit yourself.
+
+Input is one object with an `action`:
+
+- `{ "action": "page", "eventId": "reinvent2026", "timezone": "America/Los_Angeles" | null, "path": "<absolute path>" }`
+  stages the first page. `timezone` is `GetEvent`'s `event.timezone` (null when it has none) and is required. Pass the
+  saved result as `path` (absolute; a symlink, a directory or a file over 16 MiB is refused), or a small result inline as `page`: exactly one.
+  Output: `{ "syncId", "pageNumber", "stagedCount", "totalCount", "nextToken"?, "complete", "totalCountChanged"? }`, no session data.
+- `{ "action": "page", "syncId": "<from the first page>", "path": ... }` stages each later page (no `eventId`, no `timezone`).
+  A page that repeats a session is refused (`overlap`); a page after the last is refused (`alreadyComplete`).
+- `{ "action": "commit", "syncId": "...", "allowShrink"?: true }` replaces the stored catalog. It refuses, leaving the stored catalog
+  untouched, when nothing is staged (`nothingStaged`), the last page still has a `nextToken` (`incomplete`), there are no sessions
+  (`empty`), fewer sessions than the final `totalCount` (`partial`), or more than 10% fewer than the stored catalog of the same event
+  (`shrunk`). Only the user's approval, after seeing both counts, may add `allowShrink: true`. The `syncId` ties the pages of one import together.
+  Output: `{ "committed": true, "eventId", "count", "totalCount", "syncedAt", "firstImport"?, "replacedEventId"?, "warnings"?, "summary"? }`
+  where `summary` is `{ counts, abstractsCompared, highlights (at most 20), omitted }`: what changed since the previous import.
+- `{ "action": "reindex", "timezone"?: string | null }` rebuilds the index from the stored sessions with no AWS call (the remedy for
+  `schema-version`); `timezone` is needed only for a catalog imported before timezones were stored.
+
+A refusal is an error whose `error` starts with its `reason` (`shrunk: ...`), and `reason` is also given on its own.
+The staged pages of a refused commit are kept for 24 hours, so a user-approved `allowShrink` commit needs no new pull.
+
+The sync brief (what the `reinvent-scout:catalog-sync` agent does): `GetEvent` and note its `timezone`; `ListSessions` with
+`includeAbstracts: true`; for each page `catalog_import` with `action: "page"` (always the saved file's path), following
+`nextToken` until `complete`; then `action: "commit"`. On `shrunk` it stops and reports both counts and never passes `allowShrink`;
+on any other refusal it reports the reason and stops; it returns at most about 15 lines and never session data.
+
+## 2a. `catalog_changes`
+
+Input: `{ "sessionIds"?: string[] (1 to 200, ids or codes), "kinds"?: ("added" | "removed" | "changed")[], "offset"?: number, "limit"?: number (1 to 50, default 25) }`.
 
 ```json
-{
-  "eventId": "reinvent2026",
-  "totalCount": 2043,
-  "count": 2043,
-  "countMismatch": false,
-  "totalCountMissing": false,
-  "reindexed": false
-}
+{ "available": true, "eventId": "reinvent2026", "fromSyncedAt": 1234567000000, "toSyncedAt": 1234567890000,
+  "counts": { "added": 3, "removed": 1, "changed": 12, "unchanged": 2027 }, "abstractsCompared": true,
+  "total": 16, "offset": 0, "nextOffset": 25,
+  "changes": [{ "kind": "changed", "sessionId": "1780441461150001GGoc", "code": "ANT301", "title": "...", "fields": ["sessionTime", "room"] }] }
 ```
 
-Never returns any session data -- only counts. The full catalog stays on disk locally and is never
-put in your context; use `match_sessions` (ranked candidates) or the CLI's `catalog search`/
-`catalog show` (for a human, or for you to inspect one session directly) instead of ever asking for
-"the whole catalog."
+What the last import changed, removed sessions first, then schedule changes (`sessionTime`, `venue`, `room`), then added, then the rest. Pass the ids on the
+user's schedule as `sessionIds` to answer "did anything I planned move?". `nextOffset` is present exactly when more remain. When there is no diff the
+answer is `{ "available": false, "reason": "noImport" | "firstImport" | "eventReplaced" | "superseded" }`; `seatAvailability` never counts as a change.
+
+## 2b. `lookup_sessions`
+
+Input: `{ "ids": string[] (1 to 100 session ids or codes of at most 64 characters, like ARC330 or ARC330-R1), "includeAbstract"?: boolean }`; with `includeAbstract` at most 10 ids.
+
+```json
+{ "rows": [{ "query": "ARC330", "sessionId": "1780441461150001GGoc", "code": "ARC330", "title": "...", "type": "Chalk talk", "level": "300 - Advanced",
+    "venue": "MGM Grand", "room": "...", "startDate": "2026-12-02", "startTime": "10:30", "endTime": "11:30",
+    "startsAt": "2026-12-02T18:30:00Z", "endsAt": "2026-12-02T19:30:00Z", "otherSittings": [], "abstract": "..." }],
+  "notFound": [], "ambiguous": [{ "query": "DUP100", "sessionIds": ["..."] }], "notReturned": [] }
+```
+
+Reads the local catalog once. `abstract` is present only with `includeAbstract`. `startsAt`/`endsAt` are UTC instants (null, with `warnings`, when the event's timezone is unknown); an abstract is cut to 1,500
+characters. Every query is in exactly one of `rows`, `notFound`, `ambiguous` or `notReturned` (cut to fit the output budget: ask for them again).
+Use it to name the ids on a `GetSchedule` result.
+
+## 2c. `search_sessions`
+
+Input: `{ "query"?: string, "format"?: string, "venue"?: one of the catalog's venues, "levels"?: { "min": number, "max": number }, "day"?: "YYYY-MM-DD", "limit"?: number }`
+(15 by default, at most 25). Returns `{ "rows": [{ "sessionId", "code", "title", "type", "level", "venue", "startDate", "startTime", "score" }], "omitted": number }`
+over the local catalog, best match first. For a tech profile use `match_sessions`; this is for "sessions about X".
 
 ## 3. Read the repository, write a profile
 
 Not a tool call. Read the repository per `reference/profiling.md` and build the profile object
 described there. Do this before calling `validate_profile` -- the profile is authored by you, not
-generated by the CLI.
+generated by any command.
 
 ## 4. `validate_profile`
 
@@ -105,23 +159,22 @@ gap pattern with its Well-Architected `pillar`; a next step is a migration path 
 already has the destination (`skipped` says why, and it has no goals). The goals are `understand` (introductory sessions, level 100/200),
 `deepen` (sessions at any level whose title names the topic, leaving out the ones the All lens demotes) for services and patterns, and `improve` for a gap or a next step; `sessions` counts what that
 goal would return for that topic alone, and a goal with `0` is a dead end (its `reason` says why, for example the closest 300-level session): say so instead of offering it.
-The text map (`profile map`) prints each topic's label and id, a next step's destination, and one line per goal for the topics with nothing, not a zero on each. A very large map is trimmed
-to the budget, first to one place per topic, then to none, then without notes. `reinvent-scout profile map --profile <file|name> [--json]`
-prints the same map.
+A very large map is trimmed
+to the budget, first to one place per topic, then to none, then without notes.
 
 With `preferences.levels` the counts are of the sessions in that band range only (bands 100, 200, 300, 400, 500; inclusive; a session with no level is left
 out), the map echoes `preferences`, and a goal the range emptied says why in its `reason` ("6 sessions match, none at 400–500"; `understand` is
-introductory, so above 200 it says "understand lists introductory (100–200) sessions, which is outside 400–500; use deepen"). `profile map --level 400-500` is the CLI form.
+introductory, so above 200 it says "understand lists introductory (100–200) sessions, which is outside 400–500; use deepen").
 
 Present the map, ask the user for up to about five topics and a goal each, then call `match_sessions` with a `focus`.
 
 ## 4b. `list_filters`
 
-Arguments: `{ "field"?: "level" | "format" | "venue" | "day" | "topic" | "area" | "industry" | "role" }`. Read-only, from the local catalog: it needs no profile and no sign-in. Returns
+Arguments: `{ "field"?: "level" | "format" | "venue" | "day" | "topic" | "area" | "industry" | "role" }`. Read-only, from the local catalog: it needs no profile. Returns
 `{ "fields": { "<field>": { "total": number, "values": [{ "value": string, "count": number }], "more"?: number } } }`: each value with how many distinct talks have it (a repeat counts once), most first
 (levels in order). With no `field`, every field lists its first 40 values and `more` says how many were left out; with a `field`, its whole list, shortened only to fit the response budget (again `more`).
 Call it when the user asks what they can filter on ("what venues are there?"), or names a value that does not resolve; the values are what `preferences.rules` takes. An unknown field is an `isError`
-naming the fields. `reinvent-scout catalog filters [--field <field>] [--json]` prints the same.
+naming the fields.
 
 ## 5. `match_sessions`
 
@@ -150,8 +203,7 @@ an earlier choice is left out of later ones and carries `alsoMatches` naming the
 ranked past its cap is still listed under a later choice that matches it. An
 unknown topic, a goal that does not apply (`improve` is for gaps and next steps, `understand` and `deepen` for services and patterns), a
 focus with `lens` or `limit`, or `perTopic` without a `focus` is an `isError` naming the problem. When the response would not fit, ranking reasons go
-first, then sessions from the end of the longest list (`truncated`, `omitted`). `reinvent-scout match --focus "<topic>:<goal>,..." [--per-topic N] [--json]`
-prints the same response, and accepts a bare label ("DynamoDB") where only one topic has it.
+first, then sessions from the end of the longest list (`truncated`, `omitted`).
 `lens` defaults to `"all"`: the sessions about the services and patterns the profile's code is built on,
 at any level and in any format (see "The all lens" in `reference/profiling.md`). `limit` defaults to 25 and is silently capped at 50 --
 asking for more never errors, it just gets the largest sensible set. Fix requires an exact supported
@@ -211,9 +263,9 @@ otherwise exceed the size budget:
 `code` is a session's base code with any repeat suffix removed -- the stable id across every
 sitting of the same talk. `offerings` lists every scheduled sitting (a repeat conference talk given
 twice has two), each with its own date, time, venue and room; use the `sessionId` from the specific
-offering you mean when calling `favorite_sessions`, not `code`. An offering also has `endTime` (`startTime` plus the catalog's length, the same local time; `endDate` too when it runs past midnight) when the catalog has a length and the sitting a start time, and no
+offering you mean when calling `AssociateFavorites` or `ReserveSessions`, not `code`. An offering also has `endTime` (`startTime` plus the catalog's length, the same local time; `endDate` too when it runs past midnight) when the catalog has a length and the sitting a start time, and no
 `endTime` otherwise. Under a tight response budget `endTime` is the first thing left off, before ranking reasons and before any candidate, so its absence says nothing about the session. It is for showing when a sitting ends.
-**Never infer that two sittings overlap or do not, or answer "can I attend both", from these times:** call `plan_schedule` with the offerings (it needs a sign-in), which checks time overlap (not travel or seats), and
+**Never infer that two sittings overlap or do not, or answer "can I attend both", from these times:** call `plan_schedule` with the offerings (it needs the schedule from `GetSchedule`), which checks time overlap (not travel or seats), and
 report what it says.
 
 Each candidate's `why` is `{ "summary": string, "yourCode": [{ "repo", "file", "line"? }], "more"?: number, "sessionSays"?: string }`,
@@ -266,168 +318,52 @@ usually `[]`) lists Next-level paths the profile has already taken, as
 produced nothing instead of reporting an empty result. An offering with `startDate: null` is
 unscheduled: the talk exists but has no time yet, so it cannot go on a schedule.
 
-The CLI prints the same object: `reinvent-scout match --json` returns exactly what `match_sessions`
-returns, except that the CLI is not size-budgeted: MCP may drop every candidate's ranking reasons to fit its budget
-(`rankingReasonsOmitted`, common at the default limit under `all`), and the CLI never does (`--include-abstracts` adds an
-`abstract` to each candidate), and `reinvent-scout profile validate --json` returns exactly the `validate_profile`
-report. Human output shows each candidate's title line, its `Why:`, `Your code:` and `Session:`
-lines, then `Rules:` (every reason with its sources only under `--verbose`), then one `Skipped:` line
-per skipped path.
+Under `all` the ranking `reasons` of every candidate may be dropped to fit the output budget (`rankingReasonsOmitted`, common at the default limit); `why` is unaffected.
 
 ## 6. Present candidates
 
 Not a tool call. Present each candidate with `why.summary` and `why.sessionSays`, cite
 `why.yourCode`, and give its `offerings` (when and where) so the user can judge for themselves, not
-just a bare title and score. Do not read out ranking `reasons` unless asked. Ask for confirmation
+just a bare title and score. Do not read out ranking `reasons` unless asked. For an abstract, use `lookup_sessions` with `includeAbstract` (at most 10 ids); a match never returns one. Ask for confirmation
 before favoriting anything.
 
-## 7. `favorite_sessions`
+## 7. The schedule, favorites and reservations (AWS tools)
 
-Arguments: `{ "sessionIds": string[] (1 to 30), "event"?: string }`. The MCP tool takes at most 30 IDs
-per call: writes are paced at 30 per minute, so a larger call would sleep past the MCP client's
-default 60-second timeout and lose its result. Send several calls instead. The CLI has no such
-timeout and keeps its own, larger limit.
+All account access is the AWS Events MCP: `GetSchedule`, `ReserveSessions`, `CancelReservation`, `AssociateFavorites`
+and `DisassociateFavorite`, under the names in SKILL.md (`mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___<Name>` or `mcp__awsevents__AWSEventsPublicApi-Mcp-prod___<Name>`; use whichever is available).
+The writes keep their permission prompt, which is also your confirmation: never call one without the user's go-ahead.
 
-```json
-{
-  "successful": ["1780441461150001GGoc"],
-  "alreadyFavorited": [],
-  "failed": [
-    { "sessionId": "abc123", "code": "scheduleConflict", "conflictsWith": [ { "sessionId": "def456", "title": "Some other session" } ] }
-  ],
-  "verified": { "favorited": ["1780441461150001GGoc"] },
-  "mismatch": []
-}
-```
+- **Read the schedule** with `GetSchedule`, and resolve its ids with `lookup_sessions`. Its `reserved` and `favorites` are session ids; `personalTime`
+  blocks carry `startDateTime`/`endDateTime` in UTC (`YYYY-MM-DDTHH:MM:SS`). Sort everything by `startsAt` from `lookup_sessions` (UTC) and by those
+  instants; do not guess a session's timezone.
+- **Batches.** `ReserveSessions` and `AssociateFavorites` take at most 10 ids per call. Send several calls, one after another, and read every `failed` entry
+  of each result and report it: a `failed` entry is a refusal, never a success. `alreadyScheduled` is not a failure. A `scheduleConflict` names
+  `conflictsWith`.
+- **Stop and pause.** A 409 means reservations are closed: stop. On a 429, pause until a later wakeup instead of retrying in a loop; on a 429, pause also means not sending the next batch yet.
+  Authentication and registration failures stop the run; relay what already succeeded.
+- **Never replay an uncertain write.** After a timeout or transport error, call `GetSchedule` to see what landed, tell the user, and ask before
+  any later retry with only the still-missing ids. A 200 that contradicts the schedule you read back is uncertain too.
+- **Cancel** with `CancelReservation` only for a cancellation the user chose explicitly. A 404 means the reservation is already gone.
+  Remove a favorite with `DisassociateFavorite`.
+- **Read a session live** with `GetSession` (see "Live session read" below).
 
-Chunking and pacing happen automatically -- call this once with the whole shortlist. A `failed`
-entry is a real refusal (a schedule conflict, the session no longer available, the request itself
-failing, or `"notAttempted"` -- never even sent) that must be reported to the user as a refusal,
-never silently dropped or reported as a success; `alreadyFavorited` is not a failure.
-`"notAttempted"` shows up in two different situations, and only one of them also sets `aborted`
-(below): a session-wide sign-in problem stopping the whole run early (`aborted` is set), or the
-write rate limit being reached on one chunk, with no session-wide problem at all (`aborted` is
-absent -- the run simply stopped sending further chunks; nothing further to relay beyond the
-refusal itself, and a plain retry of the `notAttempted` ids shortly after should just work).
-`verified.favorited` is the ground truth after a re-read of the real schedule, done once at
-the end -- trust it over `successful`/`alreadyFavorited` alone. `mismatch` (normally empty) names an
-id the write claimed succeeded that the read-back doesn't confirm; mention it to the user if it's
-non-empty rather than reporting unqualified success.
-
-`verified` can be `null` instead of an object, in two different situations -- tell them apart by
-whether `aborted` is also present:
-
-- **`verificationError` set, `aborted` absent:** every chunk was attempted and the results above
-  (`successful`/`alreadyFavorited`/`failed`) are complete and real -- only the final re-read of the
-  schedule itself failed (a transient server error, most often). Tell the user what succeeded and
-  that it couldn't be double-checked against the schedule; do not imply anything failed to write.
-- **`aborted` set (`{ "reason": "authRequired" | "notRegistered", "message": string }`):** the run
-  stopped early because of a session-wide problem, *after* the ids in `successful`/
-  `alreadyFavorited`/`failed` had already been attempted -- everything already there really
-  happened; ids with `failed[].code === "notAttempted"` were never even sent, not refused. Relay
-  *both* halves to the user: the real partial results already gathered, and `aborted.message` itself
-  (it already says the right thing) -- but the remedy branches on `aborted.reason`, and the two are
-  not interchangeable:
-  - `"authRequired"`: follow the same remedy as the "No signed-in session" case under Error
-    handling below (run `reinvent-scout auth login` yourself), then retry only the ids that were
-    `notAttempted` (or `failed` with `"requestFailed"`), not the ones already `successful`.
-  - `"notRegistered"`: signing in again will **not** help -- tell the user the account needs to
-    register for the event first, the same as the "Not registered for the event" case under Error
-    handling below, and stop there; do not run `auth login` or suggest it.
-
-  Never present an `aborted` result as a plain failure: the agent still needs to tell the user which
-  sessions really are already favorited.
-
-## 8. `unfavorite_session`
-
-Arguments: `{ "sessionId": string, "event"?: string }`.
-
-```json
-{ "outcome": "removed" }
-```
-
-`outcome` is `"removed"` or `"notFavorited"` -- removing something that was never (or no longer)
-favorited is not an error, there's nothing left to do either way.
-
-## 9. `get_schedule`
-
-Arguments (all optional): `{ "event"?: string, "limit"?: number, "offset"?: number }`. `limit`
-defaults to 50 and is silently capped at 60. Use this to confirm what actually got favorited, or to
-answer "what's on my schedule" at any point in the flow.
-
-```json
-{
-  "entries": [
-    { "kind": "favorite", "sessionId": "1780441461150001GGoc", "title": "...", "startsAt": "2026-11-30T18:30:00Z", "endsAt": "2026-11-30T19:30:00Z", "...": "..." }
-  ],
-  "total": 1,
-  "totals": { "reserved": 0, "favorites": 1, "personalTime": 0 },
-  "returned": 1,
-  "offset": 0
-}
-```
-
-Every entry is tagged `kind` (`"reserved"`, `"favorite"`, or `"personalTime"`) and carries a common
-`startsAt`/`endsAt` (a real UTC instant) alongside its own raw fields, sorted chronologically across
-all three kinds together. `nextOffset` is present exactly when more entries remain -- page with it
-(pass it back as `offset` on the next call) until it's absent; never assume one page is everything.
-`startsAt`/`endsAt` can be `null` when the event's timezone isn't known yet or a session isn't fully
-scheduled -- when that happens, `warnings` names why and, when there's a real remedy, what to run
-(usually another `catalog_sync`). `warning` (singular, distinct from `warnings`) means no local
-catalog has been synced at all; both can be present at once.
+Check what stuck with another `GetSchedule`; the observed state is not proof of which request caused it.
 
 ## Error handling
 
-Every tool can return `isError: true` with a plain-text message instead of the JSON shapes above.
-The messages that matter for how you should react:
+A failed command prints `{ "error": string, "reason"?: string }`; the messages that matter for how you should react:
 
-- **No signed-in session** ("No signed-in session found. Run `reinvent-scout auth login` (the
-  skill can run it for you), then try again."): run `reinvent-scout auth login` yourself in the
-  shell -- it blocks until the browser sign-in callback lands -- then retry the call that failed.
-  Do not tell the user to open a terminal themselves; you already have shell access.
-- **Not registered for the event** ("You're signed in, but not registered for this event. Signing
-  in again will not help; register for the event first."): from `get_schedule`/`favorite_sessions`/
-  `unfavorite_session` on a 403. Signing in again will not fix this -- tell the user they need to
-  register for the event first, and stop trying to retry sign-in.
-- **Catalog missing/unusable** (`catalog_sync` and a signed-in session needed, or a local rebuild
-  needed): from `validate_profile`/`match_sessions`/`get_schedule` when there's no usable local
-  catalog. Run `catalog_sync` and retry.
-- **Schema violation**: from `validate_profile`/`match_sessions` when the profile object itself is
-  invalid. The message names the offending entry (a missing evidence array, an unknown
-  `schemaVersion`) -- fix the profile and retry rather than asking the user what went wrong.
-
-## CLI command reference
-
-Every command this build registers, for reference or as a fallback outside the MCP tools above (a
-human running these directly gets human-formatted terminal output, not JSON):
-
-- `reinvent-scout auth login`
-- `reinvent-scout auth logout`
-- `reinvent-scout auth status`
-- `reinvent-scout catalog sync`
-- `reinvent-scout catalog search`
-- `reinvent-scout catalog show`
-- `reinvent-scout catalog filters`
-- `reinvent-scout profile validate`
-- `reinvent-scout profile save`
-- `reinvent-scout profile map`
-- `reinvent-scout match`
-- `reinvent-scout schedule show`
-- `reinvent-scout schedule favorite`
-- `reinvent-scout schedule unfavorite`
-- `reinvent-scout schedule plan`
-- `reinvent-scout schedule reserve`
-- `reinvent-scout schedule cancel`
-- `reinvent-scout mcp`
-- `reinvent-scout skill install`
-- `reinvent-scout skill update`
-
-`reinvent-scout mcp` starts this stdio server itself -- it's what your MCP client config points at
-(see the project README), not a command you run yourself mid-conversation.
-`reinvent-scout skill install`/`reinvent-scout skill update` are how this skill gets onto disk and
-stays current -- also not something you run on yourself mid-conversation, though it's fine to
-mention if the user asks how to install or update the skill. `skill update` never overwrites a
-locally-modified file without `--force`.
+- **No catalog imported** ("No catalog has been imported yet. Run the catalog sync (the reinvent-scout:catalog-sync agent)."): run
+  the agent, then retry the command.
+- **Catalog needs a local rebuild** ("Rebuild it locally with catalog_import action "reindex", or re-import it."): run
+  `catalog_import` with `action: "reindex"`.
+- **An import refusal** (`shrunk:`, `partial:`, `incomplete:`, `empty:`, `overlap:`, `alreadyComplete:`, `nothingStaged:`): see the
+  protocol under `catalog_import`. Never pass `allowShrink` without the user's approval.
+- **Schema violation**: from `validate_profile`/`match_sessions` when the profile object itself is invalid, or any command when its
+  input is. The message names the offending field -- fix the input and retry rather than asking the user what went wrong.
+- **AWS errors** come from the AWS Events MCP, not the script: not signed in (the client opens the sign-in; ask the user to
+  complete it), not registered for the event (403: signing in again will not help; tell the user to register first), reservations
+  closed (409), too many requests (429), and not found (404, which is not proof a session is gone).
 
 ## Evidence lens example
 
@@ -588,13 +524,7 @@ this original profile object to `match_sessions`, never that report.
 }
 ```
 
-```text
-reinvent-scout profile validate lens-profile.json
-reinvent-scout match --profile lens-profile.json --lens fix
-reinvent-scout match --profile lens-profile.json --lens next-level
-```
-
-For MCP, call `validate_profile` with that object, then `match_sessions` with the same object
+Call `validate_profile` with that object, then `match_sessions` with the same object
 and `lens: "fix"` or `lens: "next-level"`. Results depend on your synced catalog; zero is valid.
 Fix reasons use `kind: "pillarGap"`; Next-level reasons use `kind: "migrationPath"`. Both add
 `profileEvidence` containing the original repo/file/line (and any snippet/note), while `evidence`
@@ -611,96 +541,64 @@ read `truncated` and `omitted`; citations are not silently clipped to make a can
 
 ## Reservation workflow
 
-Use actual offering IDs from `match_sessions` or a catalog lookup. These synthetic requests show
-argument shapes; replace `example-offering` with the attendee's shortlist and replace
-`<selected-session-id>` with a `selected[].sessionId` returned by the plan. Optional `event`
-selects an event; the default is `reinvent2026`.
+Use actual offering IDs from `match_sessions` or `lookup_sessions`. These synthetic requests show
+argument shapes; replace `example-offering` with the attendee's shortlist and `<selected-session-id>` with a
+`selected[].sessionId` returned by the plan. Optional `event` selects an event; the default is `reinvent2026`.
+Call `GetSchedule` immediately before, and pass the whole `schedule` object it returns (or save the result and pass
+`scheduleFile`):
 
 ```json
-{"tool":"plan_schedule","arguments":{"sessionIds":["example-offering"]}}
+{"tool":"plan_schedule","arguments":{"sessionIds":["example-offering"],"schedule":{"reserved":[],"favorites":[],"personalTime":[]}}}
 ```
 
-`plan_schedule` is read-only and accepts an ordered list of 0–50 IDs. A requested sitting whose talk is
+`plan_schedule` is read-only, never calls AWS, and accepts an ordered list of 0–50 IDs and exactly one of `schedule` and `scheduleFile`
+(an empty request needs neither). `schedule` is the `GetSchedule` result as it is: `reserved` and `favorites` ids, and `personalTime` blocks with
+`startDateTime`/`endDateTime` as `YYYY-MM-DDTHH:MM:SS` in UTC (a `Z` or milliseconds are refused; free text is shortened). A requested sitting whose talk is
 already reserved as a different sitting is reported in `alreadyReservedAlternative`
 (`{ requested, reservedSessionId }`), never dropped. It checks the full reserved
 and personal schedule, expands repeat alternatives, and chooses the earliest feasible offering
 for each talk in input priority. Favorites do not block. A missing/invalid hard commitment time
 prevents a `conflictFree` claim. It requires a current catalog for the same event and a recognized
 IANA event timezone. Results contain `selected`, `alreadyReserved`, `rejected`, `alternatives`,
-`blockedBy`, `conflictFree`, and `limitations`. MCP adds `omitted` counts if whole presentation
-entries must be removed to fit 30 KiB; the domain still checked every hard commitment. This is a
+`blockedBy`, `conflictFree`, and `limitations`, with `omitted` counts if whole presentation
+entries must be removed to fit the output budget; every hard commitment was still checked. This is a
 greedy time-only plan, not a global optimum, seat promise, or travel-feasibility check.
 
-Present that plan and obtain the attendee's confirmation before writing these exact IDs:
+Present that plan and obtain the attendee's confirmation before writing these exact IDs with `ReserveSessions` (at most 10 ids per call):
 
 ```json
-{"tool":"reserve_sessions","arguments":{"sessionIds":["<selected-session-id>"]}}
+{"tool":"ReserveSessions","arguments":{"eventId":"reinvent2026","sessionIds":["<selected-session-id>"]}}
 ```
 
-`reserve_sessions` accepts 1–30 IDs per MCP call (the CLI accepts up to 50) of 1–128 characters, trims and deduplicates them, and sends chunks of at most 10.
-It returns `successful` (newly acknowledged), `alreadyScheduled` (already reserved), `failed`
-(per-ID code/reason and optional resolved `conflictsWith`), `uncertain`, `notAttempted`,
-`verified: {reserved: [...]}` or null, and `mismatch`. Optional `aborted`/`verificationError`
-explain early termination/read-back failure; a chunk whose sign-in token could not be obtained is
-listed under `notAttempted`, not `failed`, because no request was sent. Unresolved conflicts retain IDs with null titles.
-A partial or uncertain result is marked `isError` but still contains the complete JSON ledger;
-never discard it or blindly rerun the whole request. The CLI similarly returns a failure exit
-status while printing the outcomes. `verified` describes current state, not which request caused
-it. Unknown failure codes remain refusals. Missing/contradictory acknowledgement entries remain
-uncertain. Favorites likewise add `uncertain` IDs to existing failed-request reporting.
-
-Reservations are scheduled to open October 8, 2026; server 409 is authoritative, with no local date
-gate. Stop on 409. Auth, registration, exhausted429, and OAuth failures also stop further chunks.
-POST 500/503, network/timeout failures, and lost acknowledgements are not automatically replayed;
-one 401 refresh and bounded 429 retry remain safe. A later retry requires an explicit new request,
-fresh eligibility checks, and only the still-missing IDs. No command replaces or cancels conflicts.
+The result is `{ "result": { "successful": string[], "failed": [{ sessionId, code, conflictsWith? }] } }`. Read every `failed` entry and report it: `alreadyScheduled` is
+not a failure, `sessionFull` and `scheduleConflict` are real refusals, and an unknown code is a refusal too. A 409 means reservations are closed: stop.
+On a 429, pause until a later wakeup. A timeout or lost response is uncertain: call `GetSchedule` to see what landed, tell the user, and
+never replay the whole request; a later retry needs an explicit new request, fresh eligibility checks, and only the still-missing IDs. No command
+replaces or cancels conflicts.
 Exception: inside a watch the user confirmed ([watch.md](watch.md)), the may-cancel list is the
 explicit choice of cancellations and the running watch is the standing request for re-attempts.
 Outside a watch, these rules hold.
 
-For an explicitly requested cancellation, use one reserved offering ID:
+For an explicitly requested cancellation, call `CancelReservation` with one reserved offering ID:
 
 ```json
-{"tool":"cancel_reservation","arguments":{"sessionId":"<selected-session-id>"}}
+{"tool":"CancelReservation","arguments":{"eventId":"reinvent2026","sessionId":"<selected-session-id>"}}
 ```
 
-The result is `{sessionId, outcome, verifiedAbsent}` with optional `error`/`verificationError`.
-Outcome is `cancelled` for 204, `alreadyAbsent` for 404, or `uncertain` after an ambiguous failure.
-A failed read-back does not erase an acknowledged cancellation. Follow with `get_schedule` when
-needed to show current state. Cancel is not silently repeated after 503.
-
-These write operations each have their own 30-unit rolling-minute window plus a 1-second margin:
-reserve/favorite spend one unit per session; cancel/unfavorite one per request. Windows are
-serialized within a process and separated by store root and operation. Separate processes rely
-on API 429 as their backstop. MCP retains every requested ID/state under 30 KiB, marks shortened
-optional descriptions, caps conflict lists with `omittedConflicts`, and says to read the full
-schedule for omitted conflicts. If even the mandatory ledger cannot fit (for example many large
-Unicode IDs), the request is rejected before any write; use a smaller batch.
-
-CLI equivalents accept `--event` and `--json`; plan/reserve also accept a single `-` for stdin IDs:
-
-```sh
-reinvent-scout schedule plan <offering-id> --json
-reinvent-scout schedule reserve <selected-session-id> --json
-reinvent-scout schedule cancel <reserved-session-id> --json
-```
-
+A success means cancelled; a 404 means the reservation is already gone; any other failure is uncertain until `GetSchedule` says otherwise. Never repeat a cancel
+after a 503 without reading the schedule first. Favorites work the same way with `AssociateFavorites` (at most 10 ids per call) and `DisassociateFavorite`.
 
 ## Live session read, and watching a full session
 
-`get_session` reads one session live from the API, not from the local catalog (which can be
-stale), with one request and no writes:
+`GetSession` reads one session live from AWS, not from the local catalog (which can be stale), with one request and no writes:
 
 ```json
-{"tool":"get_session","arguments":{"sessionId":"<session-id>"}}
+{"tool":"GetSession","arguments":{"eventId":"reinvent2026","sessionId":"<session-id>"}}
 ```
 
-It returns `sessionId`, `abbreviation`, `title`, `venue`, `room`, the raw `sessionTime`
-(`date`, `time`, `length`), `isReservable`, `seatAvailability` and `fetchedAt`. A field the API did
-not send is omitted. `seatAvailability` is one of `available`, `limited`, `veryLimited`,
-`unavailable` and `walkUp`; it is a hint, not a guarantee of a seat. A 404 comes back as
-`isError: true` and is not proof the session is gone: during an API outage real ids 404. Auth and
-registration failures read like the other tools'.
+The result's `session` has `sessionId`, `abbreviation`, `title`, `venue`, `room`, `sessionTime` (`date`, `time`, `length`), `isReservable` and
+`seatAvailability`, plus the abstract and taxonomy: read only what you need. `seatAvailability` is one of `available`, `limited`, `veryLimited`,
+`unavailable` and `walkUp`; it is a hint, not a guarantee of a seat. A 404 is not proof the session is gone: during an API outage real ids 404.
 
 To reserve a full session when a seat opens, follow [watch.md](watch.md). It is a playbook for
 you to carry out with these tools, not a command to run.
@@ -724,16 +622,23 @@ files. Settings use atomic local writes and an exclusive lock, with no attendee-
 {"tool":"set_onsite_preferences","arguments":{"patch":{"allowWalkUp":true,"sessionWalkUp":[{"sessionId":"example-offering","allowWalkUp":false}]}}}
 ```
 
+Nearby recommendations take two calls, because the script does not call AWS. Call `GetSchedule` first and pass the whole `schedule`
+object (or `scheduleFile`). The first call answers with `refreshIds` (up to 20 eligible sessions) and cached bands, which are only ever unknown:
+
 ```json
-{"tool":"nearby_sessions","arguments":{"location":{"venue":"MGM Grand","source":"user","confirmed":true},"withinMinutes":60,"limit":10}}
+{"tool":"nearby_sessions","arguments":{"location":{"venue":"MGM Grand","source":"user","confirmed":true},"withinMinutes":60,"limit":10,"schedule":{"reserved":[],"favorites":[],"personalTime":[]}}}
 ```
+
+Read each id in `refreshIds` with `GetSession`, one at a time, skipping any that fails, then call `nearby_sessions` again with the same input plus
+`liveSessions`: the `session` objects you read (at most 20). A band is stamped when the second call arrives and is fresh for `freshnessMinutes`.
+Unknown or repeated `liveSessions` entries are counted in `coverage.liveIgnored` and otherwise ignored.
 
 Read `candidates` IDs, starts/ends, minutes-to-start, outbound/check-in and onward travel,
 `admission`, `availabilitySource`, observation age, and `coverage`. Estimates are conservative
 hand-maintained assumptions, not AWS schedules or live routes; seat bands never promise admission.
 Fresh reads replace cached time/venue/bands. Failed or stale reads are unknown, even if the old
-catalog band looked promising. At most20 locally eligible offerings are refreshed serially; a
-locally excluded offering is not refreshed, so this is not an exhaustive live search. Full reserved
+catalog band looked promising. At most 20 locally eligible offerings are asked for; a
+locally excluded offering is not, so this is not an exhaustive live search. Full reserved
 and personal commitments constrain feasibility before any output budget. Favorites do not block.
 `skipSessionIds` requires an explicit attendee choice and does not cancel reservations.
 
@@ -745,9 +650,39 @@ remains the conservative fallback. Per-event `checkInMinutes` defaults10, `fresh
 and `peakBufferMinutes`5 during08:00–10:00/16:00–18:00. Routes and window arrays replace prior lists.
 
 Present the actual returned offering ID and obtain confirmation, then pass that ID to
-`reserve_sessions` using the reservation flow above. A nearby suggestion itself never writes.
-CLI equivalents are `reinvent-scout schedule onsite-config --file onsite-patch.json --json` and
-`reinvent-scout schedule nearby --venue "MGM Grand" --confirm-venue --json`; add
-`--skip-session <id>` only after explicit instruction. MCP budgets drop whole candidates or
-preference entries with omission counts. Inspect full settings using
-`reinvent-scout schedule onsite-config --json`; do not change settings just to inspect omissions.
+`ReserveSessions` using the reservation flow above. A nearby suggestion itself never writes.
+`skipSessionIds` needs an explicit instruction. Output budgets drop whole candidates or
+preference entries with omission counts; do not change settings just to inspect omissions.
+
+
+## Session preferences
+
+SKILL.md step 5 points here. When the user states a level preference, in numbers or words, pass it as `preferences: { "levels": { "min": N, "max": M } }` on
+`map_profile` and on `match_sessions`, and keep passing it for the rest of the conversation, the map included. The words are the catalog's own
+labels: 100 Foundational, 200 Intermediate, 300 Advanced, 400 Expert, 500 Distinguished. "Only 400-500" and "expert" are 400 to 500;
+"advanced and up" and "no intro" are 300 to 500; "only intro" is 100 to 200; "300 only" is 300 to 300. State the active level range once, briefly, when you
+apply it. It filters: filtering removes sessions, and the remaining ones are re-ranked by the same rules. `understand` and the `explain` lens are introductory (100 to 200), so above 200 they
+have nothing and say so (`explain` is an error naming `deepen` or `all`). When the filter empties something the response says so (`reason`:
+"4 sessions match, none at 400–500"): tell the user, never widen the range yourself, and offer to widen it.
+The same `preferences` object carries `rules` on any catalog field: `{ "field": "format" | "venue" | "day" | "topic" | "area" | "industry" | "role", "value", "action": "only" | "prefer" | "avoid" | "exclude", "levels"? }`
+(`levels` limits a rule to sessions in that range). `only` keeps just the sessions with the value: several `only` rules on one field are a union ("MGM Grand or Wynn/Encore"), rules on different
+fields an intersection, and a session with no value for that field is left out. `exclude` removes sessions. `prefer` and `avoid` only reorder: within one field the first matching rule decides, across
+fields the effects add up (+1 each for prefer, -1 for avoid), and the sessions with the highest sum come first, after the demoted sessions' own place and before every other ranking consideration, so
+"more than anything" means a preferred session outranks a neutral one even if it matches less strongly. `why.summary` names every preference that moved a session: "(a chalk talk at MGM Grand, which you
+prefer)", "(ranked lower: a breakout session, which you asked to avoid at 300–500)". Turn plain statements into rules and keep them for the rest of the conversation, the map included:
+
+| The user says | Pass |
+|---|---|
+| "only 400+" | `levels: { min: 400, max: 500 }` |
+| "no workshops" | `rules: [{ field: "format", value: "Workshop", action: "exclude" }]` |
+| "I like chalk talks" | `rules: [{ field: "format", value: "Chalk talk", action: "prefer" }]` |
+| "avoid breakouts unless intro" | `rules: [{ field: "format", value: "Breakout session", action: "avoid", levels: { min: 300, max: 500 } }]` |
+| "only sessions at MGM" | `rules: [{ field: "venue", value: "MGM Grand", action: "only" }]` |
+| "I'm staying at the Venetian, prefer sessions there" | `rules: [{ field: "venue", value: "Venetian", action: "prefer" }]` |
+| "nothing on Thursday" | `rules: [{ field: "day", value: "<that date>", action: "exclude" }]`, the date from `list_filters` with `field: "day"` |
+| "what venues are there?" | call `list_filters` with `field: "venue"` |
+
+Format words: chalk talk; breakout or talk (the catalog's "Breakout session"); workshop; builders' session; lightning talk; code talk; lab; bootcamp. A value is checked against the catalog's own
+vocabulary for its field, in any case or as a unique prefix ("chalk", "mgm"). When the user asks what they can filter on ("what venues are there?", "what categories are there?"), or names a value that
+does not resolve (the error lists the closest values), call `list_filters` (no profile needed; `field` for one field's values with counts) and offer the real values. Never compute a day's date yourself: get the `YYYY-MM-DD` values from `list_filters` with `field: "day"` and pick the one that is the weekday the user named. Restate the active
+preferences once, briefly, when you first apply them, and say when a preference emptied a result. `only`, `exclude` and `levels` change the map's counts; `prefer` and `avoid` do not.

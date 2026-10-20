@@ -3,6 +3,7 @@ import { EmptyCatalogError } from "../core/errors.js";
 import { buildIndexRecord } from "./index-record.js";
 import {
   CURRENT_SCHEMA_VERSION,
+  DEFAULT_EVENT_ID,
   readMeta,
   readRaw,
   readTimezoneAvailability,
@@ -11,10 +12,7 @@ import {
   type CatalogStoreDeps,
 } from "./store.js";
 
-/** The event this CLI targets when nothing else is specified. The API is multi-event (Summits
- * appear in ListEvents today), so every command that takes an event id treats this as only a
- * default, never a hard-coded assumption -- see the lead's amendment in the plan. */
-export const DEFAULT_EVENT_ID = "reinvent2026";
+export { DEFAULT_EVENT_ID };
 
 export interface SyncCatalogDeps extends CatalogStoreDeps {
   apiClient: ApiClient;

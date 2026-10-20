@@ -1,9 +1,7 @@
-import type { ApiClient } from "../api/client.js";
 import type { Schedule } from "../api/types.js";
 import type { IndexRecord } from "../catalog/index-record.js";
 import { baseSessionCode, requireCurrentIndex } from "../catalog/query.js";
-import { readMeta, readTimezoneAvailability, type CatalogStoreDeps } from "../catalog/store.js";
-import { DEFAULT_EVENT_ID } from "../catalog/sync.js";
+import { DEFAULT_EVENT_ID, readMeta, readTimezoneAvailability, type CatalogStoreDeps } from "../catalog/store.js";
 import { ValidationError } from "../core/errors.js";
 import { deriveSessionTimes } from "./merge.js";
 import { validateSessionIds } from "./reservations.js";
@@ -104,15 +102,27 @@ export function buildSchedulePlan(input: readonly string[], context: PlanContext
   return result;
 }
 
-/** Catalog event validation precedes the full schedule read. Neither adapter may use a display page. */
-export async function planSchedule(ids: readonly string[], deps: CatalogStoreDeps & { apiClient: Pick<ApiClient, "getSchedule">; eventId?: string; now?: () => number }): Promise<SchedulePlan> {
+export interface PlanDeps extends CatalogStoreDeps { eventId?: string; now?: () => number }
+interface PlanContextParts { ids: string[]; index: IndexRecord[]; timezone: string }
+
+/** The checks that need no schedule: a current catalog for the event, and its known timezone.
+ * Returns null for an empty request, which needs neither. */
+export function preparePlan(ids: readonly string[], deps: PlanDeps): PlanContextParts | null {
   const trimmed = validateSessionIds(ids, true, false);
-  if (!trimmed.length) return buildSchedulePlan([], { index: [], schedule: { reserved: [], favorites: [], personalTime: [] }, eventTimezone: null });
+  if (!trimmed.length) return null;
   const index = requireCurrentIndex(deps);
   const eventId = deps.eventId ?? DEFAULT_EVENT_ID;
   if (readMeta(deps)?.eventId !== eventId) throw new ValidationError(`Sync the catalog for event ${eventId} before planning its schedule.`);
   const timezone = readTimezoneAvailability(deps);
   if (timezone?.status !== "known") throw new ValidationError("Planning requires the event's recognized IANA timezone; sync the event catalog first.");
-  const schedule = await deps.apiClient.getSchedule(eventId);
-  return buildSchedulePlan(trimmed, { index, schedule, eventTimezone: timezone.timezone, ...(deps.now ? { now: deps.now } : {}) });
+  return { ids: trimmed, index, timezone: timezone.timezone };
+}
+
+/** Plans from a schedule passed in as data (the `GetSchedule` result). The event and timezone
+ * checks run before planning; an empty request needs neither the catalog nor a schedule. */
+export function planSchedule(ids: readonly string[], deps: PlanDeps & { schedule?: Schedule }): SchedulePlan {
+  const parts = preparePlan(ids, deps);
+  if (parts === null) return buildSchedulePlan([], { index: [], schedule: { reserved: [], favorites: [], personalTime: [] }, eventTimezone: null });
+  if (deps.schedule === undefined) throw new ValidationError("Planning needs the schedule: call GetSchedule and pass its result as `schedule` or `scheduleFile`.");
+  return buildSchedulePlan(parts.ids, { index: parts.index, schedule: deps.schedule, eventTimezone: parts.timezone, ...(deps.now ? { now: deps.now } : {}) });
 }

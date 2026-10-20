@@ -33,7 +33,7 @@ export class NotRegisteredError extends Error {
  * to do something first" errors a new user will hit.
  */
 export class CatalogMissingError extends Error {
-  constructor(message = "No catalog has been synced yet. Run `reinvent-scout catalog sync` first.") {
+  constructor(message = "No catalog has been imported yet. Run the catalog sync (the reinvent-scout:catalog-sync agent).") {
     super(message);
     this.name = "CatalogMissingError";
   }

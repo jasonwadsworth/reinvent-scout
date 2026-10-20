@@ -11,6 +11,8 @@ import { DEFAULT_EVENT_ID } from "../../src/catalog/sync.js";
 import { registerScheduleCommands } from "../../src/cli/commands/schedule.js";
 import { registerMcpCommand } from "../../src/cli/commands/mcp.js";
 import { createMcpServer } from "../../src/mcp/server.js";
+import { OUTPUT_BUDGET_BYTES } from "../../src/commands/output-budget.js";
+import { callCommand } from "../helpers/call-command.js";
 import { createTempHome } from "../helpers/temp-home.js";
 import type { NearbyResult } from "../../src/onsite/recommend.js";
 afterEach(() => vi.unstubAllEnvs());
@@ -39,14 +41,22 @@ it("documented MCP preferences→confirmed nearby→printed ID reservation agree
     const server = createMcpServer({ resolveStoreRoot: () => home.path, buildApiClient: () => api, now: () => now });
     const [a, b] = InMemoryTransport.createLinkedPair(); const client = new Client({ name: "onsite-docs", version: "1" });
     await Promise.all([server.connect(b), client.connect(a)]);
-    const workflow = readFileSync(new URL("../../skills/reinvent-scout/reference/workflow.md", import.meta.url), "utf8");
+    const workflow = readFileSync(new URL("../../plugin/skills/reinvent-scout/reference/workflow.md", import.meta.url), "utf8");
     const examples = [...workflow.matchAll(/```json\n([\s\S]*?)```/g)].map(m => JSON.parse(m[1]!) as { tool?: string; arguments?: Record<string, unknown> }).filter(x => ["get_onsite_preferences", "set_onsite_preferences", "nearby_sessions"].includes(x.tool ?? ""));
     expect(examples.map(x => x.tool)).toEqual(["get_onsite_preferences", "set_onsite_preferences", "nearby_sessions"]);
+    // The documented examples run through the registry (the script's commands); nearby takes two calls.
+    const opts = { storeRoot: home.path, now: () => now };
     let result!: NearbyResult;
     for (const example of examples) {
-      const reply = await client.callTool({ name: example.tool!, arguments: example.arguments! });
-      expect(reply.isError).not.toBe(true); expect(Buffer.byteLength(JSON.stringify(reply))).toBeLessThan(30 * 1024);
-      if (example.tool === "nearby_sessions") result = JSON.parse((reply.content as Array<{ text: string }>)[0]!.text);
+      const reply = await callCommand(example.tool as "nearby_sessions", example.arguments, opts);
+      expect(reply.isError).toBe(false); expect(Buffer.byteLength(reply.text)).toBeLessThanOrEqual(OUTPUT_BUDGET_BYTES);
+      if (example.tool === "nearby_sessions") {
+        const first = JSON.parse(reply.text) as NearbyResult;
+        expect(first.refreshIds).toEqual(["constructor"]);
+        const second = await callCommand("nearby_sessions", { ...example.arguments, liveSessions: first.refreshIds.map(id => raw.find(s => s.sessionId === id)) }, opts);
+        expect(second.isError).toBe(false);
+        result = JSON.parse(second.text);
+      }
     }
     expect(writes).toBe(0); expect(result.candidates[0]!.sessionId).toBe("constructor");
     const lines: string[] = []; const cli = new Command(); registerScheduleCommands(cli, { resolveStoreRoot: () => home.path, buildApiClient: () => api, now: () => now, print: line => lines.push(line) });

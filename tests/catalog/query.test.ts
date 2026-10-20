@@ -6,7 +6,7 @@ import type { Session } from "../../src/api/types.js";
 import { CatalogMissingError, CatalogUnusableError } from "../../src/core/errors.js";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
 import { CURRENT_SCHEMA_VERSION, writeCatalog, type CatalogMeta } from "../../src/catalog/store.js";
-import { catalogServiceNames, queryCatalog, resolveSessionRecord } from "../../src/catalog/query.js";
+import { catalogServiceNames, queryCatalog, resolveSessionRecord, resolveSessionToken } from "../../src/catalog/query.js";
 import { createTempHome, type TempHome } from "../helpers/temp-home.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -233,7 +233,7 @@ describe("queryCatalog", () => {
     }
     expect(caught).toBeInstanceOf(CatalogUnusableError);
     expect((caught as CatalogUnusableError).reason).toBe("outdated");
-    expect((caught as CatalogUnusableError).message).toMatch(/catalog sync/);
+    expect((caught as CatalogUnusableError).message).toMatch(/catalog_import action "reindex"/);
   });
 
   it("refuses to search when meta.json is corrupt, even beside a genuinely poisoned index", () => {
@@ -501,5 +501,26 @@ describe("catalogServiceNames", () => {
 
   it("throws CatalogMissingError when nothing has been synced", () => {
     expect(() => catalogServiceNames({ storeRoot: home.path })).toThrow(CatalogMissingError);
+  });
+});
+
+describe("resolveSessionToken (pure, over an index already in hand)", () => {
+  const index = fixture.map(buildIndexRecord);
+  it("resolves an id, an abbreviation (any case) and a base code like resolveSessionRecord", () => {
+    expect(resolveSessionToken(index, "1780441461150001GGoc")).toMatchObject({ status: "found", record: { sessionId: "1780441461150001GGoc" } });
+    expect(resolveSessionToken(index, "ant301")).toMatchObject({ status: "found", record: { abbreviation: "ANT301" } });
+    expect(resolveSessionToken(index, "API303")).toMatchObject({ status: "found", relatedAbbreviations: expect.any(Array) });
+  });
+  it("reports an unknown token and a repeated abbreviation", () => {
+    expect(resolveSessionToken(index, "NOPE999")).toEqual({ status: "not-found" });
+    const duplicated = [...index, { ...index[0]!, sessionId: "dup" }];
+    expect(resolveSessionToken(duplicated, index[0]!.abbreviation!)).toMatchObject({ status: "ambiguous" });
+  });
+  it("is the logic resolveSessionRecord uses", () => {
+    const home = createTempHome();
+    try {
+      writeCatalog({ raw: fixture, index, meta: sampleMeta() }, { storeRoot: home.path });
+      expect(resolveSessionRecord({ storeRoot: home.path }, "API303")).toEqual(resolveSessionToken(index, "API303"));
+    } finally { home.cleanup(); }
   });
 });

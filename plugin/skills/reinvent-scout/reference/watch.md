@@ -1,9 +1,13 @@
 # Watching a full session
 
 A playbook for reserving a session that is full, the moment a seat opens. There is no watcher
-program. You run the loop yourself, one check at a time, with the MCP tools: `get_schedule`,
-`get_session`, `reserve_sessions` and `cancel_reservation`. Everything below is your judgment to
-apply, not code to call.
+program. You run the loop yourself, one check at a time, with the AWS Events MCP tools
+`GetSchedule`, `GetSession`, `ReserveSessions` and `CancelReservation`. Everything below is your
+judgment to apply, not code to call.
+
+AWS Events tools are `mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___<Name>`, or
+`mcp__awsevents__AWSEventsPublicApi-Mcp-prod___<Name>` when your own `awsevents` server shadows the plugin's; use whichever is
+available. The docs here write the bare operation name (`GetSchedule`). Every AWS tool except `ListEvents` takes `eventId`: pass `reinvent2026` unless the user names another event.
 
 ## Starting a watch
 
@@ -37,7 +41,7 @@ Nothing is saved for you. Keep this in your own working notes and update it afte
 
 **If you lose track** (a new session, a compacted context, or memory you no longer trust):
 check the transcript or ask the user about in-flight swaps and pending restores before doing
-anything else. Then re-read `get_schedule` and re-confirm the targets with the user before anything
+anything else. Then re-read `GetSchedule` and re-confirm the targets with the user before anything
 else that writes: reserving without re-confirmation is not allowed. Also re-confirm the may-cancel list
 with the user, and do not cancel anything until the user re-confirms. Retrying a pending restore
 of a reservation this watch cancelled is exempt from re-confirmation.
@@ -53,23 +57,23 @@ restore this way: restore wakeups keep running even after the rest of the watch 
 
 ## One check
 
-1. Call `get_schedule`.
+1. Call `GetSchedule`.
    - A target that is already reserved (the user may have done it by hand) is resolved.
    - A reservation on the may-cancel list that is no longer reserved: drop it from the list.
-2. For each target still pending, call `get_session` and note its `seatAvailability` band and
+2. For each target still pending, call `GetSession` and note its `seatAvailability` band and
    `isReservable`. Do the targets one after another, not in parallel.
 3. If `isReservable` is false, or the band is `walkUp`, stop that target and tell the user.
 4. If the band is anything other than `unavailable`, including a missing band, call
-   `reserve_sessions` for that one target. The API decides whether a seat exists; the band is
+   `ReserveSessions` for that one target (at most 10 ids per `ReserveSessions` call). The API decides whether a seat exists; the band is
    only a hint.
 5. Read the result for the target:
    - `sessionFull`: keep watching.
    - `alreadyScheduled`: done.
    - `scheduleConflict`: see the next section.
-   - `timePassed`, `sessionNotReservable`, `insufficientAccess` or `walkUp`: stop that target and
+   - `timePassed`, `sessionNotReservable` or `insufficientAccess`: stop that target and
      tell the user.
    - An unknown code: stop that target and tell the user.
-6. A `get_session` 404 in the middle of a watch is transient. The 2026-10 outage 404'd real
+6. A `GetSession` 404 in the middle of a watch is transient. The 2026-10 outage 404'd real
    session ids, so it is not proof the session is gone. Back off and keep watching.
 7. Auth required, not registered, or a 409 (reservations closed): stop the whole watch and tell
    the user. A 429 or a service error is transient: back off.
@@ -78,9 +82,8 @@ restore this way: restore wakeups keep running even after the rest of the watch 
 
 `scheduleConflict` names the reservations it clashes with in `conflictsWith`.
 
-- `reserve_sessions` may omit some of the clashes it lists and says how many in
-  `omittedConflicts`. If `omittedConflicts` is not 0, read the full set from `get_schedule` and
-  apply the every-id rule to it before swapping.
+- AWS returns up to 100 `conflictsWith` ids on a `scheduleConflict`, so the list is the whole set
+  for any realistic schedule. Apply the every-id rule to it.
 - Swap only if every id in `conflictsWith` is on the may-cancel list. There are no partial
   swaps: if even one id is not on the list, do not swap. Cancel exactly those ids and no others,
   even if the list has more.
@@ -91,14 +94,12 @@ To swap:
 
 0. Before each swap, tell the user in the conversation which ids are about to be cancelled, so
    the transcript is the durable record.
-1. Cancel one reservation at a time and read each result. `cancel_reservation` reports `outcome`
-   and `verifiedAbsent`: `outcome` is `cancelled`, `alreadyAbsent` or `uncertain`.
-   - A cancel that says the reservation was already gone (404) is not something to restore
-     (`alreadyAbsent`). A cancel with outcome `alreadyAbsent` is never re-reserved, even when the
-     read-back fails: it was gone before this watch touched it.
-   - A cancel is uncertain if `outcome` is `uncertain`, if `get_schedule` afterwards cannot be
-     read, or if it still lists the reservation: an acknowledged cancel (`outcome` is `cancelled`)
-     whose `verifiedAbsent` is not true counts as uncertain. Then stop cancelling, do not reserve
+1. Cancel one reservation at a time, then read the result and call `GetSchedule`.
+   - A `CancelReservation` 404 means the reservation is already gone (it was not there before this
+     watch touched it): there is nothing to restore, and it is never re-reserved, even when the
+     read-back fails.
+   - A cancel is uncertain if the call times out or fails in transit, or if the `GetSchedule` that
+     follows still lists the reservation or cannot be read. Then stop cancelling, do not reserve
      the target, re-reserve anything you already cancelled, and re-reserve the uncertain one
      too. Restore every cancel that was confirmed. If it is still held, that returns
      `alreadyScheduled`, which is harmless; if it was cancelled, the re-reserve restores it. The
@@ -110,14 +111,14 @@ To swap:
      closed (409), re-reserve the ones you already cancelled, then stop the whole watch and tell
      the user. A 400 (validation error) or an OAuth failure on a cancel is treated like auth:
      re-reserve what you cancelled, then stop the whole watch.
-2. Reserve the target with `reserve_sessions`.
+2. Reserve the target with `ReserveSessions`.
 3. Decide what the result means.
    - If the target reserve was refused (any failure code), or the read-back shows it absent,
      restore: re-reserve what you cancelled.
    - If the target reserve is uncertain and the read-back cannot be done, restore anyway. If the
      target did land, the API refuses the restore with `scheduleConflict`, so it cannot
      double-book (the target overlaps the cancelled reservation by definition); if it did not land,
-     the restore saves the user's seat. Then verify with `get_schedule` when you can, stop the whole
+     the restore saves the user's seat. Then verify with `GetSchedule` when you can, stop the whole
      watch, and tell the user exactly what is known.
    - If it landed, the cancelled reservations are gone: remove them from the may-cancel list.
 4. Restore only what you actually cancelled. Retry a restore only when it was refused by a 429 or
@@ -129,7 +130,7 @@ To swap:
    keep running even after the rest of the watch stops, and you tell the user right away that a
    restore is pending. A pending restore takes priority over everything else on the next check.
    While a restore is pending, never attempt another swap.
-5. Verify with `get_schedule`. Report exactly what was kept, gained and lost. If anything was
+5. Verify with `GetSchedule`. Report exactly what was kept, gained and lost. If anything was
    lost or is uncertain, stop the whole watch and tell the user right away. A schedule that
    changed in a way the user did not approve must not be changed further.
 
@@ -140,16 +141,18 @@ as a change. Meanwhile, report the conflict once and wait for the seat band to c
 
 ## Uncertain writes
 
-Never blindly replay a write. If a reserve or cancel gives no clear answer, let the next
-`get_schedule` decide whether it landed. A reserve acknowledged as successful but missing from the
-`get_schedule` read-back is uncertain, not reserved.
+Never blindly replay a write. Uncertain means a transport error or a timeout from a write, or an
+effect that a following `GetSchedule` contradicts. If a reserve or cancel gives no clear answer, let the next
+`GetSchedule` decide whether it landed. A reserve acknowledged as successful but missing from the
+`GetSchedule` read-back is uncertain, not reserved.
 
 ## Using judgment
 
 This is why an agent runs the loop.
 
-- If a target stays full, look in the catalog for a repeat of the same talk (a code ending
-  `-R` or `-R1`) and offer it to the user. Do not reserve a repeat without asking.
+- If a target stays full, look in the catalog (`lookup_sessions` shows a talk's other sittings, `search_sessions`
+  finds similar ones) for a repeat of the same talk (a code ending `-R` or `-R1`) and offer it to
+  the user. Do not reserve a repeat without asking.
 - If a target's time or venue changed, tell the user.
 - If the user's other reservations changed in a way that affects the watch, say so.
 

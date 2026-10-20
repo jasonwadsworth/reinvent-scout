@@ -45,7 +45,7 @@ describe("CatalogMissingError", () => {
     expect(err.name).toBe("CatalogMissingError");
     // Mirrors AuthRequiredError's pattern -- these are the pair of "you need to do something
     // first" errors a new user will hit, and both name the exact command that fixes it.
-    expect(err.message).toMatch(/catalog sync/);
+    expect(err.message).toMatch(/reinvent-scout:catalog-sync/);
   });
 
   it("accepts a custom message", () => {

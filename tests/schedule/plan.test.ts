@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildIndexRecord } from "../../src/catalog/index-record.js";
-import { buildSchedulePlan, planSchedule } from "../../src/schedule/plan.js";
+import { buildSchedulePlan, planSchedule, sessionInterval } from "../../src/schedule/plan.js";
 import { createTempHome } from "../helpers/temp-home.js";
 import { CURRENT_SCHEMA_VERSION, writeCatalog } from "../../src/catalog/store.js";
 import type { Schedule } from "../../src/api/types.js";
@@ -80,24 +80,41 @@ describe("conflict-free plan", () => {
     expect(buildSchedulePlan(["missing"], context()).rejected[0]!.reason).toBe("notInCatalog");
     expect(buildSchedulePlan([], context()).selected).toEqual([]);
   });
-  it("orchestration requires a current event-matching catalog before schedule read, and never writes", async () => {
-    const home = createTempHome(); let reads = 0;
+  it("orchestration is synchronous, requires a current event-matching catalog, and takes the schedule as data", () => {
+    const home = createTempHome();
     try {
       const index = [session("a")];
       writeCatalog({ raw: [], index, meta: { schemaVersion: CURRENT_SCHEMA_VERSION, eventId: "event", syncedAt: 1, count: 1, totalCount: 1, includedAbstracts: true, timezone: "America/Los_Angeles" } }, { storeRoot: home.path });
-      const apiClient = { getSchedule: async () => { reads++; return empty(); }, reserveSessions: async () => { throw new Error("planner wrote"); } };
-      await expect(planSchedule(["a"], { storeRoot: home.path, apiClient, eventId: "other", now: () => 0 })).rejects.toThrow(/event/);
-      expect(reads).toBe(0);
-      expect((await planSchedule(["a"], { storeRoot: home.path, apiClient, eventId: "event", now: () => 0 })).selected[0]!.sessionId).toBe("a");
-      expect(reads).toBe(1);
+      expect(() => planSchedule(["a"], { storeRoot: home.path, schedule: empty(), eventId: "other", now: () => 0 })).toThrow(/event/);
+      const plan = planSchedule(["a"], { storeRoot: home.path, schedule: empty(), eventId: "event", now: () => 0 });
+      expect(plan).not.toBeInstanceOf(Promise);
+      expect(plan.selected[0]!.sessionId).toBe("a");
+    } finally { home.cleanup(); }
+  });
+  it("needs a schedule when there is anything to plan", () => {
+    const home = createTempHome();
+    try {
+      writeCatalog({ raw: [], index: [session("a")], meta: { schemaVersion: CURRENT_SCHEMA_VERSION, eventId: "event", syncedAt: 1, count: 1, totalCount: 1, includedAbstracts: true, timezone: "America/Los_Angeles" } }, { storeRoot: home.path });
+      expect(() => planSchedule(["a"], { storeRoot: home.path, eventId: "event", now: () => 0 })).toThrow(/schedule/);
+    } finally { home.cleanup(); }
+  });
+  it("a personal-time block from the schedule blocks an overlapping offering", () => {
+    const home = createTempHome();
+    try {
+      writeCatalog({ raw: [], index: [session("a")], meta: { schemaVersion: CURRENT_SCHEMA_VERSION, eventId: "event", syncedAt: 1, count: 1, totalCount: 1, includedAbstracts: true, timezone: "America/Los_Angeles" } }, { storeRoot: home.path });
+      const interval = sessionInterval(session("a"), "America/Los_Angeles")!;
+      const personalTime = [{ personalTimeId: "p", title: "Busy", description: "", startDateTime: interval.startsAt.slice(0, 19), endDateTime: interval.endsAt.slice(0, 19) }];
+      const plan = planSchedule(["a"], { storeRoot: home.path, schedule: { reserved: [], favorites: [], personalTime }, eventId: "event", now: () => 0 });
+      expect(plan.selected).toEqual([]);
+      expect(plan.rejected[0]!.reason).toBe("conflict");
     } finally { home.cleanup(); }
   });
 });
 
-it("empty orchestration input needs neither catalog nor account read", async () => {
-  const home = createTempHome(); let reads = 0;
+it("empty orchestration input needs neither catalog nor schedule", () => {
+  const home = createTempHome();
   try {
-    const result = await planSchedule([], { storeRoot: home.path, apiClient: { getSchedule: async () => { reads++; throw new Error("unexpected account read"); } } });
-    expect(result.selected).toEqual([]); expect(result.conflictFree).toBe(true); expect(reads).toBe(0);
+    const result = planSchedule([], { storeRoot: home.path });
+    expect(result.selected).toEqual([]); expect(result.conflictFree).toBe(true);
   } finally { home.cleanup(); }
 });

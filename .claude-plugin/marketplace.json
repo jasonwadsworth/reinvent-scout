@@ -1,0 +1,14 @@
+{
+  "name": "reinvent-scout",
+  "owner": {
+    "name": "Jason Wadsworth"
+  },
+  "description": "The reinvent-scout plugin: match re:Invent sessions to your code and manage your schedule.",
+  "plugins": [
+    {
+      "name": "reinvent-scout",
+      "source": "./plugin",
+      "description": "Find the re:Invent sessions that match your code, and manage your schedule, through the AWS Events MCP and local scripts."
+    }
+  ]
+}
