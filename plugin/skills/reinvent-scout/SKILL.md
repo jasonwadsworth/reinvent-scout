@@ -28,7 +28,7 @@ node "${CLAUDE_SKILL_DIR}/scripts/reinvent-scout.mjs" list_filters --json '{"fie
 
 AWS Events tools are `mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___<Name>`, or
 `mcp__awsevents__AWSEventsPublicApi-Mcp-prod___<Name>` when your own `awsevents` server shadows the plugin's; use whichever is
-available. The docs here write the bare operation name (`GetSchedule`). They need no
+available. The docs here write the bare operation name (`GetSchedule`). Every AWS tool except `ListEvents` takes `eventId`: pass `reinvent2026` unless the user names another event. They need no
 sign-in of their own here: the first call opens the AWS sign-in in the browser. If one reports you are not signed in,
 tell the user to complete it, and try again.
 
@@ -135,9 +135,9 @@ tell the user to complete it, and try again.
    cancellations and the running watch is the standing request for re-attempts. Outside a watch,
    these rules hold.
 8. Ask for confirmation before favoriting anything. On confirmation, call `AssociateFavorites` with
-   the chosen session ids, at most 10 ids per call; on a 429, pause and continue later. Report every outcome plainly: a `failed` entry is a real refusal (most
-   often a schedule conflict) and must be reported
-   as one, never smoothed over as a success. Check with `GetSchedule` that the favorites stuck.
+   the chosen session ids, at most 10 ids per call; on a 429, pause and continue later. Report every outcome plainly: a `failed` entry is a real refusal
+   (`insufficientAccess`, or an unknown code) and must be reported as one, while `alreadyFavorited` is harmless: say so. Favorites do not conflict with the schedule, so never
+   smooth a failure over as a success. Check with `GetSchedule` that the favorites stuck.
 9. Call `GetSchedule` to see what's on the schedule now, and resolve the ids on a `GetSchedule` result with `lookup_sessions`
    (titles, venue, room, and `startsAt`/`endsAt` in UTC; personal time from AWS is already UTC, so sort everything by those instants). Show the user the
    relevant entries. When the user wants an abstract, use `lookup_sessions` with `includeAbstract` (at most 10 ids). Use `DisassociateFavorite` if the user wants a favorite removed,

@@ -567,10 +567,10 @@ greedy time-only plan, not a global optimum, seat promise, or travel-feasibility
 Present that plan and obtain the attendee's confirmation before writing these exact IDs with `ReserveSessions` (at most 10 ids per call):
 
 ```json
-{"tool":"ReserveSessions","arguments":{"sessionIds":["<selected-session-id>"]}}
+{"tool":"ReserveSessions","arguments":{"eventId":"reinvent2026","sessionIds":["<selected-session-id>"]}}
 ```
 
-The result is `{ successful: string[], failed: [{ sessionId, code, conflictsWith? }] }`. Read every `failed` entry and report it: `alreadyScheduled` is
+The result is `{ "result": { "successful": string[], "failed": [{ sessionId, code, conflictsWith? }] } }`. Read every `failed` entry and report it: `alreadyScheduled` is
 not a failure, `sessionFull` and `scheduleConflict` are real refusals, and an unknown code is a refusal too. A 409 means reservations are closed: stop.
 On a 429, pause until a later wakeup. A timeout or lost response is uncertain: call `GetSchedule` to see what landed, tell the user, and
 never replay the whole request; a later retry needs an explicit new request, fresh eligibility checks, and only the still-missing IDs. No command
@@ -582,7 +582,7 @@ Outside a watch, these rules hold.
 For an explicitly requested cancellation, call `CancelReservation` with one reserved offering ID:
 
 ```json
-{"tool":"CancelReservation","arguments":{"sessionId":"<selected-session-id>"}}
+{"tool":"CancelReservation","arguments":{"eventId":"reinvent2026","sessionId":"<selected-session-id>"}}
 ```
 
 A success means cancelled; a 404 means the reservation is already gone; any other failure is uncertain until `GetSchedule` says otherwise. Never repeat a cancel
@@ -593,7 +593,7 @@ after a 503 without reading the schedule first. Favorites work the same way with
 `GetSession` reads one session live from AWS, not from the local catalog (which can be stale), with one request and no writes:
 
 ```json
-{"tool":"GetSession","arguments":{"sessionId":"<session-id>"}}
+{"tool":"GetSession","arguments":{"eventId":"reinvent2026","sessionId":"<session-id>"}}
 ```
 
 The result's `session` has `sessionId`, `abbreviation`, `title`, `venue`, `room`, `sessionTime` (`date`, `time`, `length`), `isReservable` and

@@ -920,8 +920,8 @@ it("runs the documented plan_schedule example against a catalog, and shows the A
     const selected = JSON.parse(plan.text).selected as Array<{ sessionId: string }>;
     expect(selected.map(entry => entry.sessionId)).toEqual(["example-offering"]);
     // The writes are AWS calls with AWS argument shapes: at most 10 ids to reserve, one id to cancel.
-    expect(blocks[1]!.arguments).toEqual({ sessionIds: ["<selected-session-id>"] });
-    expect(blocks[2]!.arguments).toEqual({ sessionId: "<selected-session-id>" });
+    expect(blocks[1]!.arguments).toEqual({ eventId: "reinvent2026", sessionIds: ["<selected-session-id>"] });
+    expect(blocks[2]!.arguments).toEqual({ eventId: "reinvent2026", sessionId: "<selected-session-id>" });
   } finally { home.cleanup(); }
   expect(skillMd).toMatch(/confirmation before.*reserv/i);
   expect(workflowMd).toContain("uncertain");
@@ -1274,5 +1274,40 @@ describe("watch playbook (reference/watch.md)", () => {
       "up to about 10 targets",
       "Travel time between venues is not checked",
     ]);
+  });
+});
+
+describe("AWS Events tool-call examples", () => {
+  const awsCalls = [...allSkillText.matchAll(/^\{"tool":"([A-Z][A-Za-z]+)","arguments":(.*)\}$/gm)].map((match) => ({
+    tool: match[1]!,
+    args: JSON.parse(match[2]!) as Record<string, unknown>,
+  }));
+
+  it("finds the examples it is meant to check", () => {
+    expect(awsCalls.map((call) => call.tool)).toEqual(expect.arrayContaining(["ReserveSessions", "CancelReservation", "GetSession"]));
+  });
+
+  it("passes eventId in every operation except ListEvents, as the OpenAPI paths require", () => {
+    for (const { tool, args } of awsCalls) {
+      if (tool === "ListEvents") continue;
+      expect(args, `${tool} example`).toHaveProperty("eventId", "reinvent2026");
+    }
+  });
+
+  it("says which eventId to pass in SKILL.md and watch.md", () => {
+    for (const text of [skillMd, watchMd]) {
+      expect(text).toMatch(/every AWS (Events )?tool\S* (except `ListEvents` )?takes `eventId`[^.]*`reinvent2026`/i);
+    }
+  });
+
+  it("documents the bulk response nested under result", () => {
+    expect(workflowMd).toContain('{ "result": { "successful": string[], "failed": [{ sessionId, code, conflictsWith? }] } }');
+  });
+
+  it("names only BulkFailureCode values as failure codes", () => {
+    expect(extractSection(watchMd, "## One check")).not.toMatch(/`insufficientAccess` or `walkUp`/);
+    expect(skillMd).toMatch(/`alreadyFavorited`/);
+    expect(skillMd).toMatch(/`insufficientAccess`/);
+    expect(skillMd).not.toMatch(/most\s+often a schedule conflict/);
   });
 });

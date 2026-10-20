@@ -7,7 +7,7 @@ judgment to apply, not code to call.
 
 AWS Events tools are `mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___<Name>`, or
 `mcp__awsevents__AWSEventsPublicApi-Mcp-prod___<Name>` when your own `awsevents` server shadows the plugin's; use whichever is
-available. The docs here write the bare operation name (`GetSchedule`).
+available. The docs here write the bare operation name (`GetSchedule`). Every AWS tool except `ListEvents` takes `eventId`: pass `reinvent2026` unless the user names another event.
 
 ## Starting a watch
 
@@ -70,7 +70,7 @@ restore this way: restore wakeups keep running even after the rest of the watch 
    - `sessionFull`: keep watching.
    - `alreadyScheduled`: done.
    - `scheduleConflict`: see the next section.
-   - `timePassed`, `sessionNotReservable`, `insufficientAccess` or `walkUp`: stop that target and
+   - `timePassed`, `sessionNotReservable` or `insufficientAccess`: stop that target and
      tell the user.
    - An unknown code: stop that target and tell the user.
 6. A `GetSession` 404 in the middle of a watch is transient. The 2026-10 outage 404'd real
