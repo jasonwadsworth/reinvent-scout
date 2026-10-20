@@ -1011,8 +1011,12 @@ describe("the off-stack documentation", () => {
 describe("the session preferences documentation", () => {
   const readmeMd = readFileSync(join(here, "..", "..", "README.md"), "utf8");
   const collapse = (text: string): string => text.replace(/\s+/g, " ");
+  it("points step 5 at the preferences section of workflow.md, which is where the rules now live", () => {
+    expect(collapse(extractSection(skillMd, "## The flow"))).toContain("[reference/workflow.md](reference/workflow.md#session-preferences)");
+    expect(workflowMd).toMatch(/^## Session preferences$/m);
+  });
   it("tells the agent to pass a stated level preference on the map and the match, in words as well as numbers, and keep it", () => {
-    const flow = collapse(extractSection(skillMd, "## The flow"));
+    const flow = collapse(extractSection(workflowMd, "## Session preferences"));
     for (const expected of ["`preferences: { \"levels\": { \"min\": N, \"max\": M } }`", "on `map_profile` and on `match_sessions`", "for the rest of the conversation, the map included",
       "100 Foundational, 200 Intermediate, 300 Advanced, 400 Expert, 500 Distinguished", "\"Only 400-500\" and \"expert\" are 400 to 500", "\"advanced and up\" and \"no intro\" are 300 to 500",
       "the remaining ones are re-ranked by the same rules", "never widen the range yourself, and offer to widen it", "`explain` is an error naming `deepen` or `all`"]) {
@@ -1027,7 +1031,7 @@ describe("the session preferences documentation", () => {
     }
   });
   it("turns plain statements into facet rules, restates them and keeps them, in the skill", () => {
-    const flow = collapse(extractSection(skillMd, "## The flow"));
+    const flow = collapse(extractSection(workflowMd, "## Session preferences"));
     for (const expected of ["`rules` on any catalog field", "\"field\": \"format\" | \"venue\" | \"day\" | \"topic\" | \"area\" | \"industry\" | \"role\"", "\"action\": \"only\" | \"prefer\" | \"avoid\" | \"exclude\"",
       "several `only` rules on one field are a union", "an intersection", "a session with no value for that field is left out", "within one field the first matching rule decides, across fields the effects add up",
       "a preferred session outranks a neutral one even if it matches less strongly", "(a chalk talk at MGM Grand, which you prefer)", "(ranked lower: a breakout session, which you asked to avoid at 300\u2013500)",
