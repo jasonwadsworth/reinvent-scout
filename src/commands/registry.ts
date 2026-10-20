@@ -64,7 +64,7 @@ function resolveProfileAgainstCatalog(rawProfile: unknown, storeRoot: string) {
 
 /** Mirrors the CLI's own `match` default/cap (30/100) at a smaller size deliberately -- an agent
  * asking for candidates should get a genuinely useful set, and every response (at any limit, for
- * any profile) is held to a real 30 KB budget by `buildMatchResponse` below, not by these numbers
+ * any profile) is held to a real 24 KiB budget (`OUTPUT_BUDGET_BYTES`) by `buildMatchResponse` below, not by these numbers
  * alone.
  *
  * History, since the final design only makes sense in light of what didn't work first (measured
@@ -74,7 +74,7 @@ function resolveProfileAgainstCatalog(rawProfile: unknown, storeRoot: string) {
  * response under budget, but the reviewer's follow-up measurement, varying the *profile* rather
  * than the limit, found an eight-service profile -- not an exotic one, an ordinary serverless app
  * easily names Lambda, DynamoDB, S3, SQS, EventBridge, API Gateway, Step Functions and CloudWatch
- * -- already breaches 30 KB at the *default* limit of 25, because each matched service adds its
+ * -- already breached the budget (30 KB then, 24 KiB now) at the *default* limit of 25, because each matched service adds its
  * own "service" reason to every candidate. No shape trim and no limit number can fix that: size
  * scales with the profile's richness as much as the candidate count, so the guarantee has to be
  * enforced on the actual serialized response, not assumed from a specific limit or a specific
@@ -86,7 +86,7 @@ const DEFAULT_MATCH_SESSIONS_LIMIT = 25;
 const MAX_MATCH_SESSIONS_LIMIT = 50;
 
 /** The most sessions per choice `match_sessions` accepts with a `focus`, and what it lists when `perTopic` is not given: six choices
- * of this many fit the 30 KB response budget without trimming on all seven profiles measured, taking each profile's six largest
+ * of this many fit the 24 KiB response budget (`OUTPUT_BUDGET_BYTES`) without trimming on all seven profiles measured, taking each profile's six largest
  * choices (four per choice already trims policy-tracker's). The CLI, with no budget, takes up to 10. */
 const MAX_FOCUS_PER_TOPIC = 3;
 
