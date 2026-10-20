@@ -1,7 +1,6 @@
 import type { ResolvedProfile } from "./profile.js";
 
-/** The `profile validate` report, shared by the CLI (`--json`) and the MCP `validate_profile` tool so
- * both print the same object. `fits` decides whether a candidate response is within the caller's
+/** The `validate_profile` report. `fits` decides whether a candidate response is within the caller's
  * size budget; the default accepts everything. */
 export interface CompactResolvedService {
   name: string;
@@ -99,14 +98,14 @@ function buildValidateProfileResponse(
 
 /** pr-reviewer's finding: echoing the whole resolved profile (every service's `evidence`, `usage`,
  * and every pattern's `note`/`evidence`, plus `repos`) breaks the README's own "every tool holds
- * its response to a 30 KB budget" claim for a profile with many services -- measured at 45,439
+ * its response to a 24 KiB budget" claim for a profile with many services -- measured at 45,439
  * bytes for a 120-service profile, comfortably over budget, and none of that evidence is data this
  * tool computed anyway: it's the agent's own input echoed back. This reports only what
  * `resolveProfile` actually decided: each service's name and its resolved `catalogName` (or
  * `null`), each pattern's bare name, `unresolvedServices`, and counts.
  *
  * Both `services` (and, derived from it, `unresolvedServices`) *and* `patterns` are enforced at the
- * same response budget `fits` enforces (the MCP server's 30 KB; the CLI passes none), the same truncate-in-order way `match_sessions`
+ * same response budget `fits` enforces (24 KiB in the script; the default accepts everything), the same truncate-in-order way `match_sessions`
  * does -- reviewer's follow-up finding: a first version left `patterns` out of the budget
  * entirely, on the assumption a hackathon-scale profile's own pattern list is small by
  * construction. A profile naming many long patterns (as plausible as many long service names --

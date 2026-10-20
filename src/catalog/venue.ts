@@ -9,7 +9,7 @@ export const VENUES = ["MGM Grand", "Caesars Forum", "Venetian", "Wynn/Encore", 
 export type Venue = typeof VENUES[number];
 const KNOWN_VENUES: ReadonlySet<string> = new Set(VENUES);
 
-/** Exported so callers taking a venue as a raw string (the `catalog search --venue` CLI flag)
+/** Exported so callers taking a venue as a raw string (the `venue` rule value of a preference)
  * can validate it against the same closed set this module treats as authoritative. */
 export function isKnownVenue(value: string): value is Venue {
   return KNOWN_VENUES.has(value);

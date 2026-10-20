@@ -194,8 +194,7 @@ export type SessionLookupResult =
       relatedAbbreviations: string[];
       /** The same sittings as `relatedAbbreviations`, as full records rather than just their
        * abbreviations -- sorted by start date/time, never including `record` itself. Exists for a
-       * caller (the CLI's own human-readable `catalog show`) that needs each other sitting's own
-       * day, time, venue and room, not just its name. */
+       * caller that needs each other sitting's own day, time, venue and room, not just its name. */
       relatedRecords: IndexRecord[];
     }
   | { status: "not-found" }
@@ -225,10 +224,9 @@ export function baseSessionCode(record: IndexRecord): string {
 }
 
 /** Ascending by start date then start time; a record with no `startDate` at all (unscheduled)
- * sorts last, since there's nothing yet to place it relative to a scheduled one. Exported so the
- * CLI's own `catalog show` can merge a resolved record back in with its `relatedRecords` into one
- * time-ordered list of every sitting, using the exact same order this module already sorts
- * siblings by. */
+ * sorts last, since there's nothing yet to place it relative to a scheduled one. Exported so a
+ * caller can merge a resolved record back in with its `relatedRecords` into one time-ordered list
+ * of every sitting, using the exact same order this module already sorts siblings by. */
 export function compareByStartDateTime(a: IndexRecord, b: IndexRecord): number {
   if (a.startDate !== b.startDate) {
     if (a.startDate === null) {

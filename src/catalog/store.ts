@@ -16,8 +16,8 @@ const META_FILE_NAME = "meta.json";
 const FILE_MODE = 0o600;
 
 /** Bumped whenever the on-disk `IndexRecord` shape changes incompatibly; a stored catalog at an
- * older version is reported stale so `catalog sync --reindex`-equivalent logic (task 15) can
- * rebuild the index from the stored raw data without a new API pull.
+ * older version is reported stale so a `catalog_import` reindex can rebuild the index from the
+ * stored raw data without a new import.
  *
  * Bumped 1 -> 2: `titleTerms`/`bodyTerms` built before this version can hold a poisoned entry for
  * any term that collides with an `Object.prototype` member (`constructor`, `hasOwnProperty`,
@@ -42,7 +42,7 @@ const FILE_MODE = 0o600;
  * for `match` to cite as evidence.
  *
  * Bumped 4 -> 5: `CatalogMeta` gained `timezone`, the event's IANA timezone (or `null` when the
- * API response omits it), fetched from `GetEvent` and stored at sync time. `get_schedule` needs
+ * API response omits it), fetched from `GetEvent` and stored at import time. `lookup_sessions` needs
  * it to convert each session's local wall-clock start time into a real UTC instant (`startsAt`)
  * so sessions and personal-time blocks -- which are already UTC -- sort correctly against each
  * other across a day boundary; without it there is no way to tell a resolved session's local time
@@ -185,8 +185,9 @@ export type TimezoneAvailability =
       /** `omittedByApi`: `GetEvent`'s response genuinely didn't report one -- syncing again
        * cannot fix this. `syncedBeforeTimezoneSupport`: this catalog was synced before the
        * `timezone` field existed at all, so the API was never even asked -- one more
-       * `catalog_sync` will very likely resolve it. Callers must give these two different advice;
-       * conflating them tells a user "nothing can be done" in a case a sync would fix. */
+       * importing again with the catalog-sync agent will very likely resolve it. Callers must give
+       * these two different advice; conflating them tells a user "nothing can be done" in a case an
+       * import would fix. */
       reason: "omittedByApi" | "syncedBeforeTimezoneSupport";
     }
   | {

@@ -38,6 +38,13 @@ describe("plugin only", () => {
     }
     expect(offenders).toEqual([]);
   });
+
+  it("no source file describes a removed surface", () => {
+    const removed = /\bCLI\b|MCP server|MCP tool|catalog_sync|get_schedule|get_session|reserve_sessions|cancel_reservation|favorite_sessions|unfavorite_session|reinvent-scout (?:auth|catalog|profile|match|schedule|skill|mcp)\b|errorMaxChars|signed-in session/;
+    for (const file of tsFilesUnder("src")) {
+      expect(readFileSync(join(root, file), "utf8"), file).not.toMatch(removed);
+    }
+  });
 });
 
 function tsFilesUnder(dir: string): string[] {

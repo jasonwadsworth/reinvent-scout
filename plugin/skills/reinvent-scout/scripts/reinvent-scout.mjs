@@ -23774,8 +23774,7 @@ var MatchSessionsInputSchema = external_exports.strictObject({
   profile: external_exports.unknown(),
   preferences: PreferencesSchema.optional(),
   lens: external_exports.enum(LENSES).optional(),
-  /** Silently capped at `MAX_MATCH_SESSIONS_LIMIT`, never rejected -- unlike the CLI's own
-   * `--limit`, which refuses a too-large value outright. An agent asking for "a lot" of
+  /** Silently capped at `MAX_MATCH_SESSIONS_LIMIT`, never rejected. An agent asking for "a lot" of
    * candidates should get the largest sensible set rather than a validation error it has to
    * retry past. */
   limit: external_exports.number().int().positive().optional(),
@@ -23811,7 +23810,6 @@ var planScheduleCommand = {
 var nearbySessionsCommand = {
   description: "Read-only nearby suggestions after confirming your current venue for this call. Two calls: the first returns `refreshIds` (up to 20 eligible sessions); read each with AWS GetSession, one at a time, then call again with the same input plus `liveSessions` (the `session` objects you read). Pass the whole AWS GetSchedule `schedule` (or a `scheduleFile`) both times. Skipping does not cancel reservations.",
   inputSchema: nearbyInputSchema,
-  errorMaxChars: 512,
   run: (input2, deps) => boundedNearbyResult(recommendNearbySessions(input2, { storeRoot: deps.storeRoot, ...deps.now ? { now: deps.now } : {} }))
 };
 var validateProfile = {
@@ -23870,13 +23868,11 @@ var mapProfileCommand = {
 var getOnsitePreferences = {
   description: "Read effective on-site preferences for one event without creating config or contacting the account. Explicit session false overrides global walk-up preference.",
   inputSchema: external_exports.strictObject({ eventId: eventIdSchema }),
-  errorMaxChars: 512,
   run: ({ eventId }, deps) => boundedOnsitePreferences(effectiveOnsitePreferences(readOnsiteConfig({ storeRoot: deps.storeRoot }), eventId ?? DEFAULT_EVENT_ID))
 };
 var setOnsitePreferences = {
   description: "Persist local on-site preferences atomically. Session walk-up null resets inheritance; false is explicit. Routes and windows replace their lists. No AWS schedule writes.",
   inputSchema: external_exports.strictObject({ eventId: eventIdSchema, patch: onsitePatchSchema }),
-  errorMaxChars: 512,
   run: ({ eventId, patch }, deps) => {
     const event = eventId ?? DEFAULT_EVENT_ID;
     return boundedOnsitePreferences(effectiveOnsitePreferences(updateOnsiteConfig(event, patch, { storeRoot: deps.storeRoot }), event));

@@ -106,7 +106,7 @@ export interface ResolvedProfile extends Omit<Profile, "services"> {
   services: ResolvedService[];
   /** Every service `name` that didn't resolve to a catalog display name, in profile order --
    * the same information `services[].catalogName === null` carries, surfaced as a flat list so a
-   * caller (the CLI, an MCP tool) can report it as a single warning without re-scanning
+   * caller can report it as a single warning without re-scanning
    * `services`. */
   unresolvedServices: string[];
 }
