@@ -79,12 +79,12 @@ The pattern this forces, used throughout the codebase, is a conditional spread i
 possibly-`undefined` value:
 
 ```ts
-// Not this -- fails to typecheck if `includeAbstracts` is `boolean | undefined` and the target
-// type's `includeAbstracts` is a plain optional `boolean`:
-{ includeAbstracts: options.includeAbstracts }
+// Not this -- fails to typecheck if `preferences` is `SessionPreferences | undefined` and the target
+// type's `preferences` is a plain optional property (`commands/registry.ts`):
+{ preferences }
 
 // This instead:
-{ ...(options.includeAbstracts === undefined ? {} : { includeAbstracts: options.includeAbstracts }) }
+{ ...(preferences === undefined ? {} : { preferences }) }
 ```
 
 It shows up constantly at call sites that forward an optional field from one options object into
@@ -104,3 +104,7 @@ adversarial fixture value, a single-flight test that would have passed under a w
 CI-matrix test whose positive assertion alone would have missed a regression a second assertion
 was needed to catch. Do this for your own tests as you write them, not only when reviewing someone
 else's.
+
+When a PR deletes tests, statement coverage cannot show the assertions that went with them: a line
+can still run under another test while only the deleted one checked its result. Sabotage the live
+lines and run only the tests that survive; each sabotage must turn one of them red.

@@ -28,7 +28,7 @@ plugin server and a user server at the same endpoint as one: with the exact URL 
 in your entry you get one connection (yours), and the tools are named `mcp__awsevents__AWSEventsPublicApi-Mcp-prod___<Name>`; otherwise they
 are `mcp__plugin_reinvent-scout_awsevents__AWSEventsPublicApi-Mcp-prod___<Name>`. The skill accepts either. With any other spelling of the
 URL (another path, a query string, a non-default port) there are two servers and two sign-ins, one after the
-other; use the exact URL in your own entry to avoid that. The permission rules above list both names for the same reason.
+other; use the exact URL in your own entry to avoid that. The permission rules below list both names for the same reason.
 
 ## Permissions
 
@@ -120,7 +120,7 @@ guessed from the times). A repeated talk is one candidate under its base `code`,
 `offerings`. A profile with nothing in common with any session returns an empty list, not every
 session at a score of zero.
 
-#### Map your code, then choose what to look for
+### Map your code, then choose what to look for
 
 Plain lenses rank everything the profile touches. To get a short list about what *you* care about, call
 `map_profile` first, then `match_sessions` with a `focus` of topics and, for each, a goal. The map lists
@@ -167,7 +167,7 @@ MGM Grand, which you prefer"). The map counts under `only`, `exclude` and `level
 
 `list_filters` lists each field's values with how many talks have each (a repeat counts once), most
 first, from the local catalog. `list_filters` with `field: "venue"` returns one field's whole list. A value
-that does not resolve is an error listing the closest ones.
+that does not resolve is an error listing the catalog's values.
 
 ### Lenses
 
