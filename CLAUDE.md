@@ -6,18 +6,17 @@
 - `npm run typecheck` -- `tsc --noEmit` against `src/`, then again against `tests/` via
   `tsconfig.tests.json`. Both must pass; a type error in a test file is still a failure.
 - `npm run lint` -- `eslint .`.
-- `npm run build` -- `tsc`, emitting to `dist/`.
-- `npm run check` -- all four, in that order. Run this before every commit; it's what CI runs.
+- `npm run bundle` -- rebuilds the committed plugin script from `src/`; `npm run bundle:verify` fails on a stale one.
+- `npm run check` -- typecheck, lint, test and bundle:verify, in that order. Run this before every commit; it's what CI runs.
 
 ## Core vs. adapter
 
-Domain logic lives in `src/auth/**`, `src/api/**`, and `src/catalog/**` (and, as later phases
-land, `src/profile/**`, `src/match/**`, `src/schedule/**`). `src/cli/commands/**` and (phase 3)
-`src/mcp/**` are thin adapters over these modules: they parse input, call one domain function, and
-format the result. If a CLI command or MCP tool is doing anything more interesting than that --
-branching on business rules, computing something, deciding what's valid -- that logic belongs in
-the domain module it's adapting, not the adapter. Business logic in an adapter is a review
-rejection, because it lets the CLI and the (future) MCP server drift apart from each other.
+Domain logic lives in `src/catalog/**`, `src/match/**`, `src/profile/**`, `src/schedule/**` and
+`src/onsite/**`. `src/commands/**` and `src/script/**` are thin adapters over these modules: they
+parse input, call one domain function, and format the result. If a command is doing anything more
+interesting than that -- branching on business rules, computing something, deciding what's valid --
+that logic belongs in the domain module it's adapting, not the adapter. Business logic in an
+adapter is a review rejection.
 
 ## Agentic first
 
@@ -33,15 +32,12 @@ Every module that touches time, randomness, the filesystem root, the network, or
 takes it by injection, with a real default:
 
 - Time: a `now?: () => number` parameter, defaulting to `Date.now`.
-- Randomness: PKCE's `crypto` dependency is injectable (see `src/auth/pkce.ts`).
+- Randomness: a `randomId?: () => string` parameter (`CommandDeps`), defaulting to a real generator.
 - The store root: never hardcoded or read from `process.env` directly inside a domain module --
   resolved once via `src/core/paths.ts` and passed down as `storeRoot`.
-- The network: a `fetchFn?: typeof fetch` parameter, defaulting to the global `fetch`.
-- The process: a spawner, a browser launcher (`src/auth/browser.ts`), etc.
 
 No test may hit the real network or the real home directory. Use `tests/helpers/temp-home.ts` for
-a per-test store root (respects `REINVENT_SCOUT_HOME`) and `tests/helpers/fake-fetch.ts` for
-anything that would otherwise call `fetch`.
+a per-test store root (respects `REINVENT_SCOUT_HOME`).
 
 ## `exactOptionalPropertyTypes`
 

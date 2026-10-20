@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
@@ -45,6 +45,34 @@ describe("plugin only", () => {
       expect(readFileSync(join(root, file), "utf8"), file).not.toMatch(removed);
     }
   });
+
+  it("package.json is a private plugin package", () => {
+    const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { private?: boolean; bin?: unknown; files?: unknown; description: string; scripts: Record<string, string>; dependencies: Record<string, string> };
+    expect(pkg.private).toBe(true);
+    expect(pkg.bin).toBeUndefined();
+    expect(pkg.files).toBeUndefined();
+    expect(pkg.scripts.build).toBeUndefined();
+    expect(pkg.scripts.check).toBe("npm run typecheck && npm run lint && npm run test && npm run bundle:verify");
+    expect(Object.keys(pkg.dependencies)).toEqual(["zod"]);
+    expect(pkg.description).toContain("Claude Code plugin");
+    for (const [name, command] of Object.entries(pkg.scripts)) {
+      for (const match of command.matchAll(/\bnode\s+(\S+)/g)) expect(existsSync(join(root, match[1]!)), `${name}: ${match[1]}`).toBe(true);
+    }
+  });
+
+  it("no config or doc names a removed path or command", () => {
+    const removed = /src\/(?:cli|mcp|skill|auth|api|legacy)\b|dist\/cli|tests\/(?:cli|mcp|auth|api|integration|legacy)\b|fake-fetch|@modelcontextprotocol|\bcommander\b|skill (?:install|update)|reinvent-scout mcp|npm run build/;
+    const files = [
+      "package.json", "eslint.config.js", "tsconfig.json", "tsconfig.tests.json", "vitest.config.ts", "CLAUDE.md",
+      ".claude-plugin/marketplace.json", "plugin/.claude-plugin/plugin.json", "plugin/.mcp.json",
+      ...filesUnder(".github/workflows").filter(p => p.endsWith(".yml")),
+      ...filesUnder("scripts").filter(p => p.endsWith(".mjs")),
+      ...filesUnder("plugin/agents").filter(p => p.endsWith(".md")),
+      ...filesUnder("plugin/skills").filter(p => p.endsWith(".md")),
+    ];
+    expect(files.length).toBeGreaterThan(10);
+    for (const file of files) expect(readFileSync(join(root, file), "utf8"), file).not.toMatch(removed);
+  });
 });
 
 function tsFilesUnder(dir: string): string[] {
@@ -54,4 +82,8 @@ function tsFilesUnder(dir: string): string[] {
 /** Every `from "..."`, `import "..."` and `import("...")` specifier in a source text. */
 function importSpecifiers(text: string): string[] {
   return [...text.matchAll(/\b(?:from|import)\s*["']([^"']+)["']|\bimport\(\s*["']([^"']+)["']\s*\)/g)].map(match => match[1] ?? match[2]!);
+}
+
+function filesUnder(dir: string): string[] {
+  return (readdirSync(join(root, dir), { recursive: true }) as string[]).map(p => `${dir}/${p}`);
 }
