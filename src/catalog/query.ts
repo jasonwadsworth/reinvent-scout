@@ -243,15 +243,16 @@ export function compareByStartDateTime(a: IndexRecord, b: IndexRecord): number {
 }
 
 /**
- * Resolves `catalog show`'s argument against the local index: first as an exact `sessionId`, then
- * -- case-insensitively -- as an `abbreviation`, then -- also case-insensitively -- as a *base*
- * code with any repeat suffix stripped (see `baseSessionCode`). `catalog search` prints only the
- * abbreviation (real session ids are opaque, e.g. `1780441461150001GGoc`), so the abbreviation is
- * the only thing a user actually has to paste back in; resolving only by id would make the
- * documented search-then-show flow unusable for every session in the catalog. The base-code
- * fallback matters because `match`'s own grouped output prints a candidate's `code`, not any one
- * sitting's abbreviation (see `match.ts`), and that code often isn't a real abbreviation on its
- * own -- `catalog show` needs to resolve exactly what `match` just printed.
+ * Resolves a session token against an index already in hand (so a caller resolving many tokens
+ * reads the index once): first as an exact `sessionId`, then -- case-insensitively -- as an
+ * `abbreviation`, then -- also case-insensitively -- as a *base* code with any repeat suffix
+ * stripped (see `baseSessionCode`). Search results show only the abbreviation (real session ids
+ * are opaque, e.g. `1780441461150001GGoc`), so the abbreviation is the only thing a user actually
+ * has to paste back in; resolving only by id would make the search-then-look-up flow unusable for
+ * every session in the catalog. The base-code fallback matters because a match's grouped output
+ * prints a candidate's `code`, not any one sitting's abbreviation (see `match.ts`), and that code
+ * often isn't a real abbreviation on its own -- a lookup needs to resolve exactly what the match
+ * just printed.
  *
  * When several sittings share a base code, the *earliest* by start date and time is the `record`
  * returned, and every other sitting's abbreviation is listed in `relatedAbbreviations` -- this is
@@ -263,11 +264,6 @@ export function compareByStartDateTime(a: IndexRecord, b: IndexRecord): number {
  * token that matches more than one record *by abbreviation* is reported `"ambiguous"` with every
  * candidate rather than silently resolving to the first match.
  */
-export function resolveSessionRecord(deps: CatalogStoreDeps, token: string): SessionLookupResult {
-  return resolveSessionToken(requireCurrentIndex(deps), token);
-}
-
-/** The same resolution over an index already in hand, so a caller resolving many tokens reads the index once. */
 export function resolveSessionToken(index: readonly IndexRecord[], token: string): SessionLookupResult {
 
   const bySessionId = index.find((record) => record.sessionId === token);

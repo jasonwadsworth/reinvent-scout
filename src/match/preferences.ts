@@ -175,28 +175,9 @@ export function annotate(summary: string, note: string | undefined): string {
   return note === undefined ? summary : `${summary.replace(/\.$/, "")} (${note}).`;
 }
 
-const GERUNDS: Record<FacetAction, string> = { only: "Only", prefer: "Preferring", avoid: "Avoiding", exclude: "Excluding" };
-
-/** A rule's value as a short noun phrase for the readable line: "chalk talks", "venue MGM Grand". */
-function named(rule: FacetRule): string {
-  const where = rule.levels === undefined ? "" : ` at ${describeLevels(rule.levels)}`;
-  return `${rule.field === "format" ? `${rule.value.toLowerCase()}s` : `${rule.field} ${rule.value}`}${where}`;
-}
-
 /** A rule's value as it is said when naming what emptied a result: "Workshop", "venue MGM Grand". */
 function plain(rule: FacetRule): string {
   return `${rule.field === "format" ? rule.value : `${rule.field} ${rule.value}`}${rule.levels === undefined ? "" : ` at ${describeLevels(rule.levels)}`}`;
-}
-
-/** The line that tells the reader a list was restricted or reordered, for the readable output. */
-export function describePreferences(preferences: SessionPreferences | undefined): string | undefined {
-  const parts: string[] = [];
-  if (preferences?.levels !== undefined) parts.push(`Only sessions at level ${describeLevels(preferences.levels)}.`);
-  for (const action of FACET_ACTIONS) {
-    const rules = (preferences?.rules ?? []).filter(rule => rule.action === action);
-    if (rules.length > 0) parts.push(`${GERUNDS[action]} ${rules.map(named).join(", ")}.`);
-  }
-  return parts.length === 0 ? undefined : parts.join(" ");
 }
 
 /** Whether any introductory (100/200) session can pass the level preference. */

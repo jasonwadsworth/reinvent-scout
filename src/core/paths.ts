@@ -39,9 +39,8 @@ export function resolveStoreRoot(deps: PathsDeps = {}): string {
  * narrowed by this call.
  *
  * Exported so any module that needs to create a directory under the store root at the store's
- * own mode (currently: the token store, which writes `tokens.json` at a possibly-not-yet-
- * created root) shares this hardening instead of falling back to a bare, umask-dependent
- * `mkdirSync`.
+ * own mode (the catalog, its diff, the import staging and the on-site config) shares this
+ * hardening instead of falling back to a bare, umask-dependent `mkdirSync`.
  */
 export function ensureDirWithMode(path: string, mode: number): void {
   const parent = dirname(path);
@@ -49,7 +48,7 @@ export function ensureDirWithMode(path: string, mode: number): void {
     ensureDirWithMode(parent, mode);
   }
   // Create first and treat "already exists" as the answer, rather than checking existence and
-  // then creating: two processes (the CLI and the MCP server share one store) can race between
+  // then creating: two processes (concurrent runs of the script share one store) can race between
   // those two steps, and the loser would throw EEXIST out of a function whose whole job is to
   // make the directory exist. An existing directory is left exactly as it is, mode included.
   try {
@@ -64,16 +63,4 @@ export function ensureDirWithMode(path: string, mode: number): void {
     return;
   }
   chmodSync(path, mode);
-}
-
-/**
- * Resolves the store root and makes sure it exists, mode `0700` -- including any missing
- * parent directories, which are created at `0700` too rather than left at whatever mode
- * `mkdir -p` would otherwise give them. A directory that already exists is left exactly as it
- * is: its mode is never widened (or narrowed).
- */
-export function ensureStoreRoot(deps: PathsDeps = {}): string {
-  const root = resolveStoreRoot(deps);
-  ensureDirWithMode(root, STORE_DIR_MODE);
-  return root;
 }
