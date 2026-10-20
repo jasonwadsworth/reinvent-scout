@@ -53,7 +53,7 @@ const ValidateProfileInputSchema = z.strictObject({
 /** Shared by `validate_profile` and `match_sessions`: builds the service alias index the current
  * catalog supports and resolves a raw, agent-authored profile against it. Throws
  * `CatalogMissingError`/`CatalogUnusableError` (from `catalogServiceNames`) or `z.ZodError` (from
- * `resolveProfile`'s own schema) -- both handled by `toToolError` at each call site. */
+ * `resolveProfile`'s own schema) -- both turned into the script's error object by `toCommandError`. */
 function resolveProfileAgainstCatalog(rawProfile: unknown, storeRoot: string) {
   const serviceNames = catalogServiceNames({ storeRoot });
   const serviceAliasIndex = buildServiceAliasIndex(serviceNames);

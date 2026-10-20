@@ -207,7 +207,7 @@ export type SessionLookupResult =
  * marker for a sponsored session, and the real catalog has at least one base code where that
  * collision is not hypothetical -- `AIM214` (a SageMaker session) and `AIM214-S` (an unrelated
  * sponsored talk) share a base string but are two different sessions. Exported so `match.ts`
- * groups repeat sittings by the exact same rule this module resolves `catalog show <base code>`
+ * groups repeat sittings by the exact same rule this module resolves a base code
  * with, rather than each maintaining its own copy that could drift apart.
  */
 export const REPEAT_SUFFIX_PATTERN = /-R\d*$/;

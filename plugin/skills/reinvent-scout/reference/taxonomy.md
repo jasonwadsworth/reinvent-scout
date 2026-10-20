@@ -11,7 +11,7 @@ likely to line up with a session's own tags at all.
 ## Session types
 
 The `type` a session carries (surfaced as `type` on a `match_sessions` candidate and on
-`catalog show`):
+a `lookup_sessions` result):
 
 - Bootcamp
 - Breakout session

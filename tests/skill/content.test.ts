@@ -75,7 +75,7 @@ function plainBullets(section: string): string[] {
 }
 
 /** Every backtick-quoted span, from fence-stripped text, matching either the bare tool name
- * `status` or a full snake_case identifier (`catalog_sync`, `aws_dynamodb_table`) -- deliberately
+ * `status` or a full snake_case identifier (`catalog_import`, `aws_dynamodb_table`) -- deliberately
  * broader than "just the registered tools", so a stray or hallucinated identifier of the same
  * shape is caught by the allow-list check at the call site, not silently excluded by the
  * extraction itself. */
@@ -415,7 +415,7 @@ describe("truncation advice consistency", () => {
   });
 
   it("never shows a startsAt/endsAt example with milliseconds -- real output never has them", () => {
-    // Reviewer's finding: workflow.md's get_schedule example showed "startsAt":
+    // Reviewer's finding: workflow.md's schedule example showed "startsAt":
     // "2026-11-30T18:30:00.000Z", but zonedWallClockToUtcIso/addMinutesToIso (src/schedule/
     // timezone.ts) always strip the ".000" for these two fields specifically -- real output never
     // carries it. Scoped to startsAt/endsAt by name, not every timestamp in the skill corpus:
@@ -1088,7 +1088,7 @@ describe("watch playbook (reference/watch.md)", () => {
     expect(workflowMd).toContain("watch.md");
     expect(readFileSync(join(skillRoot, "..", "..", "..", "README.md"), "utf8")).toContain("Watch a full session");
   });
-  it("documents the get_session contract in workflow.md, including that a 404 is not proof", () => {
+  it("documents the GetSession contract in workflow.md, including that a 404 is not proof", () => {
     expectAll(workflowMd, ["GetSession", "seatAvailability", "is not proof the session is gone"]);
   });
   it("gets consent before starting and limits what may be cancelled", () => {

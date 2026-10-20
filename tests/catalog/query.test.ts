@@ -341,7 +341,7 @@ describe("resolveSessionToken against a stored catalog", () => {
     expect(result.status === "found" && result.record.abbreviation).toBe("API303-R");
     expect(result.status === "found" && result.relatedAbbreviations).toEqual(["API303-R1"]);
     // relatedRecords is the same sibling, as a full record rather than just its abbreviation --
-    // `catalog show`'s human output needs each sitting's own day/time/venue/room, not just its name.
+    // a caller needs each sitting's own day/time/venue/room, not just its name.
     expect(result.status === "found" && result.relatedRecords.map((r) => r.abbreviation)).toEqual([
       "API303-R1",
     ]);
