@@ -23197,20 +23197,15 @@ function buildValidateReport(resolved, fits2 = () => true) {
   );
 }
 
-// src/schedule/reservations.ts
+// src/schedule/session-ids.ts
 var MAX_RESERVATION_IDS = 50;
 var MAX_SESSION_ID_LENGTH = 128;
-var RESPONSE_BUDGET_BYTES = 30 * 1024;
-function validateSessionIds(input2, allowEmpty = false, writeLedger = true) {
+function validateSessionIds(input2) {
   const trimmed = input2.map((id3) => typeof id3 === "string" ? id3.trim() : id3);
-  if (!allowEmpty && trimmed.length === 0 || trimmed.length > MAX_RESERVATION_IDS || trimmed.some((id3) => typeof id3 !== "string" || id3.length === 0 || Array.from(id3).length > MAX_SESSION_ID_LENGTH)) {
-    throw new ValidationError(`Expected ${allowEmpty ? "0" : "1"}\u2013${MAX_RESERVATION_IDS} session IDs, each 1\u2013${MAX_SESSION_ID_LENGTH} characters.`);
+  if (trimmed.length > MAX_RESERVATION_IDS || trimmed.some((id3) => typeof id3 !== "string" || id3.length === 0 || Array.from(id3).length > MAX_SESSION_ID_LENGTH)) {
+    throw new ValidationError(`Expected 0\u2013${MAX_RESERVATION_IDS} session IDs, each 1\u2013${MAX_SESSION_ID_LENGTH} characters.`);
   }
-  const ids2 = [...new Set(trimmed)];
-  if (writeLedger && Buffer.byteLength(JSON.stringify(JSON.stringify(ids2)), "utf8") * 2 + 8192 > RESPONSE_BUDGET_BYTES) {
-    throw new ValidationError("These IDs cannot fit the mandatory outcome ledger; submit a smaller batch before any write.");
-  }
-  return ids2;
+  return [...new Set(trimmed)];
 }
 
 // src/schedule/timezone.ts
@@ -23439,7 +23434,7 @@ function overlaps2(a, b) {
   return a.startsAt < b.endsAt && a.endsAt > b.startsAt;
 }
 function buildSchedulePlan(input2, context) {
-  const ids2 = validateSessionIds(input2, true, false);
+  const ids2 = validateSessionIds(input2);
   const result2 = { selected: [], alreadyReserved: [], alreadyReservedAlternative: [], rejected: [], alternatives: [], blockedBy: [], conflictFree: true, limitations: "Time non-overlap only; no seat or travel guarantee. Recheck the schedule before reserving." };
   if (ids2.length === 0) return result2;
   const now = (context.now ?? Date.now)();
@@ -23511,7 +23506,7 @@ function buildSchedulePlan(input2, context) {
   return result2;
 }
 function preparePlan(ids2, deps) {
-  const trimmed = validateSessionIds(ids2, true, false);
+  const trimmed = validateSessionIds(ids2);
   if (!trimmed.length) return null;
   const index = requireCurrentIndex(deps);
   const eventId = deps.eventId ?? DEFAULT_EVENT_ID;
@@ -23803,7 +23798,7 @@ var planScheduleCommand = {
   description: "Plan up to 50 priority-ordered session IDs against the schedule you pass in (the whole `schedule` object from AWS GetSchedule, called immediately before, as `schedule` or a saved `scheduleFile`), with repeat alternatives. No writes; proves time non-overlap only, not seats or travel.",
   inputSchema: PlanScheduleInputSchema,
   run: ({ sessionIds, schedule, scheduleFile, event }, deps) => {
-    const ids2 = validateSessionIds(sessionIds, true, false);
+    const ids2 = validateSessionIds(sessionIds);
     const resolved = readScheduleInput({ schedule, scheduleFile }, { optional: true });
     return boundedSchedulePlan(planSchedule(ids2, {
       storeRoot: deps.storeRoot,

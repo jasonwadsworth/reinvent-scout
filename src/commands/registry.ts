@@ -14,7 +14,7 @@ import { GOALS } from "../match/topics.js";
 import { effectiveOnsitePreferences, onsitePatchSchema, readOnsiteConfig, updateOnsiteConfig } from "../onsite/config.js";
 import { resolveProfile } from "../profile/profile.js";
 import { buildValidateReport } from "../profile/report.js";
-import { MAX_RESERVATION_IDS, MAX_SESSION_ID_LENGTH, validateSessionIds } from "../schedule/reservations.js";
+import { MAX_RESERVATION_IDS, MAX_SESSION_ID_LENGTH, validateSessionIds } from "../schedule/session-ids.js";
 import { queryCatalogChanges } from "../catalog/diff.js";
 import { importCatalog } from "../catalog/import.js";
 import { LOOKUP_MAX_ABSTRACT_IDS, LOOKUP_MAX_IDS, LOOKUP_MAX_QUERY_LENGTH, lookupSessions } from "../catalog/lookup.js";
@@ -143,7 +143,7 @@ const planScheduleCommand = {
   description: "Plan up to 50 priority-ordered session IDs against the schedule you pass in (the whole `schedule` object from AWS GetSchedule, called immediately before, as `schedule` or a saved `scheduleFile`), with repeat alternatives. No writes; proves time non-overlap only, not seats or travel.",
   inputSchema: PlanScheduleInputSchema,
   run: ({ sessionIds, schedule, scheduleFile, event }, deps) => {
-    const ids = validateSessionIds(sessionIds, true, false);
+    const ids = validateSessionIds(sessionIds);
     const resolved = readScheduleInput({ schedule, scheduleFile }, { optional: true });
     return boundedSchedulePlan(planSchedule(ids, {
       storeRoot: deps.storeRoot,

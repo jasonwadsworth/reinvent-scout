@@ -4,7 +4,7 @@ import { baseSessionCode, requireCurrentIndex } from "../catalog/query.js";
 import { DEFAULT_EVENT_ID, readMeta, readTimezoneAvailability, type CatalogStoreDeps } from "../catalog/store.js";
 import { ValidationError } from "../core/errors.js";
 import { deriveSessionTimes } from "./merge.js";
-import { validateSessionIds } from "./reservations.js";
+import { validateSessionIds } from "./session-ids.js";
 import { utcIsoToZonedWallClock } from "./timezone.js";
 
 export interface PlanSelection { requestedId: string; sessionId: string; code: string; title: string; startsAt: string; endsAt: string }
@@ -45,7 +45,7 @@ export function overlaps(a: TimeInterval, b: TimeInterval): boolean {
 /** Deterministic greedy time-only suggestion over the FULL schedule; favorites never block.
  * Existing commitments are not moved, cancelled, or attributed to this invocation. */
 export function buildSchedulePlan(input: readonly string[], context: PlanContext): SchedulePlan {
-  const ids = validateSessionIds(input, true, false);
+  const ids = validateSessionIds(input);
   const result: SchedulePlan = { selected: [], alreadyReserved: [], alreadyReservedAlternative: [], rejected: [], alternatives: [], blockedBy: [], conflictFree: true, limitations: "Time non-overlap only; no seat or travel guarantee. Recheck the schedule before reserving." };
   if (ids.length === 0) return result;
   const now = (context.now ?? Date.now)();
@@ -108,7 +108,7 @@ interface PlanContextParts { ids: string[]; index: IndexRecord[]; timezone: stri
 /** The checks that need no schedule: a current catalog for the event, and its known timezone.
  * Returns null for an empty request, which needs neither. */
 export function preparePlan(ids: readonly string[], deps: PlanDeps): PlanContextParts | null {
-  const trimmed = validateSessionIds(ids, true, false);
+  const trimmed = validateSessionIds(ids);
   if (!trimmed.length) return null;
   const index = requireCurrentIndex(deps);
   const eventId = deps.eventId ?? DEFAULT_EVENT_ID;

@@ -18,8 +18,12 @@ const KNOWN_DEAD: string[] = [
   "src/auth/provider-adapter.ts",
   "src/auth/token-provider.ts",
   "src/auth/token-store.ts",
+  "src/auth/oauth.ts",
+  "src/catalog/sync.ts",
   "src/schedule/favorites.ts",
+  "src/schedule/reservations.ts",
   "src/schedule/schedule.ts",
+  "src/schedule/write-quota.ts",
 ];
 
 describe("plugin only", () => {
